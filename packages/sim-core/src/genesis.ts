@@ -88,6 +88,22 @@ function cashForTier(tier: PromotionTier, rng: DeterministicRng): number {
   }
 }
 
+function recurringFinanceForTier(tier: PromotionTier, rng: DeterministicRng): { media: number; sponsor: number; overhead: number } {
+  switch (tier) {
+    case "GLOBAL": return { media: rng.int(1_200_000, 1_800_000), sponsor: rng.int(300_000, 600_000), overhead: rng.int(800_000, 1_200_000) };
+    case "NATIONAL": return { media: rng.int(450_000, 750_000), sponsor: rng.int(120_000, 280_000), overhead: rng.int(350_000, 600_000) };
+    case "RISING": return { media: rng.int(160_000, 300_000), sponsor: rng.int(60_000, 140_000), overhead: rng.int(160_000, 280_000) };
+    case "INDEPENDENT": return { media: rng.int(40_000, 90_000), sponsor: rng.int(20_000, 60_000), overhead: rng.int(60_000, 130_000) };
+    case "LOCAL": return { media: rng.int(8_000, 30_000), sponsor: rng.int(5_000, 20_000), overhead: rng.int(20_000, 55_000) };
+  }
+}
+
+function weeklyMarketRate(person: Person): number {
+  const averageSkill = (person.skills.inRingQuality + person.skills.matchCraft + person.skills.presentation) / 3;
+  const stageMultiplier = person.careerStage === "SPECIAL_ATTRACTION" ? 1.35 : person.careerStage === "VETERAN" ? 1.1 : person.careerStage === "PROSPECT" ? 0.75 : 1;
+  return Math.round((500 + person.recognition * 50 + person.popularity * 30 + averageSkill * 25) * stageMultiplier);
+}
+
 export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test World"): WorldState {
   const rng = new DeterministicRng(seed);
   const worldId = `world-${seed >>> 0}`;
@@ -117,6 +133,7 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
     while (usedPromotionNames.has(promotionName)) promotionName = `${rng.pick(PROMOTION_PREFIXES)} ${rng.pick(PROMOTION_SUFFIXES)}`;
     usedPromotionNames.add(promotionName);
     const tier = tierForIndex(i, ruleset.promotions);
+    const recurringFinance = recurringFinanceForTier(tier, rng);
     return {
       id: `promotion-${String(i + 1).padStart(3, "0")}`,
       worldId,
@@ -128,6 +145,13 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
       cash: cashForTier(tier, rng),
       debt: 0,
       mediaReach: tier === "GLOBAL" ? rng.int(80, 100) : tier === "NATIONAL" ? rng.int(55, 80) : tier === "RISING" ? rng.int(30, 60) : rng.int(10, 40),
+      weeklyMediaIncome: recurringFinance.media,
+      weeklySponsorIncome: recurringFinance.sponsor,
+      weeklyFixedOverhead: recurringFinance.overhead,
+      weeklyTalentCommitment: 0,
+      lastWeeklyNet: 0,
+      runwayWeeks: null,
+      financialDistress: "HEALTHY",
       aiProfile: profile(rng),
       rosterPersonIds: [],
     };
@@ -172,6 +196,14 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
     promotion.rosterPersonIds.push(person.id);
   }
 
+  const peopleById = new Map(people.map((person) => [person.id, person]));
+  for (const promotion of promotions) {
+    promotion.weeklyTalentCommitment = promotion.rosterPersonIds.reduce((sum, personId) => {
+      const person = peopleById.get(personId);
+      return sum + (person ? weeklyMarketRate(person) : 0);
+    }, 0);
+  }
+
   const ledger = [] as WorldState["ledger"];
   const writer = new LedgerWriter(worldId, ledger);
   writer.append({
@@ -204,5 +236,5 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
     },
   });
 
-  return { world, ruleset: { ...ruleset }, markets, promotions, people, ledger };
+  return { world, ruleset: { ...ruleset }, markets, promotions, people, financialTransactions: [], ledger };
 }

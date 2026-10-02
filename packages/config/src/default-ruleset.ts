@@ -1,7 +1,7 @@
 import type { Ruleset } from "../../domain/src/types.js";
 
 export const DEFAULT_RULESET: Ruleset = {
-  version: "sim0.0.1",
+  version: "sim0.0.2",
   weeksPerYear: 52,
   markets: 20,
   promotions: 9,

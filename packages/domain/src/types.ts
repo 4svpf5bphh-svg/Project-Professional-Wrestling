@@ -6,6 +6,12 @@ export type ControllerType = "AI" | "HUMAN";
 export type CareerStage = "PROSPECT" | "PRIME" | "VETERAN" | "SPECIAL_ATTRACTION";
 export type PersonStatus = "ACTIVE" | "INJURED" | "RETIRED";
 export type LedgerSignificance = "ROUTINE" | "NOTABLE" | "MAJOR" | "HISTORIC";
+export type FinancialDistressState = "HEALTHY" | "WATCH" | "DISTRESSED" | "CRISIS";
+export type FinancialTransactionCategory =
+  | "MEDIA_INCOME"
+  | "SPONSOR_INCOME"
+  | "FIXED_OVERHEAD"
+  | "TALENT_COMMITMENT";
 
 export interface PpwDate {
   year: number;
@@ -63,6 +69,13 @@ export interface Promotion {
   cash: number;
   debt: number;
   mediaReach: number;
+  weeklyMediaIncome: number;
+  weeklySponsorIncome: number;
+  weeklyFixedOverhead: number;
+  weeklyTalentCommitment: number;
+  lastWeeklyNet: number;
+  runwayWeeks: number | null;
+  financialDistress: FinancialDistressState;
   aiProfile: AiProfile;
   rosterPersonIds: Id[];
 }
@@ -102,6 +115,16 @@ export interface Person {
   contractedPromotionId: Id | null;
 }
 
+export interface FinancialTransaction {
+  id: Id;
+  worldId: Id;
+  promotionId: Id;
+  date: PpwDate;
+  category: FinancialTransactionCategory;
+  amount: number;
+  source: string;
+}
+
 export interface LedgerEvent {
   id: Id;
   worldId: Id;
@@ -120,5 +143,6 @@ export interface WorldState {
   markets: Market[];
   promotions: Promotion[];
   people: Person[];
+  financialTransactions: FinancialTransaction[];
   ledger: LedgerEvent[];
 }

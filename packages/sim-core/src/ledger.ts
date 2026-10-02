@@ -1,9 +1,11 @@
 import type { Id, LedgerEvent, LedgerSignificance, PpwDate } from "../../domain/src/types.js";
 
 export class LedgerWriter {
-  private counter = 0;
+  private counter: number;
 
-  constructor(private readonly worldId: Id, private readonly target: LedgerEvent[]) {}
+  constructor(private readonly worldId: Id, private readonly target: LedgerEvent[]) {
+    this.counter = target.length;
+  }
 
   append(input: {
     date: PpwDate;

@@ -1,7 +1,15 @@
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
-import { advanceWeeks, createWorld, deterministicWorldHash, validateWorldInvariants } from "../packages/sim-core/src/index.js";
+import {
+  advanceWeeks,
+  createWorld,
+  deterministicWorldHash,
+  determineFinancialDistress,
+  resolveWorldWeek,
+  resolveWorldWeeks,
+  validateWorldInvariants,
+} from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -67,8 +75,52 @@ test("World advances across 52-week PPW Years", () => {
   equal(state.world.currentDate.week, 1);
 });
 
-test("Genesis satisfies core invariants", () => {
+test("weekly finance settlement writes four transactions per active promotion", () => {
+  const state = createWorld(55, DEFAULT_RULESET);
+  resolveWorldWeek(state);
+  equal(state.financialTransactions.length, state.promotions.length * 4);
+});
+
+test("weekly finance transactions reconcile exactly to promotion cash movement", () => {
+  const state = createWorld(56, DEFAULT_RULESET);
+  const before = new Map(state.promotions.map((promotion) => [promotion.id, promotion.cash]));
+  resolveWorldWeek(state);
+  for (const promotion of state.promotions) {
+    const transactionNet = state.financialTransactions
+      .filter((transaction) => transaction.promotionId === promotion.id)
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    equal(promotion.cash, before.get(promotion.id)! + transactionNet);
+    equal(promotion.lastWeeklyNet, transactionNet);
+  }
+});
+
+test("financial transaction IDs remain unique across weeks", () => {
+  const state = createWorld(57, DEFAULT_RULESET);
+  resolveWorldWeeks(state, 3);
+  const ids = state.financialTransactions.map((transaction) => transaction.id);
+  equal(new Set(ids).size, ids.length);
+});
+
+test("financial distress thresholds respond to runway", () => {
+  equal(determineFinancialDistress(1_000_000, 1), "HEALTHY");
+  equal(determineFinancialDistress(1_000_000, -40_000), "HEALTHY");
+  equal(determineFinancialDistress(500_000, -40_000), "WATCH");
+  equal(determineFinancialDistress(200_000, -40_000), "DISTRESSED");
+  equal(determineFinancialDistress(50_000, -40_000), "CRISIS");
+  equal(determineFinancialDistress(0, -1), "CRISIS");
+});
+
+test("resolved Worlds remain deterministic", () => {
+  const a = createWorld(1234, DEFAULT_RULESET);
+  const b = createWorld(1234, DEFAULT_RULESET);
+  resolveWorldWeeks(a, 104);
+  resolveWorldWeeks(b, 104);
+  equal(deterministicWorldHash(a), deterministicWorldHash(b));
+});
+
+test("Genesis and 520 resolved weeks satisfy core invariants", () => {
   const state = createWorld(999, DEFAULT_RULESET);
+  resolveWorldWeeks(state, 520);
   const errors = validateWorldInvariants(state);
   equal(errors.length, 0, errors.join("\n"));
 });

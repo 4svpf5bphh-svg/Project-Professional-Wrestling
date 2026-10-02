@@ -1,7 +1,7 @@
 declare const process: { argv: string[]; exitCode?: number };
 
 import { DEFAULT_RULESET } from "../../../packages/config/src/default-ruleset.js";
-import { advanceWeeks, createWorld, formatPpwDate, summarizeWorld, validateWorldInvariants } from "../../../packages/sim-core/src/index.js";
+import { createWorld, formatPpwDate, resolveWorldWeeks, summarizeWorld, validateWorldInvariants } from "../../../packages/sim-core/src/index.js";
 
 function valueAfter(flag: string): string | undefined {
   const index = process.argv.indexOf(flag);
@@ -16,14 +16,14 @@ if (!Number.isInteger(weeks) || weeks < 0) throw new Error("--weeks must be a no
 
 const state = createWorld(seed, DEFAULT_RULESET);
 const genesisHash = summarizeWorld(state).deterministicHash;
-advanceWeeks(state.world, state.ruleset.weeksPerYear, weeks);
+resolveWorldWeeks(state, weeks);
 const invariantErrors = validateWorldInvariants(state);
 const summary = summarizeWorld(state);
 
-console.log("PPW SIM-0.0.1");
+console.log("PPW SIM-0.0.2");
 console.log(`Genesis seed: ${seed}`);
 console.log(`Genesis hash: ${genesisHash}`);
-console.log(`Advanced: ${weeks} PPW weeks`);
+console.log(`Resolved: ${weeks} PPW weeks`);
 console.log(`Current date: ${formatPpwDate(state.world.currentDate)}`);
 console.log(JSON.stringify(summary, null, 2));
 
