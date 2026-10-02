@@ -27,8 +27,11 @@ export function determineFinancialDistress(cash: number, weeklyNet: number): Fin
 function currentWeekNetByPromotion(state: WorldState): Map<string, number> {
   const currentWeekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
   const result = new Map<string, number>();
-  for (const transaction of state.financialTransactions) {
-    if (ppwDateToWeekIndex(transaction.date, state.ruleset.weeksPerYear) !== currentWeekIndex) continue;
+  for (let i = state.financialTransactions.length - 1; i >= 0; i -= 1) {
+    const transaction = state.financialTransactions[i]!;
+    const transactionWeek = ppwDateToWeekIndex(transaction.date, state.ruleset.weeksPerYear);
+    if (transactionWeek < currentWeekIndex) break;
+    if (transactionWeek !== currentWeekIndex) continue;
     result.set(transaction.promotionId, (result.get(transaction.promotionId) ?? 0) + transaction.amount);
   }
   return result;

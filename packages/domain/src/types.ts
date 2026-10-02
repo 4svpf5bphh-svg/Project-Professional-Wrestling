@@ -57,6 +57,10 @@ export interface Ruleset {
   minEventParticipants: number;
   injuryRateMultiplier: number;
   fatigueRecoveryBase: number;
+  developmentRate: number;
+  retirementBaseAge: number;
+  talentGenerationFloorRatio: number;
+  maxProspectsGeneratedPerWeek: number;
 }
 
 export interface World {
@@ -153,6 +157,11 @@ export interface Person {
   careerStage: CareerStage;
   status: PersonStatus;
   homeMarketId: Id;
+  biologicalAge: number;
+  careerExperience: number;
+  developmentAptitude: number;
+  debutDate: PpwDate;
+  generatedTalent: boolean;
   fatigue: number;
   wear: number;
   morale: number;
@@ -229,6 +238,7 @@ export interface ScheduledAppearance {
   personId: Id;
   contractId: Id;
   date: PpwDate;
+  serviceCapacityAtBooking: number;
   status: ScheduledAppearanceStatus;
 }
 

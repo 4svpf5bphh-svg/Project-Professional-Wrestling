@@ -1,7 +1,7 @@
 import type { Ruleset } from "../../domain/src/types.js";
 
 export const DEFAULT_RULESET: Ruleset = {
-  version: "sim0.0.5",
+  version: "sim0.0.6",
   weeksPerYear: 52,
   markets: 20,
   promotions: 9,
@@ -15,4 +15,8 @@ export const DEFAULT_RULESET: Ruleset = {
   minEventParticipants: 6,
   injuryRateMultiplier: 1,
   fatigueRecoveryBase: 14,
+  developmentRate: 1,
+  retirementBaseAge: 42,
+  talentGenerationFloorRatio: 0.96,
+  maxProspectsGeneratedPerWeek: 2,
 };

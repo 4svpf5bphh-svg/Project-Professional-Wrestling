@@ -4,7 +4,7 @@ PPW is a persistent asynchronous wrestling-management living-world simulation.
 
 The repository is currently in **SIM-0**, where the deterministic headless World is being built and stress-tested before any polished player interface.
 
-## Current milestone — SIM-0.0.5
+## Current milestone — SIM-0.0.6
 
 The simulator can now:
 
@@ -24,6 +24,9 @@ The simulator can now:
 - track persistent working chemistry/familiarity;
 - accumulate fatigue and long-term Wear;
 - generate injuries, temporary unavailability and recovery;
+- advance a separate slow biological Career Time;
+- develop wrestlers through actual match experience with diminishing returns;
+- transition career stages, retire worn/older wrestlers and generate new prospects when population supply falls;
 - allow serious in-match injuries to force rare changes to the booked finish;
 - evolve wrestler momentum and promotion strength through actual wrestling results;
 - calculate cash flow, runway and financial distress;

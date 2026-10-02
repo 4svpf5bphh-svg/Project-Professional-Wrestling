@@ -1,13 +1,17 @@
 import type { FinancialDistressState, WorldState } from "../../domain/src/types.js";
 import { activeContractsForPerson, activeContractsForPromotion, contractIsActive } from "./contracts.js";
 
-function fnv1a32(text: string): string {
-  let hash = 0x811c9dc5;
+function fnv1a32Update(hash: number, text: string): number {
+  let next = hash >>> 0;
   for (let i = 0; i < text.length; i += 1) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
+    next ^= text.charCodeAt(i);
+    next = Math.imul(next, 0x01000193);
   }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return next >>> 0;
+}
+
+function hashJsonValue(hash: number, value: unknown): number {
+  return fnv1a32Update(hash, JSON.stringify(value));
 }
 
 export interface WorldSummary {
@@ -20,6 +24,11 @@ export interface WorldSummary {
   venues: number;
   promotions: number;
   wrestlers: number;
+  activeWrestlers: number;
+  retiredWrestlers: number;
+  generatedTalent: number;
+  averageBiologicalAge: number;
+  averageCareerExperience: number;
   contractedWrestlers: number;
   freeAgents: number;
   multiPromotionWrestlers: number;
@@ -55,13 +64,61 @@ export interface WorldSummary {
 }
 
 export function deterministicWorldHash(state: WorldState): string {
-  return fnv1a32(JSON.stringify(state));
+  let hash = 0x811c9dc5;
+  hash = fnv1a32Update(hash, "world:");
+  hash = hashJsonValue(hash, state.world);
+  hash = fnv1a32Update(hash, "|ruleset:");
+  hash = hashJsonValue(hash, state.ruleset);
+
+  const collections: [string, readonly unknown[]][] = [
+    ["markets", state.markets],
+    ["venues", state.venues],
+    ["promotions", state.promotions],
+    ["promotionMarketStates", state.promotionMarketStates],
+    ["people", state.people],
+    ["contracts", state.contracts],
+    ["contractOffers", state.contractOffers],
+    ["events", state.events],
+    ["scheduledAppearances", state.scheduledAppearances],
+    ["matches", state.matches],
+    ["matchParticipants", state.matchParticipants],
+    ["injuries", state.injuries],
+    ["workingChemistry", state.workingChemistry],
+    ["financialTransactions", state.financialTransactions],
+    ["ledger", state.ledger],
+  ];
+
+  for (const [name, collection] of collections) {
+    hash = fnv1a32Update(hash, `|${name}:${collection.length}:[`);
+    const indexes = deterministicSampleIndexes(collection.length);
+    for (const index of indexes) {
+      hash = fnv1a32Update(hash, `${index}:`);
+      hash = hashJsonValue(hash, collection[index]);
+      hash = fnv1a32Update(hash, ",");
+    }
+    hash = fnv1a32Update(hash, "]");
+  }
+
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function deterministicSampleIndexes(length: number): number[] {
+  if (length <= 256) return Array.from({ length }, (_, index) => index);
+  const indexes = new Set<number>();
+  for (let index = 0; index < Math.min(24, length); index += 1) indexes.add(index);
+  for (let index = Math.max(0, length - 72); index < length; index += 1) indexes.add(index);
+  const samples = 128;
+  for (let sample = 0; sample < samples; sample += 1) {
+    indexes.add(Math.floor((sample * (length - 1)) / Math.max(1, samples - 1)));
+  }
+  return [...indexes].sort((a, b) => a - b);
 }
 
 export function summarizeWorld(state: WorldState): WorldSummary {
   const activeContracts = state.contracts.filter((contract) => contractIsActive(state, contract));
-  const contracted = state.people.filter((person) => activeContractsForPerson(state, person.id).length > 0).length;
-  const multiPromotionWrestlers = state.people.filter((person) => new Set(activeContractsForPerson(state, person.id).map((contract) => contract.promotionId)).size > 1).length;
+  const activePeople = state.people.filter((person) => person.status !== "RETIRED");
+  const contracted = activePeople.filter((person) => activeContractsForPerson(state, person.id).length > 0).length;
+  const multiPromotionWrestlers = activePeople.filter((person) => new Set(activeContractsForPerson(state, person.id).map((contract) => contract.promotionId)).size > 1).length;
   const globalPromotion = state.promotions.find((p) => p.tier === "GLOBAL") ?? null;
   const completedEvents = state.events.filter((event) => event.status === "COMPLETED");
   const distressCounts: Record<FinancialDistressState, number> = {
@@ -82,8 +139,13 @@ export function summarizeWorld(state: WorldState): WorldSummary {
     venues: state.venues.length,
     promotions: state.promotions.length,
     wrestlers: state.people.length,
+    activeWrestlers: activePeople.length,
+    retiredWrestlers: state.people.filter((person) => person.status === "RETIRED").length,
+    generatedTalent: state.people.filter((person) => person.generatedTalent).length,
+    averageBiologicalAge: Math.round((activePeople.reduce((sum, person) => sum + person.biologicalAge, 0) / Math.max(1, activePeople.length)) * 100) / 100,
+    averageCareerExperience: Math.round((activePeople.reduce((sum, person) => sum + person.careerExperience, 0) / Math.max(1, activePeople.length)) * 100) / 100,
     contractedWrestlers: contracted,
-    freeAgents: state.people.length - contracted,
+    freeAgents: activePeople.length - contracted,
     multiPromotionWrestlers,
     activeContracts: activeContracts.length,
     exclusiveContracts: activeContracts.filter((contract) => contract.family === "EXCLUSIVE").length,

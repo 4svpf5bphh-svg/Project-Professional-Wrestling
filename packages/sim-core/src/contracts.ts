@@ -13,6 +13,7 @@ import type {
 import { addPpwWeeks, comparePpwDates, ppwDateToWeekIndex, weeksBetween } from "./clock.js";
 import { recordFinancialTransaction } from "./transactions.js";
 import { LedgerWriter } from "./ledger.js";
+import { contractsEndingInWeek, contractsForPerson, contractsForPromotion } from "./indexes.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 
 const ROLE_VALUE: Record<RoleExpectation, number> = {
@@ -45,11 +46,11 @@ export function contractOverlaps(a: Pick<ContractTerms, "startDate" | "endDate">
 }
 
 export function activeContractsForPerson(state: WorldState, personId: Id): Contract[] {
-  return state.contracts.filter((contract) => contract.personId === personId && contractIsActive(state, contract));
+  return contractsForPerson(state, personId).filter((contract) => contractIsActive(state, contract));
 }
 
 export function activeContractsForPromotion(state: WorldState, promotionId: Id): Contract[] {
-  return state.contracts.filter((contract) => contract.promotionId === promotionId && contractIsActive(state, contract));
+  return contractsForPromotion(state, promotionId).filter((contract) => contractIsActive(state, contract));
 }
 
 export function currentRosterPersonIds(state: WorldState, promotionId: Id): Id[] {
@@ -85,7 +86,7 @@ function contractDensity(terms: ContractTerms, weeksPerYear: number): number {
 }
 
 export function canAcceptContractTerms(state: WorldState, person: Person, terms: ContractTerms): { ok: boolean; reason: string | null } {
-  const signed = state.contracts.filter((contract) => contract.personId === person.id && contract.status === "SIGNED" && contractOverlaps(contract, terms, state.ruleset.weeksPerYear));
+  const signed = contractsForPerson(state, person.id).filter((contract) => contract.status === "SIGNED" && contractOverlaps(contract, terms, state.ruleset.weeksPerYear));
   if (terms.exclusivity === "EXCLUSIVE" && signed.length > 0) {
     return { ok: false, reason: "exclusive offer overlaps another signed contract" };
   }
@@ -217,9 +218,9 @@ export function createSignedContract(state: WorldState, person: Person, promotio
 
 export function expireContracts(state: WorldState): void {
   const writer = new LedgerWriter(state.world.id, state.ledger);
-  for (const contract of state.contracts) {
+  const currentIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
+  for (const contract of contractsEndingInWeek(state, currentIndex - 1)) {
     if (contract.status !== "SIGNED") continue;
-    if (comparePpwDates(state.world.currentDate, contract.endDate, state.ruleset.weeksPerYear) <= 0) continue;
     contract.status = "EXPIRED";
     writer.append({
       date: state.world.currentDate,
@@ -249,9 +250,17 @@ function personValueForPromotion(person: Person, promotion: Promotion): number {
     + (person.careerStage === "PROSPECT" ? promotion.aiProfile.developmentPreference * 0.22 : 0);
 }
 
+function isDevelopmentProspect(person: Person): boolean {
+  return person.careerStage === "PROSPECT" || (person.biologicalAge < 27 && person.careerExperience < 25);
+}
+
+function prospectRosterTarget(promotion: Promotion, rosterTarget: number): number {
+  const ratio = 0.08 + promotion.aiProfile.developmentPreference / 800;
+  return Math.max(2, Math.round(rosterTarget * ratio));
+}
+
 function hasSamePromotionFutureContract(state: WorldState, personId: Id, promotionId: Id, afterDate = state.world.currentDate): boolean {
-  return state.contracts.some((contract) => contract.personId === personId
-    && contract.promotionId === promotionId
+  return contractsForPerson(state, personId).some((contract) => contract.promotionId === promotionId
     && contract.status === "SIGNED"
     && comparePpwDates(contract.endDate, afterDate, state.ruleset.weeksPerYear) >= 0);
 }
@@ -281,12 +290,11 @@ function createOffer(state: WorldState, promotion: Promotion, person: Person, of
 
 function renewalCandidates(state: WorldState, promotion: Promotion): Contract[] {
   const currentIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
-  return state.contracts.filter((contract) => {
-    if (contract.promotionId !== promotion.id || contract.status !== "SIGNED" || !contractIsActive(state, contract)) return false;
+  return contractsForPromotion(state, promotion.id).filter((contract) => {
+    if (contract.status !== "SIGNED" || !contractIsActive(state, contract)) return false;
     const endIndex = ppwDateToWeekIndex(contract.endDate, state.ruleset.weeksPerYear);
     if (endIndex - currentIndex > state.ruleset.renewalWindowWeeks) return false;
-    return !state.contracts.some((other) => other.id !== contract.id
-      && other.personId === contract.personId
+    return !contractsForPerson(state, contract.personId).some((other) => other.id !== contract.id
       && other.promotionId === promotion.id
       && other.status === "SIGNED"
       && comparePpwDates(other.startDate, contract.endDate, state.ruleset.weeksPerYear) > 0);
@@ -332,9 +340,45 @@ export function generateAiContractOffers(state: WorldState): void {
     const weeklyRng = new DeterministicRng(deterministicSeedFromText(`${state.world.seed}:${promotion.id}:${ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear)}:recruitment`));
     const shortlist = candidates.slice(0, Math.min(candidates.length, Math.max(8, recruitmentCount * 6)));
     const selected = new Set<string>();
-    while (selected.size < recruitmentCount && selected.size < shortlist.length) {
-      const candidate = shortlist[weeklyRng.int(0, shortlist.length - 1)]!;
-      if (selected.has(candidate.id)) continue;
+
+    const rosterPeople = roster.map((personId) => state.people.find((person) => person.id === personId)).filter((person): person is Person => Boolean(person));
+    const currentProspects = rosterPeople.filter(isDevelopmentProspect).length;
+    const prospectDeficit = Math.max(0, prospectRosterTarget(promotion, target) - currentProspects);
+    if (prospectDeficit > 0 && promotion.aiProfile.developmentPreference >= 30 && recruitmentCount > 0) {
+      const prospectShortlist = candidates
+        .filter(isDevelopmentProspect)
+        .sort((a, b) => (b.developmentAptitude * 0.55 + personValueForPromotion(b, promotion) * 0.45)
+          - (a.developmentAptitude * 0.55 + personValueForPromotion(a, promotion) * 0.45)
+          || a.id.localeCompare(b.id))
+        .slice(0, 10);
+      if (prospectShortlist.length > 0) {
+        const candidate = prospectShortlist[weeklyRng.int(0, prospectShortlist.length - 1)]!;
+        selected.add(candidate.id);
+        createOffer(state, promotion, candidate, "RECRUITMENT", state.world.currentDate);
+      }
+    }
+
+    if (selected.size < recruitmentCount && promotion.tier !== "GLOBAL") {
+      const outsideWorkShortlist = candidates
+        .filter((candidate) => !selected.has(candidate.id))
+        .filter((candidate) => {
+          const active = activeContractsForPerson(state, candidate.id);
+          return active.length > 0 && active.every((contract) => contract.exclusivity !== "EXCLUSIVE");
+        })
+        .slice(0, 10);
+      if (outsideWorkShortlist.length > 0) {
+        const candidate = outsideWorkShortlist[weeklyRng.int(0, outsideWorkShortlist.length - 1)]!;
+        selected.add(candidate.id);
+        createOffer(state, promotion, candidate, "RECRUITMENT", state.world.currentDate);
+      }
+    }
+
+    let attempts = 0;
+    while (selected.size < recruitmentCount && selected.size < candidates.length && attempts < Math.max(20, shortlist.length * 4)) {
+      attempts += 1;
+      const pool = shortlist.filter((candidate) => !selected.has(candidate.id));
+      if (pool.length === 0) break;
+      const candidate = pool[weeklyRng.int(0, pool.length - 1)]!;
       selected.add(candidate.id);
       createOffer(state, promotion, candidate, "RECRUITMENT", state.world.currentDate);
     }
@@ -358,7 +402,7 @@ export function evaluateContractOffer(state: WorldState, offer: ContractOffer): 
   const termWeeks = Math.max(1, weeksBetween(offer.startDate, offer.endDate, state.ruleset.weeksPerYear) + 1);
   const density = offer.dateEntitlement / termWeeks;
   const scheduleScore = Math.max(10, Math.min(100, 92 - density * 35 - (offer.exclusivity === "EXCLUSIVE" ? 18 : 0)));
-  const loyaltyScore = state.contracts.some((contract) => contract.personId === person.id && contract.promotionId === promotion.id) ? 78 : 48;
+  const loyaltyScore = contractsForPerson(state, person.id).some((contract) => contract.promotionId === promotion.id) ? 78 : 48;
   const exposureScore = promotion.mediaReach;
   const priorities = person.priorities;
   const weightTotal = priorities.money + priorities.role + priorities.prestige + priorities.schedule + priorities.loyalty + priorities.exposure;
@@ -376,8 +420,14 @@ export function evaluateContractOffer(state: WorldState, offer: ContractOffer): 
 
 export function resolveContractOffers(state: WorldState): void {
   const currentIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
-  const pending = state.contractOffers.filter((offer) => offer.status === "PENDING"
-    && ppwDateToWeekIndex(offer.submittedDate, state.ruleset.weeksPerYear) === currentIndex);
+  const pending: ContractOffer[] = [];
+  for (let i = state.contractOffers.length - 1; i >= 0; i -= 1) {
+    const offer = state.contractOffers[i]!;
+    const submittedIndex = ppwDateToWeekIndex(offer.submittedDate, state.ruleset.weeksPerYear);
+    if (submittedIndex < currentIndex) break;
+    if (offer.status === "PENDING" && submittedIndex === currentIndex) pending.push(offer);
+  }
+  pending.reverse(); // Preserve original submission order while scanning only the current-week tail.
   const byPerson = new Map<Id, ContractOffer[]>();
   for (const offer of pending) {
     const list = byPerson.get(offer.personId) ?? [];
