@@ -5,31 +5,11 @@ import type {
   Promotion,
   WorldState,
 } from "../../domain/src/types.js";
+import { ppwDateToWeekIndex } from "./clock.js";
+import { activeContractsForPromotion } from "./contracts.js";
 import { LedgerWriter } from "./ledger.js";
 
-class FinancialTransactionWriter {
-  private counter: number;
-
-  constructor(private readonly state: WorldState) {
-    this.counter = state.financialTransactions.length;
-  }
-
-  append(promotion: Promotion, category: FinancialTransactionCategory, amount: number, source: string): FinancialTransaction {
-    this.counter += 1;
-    const transaction: FinancialTransaction = {
-      id: `finance-${String(this.counter).padStart(8, "0")}`,
-      worldId: this.state.world.id,
-      promotionId: promotion.id,
-      date: { ...this.state.world.currentDate },
-      category,
-      amount,
-      source,
-    };
-    this.state.financialTransactions.push(transaction);
-    return transaction;
-  }
-}
-
+import { recordFinancialTransaction } from "./transactions.js";
 export function calculateRunwayWeeks(cash: number, weeklyNet: number): number | null {
   if (weeklyNet >= 0) return null;
   if (cash <= 0) return 0;
@@ -47,22 +27,26 @@ export function determineFinancialDistress(cash: number, weeklyNet: number): Fin
 }
 
 export function settleWorldFinances(state: WorldState): void {
-  const transactionWriter = new FinancialTransactionWriter(state);
   const ledgerWriter = new LedgerWriter(state.world.id, state.ledger);
+  const currentWeekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
 
   for (const promotion of state.promotions) {
     if (promotion.lifecycle === "CLOSED" || promotion.lifecycle === "DORMANT") continue;
-
     const previousDistress = promotion.financialDistress;
-    const entries = [
-      transactionWriter.append(promotion, "MEDIA_INCOME", promotion.weeklyMediaIncome, "baseline media agreement"),
-      transactionWriter.append(promotion, "SPONSOR_INCOME", promotion.weeklySponsorIncome, "baseline sponsor portfolio"),
-      transactionWriter.append(promotion, "FIXED_OVERHEAD", -promotion.weeklyFixedOverhead, "promotion operating overhead"),
-      transactionWriter.append(promotion, "TALENT_COMMITMENT", -promotion.weeklyTalentCommitment, "genesis roster commitments"),
-    ];
 
-    const weeklyNet = entries.reduce((sum, entry) => sum + entry.amount, 0);
-    promotion.cash += weeklyNet;
+    recordFinancialTransaction(state, promotion, "MEDIA_INCOME", promotion.weeklyMediaIncome, "baseline media agreement");
+    recordFinancialTransaction(state, promotion, "SPONSOR_INCOME", promotion.weeklySponsorIncome, "baseline sponsor portfolio");
+    recordFinancialTransaction(state, promotion, "FIXED_OVERHEAD", -promotion.weeklyFixedOverhead, "promotion operating overhead");
+    for (const contract of activeContractsForPromotion(state, promotion.id)) {
+      if (contract.weeklyGuarantee > 0) {
+        recordFinancialTransaction(state, promotion, "CONTRACT_GUARANTEE", -contract.weeklyGuarantee, contract.id);
+      }
+    }
+
+    const weeklyNet = state.financialTransactions
+      .filter((transaction) => transaction.promotionId === promotion.id
+        && ppwDateToWeekIndex(transaction.date, state.ruleset.weeksPerYear) === currentWeekIndex)
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
     promotion.lastWeeklyNet = weeklyNet;
     promotion.runwayWeeks = calculateRunwayWeeks(promotion.cash, weeklyNet);
     promotion.financialDistress = determineFinancialDistress(promotion.cash, weeklyNet);

@@ -20,7 +20,7 @@ resolveWorldWeeks(state, weeks);
 const invariantErrors = validateWorldInvariants(state);
 const summary = summarizeWorld(state);
 
-console.log("PPW SIM-0.0.2");
+console.log("PPW SIM-0.0.3");
 console.log(`Genesis seed: ${seed}`);
 console.log(`Genesis hash: ${genesisHash}`);
 console.log(`Resolved: ${weeks} PPW weeks`);

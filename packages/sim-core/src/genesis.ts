@@ -11,6 +11,7 @@ import type {
   WrestlerPriorities,
   WrestlerSkills,
 } from "../../domain/src/types.js";
+import { buildContractTerms, createSignedContract, targetRosterSize } from "./contracts.js";
 import { DeterministicRng } from "./rng.js";
 import { LedgerWriter } from "./ledger.js";
 
@@ -98,10 +99,26 @@ function recurringFinanceForTier(tier: PromotionTier, rng: DeterministicRng): { 
   }
 }
 
-function weeklyMarketRate(person: Person): number {
-  const averageSkill = (person.skills.inRingQuality + person.skills.matchCraft + person.skills.presentation) / 3;
-  const stageMultiplier = person.careerStage === "SPECIAL_ATTRACTION" ? 1.35 : person.careerStage === "VETERAN" ? 1.1 : person.careerStage === "PROSPECT" ? 0.75 : 1;
-  return Math.round((500 + person.recognition * 50 + person.popularity * 30 + averageSkill * 25) * stageMultiplier);
+function tierAllocationWeight(promotion: Promotion): number {
+  const scale = promotion.tier === "GLOBAL" ? 1.55
+    : promotion.tier === "NATIONAL" ? 1.3
+      : promotion.tier === "RISING" ? 1.12
+        : 1;
+  return scale * (0.8 + promotion.aiProfile.starPreference / 250);
+}
+
+function rosterQuotas(promotions: Promotion[], targetContracted: number): Map<string, number> {
+  const desired = promotions.map((promotion) => targetRosterSize(promotion));
+  const desiredTotal = desired.reduce((sum, value) => sum + value, 0);
+  const quotas = desired.map((value) => Math.floor(value * targetContracted / Math.max(1, desiredTotal)));
+  let remaining = targetContracted - quotas.reduce((sum, value) => sum + value, 0);
+  let cursor = 0;
+  while (remaining > 0) {
+    quotas[cursor % quotas.length]! += 1;
+    cursor += 1;
+    remaining -= 1;
+  }
+  return new Map(promotions.map((promotion, index) => [promotion.id, quotas[index]! ]));
 }
 
 export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test World"): WorldState {
@@ -113,7 +130,6 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
     seed: seed >>> 0,
     rulesetVersion: ruleset.version,
     currentDate: { year: 1, week: 1, day: 1 },
-    // Deterministic placeholder: hosting layer will own real creation timestamps.
     createdAtIso: "2000-01-01T00:00:00.000Z",
   };
 
@@ -148,12 +164,10 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
       weeklyMediaIncome: recurringFinance.media,
       weeklySponsorIncome: recurringFinance.sponsor,
       weeklyFixedOverhead: recurringFinance.overhead,
-      weeklyTalentCommitment: 0,
       lastWeeklyNet: 0,
       runwayWeeks: null,
       financialDistress: "HEALTHY",
       aiProfile: profile(rng),
-      rosterPersonIds: [],
     };
   });
 
@@ -174,38 +188,22 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
       popularity: rng.int(stage === "PROSPECT" ? 5 : 15, stage === "SPECIAL_ATTRACTION" ? 90 : 75),
       skills: skills(rng, stage),
       priorities: priorities(rng),
-      contractedPromotionId: null,
     };
   });
 
-  // Initial labour allocation is intentionally conservative. It reserves a healthy free-agent pool
-  // instead of reserving named individuals for future humans.
-  const targetContracted = Math.floor(people.length * ruleset.initialContractedTalentRatio);
-  const sortedByValue = [...people].sort((a, b) => {
-    const aValue = a.skills.inRingQuality + a.skills.matchCraft + a.skills.presentation + a.recognition;
-    const bValue = b.skills.inRingQuality + b.skills.matchCraft + b.skills.presentation + b.recognition;
-    return bValue - aValue || a.id.localeCompare(b.id);
-  });
+  const state: WorldState = {
+    world,
+    ruleset: { ...ruleset },
+    markets,
+    promotions,
+    people,
+    contracts: [],
+    contractOffers: [],
+    financialTransactions: [],
+    ledger: [],
+  };
 
-  for (let i = 0; i < targetContracted; i += 1) {
-    const person = sortedByValue[i]!;
-    // Weighted but imperfect distribution: stronger promotions get more early picks without total hoarding.
-    const poolSize = Math.max(1, Math.min(promotions.length, 1 + Math.floor((i / Math.max(1, targetContracted)) * promotions.length)));
-    const promotion = promotions[rng.int(0, poolSize - 1)]!;
-    person.contractedPromotionId = promotion.id;
-    promotion.rosterPersonIds.push(person.id);
-  }
-
-  const peopleById = new Map(people.map((person) => [person.id, person]));
-  for (const promotion of promotions) {
-    promotion.weeklyTalentCommitment = promotion.rosterPersonIds.reduce((sum, personId) => {
-      const person = peopleById.get(personId);
-      return sum + (person ? weeklyMarketRate(person) : 0);
-    }, 0);
-  }
-
-  const ledger = [] as WorldState["ledger"];
-  const writer = new LedgerWriter(worldId, ledger);
+  const writer = new LedgerWriter(worldId, state.ledger);
   writer.append({
     date: world.currentDate,
     type: "WORLD_CREATED",
@@ -222,7 +220,27 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
       payload: { name: promotion.name, tier: promotion.tier },
     });
   }
-  writer.append({
+
+  const targetContracted = Math.floor(people.length * ruleset.initialContractedTalentRatio);
+  const sortedByValue = [...people].sort((a, b) => {
+    const aValue = a.skills.inRingQuality + a.skills.matchCraft + a.skills.presentation + a.recognition + a.popularity;
+    const bValue = b.skills.inRingQuality + b.skills.matchCraft + b.skills.presentation + b.recognition + b.popularity;
+    return bValue - aValue || a.id.localeCompare(b.id);
+  });
+  const quotas = rosterQuotas(promotions, targetContracted);
+  const assigned = new Map(promotions.map((promotion) => [promotion.id, 0]));
+
+  for (let i = 0; i < targetContracted; i += 1) {
+    const person = sortedByValue[i]!;
+    const eligible = promotions.filter((promotion) => (assigned.get(promotion.id) ?? 0) < (quotas.get(promotion.id) ?? 0));
+    const promotion = rng.weightedPick(eligible.map((candidate) => ({ value: candidate, weight: tierAllocationWeight(candidate) })));
+    assigned.set(promotion.id, (assigned.get(promotion.id) ?? 0) + 1);
+    const contractRng = new DeterministicRng(rng.int(1, 0x7fffffff));
+    const terms = buildContractTerms(state, promotion, person, contractRng);
+    createSignedContract(state, person, promotion, { ...terms, signingBonus: 0 }, null, true);
+  }
+
+  new LedgerWriter(worldId, state.ledger).append({
     date: world.currentDate,
     type: "WORLD_GENESIS_COMPLETED",
     significance: "MAJOR",
@@ -233,8 +251,9 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
       wrestlers: people.length,
       contracted: targetContracted,
       freeAgents: people.length - targetContracted,
+      contracts: state.contracts.length,
     },
   });
 
-  return { world, ruleset: { ...ruleset }, markets, promotions, people, financialTransactions: [], ledger };
+  return state;
 }

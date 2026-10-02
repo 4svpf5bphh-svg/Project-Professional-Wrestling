@@ -1,3 +1,12 @@
+export function deterministicSeedFromText(text: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
 export class DeterministicRng {
   private state: number;
 
@@ -6,7 +15,6 @@ export class DeterministicRng {
   }
 
   next(): number {
-    // Mulberry32: compact, deterministic and suitable for simulation prototyping.
     this.state = (this.state + 0x6d2b79f5) >>> 0;
     let t = this.state;
     t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -30,5 +38,17 @@ export class DeterministicRng {
   pick<T>(items: readonly T[]): T {
     if (items.length === 0) throw new Error("cannot pick from empty collection");
     return items[this.int(0, items.length - 1)]!;
+  }
+
+  weightedPick<T>(items: readonly { value: T; weight: number }[]): T {
+    if (items.length === 0) throw new Error("cannot pick from empty weighted collection");
+    const total = items.reduce((sum, item) => sum + Math.max(0, item.weight), 0);
+    if (total <= 0) return items[0]!.value;
+    let roll = this.float(0, total);
+    for (const item of items) {
+      roll -= Math.max(0, item.weight);
+      if (roll <= 0) return item.value;
+    }
+    return items[items.length - 1]!.value;
   }
 }

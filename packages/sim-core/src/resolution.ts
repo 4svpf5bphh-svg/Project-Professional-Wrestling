@@ -1,8 +1,12 @@
 import type { WorldState } from "../../domain/src/types.js";
 import { advanceWeek } from "./clock.js";
+import { expireContracts, generateAiContractOffers, resolveContractOffers } from "./contracts.js";
 import { settleWorldFinances } from "./finance.js";
 
 export function resolveWorldWeek(state: WorldState): void {
+  expireContracts(state);
+  generateAiContractOffers(state);
+  resolveContractOffers(state);
   settleWorldFinances(state);
   advanceWeek(state.world, state.ruleset.weeksPerYear);
 }

@@ -11,7 +11,14 @@ export type FinancialTransactionCategory =
   | "MEDIA_INCOME"
   | "SPONSOR_INCOME"
   | "FIXED_OVERHEAD"
-  | "TALENT_COMMITMENT";
+  | "CONTRACT_GUARANTEE"
+  | "CONTRACT_SIGNING_BONUS";
+
+export type ContractFamily = "ONE_OFF" | "LIMITED_NON_EXCLUSIVE" | "EXCLUSIVE";
+export type ExclusivityType = "OPEN" | "NON_EXCLUSIVE" | "EXCLUSIVE";
+export type ContractStatus = "SIGNED" | "EXPIRED" | "TERMINATED";
+export type ContractOfferStatus = "PENDING" | "ACCEPTED" | "REJECTED" | "WITHDRAWN";
+export type RoleExpectation = "MAIN_EVENT" | "UPPER_CARD" | "FEATURED" | "REGULAR" | "DEVELOPMENTAL" | "SPECIAL_ATTRACTION";
 
 export interface PpwDate {
   year: number;
@@ -27,6 +34,9 @@ export interface Ruleset {
   wrestlers: number;
   initialContractedTalentRatio: number;
   careerTimeFactor: number;
+  renewalWindowWeeks: number;
+  maxRecruitmentOffersPerPromotionPerWeek: number;
+  offerAcceptanceThreshold: number;
 }
 
 export interface World {
@@ -72,12 +82,10 @@ export interface Promotion {
   weeklyMediaIncome: number;
   weeklySponsorIncome: number;
   weeklyFixedOverhead: number;
-  weeklyTalentCommitment: number;
   lastWeeklyNet: number;
   runwayWeeks: number | null;
   financialDistress: FinancialDistressState;
   aiProfile: AiProfile;
-  rosterPersonIds: Id[];
 }
 
 export interface WrestlerSkills {
@@ -112,7 +120,41 @@ export interface Person {
   popularity: number;
   skills: WrestlerSkills;
   priorities: WrestlerPriorities;
-  contractedPromotionId: Id | null;
+}
+
+export interface ContractTerms {
+  family: ContractFamily;
+  exclusivity: ExclusivityType;
+  roleExpectation: RoleExpectation;
+  startDate: PpwDate;
+  endDate: PpwDate;
+  dateEntitlement: number;
+  weeklyGuarantee: number;
+  appearanceFee: number;
+  signingBonus: number;
+}
+
+export interface Contract extends ContractTerms {
+  id: Id;
+  worldId: Id;
+  personId: Id;
+  promotionId: Id;
+  status: ContractStatus;
+  datesUsed: number;
+  signedDate: PpwDate;
+  sourceOfferId: Id | null;
+}
+
+export interface ContractOffer extends ContractTerms {
+  id: Id;
+  worldId: Id;
+  personId: Id;
+  promotionId: Id;
+  submittedDate: PpwDate;
+  status: ContractOfferStatus;
+  offerKind: "RECRUITMENT" | "RENEWAL";
+  resolvedUtility: number | null;
+  rejectionReason: string | null;
 }
 
 export interface FinancialTransaction {
@@ -143,6 +185,8 @@ export interface WorldState {
   markets: Market[];
   promotions: Promotion[];
   people: Person[];
+  contracts: Contract[];
+  contractOffers: ContractOffer[];
   financialTransactions: FinancialTransaction[];
   ledger: LedgerEvent[];
 }
