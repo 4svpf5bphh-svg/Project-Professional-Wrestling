@@ -17,6 +17,7 @@ export interface WorldSummary {
   year: number;
   week: number;
   markets: number;
+  venues: number;
   promotions: number;
   wrestlers: number;
   contractedWrestlers: number;
@@ -30,6 +31,12 @@ export interface WorldSummary {
   contractOffers: number;
   acceptedOffers: number;
   rejectedOffers: number;
+  events: number;
+  completedEvents: number;
+  cancelledEvents: number;
+  totalAttendance: number;
+  totalGateRevenue: number;
+  completedAppearances: number;
   globalPromotion: string | null;
   ledgerEvents: number;
   financialTransactions: number;
@@ -48,6 +55,7 @@ export function summarizeWorld(state: WorldState): WorldSummary {
   const contracted = state.people.filter((person) => activeContractsForPerson(state, person.id).length > 0).length;
   const multiPromotionWrestlers = state.people.filter((person) => new Set(activeContractsForPerson(state, person.id).map((contract) => contract.promotionId)).size > 1).length;
   const globalPromotion = state.promotions.find((p) => p.tier === "GLOBAL") ?? null;
+  const completedEvents = state.events.filter((event) => event.status === "COMPLETED");
   const distressCounts: Record<FinancialDistressState, number> = {
     HEALTHY: 0,
     WATCH: 0,
@@ -63,6 +71,7 @@ export function summarizeWorld(state: WorldState): WorldSummary {
     year: state.world.currentDate.year,
     week: state.world.currentDate.week,
     markets: state.markets.length,
+    venues: state.venues.length,
     promotions: state.promotions.length,
     wrestlers: state.people.length,
     contractedWrestlers: contracted,
@@ -76,6 +85,12 @@ export function summarizeWorld(state: WorldState): WorldSummary {
     contractOffers: state.contractOffers.length,
     acceptedOffers: state.contractOffers.filter((offer) => offer.status === "ACCEPTED").length,
     rejectedOffers: state.contractOffers.filter((offer) => offer.status === "REJECTED").length,
+    events: state.events.length,
+    completedEvents: completedEvents.length,
+    cancelledEvents: state.events.filter((event) => event.status === "CANCELLED").length,
+    totalAttendance: completedEvents.reduce((sum, event) => sum + event.attendance, 0),
+    totalGateRevenue: completedEvents.reduce((sum, event) => sum + event.gateRevenue, 0),
+    completedAppearances: state.scheduledAppearances.filter((appearance) => appearance.status === "COMPLETED").length,
     globalPromotion: globalPromotion?.name ?? null,
     ledgerEvents: state.ledger.length,
     financialTransactions: state.financialTransactions.length,

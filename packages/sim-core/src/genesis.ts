@@ -4,8 +4,10 @@ import type {
   Market,
   Person,
   Promotion,
+  PromotionMarketState,
   PromotionTier,
   Ruleset,
+  Venue,
   World,
   WorldState,
   WrestlerPriorities,
@@ -99,6 +101,68 @@ function recurringFinanceForTier(tier: PromotionTier, rng: DeterministicRng): { 
   }
 }
 
+function eventCadenceForTier(tier: PromotionTier): number {
+  switch (tier) {
+    case "GLOBAL":
+    case "NATIONAL": return 1;
+    case "RISING":
+    case "INDEPENDENT": return 2;
+    case "LOCAL": return 3;
+  }
+}
+
+function venuesForMarkets(worldId: string, markets: Market[], rng: DeterministicRng): Venue[] {
+  const venues: Venue[] = [];
+  for (const market of markets) {
+    const templates = [
+      { label: "Hall", capacity: rng.int(1_200, 2_500), costPerSeat: rng.float(4.2, 6.0), prestige: rng.int(22, 42), suitability: rng.int(45, 68) },
+      { label: "Arena", capacity: rng.int(4_500, 8_500), costPerSeat: rng.float(5.0, 7.5), prestige: rng.int(45, 68), suitability: rng.int(62, 82) },
+      { label: "Grand Arena", capacity: rng.int(11_000, 19_000), costPerSeat: rng.float(6.0, 9.0), prestige: rng.int(68, 92), suitability: rng.int(78, 96) },
+    ];
+    for (const template of templates) {
+      venues.push({
+        id: `venue-${String(venues.length + 1).padStart(4, "0")}`,
+        worldId,
+        marketId: market.id,
+        name: `${market.name} ${template.label}`,
+        capacity: template.capacity,
+        weeklyHireCost: Math.round(template.capacity * template.costPerSeat),
+        prestige: template.prestige,
+        productionSuitability: template.suitability,
+      });
+    }
+  }
+  return venues;
+}
+
+function initialMarketState(promotion: Promotion, market: Market, rng: DeterministicRng): PromotionMarketState {
+  const isHome = promotion.homeMarketId === market.id;
+  const homeBase = promotion.tier === "GLOBAL" ? 82
+    : promotion.tier === "NATIONAL" ? 68
+      : promotion.tier === "RISING" ? 52
+        : promotion.tier === "INDEPENDENT" ? 38
+          : 28;
+  if (isHome) {
+    return {
+      worldId: promotion.worldId,
+      promotionId: promotion.id,
+      marketId: market.id,
+      awareness: Math.min(100, homeBase + rng.int(0, 8)),
+      liveStrength: Math.min(100, homeBase - 4 + rng.int(-3, 5)),
+      loyalty: Math.min(100, homeBase - 8 + rng.int(-4, 5)),
+    };
+  }
+  const awareness = Math.max(3, Math.round(promotion.mediaReach * rng.float(0.18, 0.48)));
+  return {
+    worldId: promotion.worldId,
+    promotionId: promotion.id,
+    marketId: market.id,
+    awareness,
+    liveStrength: Math.max(2, Math.round(awareness * rng.float(0.35, 0.7))),
+    loyalty: Math.max(2, Math.round(awareness * rng.float(0.25, 0.55))),
+  };
+}
+
 function tierAllocationWeight(promotion: Promotion): number {
   const scale = promotion.tier === "GLOBAL" ? 1.55
     : promotion.tier === "NATIONAL" ? 1.3
@@ -118,7 +182,7 @@ function rosterQuotas(promotions: Promotion[], targetContracted: number): Map<st
     cursor += 1;
     remaining -= 1;
   }
-  return new Map(promotions.map((promotion, index) => [promotion.id, quotas[index]! ]));
+  return new Map(promotions.map((promotion, index) => [promotion.id, quotas[index]!]));
 }
 
 export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test World"): WorldState {
@@ -142,6 +206,7 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
     spendingIndex: rng.int(50, 120),
     maturity: rng.int(20, 90),
   }));
+  const venues = venuesForMarkets(worldId, markets, rng);
 
   const usedPromotionNames = new Set<string>();
   const promotions: Promotion[] = Array.from({ length: ruleset.promotions }, (_, i) => {
@@ -167,9 +232,15 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
       lastWeeklyNet: 0,
       runwayWeeks: null,
       financialDistress: "HEALTHY",
+      eventCadenceWeeks: eventCadenceForTier(tier),
       aiProfile: profile(rng),
     };
   });
+
+  const promotionMarketStates: PromotionMarketState[] = [];
+  for (const promotion of promotions) {
+    for (const market of markets) promotionMarketStates.push(initialMarketState(promotion, market, rng));
+  }
 
   const people: Person[] = Array.from({ length: ruleset.wrestlers }, (_, i) => {
     const stage = careerStage(rng);
@@ -195,10 +266,14 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
     world,
     ruleset: { ...ruleset },
     markets,
+    venues,
     promotions,
+    promotionMarketStates,
     people,
     contracts: [],
     contractOffers: [],
+    events: [],
+    scheduledAppearances: [],
     financialTransactions: [],
     ledger: [],
   };
@@ -247,6 +322,7 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
     entityIds: [worldId],
     payload: {
       markets: markets.length,
+      venues: venues.length,
       promotions: promotions.length,
       wrestlers: people.length,
       contracted: targetContracted,

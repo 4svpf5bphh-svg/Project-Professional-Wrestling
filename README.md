@@ -4,22 +4,25 @@ PPW is a persistent asynchronous wrestling-management living-world simulation.
 
 The repository is currently in **SIM-0**, where the deterministic headless World is being built and stress-tested before any polished player interface.
 
-## Current milestone — SIM-0.0.3
+## Current milestone — SIM-0.0.4
 
 The simulator can now:
 
 - create a deterministic World from a seed;
-- generate 20 markets and a configurable AI promotion ecosystem;
-- generate a configurable wrestler population while preserving free agency;
-- use formal one-off, limited non-exclusive and exclusive contracts instead of roster ownership;
-- model contract dates, date entitlements, role expectations, compensation and Service Capacity;
-- expire, renew and competitively resolve contracts;
-- allow compatible multi-promotion non-exclusive careers;
-- derive promotion rosters from current contractual rights;
-- settle media, sponsorship, overhead, signing bonuses and contract guarantees through a financial transaction ledger;
-- calculate runway and financial distress;
-- write consequential history to an append-first World Ledger;
-- advance the PPW clock across 52-week PPW Years through a World-week resolver;
+- generate 20 markets with three venue bands each;
+- generate a configurable AI promotion ecosystem and wrestler population;
+- preserve meaningful free agency;
+- use formal one-off, limited non-exclusive and exclusive contracts;
+- model contract dates, Service Capacity, expiries, renewals and competing offers;
+- run promotion-specific live-event schedules;
+- select markets, venues and broad ticket strategies;
+- calculate event demand, attendance and gate revenue;
+- charge venue, production, travel, guarantees and appearance fees through a transaction ledger;
+- consume purchased contract dates only when a wrestler actually appears;
+- allow compatible multi-promotion careers without same-day double booking;
+- evolve promotion strength in individual markets through live activity;
+- calculate cash flow, runway and financial distress;
+- record consequential history in an append-first World Ledger;
 - reproduce the same resolved World from the same seed;
 - run long-world invariant tests without external dependencies.
 
@@ -30,7 +33,7 @@ npm run test
 npm run sim -- --seed 20261002 --weeks 520
 ```
 
-The simulator remains intentionally dependency-light. PostgreSQL/Drizzle, Fastify and the PWA layer are introduced only when the domain loop needs persistence or human interaction.
+The simulator remains intentionally dependency-light. PostgreSQL/Drizzle, Fastify and the PWA layer are introduced when the domain loop needs persistence or human interaction.
 
 ## Architectural principle
 

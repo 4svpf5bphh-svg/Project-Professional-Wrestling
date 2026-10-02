@@ -12,13 +12,22 @@ export type FinancialTransactionCategory =
   | "SPONSOR_INCOME"
   | "FIXED_OVERHEAD"
   | "CONTRACT_GUARANTEE"
-  | "CONTRACT_SIGNING_BONUS";
+  | "CONTRACT_SIGNING_BONUS"
+  | "GATE_REVENUE"
+  | "VENUE_COST"
+  | "PRODUCTION_COST"
+  | "TRAVEL_COST"
+  | "APPEARANCE_FEE";
 
 export type ContractFamily = "ONE_OFF" | "LIMITED_NON_EXCLUSIVE" | "EXCLUSIVE";
 export type ExclusivityType = "OPEN" | "NON_EXCLUSIVE" | "EXCLUSIVE";
 export type ContractStatus = "SIGNED" | "EXPIRED" | "TERMINATED";
 export type ContractOfferStatus = "PENDING" | "ACCEPTED" | "REJECTED" | "WITHDRAWN";
 export type RoleExpectation = "MAIN_EVENT" | "UPPER_CARD" | "FEATURED" | "REGULAR" | "DEVELOPMENTAL" | "SPECIAL_ATTRACTION";
+export type TicketStrategy = "ACCESSIBLE" | "STANDARD" | "PREMIUM" | "PRESTIGE";
+export type WrestlingEventType = "REGULAR" | "MAJOR";
+export type WrestlingEventStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED";
+export type ScheduledAppearanceStatus = "COMMITTED" | "COMPLETED" | "CANCELLED";
 
 export interface PpwDate {
   year: number;
@@ -37,6 +46,8 @@ export interface Ruleset {
   renewalWindowWeeks: number;
   maxRecruitmentOffersPerPromotionPerWeek: number;
   offerAcceptanceThreshold: number;
+  majorEventIntervalWeeks: number;
+  minEventParticipants: number;
 }
 
 export interface World {
@@ -56,6 +67,17 @@ export interface Market {
   wrestlingInterest: number;
   spendingIndex: number;
   maturity: number;
+}
+
+export interface Venue {
+  id: Id;
+  worldId: Id;
+  marketId: Id;
+  name: string;
+  capacity: number;
+  weeklyHireCost: number;
+  prestige: number;
+  productionSuitability: number;
 }
 
 export interface AiProfile {
@@ -85,7 +107,17 @@ export interface Promotion {
   lastWeeklyNet: number;
   runwayWeeks: number | null;
   financialDistress: FinancialDistressState;
+  eventCadenceWeeks: number;
   aiProfile: AiProfile;
+}
+
+export interface PromotionMarketState {
+  worldId: Id;
+  promotionId: Id;
+  marketId: Id;
+  awareness: number;
+  liveStrength: number;
+  loyalty: number;
 }
 
 export interface WrestlerSkills {
@@ -157,6 +189,36 @@ export interface ContractOffer extends ContractTerms {
   rejectionReason: string | null;
 }
 
+export interface WrestlingEvent {
+  id: Id;
+  worldId: Id;
+  promotionId: Id;
+  marketId: Id;
+  venueId: Id;
+  date: PpwDate;
+  type: WrestlingEventType;
+  status: WrestlingEventStatus;
+  ticketStrategy: TicketStrategy;
+  expectedDemand: number;
+  attendance: number;
+  ticketYield: number;
+  gateRevenue: number;
+  totalCost: number;
+  netResult: number;
+  eventImportance: number;
+}
+
+export interface ScheduledAppearance {
+  id: Id;
+  worldId: Id;
+  eventId: Id;
+  promotionId: Id;
+  personId: Id;
+  contractId: Id;
+  date: PpwDate;
+  status: ScheduledAppearanceStatus;
+}
+
 export interface FinancialTransaction {
   id: Id;
   worldId: Id;
@@ -183,10 +245,14 @@ export interface WorldState {
   world: World;
   ruleset: Ruleset;
   markets: Market[];
+  venues: Venue[];
   promotions: Promotion[];
+  promotionMarketStates: PromotionMarketState[];
   people: Person[];
   contracts: Contract[];
   contractOffers: ContractOffer[];
+  events: WrestlingEvent[];
+  scheduledAppearances: ScheduledAppearance[];
   financialTransactions: FinancialTransaction[];
   ledger: LedgerEvent[];
 }

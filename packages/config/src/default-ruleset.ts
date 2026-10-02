@@ -1,7 +1,7 @@
 import type { Ruleset } from "../../domain/src/types.js";
 
 export const DEFAULT_RULESET: Ruleset = {
-  version: "sim0.0.3",
+  version: "sim0.0.4",
   weeksPerYear: 52,
   markets: 20,
   promotions: 9,
@@ -11,4 +11,6 @@ export const DEFAULT_RULESET: Ruleset = {
   renewalWindowWeeks: 4,
   maxRecruitmentOffersPerPromotionPerWeek: 2,
   offerAcceptanceThreshold: 50,
+  majorEventIntervalWeeks: 13,
+  minEventParticipants: 6,
 };

@@ -1,12 +1,14 @@
 import type { WorldState } from "../../domain/src/types.js";
 import { advanceWeek } from "./clock.js";
 import { expireContracts, generateAiContractOffers, resolveContractOffers } from "./contracts.js";
+import { planAndResolveWorldEvents } from "./events.js";
 import { settleWorldFinances } from "./finance.js";
 
 export function resolveWorldWeek(state: WorldState): void {
   expireContracts(state);
   generateAiContractOffers(state);
   resolveContractOffers(state);
+  planAndResolveWorldEvents(state);
   settleWorldFinances(state);
   advanceWeek(state.world, state.ruleset.weeksPerYear);
 }

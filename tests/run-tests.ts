@@ -218,5 +218,75 @@ test("Genesis and 520 resolved weeks satisfy core invariants", () => {
   equal(errors.length, 0, errors.join("\n"));
 });
 
+test("Genesis creates venue bands and promotion-market state for every promotion/market pair", () => {
+  const state = createWorld(404, DEFAULT_RULESET);
+  equal(state.venues.length, state.markets.length * 3);
+  equal(state.promotionMarketStates.length, state.promotions.length * state.markets.length);
+  for (const market of state.markets) {
+    equal(state.venues.filter((venue) => venue.marketId === market.id).length, 3);
+  }
+});
+
+test("event cadence produces weekly top-tier shows and less frequent smaller-promotion shows", () => {
+  const state = createWorld(405, DEFAULT_RULESET);
+  resolveWorldWeeks(state, 2);
+  const weekOne = state.events.filter((event) => event.date.year === 1 && event.date.week === 1);
+  const weekTwo = state.events.filter((event) => event.date.year === 1 && event.date.week === 2);
+  equal(weekOne.length, 9);
+  equal(weekTwo.length, 3);
+  ok(weekTwo.every((event) => {
+    const promotion = state.promotions.find((candidate) => candidate.id === event.promotionId)!;
+    return promotion.tier === "GLOBAL" || promotion.tier === "NATIONAL";
+  }), "a slower-cadence promotion incorrectly ran in week two");
+});
+
+test("completed events respect venue capacity and create gate/venue/production transactions", () => {
+  const state = createWorld(406, DEFAULT_RULESET);
+  resolveWorldWeek(state);
+  const completed = state.events.filter((event) => event.status === "COMPLETED");
+  ok(completed.length > 0, "no events completed");
+  for (const event of completed) {
+    const venue = state.venues.find((candidate) => candidate.id === event.venueId)!;
+    ok(event.attendance <= venue.capacity, `${event.id} exceeded venue capacity`);
+    ok(event.gateRevenue >= 0, `${event.id} has negative gate`);
+    equal(event.netResult, event.gateRevenue - event.totalCost);
+    ok(state.financialTransactions.some((transaction) => transaction.category === "GATE_REVENUE" && transaction.source === event.id), `${event.id} missing gate transaction`);
+    ok(state.financialTransactions.some((transaction) => transaction.category === "VENUE_COST" && transaction.source === event.id), `${event.id} missing venue transaction`);
+    ok(state.financialTransactions.some((transaction) => transaction.category === "PRODUCTION_COST" && transaction.source === event.id), `${event.id} missing production transaction`);
+  }
+});
+
+test("completed appearances consume purchased contract dates exactly once", () => {
+  const state = createWorld(407, DEFAULT_RULESET);
+  resolveWorldWeek(state);
+  const completed = state.scheduledAppearances.filter((appearance) => appearance.status === "COMPLETED");
+  ok(completed.length > 0, "no contracted appearances completed");
+  const totalDatesUsed = state.contracts.reduce((sum, contract) => sum + contract.datesUsed, 0);
+  equal(totalDatesUsed, completed.length);
+  for (const appearance of completed) {
+    const contract = state.contracts.find((candidate) => candidate.id === appearance.contractId)!;
+    if (contract.appearanceFee > 0) {
+      ok(state.financialTransactions.some((transaction) => transaction.category === "APPEARANCE_FEE" && transaction.source === appearance.id), `${appearance.id} missing appearance fee`);
+    }
+  }
+});
+
+test("live gate economy can generate both profitable and loss-making events", () => {
+  const state = createWorld(20261002, DEFAULT_RULESET);
+  resolveWorldWeeks(state, 52);
+  const completed = state.events.filter((event) => event.status === "COMPLETED");
+  ok(completed.some((event) => event.netResult > 0), "no live event ever made money");
+  ok(completed.some((event) => event.netResult < 0), "all live events made money; venue/price risk is absent");
+  const indieIds = new Set(state.promotions.filter((promotion) => promotion.tier === "INDEPENDENT").map((promotion) => promotion.id));
+  ok(completed.some((event) => indieIds.has(event.promotionId) && event.netResult > 0), "Independent promotions never produced a profitable live event");
+});
+
+test("scheduled appearances never exceed same-day booking or weekly Service Capacity", () => {
+  const state = createWorld(408, DEFAULT_RULESET);
+  resolveWorldWeeks(state, 104);
+  const errors = validateWorldInvariants(state).filter((error) => error.includes("double-booked") || error.includes("service capacity"));
+  equal(errors.length, 0, errors.join("\n"));
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
