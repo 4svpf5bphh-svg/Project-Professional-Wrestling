@@ -9,12 +9,14 @@ import {
   buildOneOffTerms,
   expireContracts,
   canAcceptContractTerms,
+  createInjury,
   createSignedContract,
   createWorld,
   currentRosterPersonIds,
   deterministicWorldHash,
   determineFinancialDistress,
   DeterministicRng,
+  recoverWrestlersForNewWeek,
   resolveWorldWeek,
   resolveWorldWeeks,
   serviceCapacityDatesPerWeek,
@@ -218,6 +220,8 @@ test("Genesis and 520 resolved weeks satisfy core invariants", () => {
   equal(errors.length, 0, errors.join("\n"));
 });
 
+
+
 test("Genesis creates venue bands and promotion-market state for every promotion/market pair", () => {
   const state = createWorld(404, DEFAULT_RULESET);
   equal(state.venues.length, state.markets.length * 3);
@@ -286,6 +290,99 @@ test("scheduled appearances never exceed same-day booking or weekly Service Capa
   resolveWorldWeeks(state, 104);
   const errors = validateWorldInvariants(state).filter((error) => error.includes("double-booked") || error.includes("service capacity"));
   equal(errors.length, 0, errors.join("\n"));
+});
+
+
+test("completed events build real match cards and each used wrestler appears once", () => {
+  const state = createWorld(501, DEFAULT_RULESET);
+  resolveWorldWeek(state);
+  const completedEvents = state.events.filter((event) => event.status === "COMPLETED");
+  ok(completedEvents.length > 0, "no events completed");
+  for (const event of completedEvents) {
+    const matches = state.matches.filter((match) => match.eventId === event.id && match.status === "COMPLETED");
+    equal(matches.length, event.matchCount);
+    ok(matches.length >= 3, `${event.id} did not produce a viable wrestling card`);
+    const matchIds = new Set(matches.map((match) => match.id));
+    const participants = state.matchParticipants.filter((participant) => matchIds.has(participant.matchId));
+    const participantCounts = new Map<string, number>();
+    for (const participant of participants) participantCounts.set(participant.personId, (participantCounts.get(participant.personId) ?? 0) + 1);
+    ok([...participantCounts.values()].every((count) => count === 1), `${event.id} booked a wrestler in multiple matches`);
+    const completedAppearanceIds = new Set(state.scheduledAppearances.filter((appearance) => appearance.eventId === event.id && appearance.status === "COMPLETED").map((appearance) => appearance.personId));
+    equal(participantCounts.size, completedAppearanceIds.size);
+    for (const personId of participantCounts.keys()) ok(completedAppearanceIds.has(personId), `${personId} wrestled without a completed appearance`);
+  }
+});
+
+test("singles and tag matches both emerge from AI cards", () => {
+  const state = createWorld(502, DEFAULT_RULESET);
+  resolveWorldWeeks(state, 26);
+  ok(state.matches.some((match) => match.status === "COMPLETED" && match.type === "SINGLES"), "no singles matches were produced");
+  ok(state.matches.some((match) => match.status === "COMPLETED" && match.type === "TAG"), "no tag matches were produced");
+});
+
+test("match execution exposes bounded star ratings and separate crowd response", () => {
+  const state = createWorld(503, DEFAULT_RULESET);
+  resolveWorldWeeks(state, 8);
+  const completed = state.matches.filter((match) => match.status === "COMPLETED");
+  ok(completed.length > 0, "no matches completed");
+  for (const match of completed) {
+    ok(match.criticalRatingStars >= 0.5 && match.criticalRatingStars <= 5, `${match.id} has invalid star rating`);
+    ok(match.crowdResponse >= 0 && match.crowdResponse <= 100, `${match.id} has invalid crowd response`);
+    ok(match.executionQuality >= 0 && match.executionQuality <= 100, `${match.id} has invalid execution quality`);
+  }
+  ok(completed.some((match) => Math.abs(match.crowdResponse - match.executionQuality) >= 5), "crowd response is effectively duplicating execution quality");
+});
+
+test("wrestling creates fatigue and wear while weekly recovery reduces fatigue", () => {
+  const state = createWorld(504, DEFAULT_RULESET);
+  resolveWorldWeek(state);
+  const participantId = state.matchParticipants.find((participant) => {
+    const match = state.matches.find((candidate) => candidate.id === participant.matchId);
+    return match?.status === "COMPLETED";
+  })!.personId;
+  const person = state.people.find((candidate) => candidate.id === participantId)!;
+  ok(person.fatigue > 0, "completed match added no fatigue");
+  ok(person.wear > 0, "completed match added no wear");
+  const beforeRecovery = person.fatigue;
+  recoverWrestlersForNewWeek(state);
+  ok(person.fatigue < beforeRecovery, "weekly recovery did not reduce fatigue");
+});
+
+test("injuries remove wrestlers temporarily and recover on the career clock", () => {
+  const state = createWorld(505, DEFAULT_RULESET);
+  resolveWorldWeek(state);
+  const match = state.matches.find((candidate) => candidate.status === "COMPLETED")!;
+  const participant = state.matchParticipants.find((candidate) => candidate.matchId === match.id)!;
+  const person = state.people.find((candidate) => candidate.id === participant.personId)!;
+  if (person.status === "INJURED") {
+    const active = state.injuries.find((injury) => injury.personId === person.id && injury.status === "ACTIVE")!;
+    active.status = "RECOVERED";
+    active.weeksRemaining = 0;
+    person.status = "ACTIVE";
+  }
+  createInjury(state, person, match, "MINOR", 1);
+  equal(person.status, "INJURED");
+  ok(state.injuries.some((injury) => injury.personId === person.id && injury.status === "ACTIVE"), "forced injury was not recorded");
+  recoverWrestlersForNewWeek(state);
+  equal(person.status, "ACTIVE");
+  ok(state.injuries.some((injury) => injury.personId === person.id && injury.status === "RECOVERED"), "injury did not recover");
+});
+
+test("working chemistry is persistent and familiarity grows through matches", () => {
+  const state = createWorld(506, DEFAULT_RULESET);
+  resolveWorldWeeks(state, 12);
+  ok(state.workingChemistry.length > 0, "no chemistry records were discovered");
+  ok(state.workingChemistry.some((record) => record.matchesTogether > 0 && record.familiarity > 0), "chemistry familiarity never grew");
+  const keys = state.workingChemistry.map((record) => `${record.personAId}:${record.personBId}:${record.context}`);
+  equal(new Set(keys).size, keys.length);
+});
+
+test("long Worlds produce injuries without turning the entire population unavailable", () => {
+  const state = createWorld(507, DEFAULT_RULESET);
+  resolveWorldWeeks(state, 260);
+  ok(state.injuries.length > 0, "five-year World produced no injuries");
+  ok(state.injuries.some((injury) => injury.status === "RECOVERED"), "no wrestler ever recovered from injury");
+  ok(state.people.filter((person) => person.status === "INJURED").length < state.people.length * 0.2, "injury system disabled too much of the population");
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -37,6 +37,14 @@ export interface WorldSummary {
   totalAttendance: number;
   totalGateRevenue: number;
   completedAppearances: number;
+  matches: number;
+  completedMatches: number;
+  singlesMatches: number;
+  tagMatches: number;
+  averageMatchRating: number;
+  fourStarMatches: number;
+  injuries: number;
+  activeInjuries: number;
   globalPromotion: string | null;
   ledgerEvents: number;
   financialTransactions: number;
@@ -91,6 +99,17 @@ export function summarizeWorld(state: WorldState): WorldSummary {
     totalAttendance: completedEvents.reduce((sum, event) => sum + event.attendance, 0),
     totalGateRevenue: completedEvents.reduce((sum, event) => sum + event.gateRevenue, 0),
     completedAppearances: state.scheduledAppearances.filter((appearance) => appearance.status === "COMPLETED").length,
+    matches: state.matches.length,
+    completedMatches: state.matches.filter((match) => match.status === "COMPLETED").length,
+    singlesMatches: state.matches.filter((match) => match.status === "COMPLETED" && match.type === "SINGLES").length,
+    tagMatches: state.matches.filter((match) => match.status === "COMPLETED" && match.type === "TAG").length,
+    averageMatchRating: (() => {
+      const completed = state.matches.filter((match) => match.status === "COMPLETED");
+      return completed.length === 0 ? 0 : Math.round((completed.reduce((sum, match) => sum + match.criticalRatingStars, 0) / completed.length) * 100) / 100;
+    })(),
+    fourStarMatches: state.matches.filter((match) => match.status === "COMPLETED" && match.criticalRatingStars >= 4).length,
+    injuries: state.injuries.length,
+    activeInjuries: state.injuries.filter((injury) => injury.status === "ACTIVE").length,
     globalPromotion: globalPromotion?.name ?? null,
     ledgerEvents: state.ledger.length,
     financialTransactions: state.financialTransactions.length,

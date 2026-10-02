@@ -4,7 +4,7 @@ PPW is a persistent asynchronous wrestling-management living-world simulation.
 
 The repository is currently in **SIM-0**, where the deterministic headless World is being built and stress-tested before any polished player interface.
 
-## Current milestone — SIM-0.0.4
+## Current milestone — SIM-0.0.5
 
 The simulator can now:
 
@@ -19,10 +19,15 @@ The simulator can now:
 - calculate event demand, attendance and gate revenue;
 - charge venue, production, travel, guarantees and appearance fees through a transaction ledger;
 - consume purchased contract dates only when a wrestler actually appears;
-- allow compatible multi-promotion careers without same-day double booking;
-- evolve promotion strength in individual markets through live activity;
+- build real singles/tag match cards for each event;
+- simulate intended winners, match intent, length, execution quality, visible star ratings and crowd response;
+- track persistent working chemistry/familiarity;
+- accumulate fatigue and long-term Wear;
+- generate injuries, temporary unavailability and recovery;
+- allow serious in-match injuries to force rare changes to the booked finish;
+- evolve wrestler momentum and promotion strength through actual wrestling results;
 - calculate cash flow, runway and financial distress;
-- record consequential history in an append-first World Ledger;
+- record consequential business and wrestling history in an append-first World Ledger;
 - reproduce the same resolved World from the same seed;
 - run long-world invariant tests without external dependencies.
 

@@ -14,6 +14,7 @@ import type {
 import { ppwDateToWeekIndex } from "./clock.js";
 import { activeContractsForPromotion, serviceCapacityDatesPerWeek } from "./contracts.js";
 import { LedgerWriter } from "./ledger.js";
+import { resolveEventCard } from "./matches.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 import { recordFinancialTransaction } from "./transactions.js";
 
@@ -263,6 +264,10 @@ export function planWorldEvents(state: WorldState): void {
       totalCost: 0,
       netResult: 0,
       eventImportance: type === "MAJOR" ? 85 : 58,
+      matchCount: 0,
+      averageMatchRating: 0,
+      bestMatchRating: 0,
+      crowdResponse: 0,
     };
     state.events.push(event);
 
@@ -289,10 +294,11 @@ function updateMarketAfterEvent(state: WorldState, event: WrestlingEvent, venue:
   const demandPerformance = event.expectedDemand <= 0 ? 0 : event.attendance / event.expectedDemand;
   const sellThrough = venue.capacity <= 0 ? 0 : event.attendance / venue.capacity;
   const importance = event.type === "MAJOR" ? 1.35 : 1;
-  const strengthDelta = demandPerformance >= 0.95 ? 1.1 * importance
+  const qualityEffect = (event.averageMatchRating - 2.75) * 0.18 + (event.crowdResponse - 60) / 180;
+  const strengthDelta = (demandPerformance >= 0.95 ? 1.1 * importance
     : demandPerformance >= 0.72 ? 0.55 * importance
       : demandPerformance < 0.45 ? -0.45
-        : 0.1;
+        : 0.1) + qualityEffect;
   const awarenessDelta = event.marketId === state.promotions.find((promotion) => promotion.id === event.promotionId)!.homeMarketId
     ? (event.type === "MAJOR" ? 0.5 : 0.2)
     : (event.type === "MAJOR" ? 1.4 : 0.75);
@@ -313,16 +319,38 @@ function resolveEvent(
 ): void {
   if (event.status !== "SCHEDULED") return;
   const writer = new LedgerWriter(state.world.id, state.ledger);
+  const peopleById = new Map(state.people.map((person) => [person.id, person]));
+  const eligibleAppearances = appearances.filter((appearance) => {
+    const person = peopleById.get(appearance.personId);
+    const eligible = Boolean(person) && person!.status === "ACTIVE";
+    if (!eligible) appearance.status = "CANCELLED";
+    return eligible;
+  });
+  const usableParticipantCount = eligibleAppearances.length - (eligibleAppearances.length % 2);
 
-  if (appearances.length < state.ruleset.minEventParticipants) {
+  if (usableParticipantCount < state.ruleset.minEventParticipants) {
     event.status = "CANCELLED";
-    for (const appearance of appearances) appearance.status = "CANCELLED";
+    for (const appearance of eligibleAppearances) appearance.status = "CANCELLED";
     writer.append({
       date: event.date,
       type: "EVENT_CANCELLED",
       significance: event.type === "MAJOR" ? "MAJOR" : "NOTABLE",
       entityIds: [event.id, promotion.id],
-      payload: { reason: "insufficient available contracted talent", participants: appearances.length },
+      payload: { reason: "insufficient available contracted talent", participants: eligibleAppearances.length },
+    });
+    return;
+  }
+
+  const { usedPersonIds, completedMatches } = resolveEventCard(state, event, eligibleAppearances);
+  if (completedMatches.length === 0 || usedPersonIds.size < state.ruleset.minEventParticipants) {
+    event.status = "CANCELLED";
+    for (const appearance of eligibleAppearances) appearance.status = "CANCELLED";
+    writer.append({
+      date: event.date,
+      type: "EVENT_CANCELLED",
+      significance: event.type === "MAJOR" ? "MAJOR" : "NOTABLE",
+      entityIds: [event.id, promotion.id],
+      payload: { reason: "match card could not be completed", participants: usedPersonIds.size },
     });
     return;
   }
@@ -337,11 +365,15 @@ function resolveEvent(
   recordFinancialTransaction(state, promotion, "VENUE_COST", -venue.weeklyHireCost, event.id);
   const production = productionCost(promotion, event.type);
   recordFinancialTransaction(state, promotion, "PRODUCTION_COST", -production, event.id);
-  const travel = travelCost(promotion, appearances.length, event.marketId !== promotion.homeMarketId);
+  const travel = travelCost(promotion, usedPersonIds.size, event.marketId !== promotion.homeMarketId);
   if (travel > 0) recordFinancialTransaction(state, promotion, "TRAVEL_COST", -travel, event.id);
 
   let appearanceCost = 0;
-  for (const appearance of appearances) {
+  for (const appearance of eligibleAppearances) {
+    if (!usedPersonIds.has(appearance.personId)) {
+      appearance.status = "CANCELLED";
+      continue;
+    }
     const contract = contractById.get(appearance.contractId);
     if (!contract || contract.datesUsed >= contract.dateEntitlement) {
       appearance.status = "CANCELLED";
@@ -372,7 +404,11 @@ function resolveEvent(
       gateRevenue: event.gateRevenue,
       eventCost: event.totalCost,
       eventNet: event.netResult,
-      participants: appearances.filter((appearance) => appearance.status === "COMPLETED").length,
+      participants: usedPersonIds.size,
+      matches: event.matchCount,
+      averageRating: event.averageMatchRating,
+      bestRating: event.bestMatchRating,
+      crowdResponse: event.crowdResponse,
     },
   });
 }

@@ -28,6 +28,13 @@ export type TicketStrategy = "ACCESSIBLE" | "STANDARD" | "PREMIUM" | "PRESTIGE";
 export type WrestlingEventType = "REGULAR" | "MAJOR";
 export type WrestlingEventStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED";
 export type ScheduledAppearanceStatus = "COMMITTED" | "COMPLETED" | "CANCELLED";
+export type MatchType = "SINGLES" | "TAG";
+export type MatchIntent = "COMPETITIVE" | "SHOWCASE" | "DOMINANT" | "TECHNICAL" | "HIGH_RISK" | "STORY" | "PROTECTIVE" | "EPIC";
+export type MatchStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED";
+export type MatchSide = "A" | "B";
+export type InjurySeverity = "MINOR" | "MODERATE" | "MAJOR" | "SEVERE";
+export type InjuryStatus = "ACTIVE" | "RECOVERED";
+export type ChemistryContext = "SINGLES" | "TAG";
 
 export interface PpwDate {
   year: number;
@@ -48,6 +55,8 @@ export interface Ruleset {
   offerAcceptanceThreshold: number;
   majorEventIntervalWeeks: number;
   minEventParticipants: number;
+  injuryRateMultiplier: number;
+  fatigueRecoveryBase: number;
 }
 
 export interface World {
@@ -206,6 +215,10 @@ export interface WrestlingEvent {
   totalCost: number;
   netResult: number;
   eventImportance: number;
+  matchCount: number;
+  averageMatchRating: number;
+  bestMatchRating: number;
+  crowdResponse: number;
 }
 
 export interface ScheduledAppearance {
@@ -217,6 +230,59 @@ export interface ScheduledAppearance {
   contractId: Id;
   date: PpwDate;
   status: ScheduledAppearanceStatus;
+}
+
+export interface Match {
+  id: Id;
+  worldId: Id;
+  eventId: Id;
+  promotionId: Id;
+  order: number;
+  type: MatchType;
+  status: MatchStatus;
+  intent: MatchIntent;
+  plannedLengthMinutes: number;
+  actualLengthMinutes: number;
+  intendedWinnerSide: MatchSide;
+  actualWinnerSide: MatchSide | null;
+  finishChangedDueToInjury: boolean;
+  executionQuality: number;
+  criticalRatingStars: number;
+  crowdResponse: number;
+}
+
+export interface MatchParticipant {
+  id: Id;
+  worldId: Id;
+  matchId: Id;
+  eventId: Id;
+  personId: Id;
+  side: MatchSide;
+  won: boolean;
+}
+
+export interface Injury {
+  id: Id;
+  worldId: Id;
+  personId: Id;
+  matchId: Id;
+  eventId: Id;
+  date: PpwDate;
+  severity: InjurySeverity;
+  weeksOut: number;
+  weeksRemaining: number;
+  status: InjuryStatus;
+}
+
+export interface WorkingChemistry {
+  id: Id;
+  worldId: Id;
+  personAId: Id;
+  personBId: Id;
+  context: ChemistryContext;
+  compatibility: number;
+  familiarity: number;
+  matchesTogether: number;
 }
 
 export interface FinancialTransaction {
@@ -253,6 +319,10 @@ export interface WorldState {
   contractOffers: ContractOffer[];
   events: WrestlingEvent[];
   scheduledAppearances: ScheduledAppearance[];
+  matches: Match[];
+  matchParticipants: MatchParticipant[];
+  injuries: Injury[];
+  workingChemistry: WorkingChemistry[];
   financialTransactions: FinancialTransaction[];
   ledger: LedgerEvent[];
 }

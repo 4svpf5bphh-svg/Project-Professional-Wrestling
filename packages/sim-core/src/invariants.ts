@@ -15,6 +15,7 @@ export function validateWorldInvariants(state: WorldState): string[] {
   const promotionIds = new Set(state.promotions.map((p) => p.id));
   const marketIds = new Set(state.markets.map((m) => m.id));
   const venueIds = new Set<string>();
+  const venueById = new Map(state.venues.map((venue) => [venue.id, venue]));
 
   for (const venue of state.venues) {
     if (venueIds.has(venue.id)) errors.push(`duplicate venue id: ${venue.id}`);
@@ -29,6 +30,9 @@ export function validateWorldInvariants(state: WorldState): string[] {
     personIds.add(person.id);
     if (person.worldId !== state.world.id) errors.push(`person ${person.id} crosses world boundary`);
     if (!marketIds.has(person.homeMarketId)) errors.push(`person ${person.id} has invalid home market`);
+    if (person.fatigue < 0 || person.fatigue > 100) errors.push(`person ${person.id} fatigue outside 0-100`);
+    if (person.wear < 0 || person.wear > 100) errors.push(`person ${person.id} wear outside 0-100`);
+    if (person.momentum < 0 || person.momentum > 100 || person.popularity < 0 || person.popularity > 100) errors.push(`person ${person.id} audience state outside 0-100`);
   }
 
   for (const promotion of state.promotions) {
@@ -70,6 +74,7 @@ export function validateWorldInvariants(state: WorldState): string[] {
     if (contract.exclusivity === "EXCLUSIVE" && contract.family !== "EXCLUSIVE") errors.push(`contract ${contract.id} has exclusive rights without exclusive family`);
   }
 
+  const contractById = new Map(state.contracts.map((contract) => [contract.id, contract]));
   const signedByPerson = new Map<string, Contract[]>();
   for (const contract of state.contracts.filter((candidate) => candidate.status === "SIGNED")) {
     const list = signedByPerson.get(contract.personId) ?? [];
@@ -99,6 +104,7 @@ export function validateWorldInvariants(state: WorldState): string[] {
   }
 
   const eventIds = new Set<string>();
+  const eventById = new Map(state.events.map((event) => [event.id, event]));
   for (const event of state.events) {
     if (eventIds.has(event.id)) errors.push(`duplicate event id: ${event.id}`);
     eventIds.add(event.id);
@@ -106,29 +112,36 @@ export function validateWorldInvariants(state: WorldState): string[] {
     if (!promotionIds.has(event.promotionId)) errors.push(`event ${event.id} references missing promotion`);
     if (!marketIds.has(event.marketId)) errors.push(`event ${event.id} references missing market`);
     if (!venueIds.has(event.venueId)) errors.push(`event ${event.id} references missing venue`);
-    const venue = state.venues.find((candidate) => candidate.id === event.venueId);
+    const venue = venueById.get(event.venueId);
     if (venue && venue.marketId !== event.marketId) errors.push(`event ${event.id} venue belongs to another market`);
     if (venue && event.attendance > venue.capacity) errors.push(`event ${event.id} attendance exceeds venue capacity`);
     if (event.attendance < 0 || event.gateRevenue < 0 || event.totalCost < 0) errors.push(`event ${event.id} has invalid economics`);
+    if (event.matchCount < 0 || event.averageMatchRating < 0 || event.averageMatchRating > 5 || event.bestMatchRating < 0 || event.bestMatchRating > 5 || event.crowdResponse < 0 || event.crowdResponse > 100) errors.push(`event ${event.id} has invalid wrestling outputs`);
   }
 
   const appearanceIds = new Set<string>();
+  const appearancesByPerson = new Map<string, typeof state.scheduledAppearances>();
+  const appearanceKeySet = new Set<string>();
   for (const appearance of state.scheduledAppearances) {
     if (appearanceIds.has(appearance.id)) errors.push(`duplicate appearance id: ${appearance.id}`);
     appearanceIds.add(appearance.id);
     if (appearance.worldId !== state.world.id) errors.push(`appearance ${appearance.id} crosses world boundary`);
-    const event = state.events.find((candidate) => candidate.id === appearance.eventId);
-    const contract = state.contracts.find((candidate) => candidate.id === appearance.contractId);
+    const event = eventById.get(appearance.eventId);
+    const contract = contractById.get(appearance.contractId);
     if (!event) errors.push(`appearance ${appearance.id} references missing event`);
     if (!contract) errors.push(`appearance ${appearance.id} references missing contract`);
     if (!personIds.has(appearance.personId)) errors.push(`appearance ${appearance.id} references missing person`);
     if (!promotionIds.has(appearance.promotionId)) errors.push(`appearance ${appearance.id} references missing promotion`);
     if (event && event.promotionId !== appearance.promotionId) errors.push(`appearance ${appearance.id} promotion does not match event`);
     if (contract && (contract.personId !== appearance.personId || contract.promotionId !== appearance.promotionId)) errors.push(`appearance ${appearance.id} does not match contract parties`);
+    const personList = appearancesByPerson.get(appearance.personId) ?? [];
+    personList.push(appearance);
+    appearancesByPerson.set(appearance.personId, personList);
+    appearanceKeySet.add(`${appearance.eventId}:${appearance.personId}`);
   }
 
   for (const person of state.people) {
-    const appearances = state.scheduledAppearances.filter((appearance) => appearance.personId === person.id && appearance.status !== "CANCELLED");
+    const appearances = (appearancesByPerson.get(person.id) ?? []).filter((appearance) => appearance.status !== "CANCELLED");
     for (let i = 0; i < appearances.length; i += 1) {
       for (let j = i + 1; j < appearances.length; j += 1) {
         if (samePpwDate(appearances[i]!.date, appearances[j]!.date)) errors.push(`person ${person.id} is double-booked on Y${appearances[i]!.date.year} W${appearances[i]!.date.week} D${appearances[i]!.date.day}`);
@@ -151,6 +164,95 @@ export function validateWorldInvariants(state: WorldState): string[] {
   }
   for (const contract of state.contracts) {
     if ((completedByContract.get(contract.id) ?? 0) !== contract.datesUsed) errors.push(`contract ${contract.id} datesUsed does not match completed appearances`);
+  }
+
+  const matchIds = new Set<string>();
+  const matchById = new Map(state.matches.map((match) => [match.id, match]));
+  const completedMatchesByEvent = new Map<string, typeof state.matches>();
+  const participantsByMatch = new Map<string, typeof state.matchParticipants>();
+  for (const participant of state.matchParticipants) {
+    const list = participantsByMatch.get(participant.matchId) ?? [];
+    list.push(participant);
+    participantsByMatch.set(participant.matchId, list);
+  }
+  for (const match of state.matches) {
+    if (matchIds.has(match.id)) errors.push(`duplicate match id: ${match.id}`);
+    matchIds.add(match.id);
+    if (match.worldId !== state.world.id) errors.push(`match ${match.id} crosses world boundary`);
+    const event = eventById.get(match.eventId);
+    if (!event) errors.push(`match ${match.id} references missing event`);
+    if (event && event.promotionId !== match.promotionId) errors.push(`match ${match.id} promotion does not match event`);
+    if (match.order < 1 || !Number.isInteger(match.order)) errors.push(`match ${match.id} has invalid card order`);
+    if (match.status === "COMPLETED") {
+      const eventMatches = completedMatchesByEvent.get(match.eventId) ?? [];
+      eventMatches.push(match);
+      completedMatchesByEvent.set(match.eventId, eventMatches);
+      if (match.actualWinnerSide === null) errors.push(`completed match ${match.id} has no winner`);
+      if (match.criticalRatingStars < 0.5 || match.criticalRatingStars > 5) errors.push(`match ${match.id} rating outside 0.5-5`);
+      if (match.executionQuality < 0 || match.executionQuality > 100 || match.crowdResponse < 0 || match.crowdResponse > 100) errors.push(`match ${match.id} output outside 0-100`);
+      if (match.actualLengthMinutes < 1) errors.push(`match ${match.id} has invalid actual length`);
+    }
+    const participants = participantsByMatch.get(match.id) ?? [];
+    const sideA = participants.filter((participant) => participant.side === "A");
+    const sideB = participants.filter((participant) => participant.side === "B");
+    const expectedPerSide = match.type === "TAG" ? 2 : 1;
+    if (sideA.length !== expectedPerSide || sideB.length !== expectedPerSide) errors.push(`match ${match.id} has invalid ${match.type} side sizes`);
+    if (match.status === "COMPLETED" && match.actualWinnerSide) {
+      for (const participant of participants) {
+        if (participant.won !== (participant.side === match.actualWinnerSide)) errors.push(`match participant ${participant.id} winner flag is inconsistent`);
+      }
+    }
+  }
+
+  for (const event of state.events) {
+    const completed = completedMatchesByEvent.get(event.id) ?? [];
+    if (event.status === "COMPLETED") {
+      if (event.matchCount !== completed.length) errors.push(`event ${event.id} matchCount does not match completed card`);
+      const best = completed.length === 0 ? 0 : Math.max(...completed.map((match) => match.criticalRatingStars));
+      if (Math.abs(event.bestMatchRating - best) > 0.001) errors.push(`event ${event.id} best match rating is inconsistent`);
+    }
+  }
+
+  const matchParticipantIds = new Set<string>();
+  for (const participant of state.matchParticipants) {
+    if (matchParticipantIds.has(participant.id)) errors.push(`duplicate match participant id: ${participant.id}`);
+    matchParticipantIds.add(participant.id);
+    if (participant.worldId !== state.world.id) errors.push(`match participant ${participant.id} crosses world boundary`);
+    if (!matchIds.has(participant.matchId)) errors.push(`match participant ${participant.id} references missing match`);
+    if (!eventIds.has(participant.eventId)) errors.push(`match participant ${participant.id} references missing event`);
+    if (!personIds.has(participant.personId)) errors.push(`match participant ${participant.id} references missing person`);
+    if (!appearanceKeySet.has(`${participant.eventId}:${participant.personId}`)) errors.push(`match participant ${participant.id} has no event appearance`);
+  }
+
+  const injuryIds = new Set<string>();
+  const activeInjuriesByPerson = new Map<string, number>();
+  for (const injury of state.injuries) {
+    if (injuryIds.has(injury.id)) errors.push(`duplicate injury id: ${injury.id}`);
+    injuryIds.add(injury.id);
+    if (injury.worldId !== state.world.id) errors.push(`injury ${injury.id} crosses world boundary`);
+    if (!personIds.has(injury.personId)) errors.push(`injury ${injury.id} references missing person`);
+    if (!matchIds.has(injury.matchId)) errors.push(`injury ${injury.id} references missing match`);
+    if (!eventIds.has(injury.eventId)) errors.push(`injury ${injury.id} references missing event`);
+    if (injury.weeksOut < 1 || injury.weeksRemaining < 0 || injury.weeksRemaining > injury.weeksOut) errors.push(`injury ${injury.id} has invalid duration`);
+    if (injury.status === "ACTIVE") activeInjuriesByPerson.set(injury.personId, (activeInjuriesByPerson.get(injury.personId) ?? 0) + 1);
+    if (injury.status === "RECOVERED" && injury.weeksRemaining !== 0) errors.push(`recovered injury ${injury.id} still has remaining weeks`);
+  }
+  for (const person of state.people) {
+    const active = activeInjuriesByPerson.get(person.id) ?? 0;
+    if (active > 1) errors.push(`person ${person.id} has multiple active injuries`);
+    if (person.status === "INJURED" && active !== 1) errors.push(`injured person ${person.id} does not have exactly one active injury`);
+    if (person.status === "ACTIVE" && active !== 0) errors.push(`active person ${person.id} still has active injury`);
+  }
+
+  const chemistryKeys = new Set<string>();
+  for (const chemistry of state.workingChemistry) {
+    const key = `${chemistry.personAId}:${chemistry.personBId}:${chemistry.context}`;
+    if (chemistryKeys.has(key)) errors.push(`duplicate chemistry record ${key}`);
+    chemistryKeys.add(key);
+    if (chemistry.worldId !== state.world.id) errors.push(`chemistry ${chemistry.id} crosses world boundary`);
+    if (!personIds.has(chemistry.personAId) || !personIds.has(chemistry.personBId)) errors.push(`chemistry ${chemistry.id} references missing person`);
+    if (chemistry.personAId >= chemistry.personBId) errors.push(`chemistry ${chemistry.id} pair ordering is not canonical`);
+    if (chemistry.familiarity < 0 || chemistry.familiarity > 100) errors.push(`chemistry ${chemistry.id} familiarity outside 0-100`);
   }
 
   const transactionIds = new Set<string>();

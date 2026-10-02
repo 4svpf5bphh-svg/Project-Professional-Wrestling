@@ -274,6 +274,10 @@ export function createWorld(seed: number, ruleset: Ruleset, name = "PPW Test Wor
     contractOffers: [],
     events: [],
     scheduledAppearances: [],
+    matches: [],
+    matchParticipants: [],
+    injuries: [],
+    workingChemistry: [],
     financialTransactions: [],
     ledger: [],
   };
