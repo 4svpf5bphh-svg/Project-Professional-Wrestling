@@ -3,6 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import type { AlphaPlayerWorldView } from "../../../dist/packages/application/src/player-view.js";
 
+type ErrorPayload = { error?: string };
+
+function isErrorPayload(payload: AlphaPlayerWorldView | ErrorPayload): payload is ErrorPayload {
+  return "error" in payload;
+}
+
 function money(value: number): string {
   return new Intl.NumberFormat("en-GB", {
     style: "currency",
@@ -24,9 +30,9 @@ export default function AlphaHome(): React.JSX.Element {
   async function refresh(): Promise<void> {
     setError(null);
     const response = await fetch("/api/session", { cache: "no-store" });
-    const payload = await response.json() as AlphaPlayerWorldView | { error?: string };
-    if (!response.ok || "error" in payload) {
-      throw new Error("error" in payload && payload.error ? payload.error : "Unable to load World");
+    const payload = await response.json() as AlphaPlayerWorldView | ErrorPayload;
+    if (!response.ok || isErrorPayload(payload)) {
+      throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to load World");
     }
     setView(payload);
   }
@@ -51,9 +57,9 @@ export default function AlphaHome(): React.JSX.Element {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ promotionId, requestId }),
       });
-      const payload = await response.json() as AlphaPlayerWorldView | { error?: string };
-      if (!response.ok || "error" in payload) {
-        throw new Error("error" in payload && payload.error ? payload.error : "Unable to claim promotion");
+      const payload = await response.json() as AlphaPlayerWorldView | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to claim promotion");
       }
       requestIds.current.delete(promotionId);
       setView(payload);
