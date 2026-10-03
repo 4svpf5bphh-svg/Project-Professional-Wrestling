@@ -11,6 +11,7 @@ export * from "./human-booking.js";
 export * from "./human-championships.js";
 export * from "./human-contracts.js";
 export * from "./human-control.js";
+export * from "./human-routine.js";
 export * from "./invariants.js";
 export * from "./ledger.js";
 export * from "./lifecycle.js";
