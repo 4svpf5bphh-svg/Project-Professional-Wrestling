@@ -40,10 +40,9 @@ test("C1 planning snapshots without reservation state restore with an empty rese
     runtime: createWorldRuntimeState(state.world.id),
     planning: createWorldPlanningState(state.world.id),
   };
-  const snapshot = createPersistedApplicationWorld(aggregate) as unknown as {
-    planning: { showReservations?: unknown[] };
-  } & ReturnType<typeof createPersistedApplicationWorld>;
-  delete snapshot.planning.showReservations;
+  const snapshot = createPersistedApplicationWorld(aggregate);
+  const legacyPlanning = snapshot.planning as unknown as { showReservations?: unknown[] };
+  delete legacyPlanning.showReservations;
   const restored = restorePersistedApplicationWorld(snapshot);
   ok(Array.isArray(restored.planning.showReservations), "legacy planning snapshot did not materialize reservation array");
   ok(restored.planning.showReservations.length === 0, "legacy planning snapshot invented reservations");
