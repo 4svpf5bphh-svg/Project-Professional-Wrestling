@@ -1,14 +1,13 @@
 import type { Id, WorldState } from "../../domain/src/types.js";
+import { ppwDateToWeekIndex } from "./clock.js";
 import { evaluateContractOffer } from "./contracts.js";
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-function relationshipTrust(state: WorldState, personId: Id, promotionId: Id): number {
-  return state.promotionTalentTrust?.find(
-    (entry) => entry.personId === personId && entry.promotionId === promotionId,
-  )?.trust ?? 50;
+function relationshipKey(personId: Id, promotionId: Id): string {
+  return `${personId}:${promotionId}`;
 }
 
 export function renewalRelationshipPenalty(morale: number, trust: number): number {
@@ -18,13 +17,22 @@ export function renewalRelationshipPenalty(morale: number, trust: number): numbe
 
 export function applyRenewalRelationshipResistance(state: WorldState): number {
   let rejected = 0;
+  const currentIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
+  const peopleById = new Map(state.people.map((person) => [person.id, person] as const));
+  const trustByRelationship = new Map(
+    (state.promotionTalentTrust ?? []).map((entry) => [relationshipKey(entry.personId, entry.promotionId), entry.trust] as const),
+  );
 
-  for (const offer of state.contractOffers) {
-    if (offer.status !== "PENDING" || offer.offerKind !== "RENEWAL") continue;
-    const person = state.people.find((candidate) => candidate.id === offer.personId);
+  for (let i = state.contractOffers.length - 1; i >= 0; i -= 1) {
+    const offer = state.contractOffers[i]!;
+    const submittedIndex = ppwDateToWeekIndex(offer.submittedDate, state.ruleset.weeksPerYear);
+    if (submittedIndex < currentIndex) break;
+    if (submittedIndex !== currentIndex || offer.status !== "PENDING" || offer.offerKind !== "RENEWAL") continue;
+
+    const person = peopleById.get(offer.personId);
     if (!person) continue;
 
-    const trust = relationshipTrust(state, offer.personId, offer.promotionId);
+    const trust = trustByRelationship.get(relationshipKey(offer.personId, offer.promotionId)) ?? 50;
     const penalty = renewalRelationshipPenalty(person.morale, trust);
     if (penalty <= 0) continue;
 
