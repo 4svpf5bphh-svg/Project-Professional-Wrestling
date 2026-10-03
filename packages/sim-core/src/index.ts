@@ -15,4 +15,5 @@ export * from "./reputation.js";
 export * from "./resolution.js";
 export * from "./rng.js";
 export * from "./snapshot.js";
+export * from "./talent-trust.js";
 export * from "./transactions.js";
