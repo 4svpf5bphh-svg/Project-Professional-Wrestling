@@ -81,6 +81,7 @@ test("promotion standing begins differentiated by established company scale", ()
   const independent = promotionStandingFor(state, state.promotions[state.promotions.length - 1]!.id);
   ok(global.prestige > independent.prestige + 30, `initial prestige hierarchy too flat: ${global.prestige} vs ${independent.prestige}`);
   ok(global.businessReputation > independent.businessReputation + 25, "initial business reputation hierarchy too flat");
+  ok(global.talentReputation > independent.talentReputation + 20, "initial talent reputation hierarchy too flat");
 });
 
 test("a strong year materially improves fan and business reputation", () => {
@@ -117,20 +118,46 @@ test("current reputation can collapse faster than accumulated prestige", () => {
   ok(prestigeDrop <= 4, `one bad year erased too much historical prestige: ${prestigeDrop}`);
 });
 
+test("active talent treatment outranks dormancy", () => {
+  const state = createWorld(10304, DEFAULT_RULESET);
+  resolveWorldWeeks(state, 51);
+  const activePromotion = state.promotions[3]!;
+  const dormantPromotion = state.promotions[4]!;
+  const activeStanding = promotionStandingFor(state, activePromotion.id);
+  const dormantStanding = promotionStandingFor(state, dormantPromotion.id);
+  activeStanding.talentReputation = 50;
+  dormantStanding.talentReputation = 50;
+  dormantPromotion.lifecycle = "DORMANT";
+  processPromotionStandingForWeek(state);
+  console.log(`  talent treatment: active ${activeStanding.talentReputation}, dormant ${dormantStanding.talentReputation}`);
+  ok(
+    activeStanding.talentReputation >= dormantStanding.talentReputation + 10,
+    `dormancy did not create a meaningful talent-reputation penalty: ${activeStanding.talentReputation} vs ${dormantStanding.talentReputation}`,
+  );
+});
+
 test("a decade creates bounded and meaningfully differentiated promotion standings", () => {
   const state = createWorld(20261002, DEFAULT_RULESET);
   resolveWorldWeeks(state, 520);
   const standings = ensurePromotionStandings(state);
-  const values = standings.flatMap((standing) => [standing.prestige, standing.fanReputation, standing.businessReputation]);
+  const values = standings.flatMap((standing) => [
+    standing.prestige,
+    standing.fanReputation,
+    standing.businessReputation,
+    standing.talentReputation,
+  ]);
   ok(values.every((value) => value >= 0 && value <= 100), "promotion standing escaped the 0-100 bounds");
   const prestige = standings.map((standing) => standing.prestige);
   const fans = standings.map((standing) => standing.fanReputation);
+  const talent = standings.map((standing) => standing.talentReputation);
   const prestigeRange = Math.max(...prestige) - Math.min(...prestige);
   const fanRange = Math.max(...fans) - Math.min(...fans);
+  const talentRange = Math.max(...talent) - Math.min(...talent);
   const leader = [...standings].sort((a, b) => b.prestige - a.prestige)[0]!;
-  console.log(`  standing diagnostics: prestige range ${prestigeRange.toFixed(1)}, fan range ${fanRange.toFixed(1)}, leader ${leader.promotionId} at ${leader.prestige}`);
+  console.log(`  standing diagnostics: prestige range ${prestigeRange.toFixed(1)}, fan range ${fanRange.toFixed(1)}, talent range ${talentRange.toFixed(1)}, leader ${leader.promotionId} at ${leader.prestige}`);
   ok(prestigeRange >= 18, `decade prestige became too homogeneous: range ${prestigeRange}`);
   ok(fanRange >= 8, `decade fan reputation became too homogeneous: range ${fanRange}`);
+  ok(talentRange >= 8, `decade talent reputation became too homogeneous: range ${talentRange}`);
   ok(standings.every((standing) => standing.lastEvaluatedYear === 10), "not every promotion received each annual standing evaluation");
 });
 
