@@ -27,7 +27,7 @@ export const DEFAULT_RULESET: Ruleset = {
   survivalMinimumRosterRatio: 0.35,
   survivalEmergencyRecruitmentPerCycle: 2,
   survivalRestructureIntervalWeeks: 12,
-  teamRecognitionMatches: 2,
+  teamRecognitionMatches: 8,
   singlesTitleDefenseIntervalWeeks: 8,
   tagTitleDefenseIntervalWeeks: 10,
 };
