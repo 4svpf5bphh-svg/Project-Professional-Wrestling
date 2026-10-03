@@ -6,14 +6,15 @@ import type {
   WorldState,
   WrestlingEvent,
 } from "../../domain/src/types.js";
+import { currentRosterPersonIds } from "./contracts.js";
 import { LedgerWriter } from "./ledger.js";
 
-const INITIAL_STANDING: Record<PromotionTier, { prestige: number; fan: number; business: number }> = {
-  GLOBAL: { prestige: 82, fan: 78, business: 82 },
-  NATIONAL: { prestige: 67, fan: 65, business: 70 },
-  RISING: { prestige: 50, fan: 52, business: 56 },
-  INDEPENDENT: { prestige: 36, fan: 40, business: 44 },
-  LOCAL: { prestige: 24, fan: 30, business: 34 },
+const INITIAL_STANDING: Record<PromotionTier, { prestige: number; fan: number; business: number; talent: number }> = {
+  GLOBAL: { prestige: 82, fan: 78, business: 82, talent: 74 },
+  NATIONAL: { prestige: 67, fan: 65, business: 70, talent: 65 },
+  RISING: { prestige: 50, fan: 52, business: 56, talent: 55 },
+  INDEPENDENT: { prestige: 36, fan: 40, business: 44, talent: 47 },
+  LOCAL: { prestige: 24, fan: 30, business: 34, talent: 39 },
 };
 
 const TIER_PRESTIGE: Record<PromotionTier, number> = {
@@ -46,7 +47,13 @@ function blend(current: number, evidence: number, weight: number): number {
 export function ensurePromotionStandings(state: WorldState): PromotionStanding[] {
   if (!state.promotionStandings) state.promotionStandings = [];
   for (const promotion of state.promotions) {
-    if (state.promotionStandings.some((entry) => entry.promotionId === promotion.id)) continue;
+    const existing = state.promotionStandings.find((entry) => entry.promotionId === promotion.id);
+    if (existing) {
+      if (!Number.isFinite(existing.talentReputation)) {
+        existing.talentReputation = INITIAL_STANDING[promotion.tier].talent;
+      }
+      continue;
+    }
     const initial = INITIAL_STANDING[promotion.tier];
     state.promotionStandings.push({
       worldId: state.world.id,
@@ -54,6 +61,7 @@ export function ensurePromotionStandings(state: WorldState): PromotionStanding[]
       prestige: initial.prestige,
       fanReputation: initial.fan,
       businessReputation: initial.business,
+      talentReputation: initial.talent,
       lastEvaluatedYear: 0,
     });
   }
@@ -114,6 +122,18 @@ function restructuringCountThisYear(state: WorldState, promotionId: string): num
   return count;
 }
 
+function terminationCountThisYear(state: WorldState, promotionId: string): number {
+  const year = state.world.currentDate.year;
+  let count = 0;
+  for (let index = state.ledger.length - 1; index >= 0; index -= 1) {
+    const entry = state.ledger[index]!;
+    if (entry.date.year < year) break;
+    if (entry.date.year !== year || entry.type !== "CONTRACT_TERMINATED_DURING_RESTRUCTURING") continue;
+    if (entry.entityIds.includes(promotionId)) count += 1;
+  }
+  return count;
+}
+
 function businessEvidence(state: WorldState, promotion: Promotion, events: WrestlingEvent[]): number {
   const completed = events.filter((event) => event.status === "COMPLETED").length;
   const cancelled = events.filter((event) => event.status === "CANCELLED").length;
@@ -127,6 +147,51 @@ function businessEvidence(state: WorldState, promotion: Promotion, events: Wrest
     + promotion.mediaReach * 0.2
     - restructuringPenalty;
   return round1(clamp(score));
+}
+
+function annualRosterUsage(state: WorldState, promotionId: string): number {
+  const roster = new Set(currentRosterPersonIds(state, promotionId));
+  if (roster.size === 0) return 20;
+  const used = new Set<string>();
+  const year = state.world.currentDate.year;
+  for (let index = state.scheduledAppearances.length - 1; index >= 0; index -= 1) {
+    const appearance = state.scheduledAppearances[index]!;
+    if (appearance.date.year < year) break;
+    if (
+      appearance.date.year === year
+      && appearance.promotionId === promotionId
+      && appearance.status === "COMPLETED"
+      && roster.has(appearance.personId)
+    ) {
+      used.add(appearance.personId);
+    }
+  }
+  return round1(used.size / roster.size * 100);
+}
+
+function annualRenewalAcceptance(state: WorldState, promotionId: string): number {
+  const year = state.world.currentDate.year;
+  let accepted = 0;
+  let rejected = 0;
+  for (let index = state.contractOffers.length - 1; index >= 0; index -= 1) {
+    const offer = state.contractOffers[index]!;
+    if (offer.submittedDate.year < year) break;
+    if (offer.submittedDate.year !== year || offer.promotionId !== promotionId || offer.offerKind !== "RENEWAL") continue;
+    if (offer.status === "ACCEPTED") accepted += 1;
+    if (offer.status === "REJECTED") rejected += 1;
+  }
+  const decided = accepted + rejected;
+  return decided > 0 ? round1(accepted / decided * 100) : 60;
+}
+
+function talentEvidence(state: WorldState, promotion: Promotion): number {
+  if (promotion.lifecycle === "DORMANT" || promotion.lifecycle === "CLOSED") return 15;
+  const usage = annualRosterUsage(state, promotion.id);
+  const renewalAcceptance = annualRenewalAcceptance(state, promotion.id);
+  const terminations = terminationCountThisYear(state, promotion.id);
+  const restructures = restructuringCountThisYear(state, promotion.id);
+  const continuity = clamp(100 - terminations * 18 - restructures * 8);
+  return round1(clamp(usage * 0.45 + renewalAcceptance * 0.3 + continuity * 0.25));
 }
 
 function majorEventScore(events: WrestlingEvent[]): number {
@@ -170,13 +235,16 @@ export function processPromotionStandingForWeek(state: WorldState): void {
     const events = annualEvents(state, promotion.id);
     const fanScore = fanEvidence(state, promotion, events);
     const businessScore = businessEvidence(state, promotion, events);
+    const talentScore = talentEvidence(state, promotion);
     const prestigeScore = prestigeEvidence(state, promotion, events, fanScore);
     const previousPrestige = standing.prestige;
     const previousFan = standing.fanReputation;
     const previousBusiness = standing.businessReputation;
+    const previousTalent = standing.talentReputation;
 
     standing.fanReputation = blend(standing.fanReputation, fanScore, 0.35);
     standing.businessReputation = blend(standing.businessReputation, businessScore, 0.3);
+    standing.talentReputation = blend(standing.talentReputation, talentScore, 0.32);
     standing.prestige = blend(
       standing.prestige,
       prestigeScore,
@@ -193,9 +261,11 @@ export function processPromotionStandingForWeek(state: WorldState): void {
         prestige: standing.prestige,
         fanReputation: standing.fanReputation,
         businessReputation: standing.businessReputation,
+        talentReputation: standing.talentReputation,
         prestigeDelta: round1(standing.prestige - previousPrestige),
         fanDelta: round1(standing.fanReputation - previousFan),
         businessDelta: round1(standing.businessReputation - previousBusiness),
+        talentDelta: round1(standing.talentReputation - previousTalent),
       },
     });
   }
