@@ -8,6 +8,7 @@ import { planAndResolveWorldEvents } from "./events.js";
 import { settleWorldFinances } from "./finance.js";
 import { processPromotionTierGrowthForWeek } from "./growth.js";
 import { processPromotionSurvivalForWeek } from "./lifecycle.js";
+import { processPromotionStandingForWeek } from "./reputation.js";
 
 export function resolveWorldWeek(state: WorldState): void {
   recoverWrestlersForNewWeek(state);
@@ -21,6 +22,7 @@ export function resolveWorldWeek(state: WorldState): void {
   settleWorldFinances(state);
   processPromotionSurvivalForWeek(state);
   processPromotionTierGrowthForWeek(state);
+  processPromotionStandingForWeek(state);
   processCareerProgressionForWeek(state);
   advanceWeek(state.world, state.ruleset.weeksPerYear);
 }
