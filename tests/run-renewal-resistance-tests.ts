@@ -97,10 +97,10 @@ function marginalRenewal(
   throw new Error("could not find marginal renewal offer");
 }
 
-test("low morale and low trust can veto a marginal renewal", () => {
+test("severely low morale and trust can veto a marginal renewal", () => {
   const { state, person, promotion, relationship } = fixture(10701);
-  person.morale = 25;
-  relationship.trust = 25;
+  person.morale = 10;
+  relationship.trust = 10;
   const candidate = marginalRenewal(state, person, promotion, "renewal-low-low");
   state.contractOffers.push(candidate.offer);
 
@@ -109,7 +109,7 @@ test("low morale and low trust can veto a marginal renewal", () => {
   console.log(`  marginal renewal: base ${candidate.utility.toFixed(1)}, relationship penalty ${penalty.toFixed(1)}, status ${candidate.offer.status}`);
 
   ok(rejected === 1, `expected one relationship-driven rejection, got ${rejected}`);
-  ok(candidate.offer.status === "REJECTED", "poor morale/trust did not reject marginal renewal");
+  ok(candidate.offer.status === "REJECTED", "severely poor morale/trust did not reject marginal renewal");
   ok(candidate.offer.rejectionReason?.includes("morale and trust"), "relationship rejection did not explain its cause");
 });
 
