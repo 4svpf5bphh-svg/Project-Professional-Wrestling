@@ -4,7 +4,7 @@ PPW is a persistent asynchronous wrestling-management living-world simulation.
 
 The repository is currently in **SIM-0**, where the deterministic headless World is being built and stress-tested before any polished player interface.
 
-## Current milestone — SIM-0.0.7
+## Current milestone — SIM-0.0.9
 
 The simulator can now:
 
@@ -13,14 +13,16 @@ The simulator can now:
 - preserve meaningful free agency through one-off, limited non-exclusive and exclusive contracts;
 - enforce Service Capacity, contract dates, expiries, renewals and competing offers;
 - run promotion-specific live-event schedules with venues, ticket strategies, attendance and gate economics;
-- build singles/tag match cards with intended winners, match intent, length, star ratings and crowd response;
+- build singles and tag match cards with intended winners, match intent, length, star ratings and crowd response;
 - track persistent chemistry, fatigue, Wear, injuries and recovery;
-- advance a separate slow biological Career Time;
-- develop wrestlers through actual match experience and generate new prospects as careers end;
-- let financially pressured AI promotions restructure rather than becoming permanent zombie companies;
-- reduce distressed operating costs and show cadence, release expensive contracts with settlements and recruit affordable emergency talent;
-- allow healthy distressed promotions to recover their normal operating scale;
-- move prolonged insolvent/understaffed promotions into Dormancy, releasing talent back to the shared World;
+- advance a separate slow biological Career Time, retire wrestlers under pressure rather than at a fixed birthday, and generate replacement prospects organically;
+- let financially pressured AI promotions restructure, reduce operating scale, recruit affordable emergency talent, recover when healthy or enter Dormancy after sustained failure;
+- maintain persistent singles and tag championships with reigns, defenses, title changes and historical lineages;
+- maintain persistent tag-team identities and membership rather than treating every tag pairing as disposable;
+- book established tag teams repeatedly without consuming the entire wrestler population;
+- rotate championship challengers, protect major title matches as top-card attractions and avoid automatic failed-challenger loops;
+- infer short non-title singles programmes from recent match history, continue qualified rivalries with sensible spacing, and stop ordinary fallback booking from creating accidental weekly rematches;
+- place hotter wrestlers higher on cards while keeping match quality and crowd response separate from push;
 - calculate cash flow, runway and financial distress;
 - record consequential business and wrestling history in an append-first World Ledger;
 - reproduce the same resolved World from the same seed;
@@ -28,7 +30,9 @@ The simulator can now:
 
 ## Current long-world proof
 
-The standard seed `20261002` completes 100 PPW Years with **zero invariant failures**. At Year 101 it contains 385 active wrestlers from 692 historical wrestlers, 292 generated talents, more than 144,000 completed matches and no active zero-roster promotion. Promotion lifecycle/survival state is part of deterministic diagnostics.
+The standard seed `20261002` completes **100 PPW Years with zero invariant failures** under SIM-0.0.9. At Year 101 the World contains **385 active wrestlers from 700 historical wrestlers**, including **300 generated talents**, alongside **143,686 completed matches**, **2,643 historical tag teams**, **5,907 championship contests**, **1,962 title changes** and **3,117 successful defenses**.
+
+The century simulation completed in roughly **79 seconds including the TypeScript build** on GitHub Actions after 0.0.9's booking-history lookups were moved to incremental indexes. The same milestone also passes the complete behavioural suite and the standard 10-year smoke simulation.
 
 ## Local commands
 
