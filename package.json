@@ -16,7 +16,8 @@
     "test:booking": "node dist/tests/run-booking-tests.js",
     "test:programmes": "node dist/tests/run-programme-tests.js",
     "test:audience": "node dist/tests/run-audience-tests.js",
-    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience",
+    "test:growth": "node dist/tests/run-growth-tests.js",
+    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience && npm run test:growth",
     "sim": "npm run build && node dist/apps/sim-cli/src/index.js"
   },
   "devDependencies": {
