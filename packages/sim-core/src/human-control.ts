@@ -21,6 +21,10 @@ export function claimIndependentPromotionForHuman(
   const promotion = state.promotions.find((candidate) => candidate.id === promotionId);
   if (!promotion) throw new Error(`unknown promotion ${promotionId}`);
   if (promotion.controllerType !== "AI") throw new Error(`${promotionId} is already human-controlled`);
+  const existingHuman = state.promotions.find((candidate) => candidate.controllerType === "HUMAN");
+  if (existingHuman) {
+    throw new Error(`ALPHA-1A already has human promotion ${existingHuman.id}`);
+  }
   if (promotion.tier !== "INDEPENDENT") {
     throw new Error("ALPHA-1A human claim requires an Independent promotion");
   }
