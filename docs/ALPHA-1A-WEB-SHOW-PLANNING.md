@@ -35,6 +35,10 @@ The command requires the observed World revision and planning workspace version.
 
 The browser uses one logical request ID; the server derives stable `:draft` and `:reserve` command IDs. Because both receipts are committed in the same transaction, a retry after a lost response replays the already-committed results without allocating another draft, another reservation or another World revision.
 
+## Validation contract
+
+Before promotion, the slice must pass the complete functional suite, production Next build, live HTTP/PostgreSQL planning flow, repository integration, the unchanged 10-year deterministic hash and the unchanged 100-year deterministic hash. The HTTP path specifically proves that the reserved venue survives materialization into the completed show result.
+
 ## Deliberately deferred
 
 This slice does not add:
