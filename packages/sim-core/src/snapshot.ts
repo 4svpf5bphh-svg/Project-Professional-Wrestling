@@ -1,4 +1,4 @@
-import type { FinancialDistressState, WorldState } from "../../domain/src/types.js";
+import type { FinancialDistressState, PromotionLifecycle, WorldState } from "../../domain/src/types.js";
 import { activeContractsForPerson, activeContractsForPromotion, contractIsActive } from "./contracts.js";
 
 function fnv1a32Update(hash: number, text: string): number {
@@ -59,6 +59,7 @@ export interface WorldSummary {
   financialTransactions: number;
   totalPromotionCash: number;
   distressCounts: Record<FinancialDistressState, number>;
+  lifecycleCounts: Record<PromotionLifecycle, number>;
   rosterSizes: { promotionId: string; tier: string; activePeople: number }[];
   deterministicHash: string;
 }
@@ -75,6 +76,7 @@ export function deterministicWorldHash(state: WorldState): string {
     ["venues", state.venues],
     ["promotions", state.promotions],
     ["promotionMarketStates", state.promotionMarketStates],
+    ["promotionSurvivalStates", state.promotionSurvivalStates ?? []],
     ["people", state.people],
     ["contracts", state.contracts],
     ["contractOffers", state.contractOffers],
@@ -127,7 +129,18 @@ export function summarizeWorld(state: WorldState): WorldSummary {
     DISTRESSED: 0,
     CRISIS: 0,
   };
-  for (const promotion of state.promotions) distressCounts[promotion.financialDistress] += 1;
+  const lifecycleCounts: Record<PromotionLifecycle, number> = {
+    FOUNDING: 0,
+    ACTIVE: 0,
+    DISTRESSED: 0,
+    STEWARDED: 0,
+    DORMANT: 0,
+    CLOSED: 0,
+  };
+  for (const promotion of state.promotions) {
+    distressCounts[promotion.financialDistress] += 1;
+    lifecycleCounts[promotion.lifecycle] += 1;
+  }
 
   return {
     worldId: state.world.id,
@@ -177,7 +190,12 @@ export function summarizeWorld(state: WorldState): WorldSummary {
     financialTransactions: state.financialTransactions.length,
     totalPromotionCash: Math.round(state.promotions.reduce((sum, promotion) => sum + promotion.cash, 0)),
     distressCounts,
-    rosterSizes: state.promotions.map((promotion) => ({ promotionId: promotion.id, tier: promotion.tier, activePeople: activeContractsForPromotion(state, promotion.id).length })),
+    lifecycleCounts,
+    rosterSizes: state.promotions.map((promotion) => ({
+      promotionId: promotion.id,
+      tier: promotion.tier,
+      activePeople: new Set(activeContractsForPromotion(state, promotion.id).map((contract) => contract.personId)).size,
+    })),
     deterministicHash: deterministicWorldHash(state),
   };
 }
