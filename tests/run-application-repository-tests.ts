@@ -4,10 +4,12 @@ import {
   claimIndependentPromotionCommand,
   createWorldCommandState,
   createWorldOwnershipState,
+  createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
   lockPersistedWorldForResolution,
   resolvePersistedWorldWeek,
+  upsertDetailedShowDraftCommand,
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
@@ -16,17 +18,6 @@ import { createWorld } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
-
-function test(name: string, fn: () => Promise<void>): void {
-  fn().then(() => {
-    passed += 1;
-    console.log(`PASS ${name}`);
-  }).catch((error) => {
-    failed += 1;
-    console.error(`FAIL ${name}`);
-    console.error(error instanceof Error ? error.message : String(error));
-  });
-}
 
 function ok(value: unknown, message: string): void {
   if (!value) throw new Error(message);
@@ -39,6 +30,7 @@ function fixture(seed: number): ApplicationWorldAggregate {
     ownership: createWorldOwnershipState(state.world.id, 1),
     commands: createWorldCommandState(state.world.id),
     runtime: createWorldRuntimeState(state.world.id),
+    planning: createWorldPlanningState(state.world.id),
   };
 }
 
@@ -62,9 +54,16 @@ asyncTest("repository load returns a detached persisted aggregate", async () => 
   const loaded = await repo.load(aggregate.state.world.id);
   loaded.runtime.revision = 99;
   loaded.state.promotions[0]!.name = "Detached Mutation";
+  loaded.planning.workspaces.push({
+    worldId: aggregate.state.world.id,
+    promotionId: aggregate.state.promotions[0]!.id,
+    version: 0,
+    detailedShowDrafts: [],
+  });
   const reloaded = await repo.load(aggregate.state.world.id);
   ok(reloaded.runtime.revision === 0, "detached runtime mutation leaked into repository state");
   ok(reloaded.state.promotions[0]!.name !== "Detached Mutation", "detached World mutation leaked into repository state");
+  ok(reloaded.planning.workspaces.length === 0, "detached planning mutation leaked into repository state");
 });
 
 asyncTest("successful transaction atomically persists World ownership receipt and revision", async () => {
@@ -140,9 +139,54 @@ asyncTest("stale expected revision is rejected before transaction mutation", asy
   ok(rejected, "stale revision was not rejected");
 });
 
-asyncTest("weekly lock and resolution are separately durable and failed resolution rolls back", async () => {
+asyncTest("planning state is persisted atomically with its receipt and World revision", async () => {
   const repo = new InMemoryApplicationWorldRepository();
   const aggregate = fixture(13005);
+  joinPlayerToWorld(aggregate.ownership, "player-a", aggregate.state.world.currentDate);
+  const promotion = aggregate.state.promotions.find((candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE")!;
+  claimIndependentPromotionCommand(aggregate.state, aggregate.ownership, aggregate.commands, aggregate.runtime, {
+    requestId: "planning-claim",
+    worldId: aggregate.state.world.id,
+    playerId: "player-a",
+    commandType: "CLAIM_INDEPENDENT_PROMOTION",
+    payload: { promotionId: promotion.id },
+  });
+  await repo.initialize(aggregate);
+
+  await repo.transact(aggregate.state.world.id, 1, (working) => {
+    upsertDetailedShowDraftCommand(working.state, working.ownership, working.planning, working.commands, working.runtime, {
+      requestId: "persist-draft",
+      worldId: working.state.world.id,
+      playerId: "player-a",
+      commandType: "UPSERT_DETAILED_SHOW_DRAFT",
+      payload: {
+        promotionId: promotion.id,
+        expectedPlanVersion: 0,
+        draft: {
+          draftId: "week-plan",
+          promotionId: promotion.id,
+          targetDate: { ...working.state.world.currentDate },
+          marketId: null,
+          venueId: null,
+          ticketStrategy: null,
+          participantIds: [],
+          matches: [],
+          championshipAssignments: [],
+        },
+      },
+    });
+  });
+
+  const loaded = await repo.load(aggregate.state.world.id);
+  ok(loaded.runtime.revision === 2, "planning transaction did not persist World revision");
+  ok(loaded.planning.workspaces[0]?.version === 1, "planning workspace was not persisted");
+  ok(loaded.planning.workspaces[0]?.detailedShowDrafts[0]?.draftId === "week-plan", "planning draft was not persisted");
+  ok(loaded.commands.receipts.some((receipt) => receipt.requestId === "persist-draft"), "planning receipt was not persisted");
+});
+
+asyncTest("weekly lock and resolution are separately durable and failed resolution rolls back", async () => {
+  const repo = new InMemoryApplicationWorldRepository();
+  const aggregate = fixture(13006);
   await repo.initialize(aggregate);
   const worldId = aggregate.state.world.id;
   const beforeDate = { ...aggregate.state.world.currentDate };
