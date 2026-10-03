@@ -4,6 +4,7 @@ import { processCareerProgressionForWeek, recoverWrestlersForNewWeek } from "./c
 import { expireContracts, generateAiContractOffers, resolveContractOffers } from "./contracts.js";
 import { planAndResolveWorldEvents } from "./events.js";
 import { settleWorldFinances } from "./finance.js";
+import { processPromotionSurvivalForWeek } from "./lifecycle.js";
 
 export function resolveWorldWeek(state: WorldState): void {
   recoverWrestlersForNewWeek(state);
@@ -12,6 +13,7 @@ export function resolveWorldWeek(state: WorldState): void {
   resolveContractOffers(state);
   planAndResolveWorldEvents(state);
   settleWorldFinances(state);
+  processPromotionSurvivalForWeek(state);
   processCareerProgressionForWeek(state);
   advanceWeek(state.world, state.ruleset.weeksPerYear);
 }
