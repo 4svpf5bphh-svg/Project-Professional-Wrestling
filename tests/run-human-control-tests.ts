@@ -52,10 +52,10 @@ test("an active Independent promotion can become the ALPHA-1A human test seat", 
   ok(ledgerEvent.entityIds[0] === promotion.id, "human claim ledger event points at the wrong promotion");
 });
 
-test("ALPHA-1A claim rejects non-Independent and duplicate human claims", () => {
+test("ALPHA-1A enforces Independent entry and one human promotion per World", () => {
   const state = createWorld(10802, DEFAULT_RULESET);
   const global = state.promotions.find((promotion) => promotion.tier === "GLOBAL")!;
-  const indie = state.promotions.find((promotion) => promotion.tier === "INDEPENDENT")!;
+  const indies = state.promotions.filter((promotion) => promotion.tier === "INDEPENDENT");
 
   let rejectedGlobal = false;
   try {
@@ -65,14 +65,23 @@ test("ALPHA-1A claim rejects non-Independent and duplicate human claims", () => 
   }
   ok(rejectedGlobal, "a non-Independent promotion could be claimed in ALPHA-1A");
 
-  claimIndependentPromotionForHuman(state, indie.id);
+  claimIndependentPromotionForHuman(state, indies[0]!.id);
   let rejectedDuplicate = false;
   try {
-    claimIndependentPromotionForHuman(state, indie.id);
+    claimIndependentPromotionForHuman(state, indies[0]!.id);
   } catch {
     rejectedDuplicate = true;
   }
   ok(rejectedDuplicate, "the same promotion could be claimed twice");
+
+  let rejectedSecondPromotion = false;
+  try {
+    claimIndependentPromotionForHuman(state, indies[1]!.id);
+  } catch {
+    rejectedSecondPromotion = true;
+  }
+  ok(rejectedSecondPromotion, "one human could control two promotions in ALPHA-1A");
+  ok(humanControlledPromotions(state).length === 1, "World ended with more than one human promotion");
 });
 
 test("AI event planning leaves the human promotion unbooked", () => {
