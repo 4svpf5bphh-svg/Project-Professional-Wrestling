@@ -14,6 +14,22 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ppw
+          POSTGRES_PASSWORD: ppw
+          POSTGRES_DB: ppw_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ppw -d ppw_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://ppw:ppw@127.0.0.1:5432/ppw_test
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,6 +41,8 @@ jobs:
         run: npm install
       - name: Run full test suite
         run: npm test
+      - name: Run PostgreSQL repository integration tests
+        run: npm run test:postgres-repository
       - name: Run 10-year standard-seed smoke simulation
         run: npm run sim -- --seed 20261002 --weeks 520
       # Feature branches can opt into the century stress gate by including [long] in the push commit message.
