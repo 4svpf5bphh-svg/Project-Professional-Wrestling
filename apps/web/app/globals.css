@@ -75,8 +75,12 @@ h3 { margin-bottom: 4px; font-size: 18px; }
 }
 .muted { color: #8d99a8; }
 .body-copy { line-height: 1.55; }
+.no-margin { margin-bottom: 0; }
+.micro-copy { margin: 10px 2px 0; color: #637080; font-size: 11px; line-height: 1.45; }
+.positive { color: #65e6ad; }
+.negative { color: #ff9292; }
 
-.phase-pill, .distress, .revision {
+.phase-pill, .distress, .revision, .readiness-pill {
   white-space: nowrap;
   border-radius: 999px;
   padding: 7px 10px;
@@ -88,6 +92,9 @@ h3 { margin-bottom: 4px; font-size: 18px; }
 .phase-open { border-color: rgba(93, 233, 206, .35); color: #5de9ce; }
 .phase-locking, .phase-resolving { color: #f6c85f; }
 .revision { background: #10151d; color: #7f8b9b; }
+.readiness-pill { background: #151b24; color: #aab6c5; }
+.readiness-ready { color: #65e6ad; background: rgba(50, 190, 125, .1); }
+.readiness-attention { color: #f4ce72; background: rgba(244, 206, 114, .1); }
 
 .panel, .metric-card, .choice-card, .error-card {
   border: 1px solid #202938;
@@ -95,6 +102,8 @@ h3 { margin-bottom: 4px; font-size: 18px; }
   border-radius: 18px;
 }
 .panel { padding: 17px; margin-bottom: 14px; }
+.compact-panel { padding-top: 14px; padding-bottom: 14px; }
+.week-panel { border-color: rgba(93, 233, 206, .2); box-shadow: inset 0 1px 0 rgba(255,255,255,.02); }
 .error-card { padding: 13px 15px; margin-bottom: 14px; color: #ffb1b1; border-color: rgba(255, 103, 103, .35); }
 
 .section-heading {
@@ -140,6 +149,22 @@ h3 { margin-bottom: 4px; font-size: 18px; }
 
 .status-row { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 12px; color: #98a5b5; font-size: 13px; }
 
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.result-grid > div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #202938;
+  border-radius: 13px;
+  background: #0c1118;
+}
+.result-grid span, .result-grid strong { display: block; }
+.result-grid span { margin-bottom: 5px; color: #728092; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; font-weight: 800; }
+.result-grid strong { overflow-wrap: anywhere; font-size: 14px; }
+
 .roster-list { display: grid; }
 .roster-row {
   display: flex;
@@ -183,4 +208,5 @@ h3 { margin-bottom: 4px; font-size: 18px; }
   .app-shell { padding-left: 24px; padding-right: 24px; }
   .choice-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .result-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

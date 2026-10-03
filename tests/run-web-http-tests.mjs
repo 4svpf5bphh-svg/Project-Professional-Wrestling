@@ -44,6 +44,10 @@ async function json(response) {
   return payload;
 }
 
+function weekKey(view) {
+  return `${view.world.year}:${view.world.week}`;
+}
+
 try {
   await waitForServer();
 
@@ -66,6 +70,7 @@ try {
   ok(first.player?.promotionId === promotionId, "HTTP claim did not assign the selected promotion");
   ok(first.promotion?.promotionId === promotionId, "HTTP claim did not return the promotion dashboard");
   ok(first.world?.revision === 1, "HTTP claim did not advance revision exactly once");
+  ok(first.promotion?.weekReadiness?.status, "HTTP dashboard did not expose week readiness");
 
   const retry = await json(await fetch(`${baseUrl}/api/claim`, {
     method: "POST",
@@ -74,12 +79,37 @@ try {
   }));
   ok(retry.world?.revision === 1, "HTTP idempotent retry advanced revision twice");
 
-  const after = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
-  ok(after.player?.promotionId === promotionId, "HTTP reload lost promotion ownership");
-  ok(after.promotion?.promotionId === promotionId, "HTTP reload lost promotion dashboard state");
-  ok(after.world?.revision === 1, "HTTP reload returned the wrong persisted World revision");
+  const afterClaim = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
+  ok(afterClaim.player?.promotionId === promotionId, "HTTP reload lost promotion ownership");
+  ok(afterClaim.promotion?.promotionId === promotionId, "HTTP reload lost promotion dashboard state");
+  ok(afterClaim.world?.revision === 1, "HTTP reload returned the wrong persisted World revision");
 
-  console.log("PASS Alpha Next HTTP bootstrap, claim, retry and reload");
+  const weekBefore = weekKey(afterClaim);
+  const revisionBeforeAdvance = afterClaim.world.revision;
+  const advanced = await json(await fetch(`${baseUrl}/api/advance-week`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expectedRevision: revisionBeforeAdvance }),
+  }));
+  ok(weekKey(advanced) !== weekBefore, "HTTP week endpoint did not advance the PPW calendar");
+  ok(advanced.world?.phase === "OPEN", "HTTP week endpoint did not reopen the World");
+  ok(advanced.world?.revision > revisionBeforeAdvance, "HTTP week endpoint did not advance the World revision");
+  ok(advanced.world?.lastResolvedPpwDate, "HTTP week endpoint did not expose the resolved week");
+
+  const staleResponse = await fetch(`${baseUrl}/api/advance-week`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expectedRevision: revisionBeforeAdvance }),
+  });
+  ok(staleResponse.status === 409, `stale HTTP week retry returned ${staleResponse.status} instead of 409`);
+  const stalePayload = await staleResponse.json();
+  ok(String(stalePayload.error ?? "").includes("stale World revision"), "stale HTTP week retry returned the wrong conflict reason");
+
+  const afterAdvance = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
+  ok(weekKey(afterAdvance) === weekKey(advanced), "stale HTTP retry advanced the World a second time");
+  ok(afterAdvance.world.revision === advanced.world.revision, "stale HTTP retry changed the persisted World revision");
+
+  console.log("PASS Alpha Next HTTP bootstrap, claim, retry, week resolution and stale-retry safety");
 } finally {
   if (server.exitCode === null) server.kill("SIGTERM");
   await new Promise((resolve) => {

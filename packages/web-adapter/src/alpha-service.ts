@@ -1,5 +1,6 @@
 import { DEFAULT_RULESET } from "../../config/src/default-ruleset.js";
 import {
+  activePromotionControlForPlayer,
   buildAlphaPlayerWorldView,
   claimIndependentPromotionCommand,
   createWorldCommandState,
@@ -7,6 +8,9 @@ import {
   createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  lockPersistedWorldForResolution,
+  materializePersistedCurrentWeekReservations,
+  resolvePersistedWorldWeek,
   type AlphaPlayerWorldView,
   type ApplicationWorldAggregate,
   type ApplicationWorldRepository,
@@ -25,9 +29,20 @@ export interface AlphaClaimRequest {
   name?: string;
 }
 
+export interface AlphaAdvanceWeekRequest {
+  expectedRevision: number;
+}
+
 function normalizedSeed(seed: number): number {
   if (!Number.isSafeInteger(seed)) throw new Error("Alpha World seed must be an integer");
   return seed >>> 0;
+}
+
+function requireExpectedRevision(revision: number): number {
+  if (!Number.isSafeInteger(revision) || revision < 0) {
+    throw new Error("expectedRevision must be a non-negative integer");
+  }
+  return revision;
 }
 
 export function alphaWorldId(seed: number): string {
@@ -102,5 +117,45 @@ export async function claimAlphaPromotion(
       },
     );
   });
+  return loadAlphaPlayerSession(repository, worldId, playerId);
+}
+
+export async function advanceAlphaWorldWeek(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  request: AlphaAdvanceWeekRequest,
+): Promise<AlphaPlayerWorldView> {
+  const expectedRevision = requireExpectedRevision(request.expectedRevision);
+  const before = await repository.load(worldId);
+  const control = activePromotionControlForPlayer(before.ownership, playerId);
+  if (!control) throw new Error("Alpha player must control a promotion before finishing a PPW week");
+
+  if (before.runtime.phase === "RESOLVING") {
+    throw new Error(`World ${worldId} is resolving and cannot accept another Alpha week request`);
+  }
+
+  if (before.runtime.phase === "LOCKING") {
+    await resolvePersistedWorldWeek(repository, worldId, before.runtime.revision);
+    return loadAlphaPlayerSession(repository, worldId, playerId);
+  }
+
+  if (before.runtime.revision !== expectedRevision) {
+    throw new Error(
+      `stale World revision for ${worldId}: expected ${expectedRevision}, current ${before.runtime.revision}`,
+    );
+  }
+
+  const materialized = await materializePersistedCurrentWeekReservations(
+    repository,
+    worldId,
+    expectedRevision,
+  );
+  const lockedRevision = await lockPersistedWorldForResolution(
+    repository,
+    worldId,
+    materialized.revision,
+  );
+  await resolvePersistedWorldWeek(repository, worldId, lockedRevision);
   return loadAlphaPlayerSession(repository, worldId, playerId);
 }

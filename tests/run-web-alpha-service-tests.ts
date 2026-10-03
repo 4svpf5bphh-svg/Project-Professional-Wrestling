@@ -1,7 +1,9 @@
 declare const process: { exitCode?: number };
 
+import { lockPersistedWorldForResolution } from "../packages/application/src/index.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import {
+  advanceAlphaWorldWeek,
   claimAlphaPromotion,
   createAlphaWorldAggregate,
   ensureAlphaWorld,
@@ -25,6 +27,10 @@ async function test(name: string, fn: () => Promise<void>): Promise<void> {
 
 function ok(value: unknown, message: string): void {
   if (!value) throw new Error(message);
+}
+
+function weekKey(view: { world: { year: number; week: number } }): string {
+  return `${view.world.year}:${view.world.week}`;
 }
 
 await test("Alpha web service bootstraps and exposes a player-safe promotion choice", async () => {
@@ -53,6 +59,7 @@ await test("Alpha claim travels through the transactional command path and survi
   ok(after.promotion?.promotionId === choice.promotionId, "dashboard did not expose the claimed promotion");
   ok(after.world.revision === 1, "claim did not advance the World revision exactly once");
   ok(after.availableIndependentPromotions.length === 0, "claimed player still received promotion choices");
+  ok(after.promotion?.weekReadiness.status !== undefined, "claimed dashboard did not expose week readiness");
 
   const persisted = await repository.load(worldId);
   ok(persisted.ownership.promotionControls.length === 1, "claim did not persist exactly one promotion control");
@@ -82,6 +89,71 @@ await test("Alpha service retry reuses the original request without duplicate mu
     persisted.state.ledger.filter((entry) => entry.type === "HUMAN_PROMOTION_CLAIMED").length === 1,
     "retry duplicated claim history",
   );
+});
+
+await test("Alpha week finish resolves exactly one World week and exposes the previous show result", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 61004, playerId: "alpha-player" });
+  const independent = aggregate.state.promotions.find((promotion) => (
+    promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE"
+  ));
+  ok(independent, "test World had no Independent promotion");
+  independent!.eventCadenceWeeks = 1;
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+
+  const claimed = await claimAlphaPromotion(repository, worldId, "alpha-player", {
+    promotionId: independent!.id,
+    requestId: "web-week-claim",
+  });
+  ok(claimed.promotion?.weekReadiness.status === "SHOW_REQUIRED", "weekly dashboard did not expose missing-show readiness");
+  const beforeWeek = weekKey(claimed);
+  const startingRevision = claimed.world.revision;
+
+  const after = await advanceAlphaWorldWeek(repository, worldId, "alpha-player", {
+    expectedRevision: startingRevision,
+  });
+  ok(weekKey(after) !== beforeWeek, "Alpha finish week did not advance the PPW calendar");
+  ok(after.world.phase === "OPEN", "World did not reopen after weekly resolution");
+  ok(after.world.revision > startingRevision, "weekly resolution did not advance World revision");
+  ok(after.world.lastResolvedPpwDate?.week === claimed.world.week, "dashboard did not expose the resolved PPW week");
+  ok(after.promotion?.lastResolvedShow !== null, "staff-completed mandatory show was not exposed in the result summary");
+  ok((after.promotion?.lastResolvedShow?.matchCount ?? 0) > 0, "resolved show summary contains no matches");
+
+  let staleRejected = false;
+  try {
+    await advanceAlphaWorldWeek(repository, worldId, "alpha-player", {
+      expectedRevision: startingRevision,
+    });
+  } catch (error) {
+    staleRejected = error instanceof Error && error.message.includes("stale World revision");
+  }
+  ok(staleRejected, "stale finish-week retry was not rejected");
+  const reloaded = await loadAlphaPlayerSession(repository, worldId, "alpha-player");
+  ok(weekKey(reloaded) === weekKey(after), "stale retry advanced the World twice");
+});
+
+await test("Alpha week finish safely resumes a durably locked World", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 61005, playerId: "alpha-player" });
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  const choice = (await loadAlphaPlayerSession(repository, worldId, "alpha-player")).availableIndependentPromotions[0]!;
+  const claimed = await claimAlphaPromotion(repository, worldId, "alpha-player", {
+    promotionId: choice.promotionId,
+    requestId: "web-lock-recovery-claim",
+  });
+  const beforeWeek = weekKey(claimed);
+
+  const lockedRevision = await lockPersistedWorldForResolution(repository, worldId, claimed.world.revision);
+  const locked = await repository.load(worldId);
+  ok(locked.runtime.phase === "LOCKING", "test failed to persist the weekly lock");
+
+  const recovered = await advanceAlphaWorldWeek(repository, worldId, "alpha-player", {
+    expectedRevision: lockedRevision,
+  });
+  ok(recovered.world.phase === "OPEN", "Alpha recovery did not reopen the World");
+  ok(weekKey(recovered) !== beforeWeek, "Alpha recovery did not resolve the locked week");
 });
 
 console.log(`\nAlpha web service tests: ${passed} passed, ${failed} failed`);

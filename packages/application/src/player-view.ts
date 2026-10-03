@@ -1,4 +1,13 @@
-import type { ContractFamily, FinancialDistressState, Id, PersonStatus, PromotionLifecycle, PromotionTier } from "../../domain/src/types.js";
+import type {
+  ContractFamily,
+  FinancialDistressState,
+  Id,
+  PersonStatus,
+  PpwDate,
+  PromotionLifecycle,
+  PromotionTier,
+} from "../../domain/src/types.js";
+import { humanWeekReadiness, type HumanWeekReadinessStatus } from "../../sim-core/src/human-routine.js";
 import {
   activePromotionControlForPlayer,
   activeWorldMembership,
@@ -24,6 +33,30 @@ export interface AlphaPromotionChoiceView {
   financialDistress: FinancialDistressState;
 }
 
+export interface AlphaWeekReadinessView {
+  status: HumanWeekReadinessStatus;
+  readyToFinish: boolean;
+  eventId: Id | null;
+  staffHelpRequired: boolean;
+}
+
+export interface AlphaResolvedShowView {
+  eventId: Id;
+  year: number;
+  week: number;
+  day: number;
+  marketName: string;
+  venueName: string;
+  attendance: number;
+  gateRevenue: number;
+  totalCost: number;
+  netResult: number;
+  matchCount: number;
+  averageMatchRating: number;
+  bestMatchRating: number;
+  crowdResponse: number;
+}
+
 export interface AlphaControlledPromotionView {
   promotionId: Id;
   name: string;
@@ -38,6 +71,8 @@ export interface AlphaControlledPromotionView {
   roster: AlphaRosterMemberView[];
   planningDraftCount: number;
   reservationCount: number;
+  weekReadiness: AlphaWeekReadinessView;
+  lastResolvedShow: AlphaResolvedShowView | null;
 }
 
 export interface AlphaPlayerWorldView {
@@ -49,6 +84,7 @@ export interface AlphaPlayerWorldView {
     day: number;
     phase: ApplicationWorldAggregate["runtime"]["phase"];
     revision: number;
+    lastResolvedPpwDate: PpwDate | null;
   };
   player: {
     playerId: string;
@@ -60,6 +96,48 @@ export interface AlphaPlayerWorldView {
 
 function marketName(aggregate: ApplicationWorldAggregate, marketId: Id): string {
   return aggregate.state.markets.find((market) => market.id === marketId)?.name ?? "Unknown market";
+}
+
+function venueName(aggregate: ApplicationWorldAggregate, venueId: Id): string {
+  return aggregate.state.venues.find((venue) => venue.id === venueId)?.name ?? "Unknown venue";
+}
+
+function samePpwWeek(left: PpwDate, right: PpwDate): boolean {
+  return left.year === right.year && left.week === right.week;
+}
+
+function lastResolvedShowForPromotion(
+  aggregate: ApplicationWorldAggregate,
+  promotionId: Id,
+): AlphaResolvedShowView | null {
+  const resolvedDate = aggregate.runtime.lastResolvedPpwDate;
+  if (!resolvedDate) return null;
+
+  const event = aggregate.state.events
+    .filter((candidate) => (
+      candidate.promotionId === promotionId
+      && candidate.status === "COMPLETED"
+      && samePpwWeek(candidate.date, resolvedDate)
+    ))
+    .sort((a, b) => b.date.day - a.date.day || b.id.localeCompare(a.id))[0];
+  if (!event) return null;
+
+  return {
+    eventId: event.id,
+    year: event.date.year,
+    week: event.date.week,
+    day: event.date.day,
+    marketName: marketName(aggregate, event.marketId),
+    venueName: venueName(aggregate, event.venueId),
+    attendance: event.attendance,
+    gateRevenue: event.gateRevenue,
+    totalCost: event.totalCost,
+    netResult: event.netResult,
+    matchCount: event.matchCount,
+    averageMatchRating: event.averageMatchRating,
+    bestMatchRating: event.bestMatchRating,
+    crowdResponse: event.crowdResponse,
+  };
 }
 
 export function buildAlphaPlayerWorldView(
@@ -99,6 +177,7 @@ export function buildAlphaPlayerWorldView(
       const reservationCount = aggregate.planning.showReservations.filter(
         (reservation) => reservation.promotionId === promotion.id,
       ).length;
+      const readiness = humanWeekReadiness(aggregate.state, promotion.id);
       return {
         promotionId: promotion.id,
         name: promotion.name,
@@ -113,6 +192,13 @@ export function buildAlphaPlayerWorldView(
         roster,
         planningDraftCount: workspace?.detailedShowDrafts.length ?? 0,
         reservationCount,
+        weekReadiness: {
+          status: readiness.status,
+          readyToFinish: readiness.readyToAdvance,
+          eventId: readiness.eventId,
+          staffHelpRequired: !readiness.readyToAdvance,
+        },
+        lastResolvedShow: lastResolvedShowForPromotion(aggregate, promotion.id),
       };
     })()
     : null;
@@ -144,6 +230,9 @@ export function buildAlphaPlayerWorldView(
       day: date.day,
       phase: aggregate.runtime.phase,
       revision: aggregate.runtime.revision,
+      lastResolvedPpwDate: aggregate.runtime.lastResolvedPpwDate
+        ? { ...aggregate.runtime.lastResolvedPpwDate }
+        : null,
     },
     player: {
       playerId: membership.playerId,
