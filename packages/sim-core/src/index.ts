@@ -11,6 +11,7 @@ export * from "./invariants.js";
 export * from "./ledger.js";
 export * from "./lifecycle.js";
 export * from "./matches.js";
+export * from "./morale.js";
 export * from "./reputation.js";
 export * from "./resolution.js";
 export * from "./rng.js";
