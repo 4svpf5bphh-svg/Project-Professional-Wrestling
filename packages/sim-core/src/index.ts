@@ -1,3 +1,4 @@
+export * from "./audience.js";
 export * from "./career.js";
 export * from "./clock.js";
 export * from "./competition.js";
