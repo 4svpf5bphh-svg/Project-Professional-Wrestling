@@ -2,7 +2,6 @@ import type {
   Contract,
   Id,
   Match,
-  Person,
   PpwDate,
   Promotion,
   WorldState,
@@ -374,8 +373,8 @@ function appendReservationExpiryLedger(
     payload: {
       reservationId: reservation.reservationId,
       sourceDraftId: reservation.sourceDraftId,
-      targetDate: reservation.targetDate,
-      reasons,
+      targetDate: `${reservation.targetDate.year}-W${reservation.targetDate.week}-D${reservation.targetDate.day}`,
+      reasons: reasons.join(","),
     },
   });
 }
