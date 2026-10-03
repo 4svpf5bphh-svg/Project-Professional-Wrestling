@@ -193,7 +193,7 @@ function talentEvidence(state: WorldState, promotion: Promotion): number {
   const continuity = clamp(100 - terminations * 18 - restructures * 8);
   const releasePenalty = terminations * 5 + restructures * 3;
   const raw = usage * 0.45 + renewalAcceptance * 0.3 + continuity * 0.25 - releasePenalty;
-  return round1(clamp(raw, 25, 95));
+  return round1(clamp(raw, 30, 90));
 }
 
 function majorEventScore(events: WrestlingEvent[]): number {
@@ -246,7 +246,7 @@ export function processPromotionStandingForWeek(state: WorldState): void {
 
     standing.fanReputation = blend(standing.fanReputation, fanScore, 0.35);
     standing.businessReputation = blend(standing.businessReputation, businessScore, 0.3);
-    standing.talentReputation = blend(standing.talentReputation, talentScore, 0.25);
+    standing.talentReputation = blend(standing.talentReputation, talentScore, 0.22);
     standing.prestige = blend(
       standing.prestige,
       prestigeScore,
