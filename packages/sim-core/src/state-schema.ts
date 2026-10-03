@@ -91,8 +91,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function validateMetadata(input: Record<string, unknown>): void {
   if (!isRecord(input.world)) throw new Error("persisted World state is missing world metadata");
   if (!isRecord(input.ruleset)) throw new Error("persisted World state is missing ruleset metadata");
-  const world = input.world as PersistedWorldStateV1["world"];
-  const ruleset = input.ruleset as PersistedWorldStateV1["ruleset"];
+  const world = input.world as unknown as PersistedWorldStateV1["world"];
+  const ruleset = input.ruleset as unknown as PersistedWorldStateV1["ruleset"];
   if (world.rulesetVersion !== ruleset.version) {
     throw new Error(`persisted World ruleset mismatch: world=${world.rulesetVersion}, state=${ruleset.version}`);
   }
