@@ -24,7 +24,8 @@
     "test:morale": "node dist/tests/run-morale-tests.js",
     "test:renewal-resistance": "node dist/tests/run-renewal-resistance-tests.js",
     "test:human-control": "node dist/tests/run-human-control-tests.js",
-    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience && npm run test:growth && npm run test:market-competition && npm run test:reputation && npm run test:talent-trust && npm run test:contract-trust && npm run test:morale && npm run test:renewal-resistance && npm run test:human-control",
+    "test:human-show": "node dist/tests/run-human-show-tests.js",
+    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience && npm run test:growth && npm run test:market-competition && npm run test:reputation && npm run test:talent-trust && npm run test:contract-trust && npm run test:morale && npm run test:renewal-resistance && npm run test:human-control && npm run test:human-show",
     "sim": "npm run build && node dist/apps/sim-cli/src/index.js"
   },
   "devDependencies": {
