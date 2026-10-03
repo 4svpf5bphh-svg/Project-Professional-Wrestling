@@ -52,6 +52,16 @@ export interface WorldSummary {
   tagMatches: number;
   averageMatchRating: number;
   fourStarMatches: number;
+  teams: number;
+  activeTeams: number;
+  championships: number;
+  activeChampionships: number;
+  championshipReigns: number;
+  activeReigns: number;
+  championshipContests: number;
+  championshipCoronations: number;
+  titleChanges: number;
+  successfulDefenses: number;
   injuries: number;
   activeInjuries: number;
   globalPromotion: string | null;
@@ -86,6 +96,11 @@ export function deterministicWorldHash(state: WorldState): string {
     ["matchParticipants", state.matchParticipants],
     ["injuries", state.injuries],
     ["workingChemistry", state.workingChemistry],
+    ["teams", state.teams ?? []],
+    ["teamMemberships", state.teamMemberships ?? []],
+    ["championships", state.championships ?? []],
+    ["championshipReigns", state.championshipReigns ?? []],
+    ["championshipContests", state.championshipContests ?? []],
     ["financialTransactions", state.financialTransactions],
     ["ledger", state.ledger],
   ];
@@ -123,6 +138,10 @@ export function summarizeWorld(state: WorldState): WorldSummary {
   const multiPromotionWrestlers = activePeople.filter((person) => new Set(activeContractsForPerson(state, person.id).map((contract) => contract.promotionId)).size > 1).length;
   const globalPromotion = state.promotions.find((p) => p.tier === "GLOBAL") ?? null;
   const completedEvents = state.events.filter((event) => event.status === "COMPLETED");
+  const teams = state.teams ?? [];
+  const championships = state.championships ?? [];
+  const reigns = state.championshipReigns ?? [];
+  const contests = state.championshipContests ?? [];
   const distressCounts: Record<FinancialDistressState, number> = {
     HEALTHY: 0,
     WATCH: 0,
@@ -183,6 +202,16 @@ export function summarizeWorld(state: WorldState): WorldSummary {
       return completed.length === 0 ? 0 : Math.round((completed.reduce((sum, match) => sum + match.criticalRatingStars, 0) / completed.length) * 100) / 100;
     })(),
     fourStarMatches: state.matches.filter((match) => match.status === "COMPLETED" && match.criticalRatingStars >= 4).length,
+    teams: teams.length,
+    activeTeams: teams.filter((team) => team.status === "ACTIVE").length,
+    championships: championships.length,
+    activeChampionships: championships.filter((championship) => championship.status === "ACTIVE").length,
+    championshipReigns: reigns.length,
+    activeReigns: reigns.filter((reign) => reign.status === "ACTIVE").length,
+    championshipContests: contests.length,
+    championshipCoronations: contests.filter((contest) => contest.previousHolderId === null).length,
+    titleChanges: contests.filter((contest) => contest.previousHolderId !== null && contest.titleChanged).length,
+    successfulDefenses: contests.filter((contest) => contest.previousHolderId !== null && !contest.titleChanged).length,
     injuries: state.injuries.length,
     activeInjuries: state.injuries.filter((injury) => injury.status === "ACTIVE").length,
     globalPromotion: globalPromotion?.name ?? null,
