@@ -102,7 +102,7 @@ export function selectNonTitleProgramme(
   rng: DeterministicRng,
 ): ProgrammeSelection | null {
   if (remaining.length < 2) return null;
-  if (!rng.chance(event.type === "MAJOR" ? 0.98 : 0.68)) return null;
+  if (!rng.chance(event.type === "MAJOR" ? 1 : 0.75)) return null;
   const peopleById = new Map(remaining.map((person) => [person.id, person]));
   const histories = buildRecentHistories(state, event, new Set(peopleById.keys()));
   const currentWeek = ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear);
