@@ -2,7 +2,9 @@
 
 PPW is a persistent asynchronous wrestling-management living-world simulation.
 
-The deterministic **SIM-0** headless foundation is now released through **SIM-0.0.11**. The next milestone is **ALPHA-1A**, where one human-controlled Independent promotion enters the same living World as the AI promotions.
+The deterministic **SIM-0** headless foundation is now released through **SIM-0.0.11**. Development has moved into **ALPHA-1A**, where one human-controlled Independent promotion enters the same living World as the AI promotions.
+
+Before persistence/API/PWA work, ALPHA-1 is governed by the architecture contract in [`docs/ALPHA-1-ARCHITECTURE-REVIEW.md`](docs/ALPHA-1-ARCHITECTURE-REVIEW.md). The simulator is being preserved; the next work hardens ownership, World locking, editable planning, lifecycle parity, persistence, privacy/read models and recovery around it so ALPHA-1B can later add a second human without a backend rewrite.
 
 ## Released baseline — SIM-0.0.11
 
@@ -31,7 +33,7 @@ The simulator can now:
 - reproduce the same resolved World from the same seed;
 - validate the complete simulation through GitHub Actions, including a standard-seed 100-PPW-Year run.
 
-See [`docs/SIM-0.0.10.md`](docs/SIM-0.0.10.md) and [`docs/SIM-0.0.11.md`](docs/SIM-0.0.11.md) for the latest milestone notes.
+See [`docs/SIM-0.0.10.md`](docs/SIM-0.0.10.md) and [`docs/SIM-0.0.11.md`](docs/SIM-0.0.11.md) for the latest released SIM milestone notes.
 
 ## Current long-world proof
 
@@ -49,20 +51,39 @@ At Year 101 the World contains:
 
 Deterministic release hashes are `6a5dcd3b` after 10 PPW Years and `7662b626` after 100 PPW Years. The optimized SIM-0.0.11 century Actions step completed in roughly **86 seconds** on its release-validation runner after the weekly Morale contract lookup was made incremental.
 
-The complete SIM-0.0.11 behavioural suite contains **85 tests**, all passing.
+## ALPHA-1A — current headless human lifecycle
 
-## Next milestone — ALPHA-1A
+The ALPHA branch now proves the human command path through the same living World:
 
-ALPHA-1A turns the proven World into the first playable PPW slice:
+- claim/control one Independent promotion for the one-human ALPHA-1A test seat;
+- submit exact player contract offers through the normal wrestler decision system;
+- prepare show logistics, venue, market, ticket strategy and contracted participants;
+- manually book singles/tag match cards, sides, intended winners, match intent and length;
+- explicitly designate promotion-owned singles/tag championship matches;
+- evaluate mandatory-show readiness;
+- run fully prepared work unchanged;
+- invoke Routine Continuity at the weekly lock when required show/card work is incomplete;
+- restore human control immediately after any staff completion;
+- resolve all consequences through the normal deterministic World engine.
 
-- one human promoter controlling one Independent promotion;
-- AI promotions continuing to operate in the same World;
-- founding/claiming the player promotion and managing its roster/contracts;
-- player-facing show preparation and booking while preserving the existing match/event simulation;
-- advanced booking and Routine Continuity so a prepared show can run normally during a real-life absence;
-- mandatory-show fallback only when required work was left unresolved;
-- finances, championships, basic tag wrestling, injuries, markets, opportunities, attention and history exposed through a player-facing application;
-- server-authoritative persistence so ALPHA-1B can later add a second human to the same existing World rather than rebuilding the game around multiplayer.
+This is still a **headless application boundary**, not yet the user-facing PWA. The architecture review intentionally stops general gameplay expansion here until the pre-UI gates are hardened.
+
+## ALPHA-1 direction
+
+ALPHA-1A will turn the proven human lifecycle into one real persistent, server-authoritative World with:
+
+- one authenticated human player and AI promotions;
+- 1 real day = 1 PPW week;
+- first-class player/promotion ownership;
+- editable advance planning;
+- human/AI lifecycle parity;
+- Routine Continuity and basic long-absence Stewardship;
+- relational persistence, migrations, idempotent commands and recoverable weekly resolution;
+- privacy-safe read models;
+- Attention and basic Opportunities;
+- mobile-first installable PWA.
+
+ALPHA-1B then adds a late-joining second human to the **same existing World** using World Entry Health and the same ownership/lock/persistence architecture.
 
 ## Local commands
 
@@ -73,7 +94,7 @@ npm run sim -- --seed 20261002 --weeks 520
 npm run sim -- --seed 20261002 --weeks 5200
 ```
 
-The simulator remains intentionally dependency-light at the SIM layer. Persistence, API and PWA concerns are added around the simulation core during ALPHA-1A rather than coupling them into deterministic resolution logic.
+The simulator remains intentionally dependency-light at the SIM layer. Persistence, API and PWA concerns are added around the simulation core rather than coupled into deterministic wrestling resolution logic.
 
 ## Architectural principle
 
