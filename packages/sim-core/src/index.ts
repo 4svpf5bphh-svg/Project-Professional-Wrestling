@@ -7,6 +7,7 @@ export * from "./events.js";
 export * from "./finance.js";
 export * from "./genesis.js";
 export * from "./growth.js";
+export * from "./human-contracts.js";
 export * from "./human-control.js";
 export * from "./invariants.js";
 export * from "./ledger.js";
