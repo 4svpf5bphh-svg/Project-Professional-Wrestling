@@ -395,6 +395,14 @@ export interface ChampionshipContest {
   titleChanged: boolean;
 }
 
+export interface ChampionshipMatchBooking {
+  worldId: Id;
+  promotionId: Id;
+  eventId: Id;
+  matchId: Id;
+  championshipId: Id;
+}
+
 export interface FinancialTransaction {
   id: Id;
   worldId: Id;
@@ -440,6 +448,7 @@ export interface WorldState {
   championships?: Championship[];
   championshipReigns?: ChampionshipReign[];
   championshipContests?: ChampionshipContest[];
+  championshipMatchBookings?: ChampionshipMatchBooking[];
   financialTransactions: FinancialTransaction[];
   ledger: LedgerEvent[];
 }
