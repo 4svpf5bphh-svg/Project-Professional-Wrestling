@@ -1,5 +1,6 @@
 import type { ChampionshipReign, Team, WorldState } from "../../domain/src/types.js";
 import { ppwDateToWeekIndex } from "./clock.js";
+import { LedgerWriter } from "./ledger.js";
 
 interface TeamIndex {
   syncedTeams: number;
@@ -86,7 +87,47 @@ export function indexedActiveTeamIdsForPerson(state: WorldState, personId: strin
   return [...(ensureTeamIndex(state).activeTeamsByPerson.get(personId) ?? new Set<string>())].sort();
 }
 
+function retireDisplacedPrimaryTeams(state: WorldState, newTeam: Team): void {
+  const memberships = state.teamMemberships ?? [];
+  const newMembers = memberships
+    .filter((membership) => membership.teamId === newTeam.id && membership.active)
+    .map((membership) => membership.personId);
+  if (newMembers.length !== 2) return;
+
+  const memberSet = new Set(newMembers);
+  const displacedTeamIds = new Set(
+    memberships
+      .filter((membership) => membership.active && membership.teamId !== newTeam.id && memberSet.has(membership.personId))
+      .map((membership) => membership.teamId),
+  );
+  if (displacedTeamIds.size === 0) return;
+
+  const transitionDate = { ...newTeam.formedDate };
+  const ledger = new LedgerWriter(state.world.id, state.ledger);
+  for (const teamId of displacedTeamIds) {
+    const team = (state.teams ?? []).find((candidate) => candidate.id === teamId);
+    if (!team || team.status !== "ACTIVE") continue;
+    team.status = "DISBANDED";
+    team.disbandedDate = transitionDate;
+    for (const membership of memberships) {
+      if (membership.teamId !== teamId || !membership.active) continue;
+      membership.active = false;
+      membership.leftDate = transitionDate;
+    }
+    ledger.append({
+      date: transitionDate,
+      type: "TAG_TEAM_DISBANDED",
+      significance: "ROUTINE",
+      entityIds: [team.id, ...newMembers],
+      payload: { reason: "member formed a new primary tag team", replacementTeamId: newTeam.id },
+    });
+  }
+}
+
 export function indexNewTeamState(state: WorldState): void {
+  const newestTeam = state.teams?.[state.teams.length - 1];
+  if (newestTeam?.status === "ACTIVE") retireDisplacedPrimaryTeams(state, newestTeam);
+  teamIndexes.delete(state);
   ensureTeamIndex(state);
 }
 
