@@ -1,4 +1,5 @@
 import type { MatchType, Person, WorldState, WrestlingEvent, WorkingChemistry } from "../../domain/src/types.js";
+import { selectNonTitleProgramme } from "./booking-programmes.js";
 import { ppwDateToWeekIndex } from "./clock.js";
 import { DeterministicRng } from "./rng.js";
 
@@ -14,6 +15,11 @@ function pairKey(a: string, b: string): string {
 
 function pushScore(person: Person): number {
   return person.momentum * 0.4 + person.popularity * 0.3 + person.recognition * 0.2 + person.skills.presentation * 0.1;
+}
+
+function cardPushScore(card: BookingCardMatch): number {
+  const people = [...card.sideA, ...card.sideB];
+  return people.reduce((sum, person) => sum + pushScore(person), 0) / people.length;
 }
 
 function activePrimaryPartners(state: WorldState): Map<string, string> {
@@ -252,8 +258,10 @@ export function buildBookingCard(
 
   const singlesTitle = reserveSinglesTitleMatch(state, event, remaining);
   const tagTitle = reserveTagTitleMatch(state, event, remaining, chemistryByPair);
+  const programme = selectNonTitleProgramme(state, event, remaining, rng);
+  if (programme) removePeople(remaining, [programme.sideA[0], programme.sideB[0]]);
 
-  if (!singlesTitle && !tagTitle) {
+  if (!singlesTitle && !tagTitle && !programme) {
     if (remaining.length >= 4 && event.type === "MAJOR" && rng.chance(0.3)) {
       const tag = takeTagCard(remaining, primaryPartners, chemistryByPair);
       if (tag) cards.push(tag);
@@ -268,13 +276,15 @@ export function buildBookingCard(
     if (makeTag) {
       const tag = takeTagCard(remaining, primaryPartners, chemistryByPair);
       if (tag) {
-        cards.unshift(tag);
+        cards.push(tag);
         continue;
       }
     }
-    cards.unshift({ type: "SINGLES", sideA: [remaining.shift()!], sideB: [remaining.shift()!] });
+    cards.push({ type: "SINGLES", sideA: [remaining.shift()!], sideB: [remaining.shift()!] });
   }
 
+  cards.sort((a, b) => cardPushScore(a) - cardPushScore(b));
+  if (programme) cards.push({ type: "SINGLES", sideA: programme.sideA, sideB: programme.sideB });
   if (tagTitle) cards.push(tagTitle);
   if (singlesTitle) cards.push(singlesTitle);
   return cards;
