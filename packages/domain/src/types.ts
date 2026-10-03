@@ -36,6 +36,12 @@ export type MatchSide = "A" | "B";
 export type InjurySeverity = "MINOR" | "MODERATE" | "MAJOR" | "SEVERE";
 export type InjuryStatus = "ACTIVE" | "RECOVERED";
 export type ChemistryContext = "SINGLES" | "TAG";
+export type TeamStatus = "ACTIVE" | "DISBANDED";
+export type ChampionshipDivision = "SINGLES" | "TAG";
+export type ChampionshipStatus = "ACTIVE" | "INACTIVE";
+export type ChampionshipHolderType = "PERSON" | "TEAM";
+export type ChampionshipReignStatus = "ACTIVE" | "ENDED";
+export type ChampionshipReignEndReason = "LOST" | "VACATED" | "PROMOTION_DORMANT" | "CONTRACT_ENDED" | "RETIRED" | "TEAM_INACTIVE";
 
 export interface PpwDate {
   year: number;
@@ -70,6 +76,9 @@ export interface Ruleset {
   survivalMinimumRosterRatio: number;
   survivalEmergencyRecruitmentPerCycle: number;
   survivalRestructureIntervalWeeks: number;
+  teamRecognitionMatches: number;
+  singlesTitleDefenseIntervalWeeks: number;
+  tagTitleDefenseIntervalWeeks: number;
 }
 
 export interface World {
@@ -318,6 +327,64 @@ export interface WorkingChemistry {
   matchesTogether: number;
 }
 
+export interface Team {
+  id: Id;
+  worldId: Id;
+  name: string;
+  status: TeamStatus;
+  formedDate: PpwDate;
+  disbandedDate: PpwDate | null;
+}
+
+export interface TeamMembership {
+  id: Id;
+  worldId: Id;
+  teamId: Id;
+  personId: Id;
+  joinedDate: PpwDate;
+  leftDate: PpwDate | null;
+  active: boolean;
+}
+
+export interface Championship {
+  id: Id;
+  worldId: Id;
+  promotionId: Id;
+  name: string;
+  division: ChampionshipDivision;
+  status: ChampionshipStatus;
+  prestige: number;
+  currentReignId: Id | null;
+  createdDate: PpwDate;
+}
+
+export interface ChampionshipReign {
+  id: Id;
+  worldId: Id;
+  championshipId: Id;
+  holderType: ChampionshipHolderType;
+  holderId: Id;
+  status: ChampionshipReignStatus;
+  startDate: PpwDate;
+  endDate: PpwDate | null;
+  wonMatchId: Id | null;
+  lostMatchId: Id | null;
+  defenses: number;
+  endReason: ChampionshipReignEndReason | null;
+}
+
+export interface ChampionshipContest {
+  id: Id;
+  worldId: Id;
+  championshipId: Id;
+  matchId: Id;
+  eventId: Id;
+  date: PpwDate;
+  previousHolderId: Id | null;
+  winnerHolderId: Id;
+  titleChanged: boolean;
+}
+
 export interface FinancialTransaction {
   id: Id;
   worldId: Id;
@@ -357,6 +424,11 @@ export interface WorldState {
   matchParticipants: MatchParticipant[];
   injuries: Injury[];
   workingChemistry: WorkingChemistry[];
+  teams?: Team[];
+  teamMemberships?: TeamMembership[];
+  championships?: Championship[];
+  championshipReigns?: ChampionshipReign[];
+  championshipContests?: ChampionshipContest[];
   financialTransactions: FinancialTransaction[];
   ledger: LedgerEvent[];
 }
