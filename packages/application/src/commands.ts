@@ -20,7 +20,9 @@ export type ApplicationCommandType =
   | "CLAIM_INDEPENDENT_PROMOTION"
   | "SUBMIT_CONTRACT_OFFER"
   | "UPSERT_DETAILED_SHOW_DRAFT"
-  | "REMOVE_DETAILED_SHOW_DRAFT";
+  | "REMOVE_DETAILED_SHOW_DRAFT"
+  | "RESERVE_DETAILED_SHOW_DRAFT"
+  | "RELEASE_DETAILED_SHOW_RESERVATION";
 
 export interface ApplicationCommandEnvelope<TPayload> {
   requestId: string;
