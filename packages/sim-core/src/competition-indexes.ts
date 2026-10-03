@@ -1,0 +1,121 @@
+import type { ChampionshipReign, Team, WorldState } from "../../domain/src/types.js";
+import { ppwDateToWeekIndex } from "./clock.js";
+
+interface TeamIndex {
+  syncedTeams: number;
+  syncedMemberships: number;
+  byId: Map<string, Team>;
+  activeMembersByTeam: Map<string, string[]>;
+  activeTeamByPair: Map<string, Team>;
+}
+
+interface ChampionshipIndex {
+  syncedReigns: number;
+  syncedContests: number;
+  reignById: Map<string, ChampionshipReign>;
+  lastContestWeekByChampionship: Map<string, number>;
+}
+
+const teamIndexes = new WeakMap<WorldState, TeamIndex>();
+const championshipIndexes = new WeakMap<WorldState, ChampionshipIndex>();
+
+function pairKey(a: string, b: string): string {
+  return a < b ? `${a}:${b}` : `${b}:${a}`;
+}
+
+function ensureTeamIndex(state: WorldState): TeamIndex {
+  const teams = state.teams ?? [];
+  const memberships = state.teamMemberships ?? [];
+  let index = teamIndexes.get(state);
+  if (!index || index.syncedTeams > teams.length || index.syncedMemberships > memberships.length) {
+    index = {
+      syncedTeams: 0,
+      syncedMemberships: 0,
+      byId: new Map(),
+      activeMembersByTeam: new Map(),
+      activeTeamByPair: new Map(),
+    };
+    teamIndexes.set(state, index);
+  }
+
+  for (let i = index.syncedTeams; i < teams.length; i += 1) {
+    const team = teams[i]!;
+    index.byId.set(team.id, team);
+    if (!index.activeMembersByTeam.has(team.id)) index.activeMembersByTeam.set(team.id, []);
+  }
+  index.syncedTeams = teams.length;
+
+  const affectedTeams = new Set<string>();
+  for (let i = index.syncedMemberships; i < memberships.length; i += 1) {
+    const membership = memberships[i]!;
+    if (!membership.active) continue;
+    const members = index.activeMembersByTeam.get(membership.teamId) ?? [];
+    if (!members.includes(membership.personId)) members.push(membership.personId);
+    members.sort();
+    index.activeMembersByTeam.set(membership.teamId, members);
+    affectedTeams.add(membership.teamId);
+  }
+  index.syncedMemberships = memberships.length;
+
+  for (const teamId of affectedTeams) {
+    const team = index.byId.get(teamId);
+    const members = index.activeMembersByTeam.get(teamId) ?? [];
+    if (team?.status === "ACTIVE" && members.length === 2) index.activeTeamByPair.set(pairKey(members[0]!, members[1]!), team);
+  }
+  return index;
+}
+
+export function indexedTeamById(state: WorldState, teamId: string): Team | undefined {
+  return ensureTeamIndex(state).byId.get(teamId);
+}
+
+export function indexedActiveTeamMemberIds(state: WorldState, teamId: string): string[] {
+  return [...(ensureTeamIndex(state).activeMembersByTeam.get(teamId) ?? [])];
+}
+
+export function indexedActiveTeamForPair(state: WorldState, personAId: string, personBId: string): Team | undefined {
+  return ensureTeamIndex(state).activeTeamByPair.get(pairKey(personAId, personBId));
+}
+
+export function indexNewTeamState(state: WorldState): void {
+  ensureTeamIndex(state);
+}
+
+export function indexTeamDisbanded(state: WorldState, teamId: string): void {
+  const index = ensureTeamIndex(state);
+  const members = index.activeMembersByTeam.get(teamId) ?? [];
+  if (members.length === 2) index.activeTeamByPair.delete(pairKey(members[0]!, members[1]!));
+  index.activeMembersByTeam.set(teamId, []);
+}
+
+function ensureChampionshipIndex(state: WorldState): ChampionshipIndex {
+  const reigns = state.championshipReigns ?? [];
+  const contests = state.championshipContests ?? [];
+  let index = championshipIndexes.get(state);
+  if (!index || index.syncedReigns > reigns.length || index.syncedContests > contests.length) {
+    index = { syncedReigns: 0, syncedContests: 0, reignById: new Map(), lastContestWeekByChampionship: new Map() };
+    championshipIndexes.set(state, index);
+  }
+  for (let i = index.syncedReigns; i < reigns.length; i += 1) {
+    const reign = reigns[i]!;
+    index.reignById.set(reign.id, reign);
+  }
+  index.syncedReigns = reigns.length;
+  for (let i = index.syncedContests; i < contests.length; i += 1) {
+    const contest = contests[i]!;
+    index.lastContestWeekByChampionship.set(
+      contest.championshipId,
+      ppwDateToWeekIndex(contest.date, state.ruleset.weeksPerYear),
+    );
+  }
+  index.syncedContests = contests.length;
+  return index;
+}
+
+export function indexedReignById(state: WorldState, reignId: string): ChampionshipReign | undefined {
+  return ensureChampionshipIndex(state).reignById.get(reignId);
+}
+
+export function indexedLastContestWeek(state: WorldState, championshipId: string): number | null {
+  return ensureChampionshipIndex(state).lastContestWeekByChampionship.get(championshipId) ?? null;
+}
