@@ -8,8 +8,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "clean": "rm -rf dist",
+    "clean": "rm -rf dist apps/web/.next",
     "build": "tsc -p tsconfig.json",
+    "web:dev": "next dev apps/web",
+    "web:build": "next build apps/web",
     "test:core": "node dist/tests/run-tests.js",
     "test:lifecycle": "node dist/tests/run-lifecycle-tests.js",
     "test:competition": "node dist/tests/run-competition-tests.js",
@@ -40,14 +42,21 @@
     "test:application-materialization": "node dist/tests/run-application-materialization-tests.js",
     "test:application-planning-status": "node dist/tests/run-application-planning-status-tests.js",
     "test:application-planning-compat": "node dist/tests/run-application-planning-compat-tests.js",
+    "test:web-alpha": "node dist/tests/run-web-alpha-service-tests.js",
     "test:postgres-repository": "npm run build && node dist/tests/run-postgres-repository-tests.js && node dist/tests/run-postgres-reservation-tests.js && node dist/tests/run-postgres-materialization-tests.js",
-    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience && npm run test:growth && npm run test:market-competition && npm run test:reputation && npm run test:talent-trust && npm run test:contract-trust && npm run test:morale && npm run test:renewal-resistance && npm run test:human-control && npm run test:human-show && npm run test:human-contracts && npm run test:human-booking && npm run test:human-championships && npm run test:human-routine && npm run test:state-schema && npm run test:id-allocation && npm run test:application-ownership && npm run test:application-commands && npm run test:application-runtime && npm run test:application-repository && npm run test:application-planning && npm run test:application-reservations && npm run test:application-materialization && npm run test:application-planning-status && npm run test:application-planning-compat",
+    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience && npm run test:growth && npm run test:market-competition && npm run test:reputation && npm run test:talent-trust && npm run test:contract-trust && npm run test:morale && npm run test:renewal-resistance && npm run test:human-control && npm run test:human-show && npm run test:human-contracts && npm run test:human-booking && npm run test:human-championships && npm run test:human-routine && npm run test:state-schema && npm run test:id-allocation && npm run test:application-ownership && npm run test:application-commands && npm run test:application-runtime && npm run test:application-repository && npm run test:application-planning && npm run test:application-reservations && npm run test:application-materialization && npm run test:application-planning-status && npm run test:application-planning-compat && npm run test:web-alpha",
     "sim": "npm run build && node dist/apps/sim-cli/src/index.js"
   },
   "dependencies": {
-    "postgres": "^3.4.7"
+    "next": "16.3.8",
+    "postgres": "^3.4.7",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
     "typescript": "^5.9.3"
   }
 }

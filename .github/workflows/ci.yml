@@ -30,6 +30,8 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgres://ppw:ppw@127.0.0.1:5432/ppw_test
+      PPW_ALPHA_PLAYER_ID: ci-alpha-player
+      PPW_ALPHA_WORLD_SEED: 20261002
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,6 +43,8 @@ jobs:
         run: npm install
       - name: Run full test suite
         run: npm test
+      - name: Build Alpha web app
+        run: npm run web:build
       - name: Run PostgreSQL repository integration tests
         run: npm run test:postgres-repository
       - name: Run 10-year standard-seed smoke simulation
