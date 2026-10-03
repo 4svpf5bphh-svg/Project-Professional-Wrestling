@@ -18,7 +18,8 @@
     "test:audience": "node dist/tests/run-audience-tests.js",
     "test:growth": "node dist/tests/run-growth-tests.js",
     "test:market-competition": "node dist/tests/run-market-competition-tests.js",
-    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience && npm run test:growth && npm run test:market-competition",
+    "test:reputation": "node dist/tests/run-reputation-tests.js",
+    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience && npm run test:growth && npm run test:market-competition && npm run test:reputation",
     "sim": "npm run build && node dist/apps/sim-cli/src/index.js"
   },
   "devDependencies": {
