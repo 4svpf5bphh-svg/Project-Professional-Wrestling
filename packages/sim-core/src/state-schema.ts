@@ -159,6 +159,42 @@ function migrateV1ToV2(snapshot: PersistedWorldStateV1): PersistedWorldStateV2 {
   };
 }
 
+function validateChampionshipMatchBookings(snapshot: PersistedWorldStateV2): void {
+  const promotionIds = new Set(snapshot.promotions.map((promotion) => promotion.id));
+  const eventById = new Map(snapshot.events.map((event) => [event.id, event]));
+  const matchById = new Map(snapshot.matches.map((match) => [match.id, match]));
+  const championshipById = new Map(snapshot.championships.map((championship) => [championship.id, championship]));
+  const championshipKeys = new Set<string>();
+  const matchKeys = new Set<string>();
+
+  for (const booking of snapshot.championshipMatchBookings) {
+    if (booking.worldId !== snapshot.world.id) throw new Error("persisted championship booking crosses World boundary");
+    if (!promotionIds.has(booking.promotionId)) throw new Error("persisted championship booking references missing promotion");
+
+    const event = eventById.get(booking.eventId);
+    if (!event || event.status !== "SCHEDULED") throw new Error("persisted championship booking requires a scheduled event");
+    if (event.promotionId !== booking.promotionId) throw new Error("persisted championship booking event belongs to another promotion");
+
+    const match = matchById.get(booking.matchId);
+    if (!match || match.status !== "SCHEDULED") throw new Error("persisted championship booking requires a scheduled match");
+    if (match.eventId !== event.id || match.promotionId !== booking.promotionId) {
+      throw new Error("persisted championship booking match does not belong to its event and promotion");
+    }
+
+    const championship = championshipById.get(booking.championshipId);
+    if (!championship || championship.promotionId !== booking.promotionId) {
+      throw new Error("persisted championship booking title belongs to another promotion");
+    }
+
+    const championshipKey = `${booking.eventId}:${booking.championshipId}`;
+    const matchKey = `${booking.eventId}:${booking.matchId}`;
+    if (championshipKeys.has(championshipKey)) throw new Error("persisted event double-books one championship");
+    if (matchKeys.has(matchKey)) throw new Error("persisted match is assigned to multiple championships");
+    championshipKeys.add(championshipKey);
+    matchKeys.add(matchKey);
+  }
+}
+
 /**
  * Convert live simulation state into the current persistence schema without
  * mutating the live World. Persistence metadata is intentionally outside the
@@ -198,6 +234,7 @@ export function createPersistedWorldState(state: WorldState): PersistedWorldStat
 }
 
 function restoreV2(snapshot: PersistedWorldStateV2): WorldState {
+  validateChampionshipMatchBookings(snapshot);
   const {
     stateSchemaVersion: _stateSchemaVersion,
     promotionTalentTrust,
