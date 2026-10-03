@@ -1,4 +1,13 @@
-import type { Contract, Id, Match, MatchParticipant, WorldState } from "../../domain/src/types.js";
+import type {
+  ChampionshipContest,
+  ChemistryContext,
+  Contract,
+  Id,
+  Match,
+  MatchParticipant,
+  WorkingChemistry,
+  WorldState,
+} from "../../domain/src/types.js";
 import { ppwDateToWeekIndex } from "./clock.js";
 
 interface ContractIndex {
@@ -21,9 +30,17 @@ interface MatchHistoryIndex {
   participantsByMatch: Map<Id, MatchParticipant[]>;
 }
 
+interface BookingHistoryIndex {
+  syncedContests: number;
+  syncedChemistry: number;
+  lastContestByChampionship: Map<Id, ChampionshipContest>;
+  chemistryByPair: Map<string, WorkingChemistry>;
+}
+
 const contractIndexes = new WeakMap<WorldState, ContractIndex>();
 const personIndexes = new WeakMap<WorldState, PersonIndex>();
 const matchHistoryIndexes = new WeakMap<WorldState, MatchHistoryIndex>();
+const bookingHistoryIndexes = new WeakMap<WorldState, BookingHistoryIndex>();
 
 function ensureContractIndex(state: WorldState): ContractIndex {
   let index = contractIndexes.get(state);
@@ -121,4 +138,53 @@ export function matchesForEvent(state: WorldState, eventId: Id): readonly Match[
 
 export function participantsForMatch(state: WorldState, matchId: Id): readonly MatchParticipant[] {
   return ensureMatchHistoryIndex(state).participantsByMatch.get(matchId) ?? [];
+}
+
+function chemistryKey(personAId: Id, personBId: Id, context: ChemistryContext): string {
+  const [a, b] = personAId < personBId ? [personAId, personBId] : [personBId, personAId];
+  return `${a}:${b}:${context}`;
+}
+
+function ensureBookingHistoryIndex(state: WorldState): BookingHistoryIndex {
+  const contests = state.championshipContests ?? [];
+  let index = bookingHistoryIndexes.get(state);
+  if (
+    !index
+    || index.syncedContests > contests.length
+    || index.syncedChemistry > state.workingChemistry.length
+  ) {
+    index = {
+      syncedContests: 0,
+      syncedChemistry: 0,
+      lastContestByChampionship: new Map(),
+      chemistryByPair: new Map(),
+    };
+    bookingHistoryIndexes.set(state, index);
+  }
+
+  for (let i = index.syncedContests; i < contests.length; i += 1) {
+    const contest = contests[i]!;
+    index.lastContestByChampionship.set(contest.championshipId, contest);
+  }
+  index.syncedContests = contests.length;
+
+  for (let i = index.syncedChemistry; i < state.workingChemistry.length; i += 1) {
+    const chemistry = state.workingChemistry[i]!;
+    index.chemistryByPair.set(chemistryKey(chemistry.personAId, chemistry.personBId, chemistry.context), chemistry);
+  }
+  index.syncedChemistry = state.workingChemistry.length;
+  return index;
+}
+
+export function lastContestForChampionship(state: WorldState, championshipId: Id): ChampionshipContest | null {
+  return ensureBookingHistoryIndex(state).lastContestByChampionship.get(championshipId) ?? null;
+}
+
+export function workingChemistryForPair(
+  state: WorldState,
+  personAId: Id,
+  personBId: Id,
+  context: ChemistryContext,
+): WorkingChemistry | undefined {
+  return ensureBookingHistoryIndex(state).chemistryByPair.get(chemistryKey(personAId, personBId, context));
 }
