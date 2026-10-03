@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - "sim-*"
+      - "alpha-*"
   pull_request:
     branches:
       - main
