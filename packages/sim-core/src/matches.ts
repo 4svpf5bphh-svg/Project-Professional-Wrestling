@@ -13,6 +13,7 @@ import type {
   WorkingChemistry,
 } from "../../domain/src/types.js";
 import { applyMatchLoad, createInjury } from "./career.js";
+import { buildBookingCard } from "./booking.js";
 import { LedgerWriter } from "./ledger.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 
@@ -89,9 +90,21 @@ function pushScore(person: Person): number {
   return person.momentum * 0.4 + person.popularity * 0.3 + person.recognition * 0.2 + person.skills.presentation * 0.1;
 }
 
+function tagSideContinuity(state: WorldState, side: Person[]): number {
+  if (side.length !== 2) return 0;
+  const [left, right] = pairKey(side[0]!.id, side[1]!.id);
+  const chemistry = state.workingChemistry.find((record) => record.context === "TAG" && record.personAId === left && record.personBId === right);
+  const activeTeam = (state.teams ?? []).some((team) => {
+    if (team.status !== "ACTIVE") return false;
+    const members = (state.teamMemberships ?? []).filter((membership) => membership.active && membership.teamId === team.id).map((membership) => membership.personId).sort();
+    return members.length === 2 && members[0] === left && members[1] === right;
+  });
+  return (activeTeam ? 8 : 0) + Math.min(6, (chemistry?.matchesTogether ?? 0) * 0.3) + Math.min(2, (chemistry?.familiarity ?? 0) / 50);
+}
+
 function chooseWinnerSide(sideA: Person[], sideB: Person[], state: WorldState, matchId: string): MatchSide {
-  const a = sideA.reduce((sum, person) => sum + pushScore(person), 0) / sideA.length;
-  const b = sideB.reduce((sum, person) => sum + pushScore(person), 0) / sideB.length;
+  const a = sideA.reduce((sum, person) => sum + pushScore(person), 0) / sideA.length + tagSideContinuity(state, sideA);
+  const b = sideB.reduce((sum, person) => sum + pushScore(person), 0) / sideB.length + tagSideContinuity(state, sideB);
   const rng = new DeterministicRng(deterministicSeedFromText(`${state.world.seed}:${matchId}:winner`));
   const adjustedA = a + rng.float(-7, 7);
   const adjustedB = b + rng.float(-7, 7);
@@ -134,18 +147,8 @@ function buildEventCard(state: WorldState, event: WrestlingEvent, appearances: S
   const ranked = appearances.map((appearance) => peopleById.get(appearance.personId))
     .filter((person): person is Person => Boolean(person) && person!.status === "ACTIVE")
     .sort((a, b) => (b.recognition + b.popularity + b.momentum + b.skills.matchCraft) - (a.recognition + a.popularity + a.momentum + a.skills.matchCraft) || a.id.localeCompare(b.id));
-  const cards: { type: MatchType; sideA: Person[]; sideB: Person[] }[] = [];
-  const remaining = [...ranked];
   const rng = new DeterministicRng(deterministicSeedFromText(`${state.world.seed}:${event.id}:card`));
-  if (remaining.length >= 4 && event.type === "MAJOR" && rng.chance(0.3)) {
-    const top = remaining.splice(0, 4); cards.push({ type: "TAG", sideA: [top[0]!, top[3]!], sideB: [top[1]!, top[2]!] });
-  } else if (remaining.length >= 2) cards.push({ type: "SINGLES", sideA: [remaining.shift()!], sideB: [remaining.shift()!] });
-  while (remaining.length >= 2) {
-    const canTag = remaining.length >= 4;
-    const makeTag = canTag && rng.chance(event.type === "MAJOR" ? 0.36 : 0.28);
-    if (makeTag) { const group = remaining.splice(0, 4); cards.unshift({ type: "TAG", sideA: [group[0]!, group[3]!], sideB: [group[1]!, group[2]!] }); }
-    else cards.unshift({ type: "SINGLES", sideA: [remaining.shift()!], sideB: [remaining.shift()!] });
-  }
+  const cards = buildBookingCard(state, event, ranked, rng);
   const total = cards.length;
   return cards.map((card, index) => makeMatch(state, event, index + 1, total, card.type, card.sideA, card.sideB));
 }
