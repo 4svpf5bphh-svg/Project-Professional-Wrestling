@@ -1,6 +1,6 @@
 {
   "name": "project-professional-wrestling",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "private": true,
   "description": "PPW SIM-0 headless persistent wrestling world simulation",
   "type": "module",
@@ -12,7 +12,8 @@
     "build": "tsc -p tsconfig.json",
     "test:core": "node dist/tests/run-tests.js",
     "test:lifecycle": "node dist/tests/run-lifecycle-tests.js",
-    "test": "npm run build && npm run test:core && npm run test:lifecycle",
+    "test:competition": "node dist/tests/run-competition-tests.js",
+    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition",
     "sim": "npm run build && node dist/apps/sim-cli/src/index.js"
   },
   "devDependencies": {

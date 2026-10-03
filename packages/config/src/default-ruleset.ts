@@ -1,7 +1,7 @@
 import type { Ruleset } from "../../domain/src/types.js";
 
 export const DEFAULT_RULESET: Ruleset = {
-  version: "sim0.0.7",
+  version: "sim0.0.8",
   weeksPerYear: 52,
   markets: 20,
   promotions: 9,
@@ -27,4 +27,7 @@ export const DEFAULT_RULESET: Ruleset = {
   survivalMinimumRosterRatio: 0.35,
   survivalEmergencyRecruitmentPerCycle: 2,
   survivalRestructureIntervalWeeks: 12,
+  teamRecognitionMatches: 20,
+  singlesTitleDefenseIntervalWeeks: 8,
+  tagTitleDefenseIntervalWeeks: 10,
 };

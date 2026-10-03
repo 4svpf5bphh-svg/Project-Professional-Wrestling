@@ -1,6 +1,7 @@
 import type { WorldState } from "../../domain/src/types.js";
 import { advanceWeek } from "./clock.js";
 import { processCareerProgressionForWeek, recoverWrestlersForNewWeek } from "./career.js";
+import { maintainChampionshipsForWeek, processCompetitionForWeek } from "./competition.js";
 import { expireContracts, generateAiContractOffers, resolveContractOffers } from "./contracts.js";
 import { planAndResolveWorldEvents } from "./events.js";
 import { settleWorldFinances } from "./finance.js";
@@ -9,9 +10,11 @@ import { processPromotionSurvivalForWeek } from "./lifecycle.js";
 export function resolveWorldWeek(state: WorldState): void {
   recoverWrestlersForNewWeek(state);
   expireContracts(state);
+  maintainChampionshipsForWeek(state);
   generateAiContractOffers(state);
   resolveContractOffers(state);
   planAndResolveWorldEvents(state);
+  processCompetitionForWeek(state);
   settleWorldFinances(state);
   processPromotionSurvivalForWeek(state);
   processCareerProgressionForWeek(state);

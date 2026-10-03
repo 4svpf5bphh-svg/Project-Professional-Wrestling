@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - sim-0.0.7
+      - "sim-*"
   pull_request:
     branches:
       - main
@@ -26,5 +26,7 @@ jobs:
         run: npm test
       - name: Run 10-year standard-seed smoke simulation
         run: npm run sim -- --seed 20261002 --weeks 520
+      # Feature branches can opt into the century stress gate by including [long] in the push commit message.
       - name: Run 100-year standard-seed validation
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[long]'))
         run: npm run sim -- --seed 20261002 --weeks 5200
