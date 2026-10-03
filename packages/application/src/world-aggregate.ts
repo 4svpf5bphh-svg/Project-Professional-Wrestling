@@ -6,16 +6,33 @@ import {
 } from "../../sim-core/src/state-schema.js";
 import type { WorldCommandState } from "./commands.js";
 import type { WorldOwnershipState } from "./ownership.js";
+import {
+  createWorldPlanningState,
+  validateWorldPlanningStateShape,
+  type WorldPlanningState,
+} from "./planning.js";
 import type { WorldRuntimeState } from "./runtime.js";
+
+export const CURRENT_APPLICATION_STATE_SCHEMA_VERSION = 1 as const;
 
 export interface ApplicationWorldAggregate {
   state: WorldState;
   ownership: WorldOwnershipState;
   commands: WorldCommandState;
   runtime: WorldRuntimeState;
+  planning: WorldPlanningState;
 }
 
 export interface PersistedApplicationWorld {
+  applicationStateSchemaVersion: typeof CURRENT_APPLICATION_STATE_SCHEMA_VERSION;
+  world: PersistedWorldState;
+  ownership: WorldOwnershipState;
+  commands: WorldCommandState;
+  runtime: WorldRuntimeState;
+  planning: WorldPlanningState;
+}
+
+interface LegacyPersistedApplicationWorld {
   world: PersistedWorldState;
   ownership: WorldOwnershipState;
   commands: WorldCommandState;
@@ -42,6 +59,7 @@ function validateAggregateWorlds(aggregate: ApplicationWorldAggregate): void {
   if (aggregate.ownership.worldId !== worldId) throw new Error("ownership state crosses World boundary");
   if (aggregate.commands.worldId !== worldId) throw new Error("command state crosses World boundary");
   if (aggregate.runtime.worldId !== worldId) throw new Error("runtime state crosses World boundary");
+  if (aggregate.planning.worldId !== worldId) throw new Error("planning state crosses World boundary");
   if (!Number.isSafeInteger(aggregate.runtime.revision) || aggregate.runtime.revision < 0) {
     throw new Error("World runtime revision is invalid");
   }
@@ -51,6 +69,7 @@ function validateAggregateWorlds(aggregate: ApplicationWorldAggregate): void {
       throw new Error("command receipt revision exceeds current World revision");
     }
   }
+  validateWorldPlanningStateShape(aggregate.state, aggregate.planning);
 }
 
 export function createPersistedApplicationWorld(
@@ -58,21 +77,45 @@ export function createPersistedApplicationWorld(
 ): PersistedApplicationWorld {
   validateAggregateWorlds(aggregate);
   return structuredClone({
+    applicationStateSchemaVersion: CURRENT_APPLICATION_STATE_SCHEMA_VERSION,
     world: createPersistedWorldState(aggregate.state),
     ownership: aggregate.ownership,
     commands: aggregate.commands,
     runtime: aggregate.runtime,
+    planning: aggregate.planning,
   });
 }
 
+function normalizePersistedApplicationWorld(
+  snapshot: PersistedApplicationWorld | LegacyPersistedApplicationWorld,
+): PersistedApplicationWorld {
+  if ("applicationStateSchemaVersion" in snapshot) {
+    if (snapshot.applicationStateSchemaVersion !== CURRENT_APPLICATION_STATE_SCHEMA_VERSION) {
+      throw new Error(`unsupported application state schema version: ${String(snapshot.applicationStateSchemaVersion)}`);
+    }
+    return structuredClone(snapshot);
+  }
+
+  return {
+    applicationStateSchemaVersion: CURRENT_APPLICATION_STATE_SCHEMA_VERSION,
+    world: structuredClone(snapshot.world),
+    ownership: structuredClone(snapshot.ownership),
+    commands: structuredClone(snapshot.commands),
+    runtime: structuredClone(snapshot.runtime),
+    planning: createWorldPlanningState(snapshot.world.world.id),
+  };
+}
+
 export function restorePersistedApplicationWorld(
-  snapshot: PersistedApplicationWorld,
+  input: PersistedApplicationWorld | LegacyPersistedApplicationWorld,
 ): ApplicationWorldAggregate {
+  const snapshot = normalizePersistedApplicationWorld(input);
   const aggregate: ApplicationWorldAggregate = {
     state: restorePersistedWorldState(snapshot.world),
     ownership: structuredClone(snapshot.ownership),
     commands: structuredClone(snapshot.commands),
     runtime: structuredClone(snapshot.runtime),
+    planning: structuredClone(snapshot.planning),
   };
   validateAggregateWorlds(aggregate);
   return aggregate;

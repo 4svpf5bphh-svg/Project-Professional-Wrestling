@@ -18,7 +18,9 @@ import {
 
 export type ApplicationCommandType =
   | "CLAIM_INDEPENDENT_PROMOTION"
-  | "SUBMIT_CONTRACT_OFFER";
+  | "SUBMIT_CONTRACT_OFFER"
+  | "UPSERT_DETAILED_SHOW_DRAFT"
+  | "REMOVE_DETAILED_SHOW_DRAFT";
 
 export interface ApplicationCommandEnvelope<TPayload> {
   requestId: string;
