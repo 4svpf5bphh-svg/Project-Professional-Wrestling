@@ -148,6 +148,7 @@ export interface PromotionStanding {
   prestige: number;
   fanReputation: number;
   businessReputation: number;
+  talentReputation: number;
   lastEvaluatedYear: number;
 }
 
