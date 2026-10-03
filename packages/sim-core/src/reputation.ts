@@ -191,7 +191,8 @@ function talentEvidence(state: WorldState, promotion: Promotion): number {
   const terminations = terminationCountThisYear(state, promotion.id);
   const restructures = restructuringCountThisYear(state, promotion.id);
   const continuity = clamp(100 - terminations * 18 - restructures * 8);
-  return round1(clamp(usage * 0.45 + renewalAcceptance * 0.3 + continuity * 0.25));
+  const releasePenalty = terminations * 5 + restructures * 3;
+  return round1(clamp(usage * 0.45 + renewalAcceptance * 0.3 + continuity * 0.25 - releasePenalty));
 }
 
 function majorEventScore(events: WrestlingEvent[]): number {
