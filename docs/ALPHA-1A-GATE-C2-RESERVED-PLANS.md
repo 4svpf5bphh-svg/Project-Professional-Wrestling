@@ -122,17 +122,11 @@ C.2 does **not** yet:
 
 Those boundaries remain separate so advance planning cannot corrupt deterministic resolution.
 
-## Validation target
+## Validation
 
-Gate C.2 must preserve the existing all-AI deterministic hashes because reservations are application state only and are absent from an all-AI World.
+The final scratch head passed the full functional suite, including seven reservation tests and the C.1 compatibility test. The live PostgreSQL integration also passed reservation transaction/reload coverage, and the 10-year all-AI regression remained at deterministic hash `6a5dcd3b` with invariants PASS.
 
-Required regression gates remain:
-
-- full functional suite;
-- live PostgreSQL repository tests including reservation persistence;
-- 10-year standard-seed hash `6a5dcd3b`;
-- 100-year standard-seed hash `7662b626`;
-- invariants PASS.
+The exact promoted `alpha-1a` head must additionally pass the standard 100-year `[long]` gate at hash `7662b626` before C.2 is considered sealed.
 
 ## Next boundary
 
