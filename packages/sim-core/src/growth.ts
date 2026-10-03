@@ -4,16 +4,16 @@ import { LedgerWriter } from "./ledger.js";
 
 const TIER_ORDER: PromotionTier[] = ["LOCAL", "INDEPENDENT", "RISING", "NATIONAL", "GLOBAL"];
 const PROMOTE_AT: Partial<Record<PromotionTier, number>> = {
-  LOCAL: 35,
-  INDEPENDENT: 50,
-  RISING: 65,
-  NATIONAL: 80,
+  LOCAL: 30,
+  INDEPENDENT: 40,
+  RISING: 50,
+  NATIONAL: 62,
 };
 const DEMOTE_BELOW: Partial<Record<PromotionTier, number>> = {
-  INDEPENDENT: 29,
-  RISING: 44,
-  NATIONAL: 59,
-  GLOBAL: 74,
+  INDEPENDENT: 24,
+  RISING: 34,
+  NATIONAL: 44,
+  GLOBAL: 54,
 };
 
 function clamp(value: number, min: number, max: number): number {
