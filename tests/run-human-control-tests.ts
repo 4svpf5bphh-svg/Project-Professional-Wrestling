@@ -28,7 +28,7 @@ function ok(value: unknown, message: string): void {
   if (!value) throw new Error(message);
 }
 
-test("an active Independent promotion can become the ALPHA-1A human test seat", () => {
+test("an active Independent promotion can become a human-controlled promotion", () => {
   const state = createWorld(10801, DEFAULT_RULESET);
   const promotion = state.promotions.find(
     (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
@@ -52,7 +52,7 @@ test("an active Independent promotion can become the ALPHA-1A human test seat", 
   ok(ledgerEvent.entityIds[0] === promotion.id, "human claim ledger event points at the wrong promotion");
 });
 
-test("ALPHA-1A enforces Independent entry and one human promotion per World", () => {
+test("sim-core enforces promotion eligibility but does not own multiplayer seat policy", () => {
   const state = createWorld(10802, DEFAULT_RULESET);
   const global = state.promotions.find((promotion) => promotion.tier === "GLOBAL")!;
   const indies = state.promotions.filter((promotion) => promotion.tier === "INDEPENDENT");
@@ -63,7 +63,7 @@ test("ALPHA-1A enforces Independent entry and one human promotion per World", ()
   } catch {
     rejectedGlobal = true;
   }
-  ok(rejectedGlobal, "a non-Independent promotion could be claimed in ALPHA-1A");
+  ok(rejectedGlobal, "a non-Independent promotion could be claimed");
 
   claimIndependentPromotionForHuman(state, indies[0]!.id);
   let rejectedDuplicate = false;
@@ -74,17 +74,14 @@ test("ALPHA-1A enforces Independent entry and one human promotion per World", ()
   }
   ok(rejectedDuplicate, "the same promotion could be claimed twice");
 
-  let rejectedSecondPromotion = false;
-  try {
-    claimIndependentPromotionForHuman(state, indies[1]!.id);
-  } catch {
-    rejectedSecondPromotion = true;
-  }
-  ok(rejectedSecondPromotion, "one human could control two promotions in ALPHA-1A");
-  ok(humanControlledPromotions(state).length === 1, "World ended with more than one human promotion");
+  claimIndependentPromotionForHuman(state, indies[1]!.id);
+  ok(
+    humanControlledPromotions(state).length === 2,
+    "sim-core still imposed the temporary ALPHA-1A one-human World rule",
+  );
 });
 
-test("AI event planning leaves the human promotion unbooked", () => {
+test("AI event planning leaves human promotions unbooked", () => {
   const state = createWorld(10803, DEFAULT_RULESET);
   const promotion = state.promotions.find(
     (candidate) => candidate.tier === "INDEPENDENT" && shouldPromotionRunEvent(state, candidate),
