@@ -142,6 +142,15 @@ export interface Promotion {
   aiProfile: AiProfile;
 }
 
+export interface PromotionStanding {
+  worldId: Id;
+  promotionId: Id;
+  prestige: number;
+  fanReputation: number;
+  businessReputation: number;
+  lastEvaluatedYear: number;
+}
+
 export interface PromotionSurvivalState {
   worldId: Id;
   promotionId: Id;
@@ -414,6 +423,7 @@ export interface WorldState {
   venues: Venue[];
   promotions: Promotion[];
   promotionMarketStates: PromotionMarketState[];
+  promotionStandings?: PromotionStanding[];
   promotionSurvivalStates?: PromotionSurvivalState[];
   people: Person[];
   contracts: Contract[];
