@@ -16,6 +16,10 @@ import {
   type PromotionPlanningWorkspace,
   type WorldPlanningState,
 } from "./planning.js";
+import {
+  assertPlayerShowPlanningActionAllowed,
+  playerShowPlanningStatus,
+} from "./planning-status.js";
 import type { WorldRuntimeState } from "./runtime.js";
 
 export interface UpsertDetailedShowDraftPayload {
@@ -62,6 +66,19 @@ export function upsertDetailedShowDraftCommand(
 
   return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
     authorizePlanningMutation(state, ownership, planning, envelope.playerId, envelope.payload.promotionId);
+    const existing = planning.workspaces
+      .find((workspace) => workspace.promotionId === envelope.payload.promotionId)
+      ?.detailedShowDrafts.find((draft) => draft.draftId === envelope.payload.draft.draftId);
+    if (existing) {
+      const status = playerShowPlanningStatus(
+        state,
+        planning,
+        runtime,
+        envelope.payload.promotionId,
+        existing.draftId,
+      );
+      assertPlayerShowPlanningActionAllowed(status, "EDIT_DRAFT");
+    }
     return upsertDetailedShowDraft(
       state,
       planning,
@@ -86,6 +103,14 @@ export function removeDetailedShowDraftCommand(
 
   return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
     authorizePlanningMutation(state, ownership, planning, envelope.playerId, envelope.payload.promotionId);
+    const status = playerShowPlanningStatus(
+      state,
+      planning,
+      runtime,
+      envelope.payload.promotionId,
+      envelope.payload.draftId,
+    );
+    assertPlayerShowPlanningActionAllowed(status, "DELETE_DRAFT");
     return removeDetailedShowDraft(
       planning,
       envelope.payload.promotionId,
