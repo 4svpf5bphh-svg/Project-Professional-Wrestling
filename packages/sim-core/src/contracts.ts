@@ -390,6 +390,15 @@ function weeklyEquivalent(offer: ContractOffer, state: WorldState): number {
   return offer.weeklyGuarantee + offer.signingBonus / termWeeks + offer.appearanceFee * offer.dateEntitlement / termWeeks;
 }
 
+function relationshipLoyaltyScore(state: WorldState, person: Person, promotion: Promotion): number {
+  const hasPriorRelationship = contractsForPerson(state, person.id).some((contract) => contract.promotionId === promotion.id);
+  const baseline = hasPriorRelationship ? 78 : 48;
+  const trust = state.promotionTalentTrust?.find(
+    (entry) => entry.personId === person.id && entry.promotionId === promotion.id,
+  )?.trust ?? 50;
+  return Math.max(0, Math.min(100, baseline + (trust - 50) * 0.3));
+}
+
 export function evaluateContractOffer(state: WorldState, offer: ContractOffer): number {
   const person = state.people.find((candidate) => candidate.id === offer.personId);
   const promotion = state.promotions.find((candidate) => candidate.id === offer.promotionId);
@@ -402,7 +411,7 @@ export function evaluateContractOffer(state: WorldState, offer: ContractOffer): 
   const termWeeks = Math.max(1, weeksBetween(offer.startDate, offer.endDate, state.ruleset.weeksPerYear) + 1);
   const density = offer.dateEntitlement / termWeeks;
   const scheduleScore = Math.max(10, Math.min(100, 92 - density * 35 - (offer.exclusivity === "EXCLUSIVE" ? 18 : 0)));
-  const loyaltyScore = contractsForPerson(state, person.id).some((contract) => contract.promotionId === promotion.id) ? 78 : 48;
+  const loyaltyScore = relationshipLoyaltyScore(state, person, promotion);
   const exposureScore = promotion.mediaReach;
   const priorities = person.priorities;
   const weightTotal = priorities.money + priorities.role + priorities.prestige + priorities.schedule + priorities.loyalty + priorities.exposure;
