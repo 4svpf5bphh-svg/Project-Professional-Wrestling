@@ -1,4 +1,4 @@
-import type { FinancialDistressState, RoleExpectation, WorldState } from "../../domain/src/types.js";
+import type { Contract, FinancialDistressState, RoleExpectation, WorldState } from "../../domain/src/types.js";
 import { ppwDateToWeekIndex } from "./clock.js";
 import { contractIsActive } from "./contracts.js";
 
@@ -25,6 +25,52 @@ const DISTRESS_PENALTY: Record<FinancialDistressState, number> = {
   DISTRESSED: 6,
   CRISIS: 10,
 };
+
+interface MoraleContractCache {
+  contractsRef: WorldState["contracts"];
+  currentWeekIndex: number;
+  syncedLength: number;
+  candidates: Contract[];
+}
+
+const moraleContractCaches = new WeakMap<WorldState, MoraleContractCache>();
+
+function activeContractsForMorale(state: WorldState): Contract[] {
+  const currentWeekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
+  let cache = moraleContractCaches.get(state);
+
+  if (
+    !cache
+    || cache.contractsRef !== state.contracts
+    || cache.syncedLength > state.contracts.length
+    || currentWeekIndex < cache.currentWeekIndex
+  ) {
+    cache = {
+      contractsRef: state.contracts,
+      currentWeekIndex,
+      syncedLength: 0,
+      candidates: [],
+    };
+    moraleContractCaches.set(state, cache);
+  }
+
+  cache.candidates = cache.candidates.filter((contract) => (
+    contract.status === "SIGNED"
+    && ppwDateToWeekIndex(contract.endDate, state.ruleset.weeksPerYear) >= currentWeekIndex
+  ));
+
+  for (let index = cache.syncedLength; index < state.contracts.length; index += 1) {
+    const contract = state.contracts[index]!;
+    if (contract.status !== "SIGNED") continue;
+    if (ppwDateToWeekIndex(contract.endDate, state.ruleset.weeksPerYear) < currentWeekIndex) continue;
+    cache.candidates.push(contract);
+  }
+
+  cache.syncedLength = state.contracts.length;
+  cache.currentWeekIndex = currentWeekIndex;
+
+  return cache.candidates.filter((contract) => contractIsActive(state, contract));
+}
 
 function currentWeekCompletedPromotionIds(state: WorldState): Set<string> {
   const currentWeekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
@@ -62,10 +108,9 @@ function fatiguePenalty(fatigue: number): number {
 export function processWrestlerMoraleForWeek(state: WorldState): void {
   const completedPromotionIds = currentWeekCompletedPromotionIds(state);
   const completedAppearancePairs = currentWeekCompletedAppearancePairs(state);
-  const activeContractsByPerson = new Map<string, typeof state.contracts>();
+  const activeContractsByPerson = new Map<string, Contract[]>();
 
-  for (const contract of state.contracts) {
-    if (!contractIsActive(state, contract)) continue;
+  for (const contract of activeContractsForMorale(state)) {
     const list = activeContractsByPerson.get(contract.personId) ?? [];
     list.push(contract);
     activeContractsByPerson.set(contract.personId, list);
