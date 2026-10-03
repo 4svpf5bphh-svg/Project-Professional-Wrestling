@@ -7,6 +7,7 @@ interface TeamIndex {
   byId: Map<string, Team>;
   activeMembersByTeam: Map<string, string[]>;
   activeTeamByPair: Map<string, Team>;
+  activeTeamsByPerson: Map<string, Set<string>>;
 }
 
 interface ChampionshipIndex {
@@ -34,6 +35,7 @@ function ensureTeamIndex(state: WorldState): TeamIndex {
       byId: new Map(),
       activeMembersByTeam: new Map(),
       activeTeamByPair: new Map(),
+      activeTeamsByPerson: new Map(),
     };
     teamIndexes.set(state, index);
   }
@@ -53,6 +55,9 @@ function ensureTeamIndex(state: WorldState): TeamIndex {
     if (!members.includes(membership.personId)) members.push(membership.personId);
     members.sort();
     index.activeMembersByTeam.set(membership.teamId, members);
+    const personTeams = index.activeTeamsByPerson.get(membership.personId) ?? new Set<string>();
+    personTeams.add(membership.teamId);
+    index.activeTeamsByPerson.set(membership.personId, personTeams);
     affectedTeams.add(membership.teamId);
   }
   index.syncedMemberships = memberships.length;
@@ -77,6 +82,10 @@ export function indexedActiveTeamForPair(state: WorldState, personAId: string, p
   return ensureTeamIndex(state).activeTeamByPair.get(pairKey(personAId, personBId));
 }
 
+export function indexedActiveTeamIdsForPerson(state: WorldState, personId: string): string[] {
+  return [...(ensureTeamIndex(state).activeTeamsByPerson.get(personId) ?? new Set<string>())].sort();
+}
+
 export function indexNewTeamState(state: WorldState): void {
   ensureTeamIndex(state);
 }
@@ -85,6 +94,11 @@ export function indexTeamDisbanded(state: WorldState, teamId: string): void {
   const index = ensureTeamIndex(state);
   const members = index.activeMembersByTeam.get(teamId) ?? [];
   if (members.length === 2) index.activeTeamByPair.delete(pairKey(members[0]!, members[1]!));
+  for (const personId of members) {
+    const personTeams = index.activeTeamsByPerson.get(personId);
+    personTeams?.delete(teamId);
+    if (personTeams?.size === 0) index.activeTeamsByPerson.delete(personId);
+  }
   index.activeMembersByTeam.set(teamId, []);
 }
 
