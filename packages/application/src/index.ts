@@ -2,6 +2,7 @@ export * from "./commands.js";
 export * from "./ownership.js";
 export * from "./planning.js";
 export * from "./planning-commands.js";
+export * from "./planning-materialization.js";
 export * from "./planning-reservations.js";
 export * from "./reservation-commands.js";
 export * from "./runtime.js";
