@@ -20,7 +20,8 @@
     "test:market-competition": "node dist/tests/run-market-competition-tests.js",
     "test:reputation": "node dist/tests/run-reputation-tests.js",
     "test:talent-trust": "node dist/tests/run-talent-trust-tests.js",
-    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience && npm run test:growth && npm run test:market-competition && npm run test:reputation && npm run test:talent-trust",
+    "test:contract-trust": "node dist/tests/run-contract-trust-tests.js",
+    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience && npm run test:growth && npm run test:market-competition && npm run test:reputation && npm run test:talent-trust && npm run test:contract-trust",
     "sim": "npm run build && node dist/apps/sim-cli/src/index.js"
   },
   "devDependencies": {
