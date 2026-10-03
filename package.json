@@ -1,6 +1,6 @@
 {
   "name": "project-professional-wrestling",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "private": true,
   "description": "PPW SIM-0 headless persistent wrestling world simulation",
   "type": "module",
