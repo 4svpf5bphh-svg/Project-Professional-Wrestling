@@ -4,6 +4,8 @@ import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import {
   activeContractsForPromotion,
   createWorld,
+  deterministicWorldHash,
+  ensurePromotionStandings,
   ensurePromotionTalentTrust,
   LedgerWriter,
   processTalentTrustForWeek,
@@ -38,6 +40,28 @@ test("contract relationships create one neutral trust record per wrestler and pr
   ok(relationships.length === contractPairs.size, `expected ${contractPairs.size} trust relationships, got ${relationships.length}`);
   ok(relationshipPairs.size === relationships.length, "duplicate wrestler-promotion trust relationships were created");
   ok(relationships.every((entry) => entry.trust === 50), "new trust relationships should begin neutral at 50");
+});
+
+test("global diagnostic hash includes promotion standing and wrestler trust state", () => {
+  const state = createWorld(10405, DEFAULT_RULESET);
+  const standings = ensurePromotionStandings(state);
+  const relationships = ensurePromotionTalentTrust(state);
+  ok(standings.length > 0, "expected promotion standings for hash test");
+  ok(relationships.length > 0, "expected wrestler trust relationships for hash test");
+
+  const baseline = deterministicWorldHash(state);
+  const trust = relationships[0]!;
+  const originalTrust = trust.trust;
+  trust.trust = originalTrust + 1;
+  const trustHash = deterministicWorldHash(state);
+  ok(trustHash !== baseline, "changing wrestler trust did not change the global diagnostic hash");
+  trust.trust = originalTrust;
+
+  const standing = standings[0]!;
+  const originalPrestige = standing.prestige;
+  standing.prestige = originalPrestige + 1;
+  const standingHash = deterministicWorldHash(state);
+  ok(standingHash !== baseline, "changing promotion standing did not change the global diagnostic hash");
 });
 
 test("being used builds more trust than being contracted but unused", () => {
