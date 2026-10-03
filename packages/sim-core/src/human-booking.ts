@@ -6,6 +6,7 @@ import type {
   MatchType,
   WorldState,
 } from "../../domain/src/types.js";
+import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 
 export interface HumanMatchPlan {
@@ -75,7 +76,7 @@ export function prepareHumanMatchCard(
   for (let index = 0; index < plans.length; index += 1) {
     const plan = plans[index]!;
     const match: Match = {
-      id: `match-${String(state.matches.length + 1).padStart(8, "0")}`,
+      id: nextEntityId(state, "match"),
       worldId: state.world.id,
       eventId: event.id,
       promotionId: promotion.id,
@@ -98,7 +99,7 @@ export function prepareHumanMatchCard(
     for (const [side, ids] of [["A", plan.sideAIds], ["B", plan.sideBIds]] as const) {
       for (const personId of ids) {
         const participant: MatchParticipant = {
-          id: `match-participant-${String(state.matchParticipants.length + 1).padStart(9, "0")}`,
+          id: nextEntityId(state, "matchParticipant"),
           worldId: state.world.id,
           matchId: match.id,
           eventId: event.id,

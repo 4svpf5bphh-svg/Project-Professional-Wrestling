@@ -26,6 +26,7 @@ import {
 } from "./competition-indexes.js";
 import { activeContractsForPerson } from "./contracts.js";
 import { personById } from "./indexes.js";
+import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { getOrCreateChemistry } from "./matches.js";
 
@@ -74,7 +75,7 @@ export function ensureTeamForPair(state: WorldState, personAId: string, personBI
   const b = personById(state, personBId);
   if (!a || !b || a.status === "RETIRED" || b.status === "RETIRED") return null;
   const team: Team = {
-    id: `team-${String(teams(state).length + 1).padStart(7, "0")}`,
+    id: nextEntityId(state, "team"),
     worldId: state.world.id,
     name: teamName(a, b),
     status: "ACTIVE",
@@ -84,7 +85,7 @@ export function ensureTeamForPair(state: WorldState, personAId: string, personBI
   teams(state).push(team);
   for (const person of [a, b]) {
     teamMemberships(state).push({
-      id: `team-membership-${String(teamMemberships(state).length + 1).padStart(8, "0")}`,
+      id: nextEntityId(state, "teamMembership"),
       worldId: state.world.id,
       teamId: team.id,
       personId: person.id,
@@ -152,7 +153,7 @@ function ensurePromotionChampionship(state: WorldState, promotion: Promotion, di
   const existing = championships(state).find((championship) => championship.promotionId === promotion.id && championship.division === division);
   if (existing) return existing;
   const championship: Championship = {
-    id: `championship-${String(championships(state).length + 1).padStart(6, "0")}`,
+    id: nextEntityId(state, "championship"),
     worldId: state.world.id,
     promotionId: promotion.id,
     name: championshipName(promotion, division),
@@ -408,7 +409,7 @@ function createReign(
   event: WrestlingEvent,
 ): ChampionshipReign {
   const reign: ChampionshipReign = {
-    id: `championship-reign-${String(championshipReigns(state).length + 1).padStart(7, "0")}`,
+    id: nextEntityId(state, "championshipReign"),
     worldId: state.world.id,
     championshipId: championship.id,
     holderType,
@@ -452,7 +453,7 @@ function recordChampionshipContest(
     previous.defenses += 1;
   }
   const contest: ChampionshipContest = {
-    id: `championship-contest-${String(championshipContests(state).length + 1).padStart(8, "0")}`,
+    id: nextEntityId(state, "championshipContest"),
     worldId: state.world.id,
     championshipId: championship.id,
     matchId: match.id,

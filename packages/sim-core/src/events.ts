@@ -13,6 +13,7 @@ import type {
 } from "../../domain/src/types.js";
 import { ppwDateToWeekIndex } from "./clock.js";
 import { activeContractsForPromotion, serviceCapacityDatesPerWeek } from "./contracts.js";
+import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { contractById, personById } from "./indexes.js";
 import { competitionDemandFactor } from "./market-competition.js";
@@ -406,7 +407,7 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
     selected.map((entry) => entry.person),
   );
   const event: WrestlingEvent = {
-    id: `event-${String(state.events.length + 1).padStart(7, "0")}`,
+    id: nextEntityId(state, "event"),
     worldId: state.world.id,
     promotionId: promotion.id,
     marketId: market.id,
@@ -431,7 +432,7 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
 
   for (const entry of selected) {
     const appearance: ScheduledAppearance = {
-      id: `appearance-${String(state.scheduledAppearances.length + 1).padStart(8, "0")}`,
+      id: nextEntityId(state, "scheduledAppearance"),
       worldId: state.world.id,
       eventId: event.id,
       promotionId: promotion.id,
@@ -494,7 +495,7 @@ export function planWorldEvents(state: WorldState): void {
     const expectedDemand = estimateDemand(state, promotion, market, type, strategy, selected.map((entry) => entry.person));
     const venue = chooseVenue(state, market.id, eventDate, expectedDemand);
     const event: WrestlingEvent = {
-      id: `event-${String(state.events.length + 1).padStart(7, "0")}`,
+      id: nextEntityId(state, "event"),
       worldId: state.world.id,
       promotionId: promotion.id,
       marketId: market.id,
@@ -519,7 +520,7 @@ export function planWorldEvents(state: WorldState): void {
 
     for (const entry of selected) {
       const appearance: ScheduledAppearance = {
-        id: `appearance-${String(state.scheduledAppearances.length + 1).padStart(8, "0")}`,
+        id: nextEntityId(state, "scheduledAppearance"),
         worldId: state.world.id,
         eventId: event.id,
         promotionId: promotion.id,

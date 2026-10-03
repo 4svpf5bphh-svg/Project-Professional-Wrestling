@@ -91,6 +91,7 @@ test("persisted World state has an explicit schema version and materializes lazy
   const snapshot = createPersistedWorldState(state);
 
   ok(snapshot.stateSchemaVersion === CURRENT_WORLD_STATE_SCHEMA_VERSION, "snapshot schema version is missing or incorrect");
+  ok(typeof snapshot.entityIdCounters === "object", "entity ID counters were not persisted");
   ok(Array.isArray(snapshot.promotionStandings), "promotion standings were not materialized");
   ok(Array.isArray(snapshot.promotionTalentTrust), "talent trust was not materialized");
   ok(Array.isArray(snapshot.promotionSurvivalStates), "survival state was not materialized");
@@ -131,12 +132,13 @@ test("restored World state is detached from the persisted snapshot object", () =
   ok(snapshot.promotions[0]!.cash === originalCash, "mutating restored state also mutated persisted snapshot data");
 });
 
-test("schema v1 migrates unresolved Ledger title intent into explicit v2 live state", () => {
+test("schema v1 migrates unresolved Ledger title intent through the current live state", () => {
   const { state, event, match, championship } = humanTitleFixture(22004);
   const current = createPersistedWorldState(state);
   const {
     championshipMatchBookings: _discardV2LiveState,
-    stateSchemaVersion: _discardV2Version,
+    entityIdCounters: _discardV3Counters,
+    stateSchemaVersion: _discardV3Version,
     ...legacyBody
   } = current;
   const legacyV1 = { ...legacyBody, stateSchemaVersion: 1 };
@@ -159,7 +161,7 @@ test("current schema persists live title intent independently of Ledger interpre
   const restored = restorePersistedWorldState(JSON.parse(JSON.stringify(snapshot)));
   const booking = restored.championshipMatchBookings?.[0];
 
-  ok(snapshot.stateSchemaVersion === 2, "title booking snapshot did not use schema v2");
+  ok(snapshot.stateSchemaVersion === CURRENT_WORLD_STATE_SCHEMA_VERSION, "title booking snapshot did not use current schema");
   ok(Boolean(booking), "live title booking did not survive current-schema persistence");
   ok(booking!.eventId === event.id && booking!.matchId === match.id && booking!.championshipId === championship.id, "restored live title booking changed identity");
   ok(deterministicWorldHash(restored) === deterministicWorldHash(state), "live title booking round-trip changed deterministic state");
@@ -178,6 +180,9 @@ test("missing or corrupt mandatory persisted booking state is rejected", () => {
 
   const missingBookings = { ...snapshot, championshipMatchBookings: undefined };
   expectReject(() => restorePersistedWorldState(missingBookings), "field championshipMatchBookings must be an array");
+
+  const missingCounters = { ...snapshot, entityIdCounters: undefined };
+  expectReject(() => restorePersistedWorldState(missingCounters), "persisted entity ID counters must be an object");
 
   const mismatch = structuredClone(snapshot);
   mismatch.world.rulesetVersion = "different-ruleset";

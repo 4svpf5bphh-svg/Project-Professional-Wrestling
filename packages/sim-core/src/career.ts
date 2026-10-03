@@ -1,5 +1,6 @@
 import type { CareerStage, InjurySeverity, Match, Person, WorldState } from "../../domain/src/types.js";
 import { ppwDateToWeekIndex } from "./clock.js";
+import { allocateEntityId, nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { personById } from "./indexes.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
@@ -27,7 +28,7 @@ export function createInjury(
   if (existing) return;
   const eventDate = state.events.find((event) => event.id === match.eventId)?.date ?? state.world.currentDate;
   const injury = {
-    id: `injury-${String(state.injuries.length + 1).padStart(7, "0")}`,
+    id: nextEntityId(state, "injury"),
     worldId: state.world.id,
     personId: person.id,
     matchId: match.id,
@@ -208,12 +209,12 @@ function maybeRetireWrestlers(state: WorldState): void {
   }
 }
 
-function generatedProspect(state: WorldState, index: number): Person {
+function generatedProspect(state: WorldState, index: number, id: string): Person {
   const weekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
   const rng = new DeterministicRng(deterministicSeedFromText(`${state.world.seed}:${weekIndex}:${index}:prospect-generation`));
   const stat = (min: number, max: number) => rng.int(min, max);
   return {
-    id: `person-${String(index).padStart(4, "0")}`,
+    id,
     worldId: state.world.id,
     name: `${rng.pick(GENERATED_FIRST_NAMES)} ${rng.pick(GENERATED_LAST_NAMES)} ${index}`,
     careerStage: "PROSPECT",
@@ -256,7 +257,8 @@ export function replenishTalentPopulation(state: WorldState): number {
   const count = Math.min(state.ruleset.maxProspectsGeneratedPerWeek, toTarget);
   const writer = new LedgerWriter(state.world.id, state.ledger);
   for (let i = 0; i < count; i += 1) {
-    const person = generatedProspect(state, state.people.length + 1);
+    const allocation = allocateEntityId(state, "person");
+    const person = generatedProspect(state, allocation.sequence, allocation.id);
     state.people.push(person);
     writer.append({
       date: state.world.currentDate,

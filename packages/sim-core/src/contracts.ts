@@ -12,6 +12,7 @@ import type {
 } from "../../domain/src/types.js";
 import { addPpwWeeks, comparePpwDates, ppwDateToWeekIndex, weeksBetween } from "./clock.js";
 import { recordFinancialTransaction } from "./transactions.js";
+import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { contractsEndingInWeek, contractsForPerson, contractsForPromotion } from "./indexes.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
@@ -174,7 +175,7 @@ export function buildOneOffTerms(state: WorldState, promotion: Promotion, person
 
 export function createSignedContract(state: WorldState, person: Person, promotion: Promotion, terms: ContractTerms, sourceOfferId: Id | null, recordLedger = true): Contract {
   const contract: Contract = {
-    id: `contract-${String(state.contracts.length + 1).padStart(6, "0")}`,
+    id: nextEntityId(state, "contract"),
     worldId: state.world.id,
     personId: person.id,
     promotionId: promotion.id,
@@ -273,7 +274,7 @@ function createOffer(state: WorldState, promotion: Promotion, person: Person, of
   const rng = new DeterministicRng(offerSeed(state, promotion, person, offerKind));
   const terms = buildContractTerms(state, promotion, person, rng, startDate);
   const offer: ContractOffer = {
-    id: `offer-${String(state.contractOffers.length + 1).padStart(7, "0")}`,
+    id: nextEntityId(state, "contractOffer"),
     worldId: state.world.id,
     personId: person.id,
     promotionId: promotion.id,

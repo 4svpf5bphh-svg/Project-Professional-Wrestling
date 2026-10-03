@@ -1,6 +1,7 @@
 import type { ContractOffer, ContractTerms, Id, WorldState } from "../../domain/src/types.js";
 import { comparePpwDates } from "./clock.js";
 import { canAcceptContractTerms } from "./contracts.js";
+import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 
 export type HumanContractOfferPlan = ContractTerms & {
@@ -69,7 +70,7 @@ export function submitHumanContractOffer(state: WorldState, plan: HumanContractO
     (contract) => contract.promotionId === promotion.id && contract.personId === person.id,
   );
   const offer: ContractOffer = {
-    id: `offer-${String(state.contractOffers.length + 1).padStart(7, "0")}`,
+    id: nextEntityId(state, "contractOffer"),
     worldId: state.world.id,
     personId: person.id,
     promotionId: promotion.id,

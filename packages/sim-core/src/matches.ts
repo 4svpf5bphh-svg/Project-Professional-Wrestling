@@ -14,6 +14,7 @@ import type {
 } from "../../domain/src/types.js";
 import { applyMatchLoad, createInjury } from "./career.js";
 import { buildBookingCard } from "./booking.js";
+import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 
@@ -49,7 +50,7 @@ export function getOrCreateChemistry(state: WorldState, a: Person, b: Person, co
   if (existing) return existing;
   const rng = new DeterministicRng(deterministicSeedFromText(`${state.world.seed}:chemistry:${context}:${personAId}:${personBId}`));
   const record: WorkingChemistry = {
-    id: `chemistry-${String(state.workingChemistry.length + 1).padStart(7, "0")}`,
+    id: nextEntityId(state, "workingChemistry"),
     worldId: state.world.id,
     personAId,
     personBId,
@@ -119,7 +120,7 @@ interface PlannedMatch {
 }
 
 function makeMatch(state: WorldState, event: WrestlingEvent, order: number, total: number, type: MatchType, sideA: Person[], sideB: Person[]): PlannedMatch {
-  const id = `match-${String(state.matches.length + 1).padStart(8, "0")}`;
+  const id = nextEntityId(state, "match");
   const intent = intentFor(event, order, total, state);
   const match: Match = {
     id, worldId: state.world.id, eventId: event.id, promotionId: event.promotionId, order, type, status: "SCHEDULED", intent,
@@ -132,7 +133,7 @@ function makeMatch(state: WorldState, event: WrestlingEvent, order: number, tota
   for (const [side, people] of [["A", sideA], ["B", sideB]] as const) {
     for (const person of people) {
       const participant: MatchParticipant = {
-        id: `match-participant-${String(state.matchParticipants.length + 1).padStart(9, "0")}`,
+        id: nextEntityId(state, "matchParticipant"),
         worldId: state.world.id, matchId: match.id, eventId: event.id, personId: person.id, side, won: false,
       };
       state.matchParticipants.push(participant);

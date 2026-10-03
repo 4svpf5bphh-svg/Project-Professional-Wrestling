@@ -1,4 +1,5 @@
 import type { FinancialTransaction, FinancialTransactionCategory, Promotion, WorldState } from "../../domain/src/types.js";
+import { nextEntityId } from "./id-allocator.js";
 
 export function recordFinancialTransaction(
   state: WorldState,
@@ -8,7 +9,7 @@ export function recordFinancialTransaction(
   source: string,
 ): FinancialTransaction {
   const transaction: FinancialTransaction = {
-    id: `finance-${String(state.financialTransactions.length + 1).padStart(8, "0")}`,
+    id: nextEntityId(state, "financialTransaction"),
     worldId: state.world.id,
     promotionId: promotion.id,
     date: { ...state.world.currentDate },
