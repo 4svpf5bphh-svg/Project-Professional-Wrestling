@@ -13,7 +13,7 @@ function relationshipTrust(state: WorldState, personId: Id, promotionId: Id): nu
 
 export function renewalRelationshipPenalty(morale: number, trust: number): number {
   const relationshipAverage = (morale + trust) / 2;
-  return round1(Math.max(0, 55 - relationshipAverage) * 0.35);
+  return round1(Math.max(0, 55 - relationshipAverage) * 0.2);
 }
 
 export function applyRenewalRelationshipResistance(state: WorldState): number {
