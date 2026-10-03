@@ -48,6 +48,32 @@ function weekKey(view) {
   return `${view.world.year}:${view.world.week}`;
 }
 
+function showPlanBody(view) {
+  const promotion = view.promotion;
+  const planning = promotion?.showPlanning;
+  ok(promotion && planning, "HTTP promotion planning view is missing");
+  ok(planning.canPlanThisWeek, "HTTP current-week planner is not available");
+  const market = planning.markets[0];
+  const venue = market?.venues[0];
+  ok(market && venue, "HTTP planning view exposed no market/venue options");
+  let participantIds = promotion.roster
+    .filter((person) => person.status === "ACTIVE" && person.datesRemaining > 0)
+    .slice(0, planning.maxParticipants)
+    .map((person) => person.personId);
+  if (participantIds.length % 2 !== 0) participantIds = participantIds.slice(0, -1);
+  ok(participantIds.length >= planning.minParticipants, "HTTP planning view exposed too few reservable wrestlers");
+  return {
+    requestId: "ci-http-show-plan-001",
+    expectedRevision: view.world.revision,
+    expectedPlanVersion: planning.workspaceVersion,
+    day: 6,
+    marketId: market.marketId,
+    venueId: venue.venueId,
+    ticketStrategy: "STANDARD",
+    participantIds,
+  };
+}
+
 try {
   await waitForServer();
 
@@ -71,6 +97,7 @@ try {
   ok(first.promotion?.promotionId === promotionId, "HTTP claim did not return the promotion dashboard");
   ok(first.world?.revision === 1, "HTTP claim did not advance revision exactly once");
   ok(first.promotion?.weekReadiness?.status, "HTTP dashboard did not expose week readiness");
+  ok(first.promotion?.showPlanning?.markets?.length > 0, "HTTP dashboard did not expose show planning options");
 
   const retry = await json(await fetch(`${baseUrl}/api/claim`, {
     method: "POST",
@@ -84,8 +111,27 @@ try {
   ok(afterClaim.promotion?.promotionId === promotionId, "HTTP reload lost promotion dashboard state");
   ok(afterClaim.world?.revision === 1, "HTTP reload returned the wrong persisted World revision");
 
-  const weekBefore = weekKey(afterClaim);
-  const revisionBeforeAdvance = afterClaim.world.revision;
+  const plan = showPlanBody(afterClaim);
+  const planned = await json(await fetch(`${baseUrl}/api/show-plan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(plan),
+  }));
+  ok(planned.world.revision === afterClaim.world.revision + 2, "HTTP show plan did not commit draft and reservation revisions");
+  ok(planned.promotion?.showPlanning?.currentPlan?.state === "RESERVED", "HTTP show plan did not return a reserved state");
+  ok(planned.promotion?.showPlanning?.currentPlan?.venueId === plan.venueId, "HTTP show plan lost selected venue");
+  ok(planned.promotion?.showPlanning?.currentPlan?.participantIds?.length === plan.participantIds.length, "HTTP show plan lost selected talent");
+
+  const planRetry = await json(await fetch(`${baseUrl}/api/show-plan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(plan),
+  }));
+  ok(planRetry.world.revision === planned.world.revision, "HTTP show-plan retry advanced revision twice");
+  ok(planRetry.promotion?.showPlanning?.currentPlan?.state === "RESERVED", "HTTP show-plan retry lost reservation");
+
+  const weekBefore = weekKey(planned);
+  const revisionBeforeAdvance = planned.world.revision;
   const advanced = await json(await fetch(`${baseUrl}/api/advance-week`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -95,6 +141,11 @@ try {
   ok(advanced.world?.phase === "OPEN", "HTTP week endpoint did not reopen the World");
   ok(advanced.world?.revision > revisionBeforeAdvance, "HTTP week endpoint did not advance the World revision");
   ok(advanced.world?.lastResolvedPpwDate, "HTTP week endpoint did not expose the resolved week");
+  ok(advanced.promotion?.lastResolvedShow?.venueName, "HTTP planned show did not materialize into the resolved result");
+  const selectedVenueName = planned.promotion.showPlanning.markets
+    .flatMap((market) => market.venues)
+    .find((venue) => venue.venueId === plan.venueId)?.name;
+  ok(advanced.promotion.lastResolvedShow.venueName === selectedVenueName, "resolved show did not use the reserved venue");
 
   const staleResponse = await fetch(`${baseUrl}/api/advance-week`, {
     method: "POST",
@@ -109,7 +160,7 @@ try {
   ok(weekKey(afterAdvance) === weekKey(advanced), "stale HTTP retry advanced the World a second time");
   ok(afterAdvance.world.revision === advanced.world.revision, "stale HTTP retry changed the persisted World revision");
 
-  console.log("PASS Alpha Next HTTP bootstrap, claim, retry, week resolution and stale-retry safety");
+  console.log("PASS Alpha Next HTTP bootstrap, claim, show reservation, retry, week resolution and stale-retry safety");
 } finally {
   if (server.exitCode === null) server.kill("SIGTERM");
   await new Promise((resolve) => {

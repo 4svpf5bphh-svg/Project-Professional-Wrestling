@@ -1,6 +1,8 @@
 import { DEFAULT_RULESET } from "../../config/src/default-ruleset.js";
+import type { TicketStrategy } from "../../domain/src/types.js";
 import {
   activePromotionControlForPlayer,
+  alphaCurrentWeekShowDraftId,
   buildAlphaPlayerWorldView,
   claimIndependentPromotionCommand,
   createWorldCommandState,
@@ -10,10 +12,13 @@ import {
   joinPlayerToWorld,
   lockPersistedWorldForResolution,
   materializePersistedCurrentWeekReservations,
+  reserveDetailedShowDraftCommand,
   resolvePersistedWorldWeek,
+  upsertDetailedShowDraftCommand,
   type AlphaPlayerWorldView,
   type ApplicationWorldAggregate,
   type ApplicationWorldRepository,
+  type DetailedShowDraft,
 } from "../../application/src/index.js";
 import { createWorld } from "../../sim-core/src/genesis.js";
 
@@ -33,6 +38,19 @@ export interface AlphaAdvanceWeekRequest {
   expectedRevision: number;
 }
 
+export interface AlphaShowPlanRequest {
+  requestId: string;
+  expectedRevision: number;
+  expectedPlanVersion: number;
+  day: number;
+  marketId: string;
+  venueId: string;
+  ticketStrategy: TicketStrategy;
+  participantIds: string[];
+}
+
+const TICKET_STRATEGIES = new Set<TicketStrategy>(["ACCESSIBLE", "STANDARD", "PREMIUM", "PRESTIGE"]);
+
 function normalizedSeed(seed: number): number {
   if (!Number.isSafeInteger(seed)) throw new Error("Alpha World seed must be an integer");
   return seed >>> 0;
@@ -43,6 +61,25 @@ function requireExpectedRevision(revision: number): number {
     throw new Error("expectedRevision must be a non-negative integer");
   }
   return revision;
+}
+
+function requirePlanVersion(version: number): number {
+  if (!Number.isSafeInteger(version) || version < 0) {
+    throw new Error("expectedPlanVersion must be a non-negative integer");
+  }
+  return version;
+}
+
+function requireRequestId(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) throw new Error("requestId must not be empty");
+  if (normalized.length > 220) throw new Error("requestId is too long");
+  return normalized;
+}
+
+function requireShowDay(day: number): number {
+  if (!Number.isSafeInteger(day) || day < 1 || day > 7) throw new Error("show day must be an integer from 1 to 7");
+  return day;
 }
 
 export function alphaWorldId(seed: number): string {
@@ -117,6 +154,91 @@ export async function claimAlphaPromotion(
       },
     );
   });
+  return loadAlphaPlayerSession(repository, worldId, playerId);
+}
+
+export async function saveAlphaCurrentWeekShowPlan(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  request: AlphaShowPlanRequest,
+): Promise<AlphaPlayerWorldView> {
+  const expectedRevision = requireExpectedRevision(request.expectedRevision);
+  const expectedPlanVersion = requirePlanVersion(request.expectedPlanVersion);
+  const requestId = requireRequestId(request.requestId);
+  const day = requireShowDay(request.day);
+  if (!TICKET_STRATEGIES.has(request.ticketStrategy)) throw new Error("unsupported ticket strategy");
+  if (!Array.isArray(request.participantIds)) throw new Error("participantIds must be an array");
+
+  const draftRequestId = `${requestId}:draft`;
+  const reservationRequestId = `${requestId}:reserve`;
+
+  await repository.transact(worldId, null, (aggregate) => {
+    const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
+    if (!control) throw new Error("Alpha player must control a promotion before planning a show");
+
+    const draftReceipt = aggregate.commands.receipts.find((receipt) => receipt.requestId === draftRequestId);
+    const reservationReceipt = aggregate.commands.receipts.find((receipt) => receipt.requestId === reservationRequestId);
+    const completeRetry = Boolean(draftReceipt && reservationReceipt);
+    if (!completeRetry && aggregate.runtime.revision !== expectedRevision) {
+      throw new Error(
+        `stale World revision for ${worldId}: expected ${expectedRevision}, current ${aggregate.runtime.revision}`,
+      );
+    }
+
+    const currentDate = aggregate.state.world.currentDate;
+    const draftId = alphaCurrentWeekShowDraftId(control.promotionId, currentDate);
+    const draft: DetailedShowDraft = {
+      draftId,
+      promotionId: control.promotionId,
+      targetDate: { year: currentDate.year, week: currentDate.week, day },
+      marketId: request.marketId,
+      venueId: request.venueId,
+      ticketStrategy: request.ticketStrategy,
+      participantIds: [...request.participantIds],
+      matches: [],
+      championshipAssignments: [],
+    };
+
+    const workspace = upsertDetailedShowDraftCommand(
+      aggregate.state,
+      aggregate.ownership,
+      aggregate.planning,
+      aggregate.commands,
+      aggregate.runtime,
+      {
+        requestId: draftRequestId,
+        worldId,
+        playerId,
+        commandType: "UPSERT_DETAILED_SHOW_DRAFT",
+        payload: {
+          promotionId: control.promotionId,
+          expectedPlanVersion,
+          draft,
+        },
+      },
+    );
+
+    reserveDetailedShowDraftCommand(
+      aggregate.state,
+      aggregate.ownership,
+      aggregate.planning,
+      aggregate.commands,
+      aggregate.runtime,
+      {
+        requestId: reservationRequestId,
+        worldId,
+        playerId,
+        commandType: "RESERVE_DETAILED_SHOW_DRAFT",
+        payload: {
+          promotionId: control.promotionId,
+          expectedPlanVersion: workspace.version,
+          draftId,
+        },
+      },
+    );
+  });
+
   return loadAlphaPlayerSession(repository, worldId, playerId);
 }
 

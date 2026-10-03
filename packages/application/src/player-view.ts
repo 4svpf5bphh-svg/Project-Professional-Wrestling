@@ -6,12 +6,14 @@ import type {
   PpwDate,
   PromotionLifecycle,
   PromotionTier,
+  TicketStrategy,
 } from "../../domain/src/types.js";
 import { humanWeekReadiness, type HumanWeekReadinessStatus } from "../../sim-core/src/human-routine.js";
 import {
   activePromotionControlForPlayer,
   activeWorldMembership,
 } from "./ownership.js";
+import { playerShowPlanningStatus, type PlayerShowPlanningState } from "./planning-status.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export interface AlphaRosterMemberView {
@@ -57,11 +59,51 @@ export interface AlphaResolvedShowView {
   crowdResponse: number;
 }
 
+export interface AlphaVenuePlanningOptionView {
+  venueId: Id;
+  name: string;
+  capacity: number;
+  weeklyHireCost: number;
+  prestige: number;
+}
+
+export interface AlphaMarketPlanningOptionView {
+  marketId: Id;
+  name: string;
+  isHomeMarket: boolean;
+  venues: AlphaVenuePlanningOptionView[];
+}
+
+export interface AlphaCurrentWeekShowPlanView {
+  draftId: string;
+  state: PlayerShowPlanningState;
+  day: number;
+  marketId: Id | null;
+  venueId: Id | null;
+  ticketStrategy: TicketStrategy | null;
+  participantIds: Id[];
+  reservationId: string | null;
+  riskReasons: string[];
+  canEdit: boolean;
+}
+
+export interface AlphaShowPlanningView {
+  workspaceVersion: number;
+  draftId: string;
+  canPlanThisWeek: boolean;
+  minParticipants: number;
+  maxParticipants: number;
+  ticketStrategies: TicketStrategy[];
+  markets: AlphaMarketPlanningOptionView[];
+  currentPlan: AlphaCurrentWeekShowPlanView | null;
+}
+
 export interface AlphaControlledPromotionView {
   promotionId: Id;
   name: string;
   tier: PromotionTier;
   lifecycle: PromotionLifecycle;
+  homeMarketId: Id;
   homeMarketName: string;
   cash: number;
   debt: number;
@@ -72,6 +114,7 @@ export interface AlphaControlledPromotionView {
   planningDraftCount: number;
   reservationCount: number;
   weekReadiness: AlphaWeekReadinessView;
+  showPlanning: AlphaShowPlanningView;
   lastResolvedShow: AlphaResolvedShowView | null;
 }
 
@@ -94,6 +137,8 @@ export interface AlphaPlayerWorldView {
   availableIndependentPromotions: AlphaPromotionChoiceView[];
 }
 
+const ALPHA_TICKET_STRATEGIES: TicketStrategy[] = ["ACCESSIBLE", "STANDARD", "PREMIUM", "PRESTIGE"];
+
 function marketName(aggregate: ApplicationWorldAggregate, marketId: Id): string {
   return aggregate.state.markets.find((market) => market.id === marketId)?.name ?? "Unknown market";
 }
@@ -104,6 +149,29 @@ function venueName(aggregate: ApplicationWorldAggregate, venueId: Id): string {
 
 function samePpwWeek(left: PpwDate, right: PpwDate): boolean {
   return left.year === right.year && left.week === right.week;
+}
+
+function currentWeekDraftId(promotionId: Id, date: PpwDate): string {
+  return `alpha-show:${promotionId}:Y${date.year}:W${date.week}`;
+}
+
+function maxShowParticipants(
+  tier: PromotionTier,
+  date: PpwDate,
+  weeksPerYear: number,
+  majorEventIntervalWeeks: number,
+): number {
+  const regular = tier === "GLOBAL"
+    ? 16
+    : tier === "NATIONAL"
+      ? 14
+      : tier === "RISING"
+        ? 12
+        : tier === "INDEPENDENT"
+          ? 10
+          : 8;
+  const weekIndex = ((date.year - 1) * weeksPerYear) + (date.week - 1);
+  return (weekIndex + 1) % majorEventIntervalWeeks === 0 ? regular + 2 : regular;
 }
 
 function lastResolvedShowForPromotion(
@@ -138,6 +206,10 @@ function lastResolvedShowForPromotion(
     bestMatchRating: event.bestMatchRating,
     crowdResponse: event.crowdResponse,
   };
+}
+
+export function alphaCurrentWeekShowDraftId(promotionId: Id, date: PpwDate): string {
+  return currentWeekDraftId(promotionId, date);
 }
 
 export function buildAlphaPlayerWorldView(
@@ -178,11 +250,38 @@ export function buildAlphaPlayerWorldView(
         (reservation) => reservation.promotionId === promotion.id,
       ).length;
       const readiness = humanWeekReadiness(aggregate.state, promotion.id);
+      const currentDate = aggregate.state.world.currentDate;
+      const draftId = currentWeekDraftId(promotion.id, currentDate);
+      const currentDraft = workspace?.detailedShowDrafts.find((draft) => (
+        draft.draftId === draftId && samePpwWeek(draft.targetDate, currentDate)
+      )) ?? null;
+      const currentStatus = currentDraft
+        ? playerShowPlanningStatus(aggregate.state, aggregate.planning, aggregate.runtime, promotion.id, draftId)
+        : null;
+      const markets = aggregate.state.markets
+        .map((market) => ({
+          marketId: market.id,
+          name: market.name,
+          isHomeMarket: market.id === promotion.homeMarketId,
+          venues: aggregate.state.venues
+            .filter((venue) => venue.marketId === market.id)
+            .map((venue) => ({
+              venueId: venue.id,
+              name: venue.name,
+              capacity: venue.capacity,
+              weeklyHireCost: venue.weeklyHireCost,
+              prestige: venue.prestige,
+            }))
+            .sort((a, b) => a.weeklyHireCost - b.weeklyHireCost || a.capacity - b.capacity || a.name.localeCompare(b.name)),
+        }))
+        .sort((a, b) => Number(b.isHomeMarket) - Number(a.isHomeMarket) || a.name.localeCompare(b.name));
+
       return {
         promotionId: promotion.id,
         name: promotion.name,
         tier: promotion.tier,
         lifecycle: promotion.lifecycle,
+        homeMarketId: promotion.homeMarketId,
         homeMarketName: marketName(aggregate, promotion.homeMarketId),
         cash: promotion.cash,
         debt: promotion.debt,
@@ -197,6 +296,36 @@ export function buildAlphaPlayerWorldView(
           readyToFinish: readiness.readyToAdvance,
           eventId: readiness.eventId,
           staffHelpRequired: !readiness.readyToAdvance,
+        },
+        showPlanning: {
+          workspaceVersion: workspace?.version ?? 0,
+          draftId,
+          canPlanThisWeek: aggregate.runtime.phase === "OPEN"
+            && readiness.status === "SHOW_REQUIRED"
+            && (currentStatus === null || currentStatus.availableActions.some((action) => (
+              action === "EDIT_DRAFT" || action === "RESERVE" || action === "REFRESH_RESERVATION"
+            ))),
+          minParticipants: aggregate.state.ruleset.minEventParticipants,
+          maxParticipants: maxShowParticipants(
+            promotion.tier,
+            currentDate,
+            aggregate.state.ruleset.weeksPerYear,
+            aggregate.state.ruleset.majorEventIntervalWeeks,
+          ),
+          ticketStrategies: [...ALPHA_TICKET_STRATEGIES],
+          markets,
+          currentPlan: currentDraft && currentStatus ? {
+            draftId,
+            state: currentStatus.state,
+            day: currentDraft.targetDate.day,
+            marketId: currentDraft.marketId,
+            venueId: currentDraft.venueId,
+            ticketStrategy: currentDraft.ticketStrategy,
+            participantIds: [...currentDraft.participantIds],
+            reservationId: currentStatus.reservationId,
+            riskReasons: [...currentStatus.riskReasons],
+            canEdit: currentStatus.availableActions.includes("EDIT_DRAFT"),
+          } : null,
         },
         lastResolvedShow: lastResolvedShowForPromotion(aggregate, promotion.id),
       };

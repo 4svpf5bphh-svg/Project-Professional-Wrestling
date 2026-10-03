@@ -4,6 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import type { AlphaPlayerWorldView } from "../../../dist/packages/application/src/player-view.js";
 
 type ErrorPayload = { error?: string };
+type TicketStrategy = "ACCESSIBLE" | "STANDARD" | "PREMIUM" | "PRESTIGE";
+type ShowPlanForm = {
+  day: number;
+  marketId: string;
+  venueId: string;
+  ticketStrategy: TicketStrategy;
+  participantIds: string[];
+};
 
 function isErrorPayload(payload: AlphaPlayerWorldView | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
@@ -31,7 +39,7 @@ function readinessCopy(status: AlphaPlayerWorldView["promotion"] extends infer T
   switch (status) {
     case "READY": return "Your required show and card are ready for the weekly lock.";
     case "NOT_REQUIRED": return "No mandatory show is due for your promotion this week.";
-    case "SHOW_REQUIRED": return "No required show is prepared. Finishing now lets staff run the missing show and card.";
+    case "SHOW_REQUIRED": return "No required show is committed yet. Finish the show plan below or staff will take over the missing work at lock.";
     case "CARD_REQUIRED": return "Your show exists, but the card is incomplete. Finishing now lets staff complete the card.";
     default: return "Weekly readiness is unavailable.";
   }
@@ -41,11 +49,43 @@ function readinessLabel(status: string): string {
   return status.replaceAll("_", " ");
 }
 
+function planningStateLabel(state: string): string {
+  return state.replaceAll("_", " ");
+}
+
+function defaultShowPlan(view: AlphaPlayerWorldView): ShowPlanForm | null {
+  const promotion = view.promotion;
+  if (!promotion) return null;
+  const planning = promotion.showPlanning;
+  const existing = planning.currentPlan;
+  const marketId = existing?.marketId ?? promotion.homeMarketId ?? planning.markets[0]?.marketId;
+  if (!marketId) return null;
+  const market = planning.markets.find((candidate) => candidate.marketId === marketId) ?? planning.markets[0];
+  const venueId = existing?.venueId ?? market?.venues[0]?.venueId;
+  if (!market || !venueId) return null;
+
+  let participantIds = existing?.participantIds ?? promotion.roster
+    .filter((person) => person.status === "ACTIVE" && person.datesRemaining > 0)
+    .slice(0, planning.maxParticipants)
+    .map((person) => person.personId);
+  if (participantIds.length % 2 !== 0) participantIds = participantIds.slice(0, -1);
+
+  return {
+    day: existing?.day ?? 6,
+    marketId: market.marketId,
+    venueId,
+    ticketStrategy: existing?.ticketStrategy ?? "STANDARD",
+    participantIds,
+  };
+}
+
 export default function AlphaHome(): React.JSX.Element {
   const [view, setView] = useState<AlphaPlayerWorldView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyPromotionId, setBusyPromotionId] = useState<string | null>(null);
   const [finishingWeek, setFinishingWeek] = useState(false);
+  const [savingShowPlan, setSavingShowPlan] = useState(false);
+  const [showPlan, setShowPlan] = useState<ShowPlanForm | null>(null);
   const requestIds = useRef(new Map<string, string>());
 
   async function refresh(): Promise<void> {
@@ -63,6 +103,14 @@ export default function AlphaHome(): React.JSX.Element {
       setError(reason instanceof Error ? reason.message : "Unable to load PPW Alpha");
     });
   }, []);
+
+  useEffect(() => {
+    if (!view?.promotion) {
+      setShowPlan(null);
+      return;
+    }
+    setShowPlan(defaultShowPlan(view));
+  }, [view]);
 
   async function claim(promotionId: string): Promise<void> {
     setBusyPromotionId(promotionId);
@@ -88,6 +136,47 @@ export default function AlphaHome(): React.JSX.Element {
       setError(reason instanceof Error ? reason.message : "Unable to claim promotion");
     } finally {
       setBusyPromotionId(null);
+    }
+  }
+
+  async function saveShowPlan(): Promise<void> {
+    if (!view?.promotion || !showPlan) return;
+    const planning = view.promotion.showPlanning;
+    setSavingShowPlan(true);
+    setError(null);
+    const requestKey = `show-plan:${planning.draftId}`;
+    let requestId = requestIds.current.get(requestKey);
+    if (!requestId) {
+      requestId = crypto.randomUUID();
+      requestIds.current.set(requestKey, requestId);
+    }
+
+    try {
+      const response = await fetch("/api/show-plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId,
+          expectedRevision: view.world.revision,
+          expectedPlanVersion: planning.workspaceVersion,
+          ...showPlan,
+        }),
+      });
+      const payload = await response.json() as AlphaPlayerWorldView | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        const message = isErrorPayload(payload) && payload.error ? payload.error : "Unable to save show plan";
+        if (message.includes("stale World revision") || message.includes("stale plan version")) {
+          await refresh();
+          throw new Error(`${message}. Latest World state loaded.`);
+        }
+        throw new Error(message);
+      }
+      requestIds.current.delete(requestKey);
+      setView(payload);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to save show plan");
+    } finally {
+      setSavingShowPlan(false);
     }
   }
 
@@ -119,6 +208,23 @@ export default function AlphaHome(): React.JSX.Element {
     }
   }
 
+  function changeMarket(marketId: string): void {
+    if (!view?.promotion || !showPlan) return;
+    const market = view.promotion.showPlanning.markets.find((candidate) => candidate.marketId === marketId);
+    setShowPlan({ ...showPlan, marketId, venueId: market?.venues[0]?.venueId ?? "" });
+  }
+
+  function toggleParticipant(personId: string): void {
+    if (!view?.promotion || !showPlan) return;
+    const selected = showPlan.participantIds.includes(personId);
+    if (selected) {
+      setShowPlan({ ...showPlan, participantIds: showPlan.participantIds.filter((id) => id !== personId) });
+      return;
+    }
+    if (showPlan.participantIds.length >= view.promotion.showPlanning.maxParticipants) return;
+    setShowPlan({ ...showPlan, participantIds: [...showPlan.participantIds, personId] });
+  }
+
   if (!view) {
     return (
       <main className="app-shell loading-shell">
@@ -131,6 +237,22 @@ export default function AlphaHome(): React.JSX.Element {
 
   const promotion = view.promotion;
   const canFinishWeek = promotion !== null && view.world.phase !== "RESOLVING";
+  const planning = promotion?.showPlanning ?? null;
+  const selectedMarket = planning && showPlan
+    ? planning.markets.find((market) => market.marketId === showPlan.marketId) ?? null
+    : null;
+  const selectedVenue = selectedMarket && showPlan
+    ? selectedMarket.venues.find((venue) => venue.venueId === showPlan.venueId) ?? null
+    : null;
+  const selectedCount = showPlan?.participantIds.length ?? 0;
+  const validRosterCount = planning
+    ? selectedCount >= planning.minParticipants && selectedCount <= planning.maxParticipants && selectedCount % 2 === 0
+    : false;
+  const canSaveShowPlan = Boolean(
+    promotion && planning?.canPlanThisWeek && showPlan && showPlan.marketId && showPlan.venueId
+    && validRosterCount && view.world.phase === "OPEN" && !savingShowPlan,
+  );
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -185,17 +307,109 @@ export default function AlphaHome(): React.JSX.Element {
             <article className="metric-card"><span>Status</span><strong>{promotion.lifecycle}</strong></article>
           </section>
 
+          {planning?.canPlanThisWeek && showPlan ? (
+            <section className="panel planner-panel" id="show-plan">
+              <div className="section-heading">
+                <div>
+                  <span className="eyebrow">BOOK THIS WEEK&apos;S SHOW</span>
+                  <h2>Commit the logistics</h2>
+                </div>
+                <span className={`plan-pill ${planning.currentPlan?.state === "RESERVED" ? "plan-reserved" : ""}`}>
+                  {planning.currentPlan ? planningStateLabel(planning.currentPlan.state) : "UNPLANNED"}
+                </span>
+              </div>
+              <p className="muted body-copy">Choose where you run, what you charge and who you commit. Saving reserves the venue and wrestler dates in the shared World. Match booking comes next.</p>
+
+              <div className="planner-grid">
+                <label className="field-label">
+                  <span>PPW day</span>
+                  <select value={showPlan.day} onChange={(event) => setShowPlan({ ...showPlan, day: Number(event.target.value) })}>
+                    {[1, 2, 3, 4, 5, 6, 7].map((day) => <option key={day} value={day}>Day {day}</option>)}
+                  </select>
+                </label>
+                <label className="field-label">
+                  <span>Market</span>
+                  <select value={showPlan.marketId} onChange={(event) => changeMarket(event.target.value)}>
+                    {planning.markets.map((market) => (
+                      <option key={market.marketId} value={market.marketId}>{market.name}{market.isHomeMarket ? " · Home" : ""}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-label">
+                  <span>Venue</span>
+                  <select value={showPlan.venueId} onChange={(event) => setShowPlan({ ...showPlan, venueId: event.target.value })}>
+                    {selectedMarket?.venues.map((venue) => (
+                      <option key={venue.venueId} value={venue.venueId}>{venue.name} · {integer(venue.capacity)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field-label">
+                  <span>Ticket strategy</span>
+                  <select value={showPlan.ticketStrategy} onChange={(event) => setShowPlan({ ...showPlan, ticketStrategy: event.target.value as TicketStrategy })}>
+                    {planning.ticketStrategies.map((strategy) => <option key={strategy} value={strategy}>{strategy.replaceAll("_", " ")}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              {selectedVenue ? (
+                <div className="venue-summary">
+                  <span>{selectedVenue.name}</span>
+                  <strong>{integer(selectedVenue.capacity)} cap · {money(selectedVenue.weeklyHireCost)} hire · PRE {Math.round(selectedVenue.prestige)}</strong>
+                </div>
+              ) : null}
+
+              <div className="roster-picker-heading">
+                <div>
+                  <strong>Show roster</strong>
+                  <span>Select an even {planning.minParticipants}–{planning.maxParticipants} wrestlers.</span>
+                </div>
+                <span className={validRosterCount ? "positive" : "warning-text"}>{selectedCount}/{planning.maxParticipants}</span>
+              </div>
+              <div className="roster-picker">
+                {promotion.roster.map((person) => {
+                  const selected = showPlan.participantIds.includes(person.personId);
+                  const available = person.status === "ACTIVE" && person.datesRemaining > 0;
+                  const maxed = !selected && selectedCount >= planning.maxParticipants;
+                  return (
+                    <button
+                      type="button"
+                      className={`talent-pick ${selected ? "talent-selected" : ""}`}
+                      key={person.personId}
+                      disabled={!available || maxed}
+                      onClick={() => toggleParticipant(person.personId)}
+                    >
+                      <span>
+                        <strong>{person.name}</strong>
+                        <small>{person.status === "ACTIVE" ? `${person.datesRemaining} dates · POP ${person.popularity}` : person.status}</small>
+                      </span>
+                      <b>{selected ? "✓" : "+"}</b>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button className="primary-button planner-save" disabled={!canSaveShowPlan} onClick={saveShowPlan}>
+                {savingShowPlan ? "Reserving…" : planning.currentPlan?.reservationId ? "Update reservation" : "Reserve show plan"}
+              </button>
+              <p className="micro-copy">Reservations are competitive commitments: another human player cannot take the same venue or wrestler on the same PPW day once yours is committed.</p>
+            </section>
+          ) : null}
+
           <section className="panel week-panel">
             <div className="section-heading">
               <div>
                 <span className="eyebrow">THIS PPW WEEK</span>
-                <h2>{readinessLabel(promotion.weekReadiness.status)}</h2>
+                <h2>{planning?.currentPlan?.state === "RESERVED" ? "SHOW RESERVED · CARD REQUIRED" : readinessLabel(promotion.weekReadiness.status)}</h2>
               </div>
               <span className={`readiness-pill readiness-${promotion.weekReadiness.readyToFinish ? "ready" : "attention"}`}>
                 {promotion.weekReadiness.readyToFinish ? "READY" : "NEEDS ATTENTION"}
               </span>
             </div>
-            <p className="muted body-copy">{readinessCopy(promotion.weekReadiness.status)}</p>
+            <p className="muted body-copy">
+              {planning?.currentPlan?.state === "RESERVED"
+                ? "Your show logistics and talent are reserved. The card is not player-booked yet, so staff will complete that missing responsibility if you finish the week now."
+                : readinessCopy(promotion.weekReadiness.status)}
+            </p>
             <button
               className="primary-button"
               disabled={!canFinishWeek || finishingWeek}

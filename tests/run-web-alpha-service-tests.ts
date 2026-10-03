@@ -8,6 +8,7 @@ import {
   createAlphaWorldAggregate,
   ensureAlphaWorld,
   loadAlphaPlayerSession,
+  saveAlphaCurrentWeekShowPlan,
 } from "../packages/web-adapter/src/alpha-service.js";
 
 let passed = 0;
@@ -31,6 +32,31 @@ function ok(value: unknown, message: string): void {
 
 function weekKey(view: { world: { year: number; week: number } }): string {
   return `${view.world.year}:${view.world.week}`;
+}
+
+function showPlanRequest(view: Awaited<ReturnType<typeof loadAlphaPlayerSession>>, requestId: string) {
+  const promotion = view.promotion;
+  if (!promotion) throw new Error("test player does not control a promotion");
+  const planning = promotion.showPlanning;
+  const market = planning.markets[0];
+  const venue = market?.venues[0];
+  if (!market || !venue) throw new Error("planning view has no market/venue option");
+  let participantIds = promotion.roster
+    .filter((person) => person.status === "ACTIVE" && person.datesRemaining > 0)
+    .slice(0, planning.maxParticipants)
+    .map((person) => person.personId);
+  if (participantIds.length % 2 !== 0) participantIds = participantIds.slice(0, -1);
+  if (participantIds.length < planning.minParticipants) throw new Error("planning view has too few available wrestlers");
+  return {
+    requestId,
+    expectedRevision: view.world.revision,
+    expectedPlanVersion: planning.workspaceVersion,
+    day: 6,
+    marketId: market.marketId,
+    venueId: venue.venueId,
+    ticketStrategy: "STANDARD" as const,
+    participantIds,
+  };
 }
 
 await test("Alpha web service bootstraps and exposes a player-safe promotion choice", async () => {
@@ -60,6 +86,7 @@ await test("Alpha claim travels through the transactional command path and survi
   ok(after.world.revision === 1, "claim did not advance the World revision exactly once");
   ok(after.availableIndependentPromotions.length === 0, "claimed player still received promotion choices");
   ok(after.promotion?.weekReadiness.status !== undefined, "claimed dashboard did not expose week readiness");
+  ok((after.promotion?.showPlanning.markets.length ?? 0) > 0, "claimed dashboard did not expose planning markets");
 
   const persisted = await repository.load(worldId);
   ok(persisted.ownership.promotionControls.length === 1, "claim did not persist exactly one promotion control");
@@ -89,6 +116,38 @@ await test("Alpha service retry reuses the original request without duplicate mu
     persisted.state.ledger.filter((entry) => entry.type === "HUMAN_PROMOTION_CLAIMED").length === 1,
     "retry duplicated claim history",
   );
+});
+
+await test("Alpha show planning atomically commits a current-week draft and scarce-resource reservation", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 61006, playerId: "alpha-player" });
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  const choice = (await loadAlphaPlayerSession(repository, worldId, "alpha-player")).availableIndependentPromotions[0]!;
+  const claimed = await claimAlphaPromotion(repository, worldId, "alpha-player", {
+    promotionId: choice.promotionId,
+    requestId: "web-plan-claim",
+  });
+  ok(claimed.promotion?.showPlanning.canPlanThisWeek, "current-week show planner was not available after claim");
+
+  const request = showPlanRequest(claimed, "web-plan-save-001");
+  const planned = await saveAlphaCurrentWeekShowPlan(repository, worldId, "alpha-player", request);
+  ok(planned.world.revision === claimed.world.revision + 2, "draft plus reservation did not advance revision twice");
+  ok(planned.promotion?.showPlanning.workspaceVersion === 1, "show draft did not advance plan version");
+  ok(planned.promotion?.showPlanning.currentPlan?.state === "RESERVED", "show plan was not returned as reserved");
+  ok(planned.promotion?.showPlanning.currentPlan?.venueId === request.venueId, "reserved plan lost selected venue");
+  ok(planned.promotion?.showPlanning.currentPlan?.participantIds.length === request.participantIds.length, "reserved plan lost selected talent");
+
+  const persisted = await repository.load(worldId);
+  ok(persisted.state.events.length === 0, "show reservation created simulation event before materialization");
+  ok(persisted.planning.workspaces[0]?.detailedShowDrafts.length === 1, "show draft was not persisted exactly once");
+  ok(persisted.planning.showReservations.length === 1, "show reservation was not persisted exactly once");
+  ok(persisted.commands.receipts.length === 3, "claim plus planning did not persist exactly three command receipts");
+
+  const retry = await saveAlphaCurrentWeekShowPlan(repository, worldId, "alpha-player", request);
+  ok(retry.world.revision === planned.world.revision, "idempotent show-plan retry advanced revision again");
+  const afterRetry = await repository.load(worldId);
+  ok(afterRetry.planning.showReservations.length === 1, "show-plan retry duplicated reservation");
 });
 
 await test("Alpha week finish resolves exactly one World week and exposes the previous show result", async () => {
