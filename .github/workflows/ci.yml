@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - sim-0.0.7
+      - "sim-*"
   pull_request:
     branches:
       - main
