@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { claimAlphaPromotion } from "../../../lib/alpha-service";
-import { withAlphaServerContext } from "../../../lib/server-world";
+import { claimAlphaPromotion } from "../../../../../dist/packages/web-adapter/src/alpha-service.js";
+import { withAlphaServerContext } from "../../../../../dist/packages/web-adapter/src/server-world.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

@@ -1,4 +1,4 @@
-import { DEFAULT_RULESET } from "../../../packages/config/src/default-ruleset.js";
+import { DEFAULT_RULESET } from "../../config/src/default-ruleset.js";
 import {
   buildAlphaPlayerWorldView,
   claimIndependentPromotionCommand,
@@ -10,8 +10,8 @@ import {
   type AlphaPlayerWorldView,
   type ApplicationWorldAggregate,
   type ApplicationWorldRepository,
-} from "../../../packages/application/src/index.js";
-import { createWorld } from "../../../packages/sim-core/src/genesis.js";
+} from "../../application/src/index.js";
+import { createWorld } from "../../sim-core/src/genesis.js";
 
 export interface AlphaWorldBootstrapOptions {
   seed: number;

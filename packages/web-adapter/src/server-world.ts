@@ -1,5 +1,5 @@
-import type { ApplicationWorldRepository } from "../../../packages/application/src/world-aggregate.js";
-import { createPostgresApplicationWorldRepository } from "../../../packages/persistence/src/postgres-world-repository.js";
+import type { ApplicationWorldRepository } from "../../application/src/world-aggregate.js";
+import { createPostgresApplicationWorldRepository } from "../../persistence/src/postgres-world-repository.js";
 import { ensureAlphaWorld } from "./alpha-service.js";
 
 export interface AlphaServerContext {

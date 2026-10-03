@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { AlphaPlayerWorldView } from "../../../packages/application/src/player-view";
+import type { AlphaPlayerWorldView } from "../../../dist/packages/application/src/player-view.js";
 
 function money(value: number): string {
   return new Intl.NumberFormat("en-GB", {

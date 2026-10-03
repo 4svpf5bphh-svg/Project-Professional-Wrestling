@@ -15,7 +15,6 @@
   },
   "include": [
     "apps/sim-cli/**/*.ts",
-    "apps/web/lib/**/*.ts",
     "packages/**/*.ts",
     "tests/**/*.ts"
   ]

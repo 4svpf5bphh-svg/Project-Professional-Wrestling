@@ -6,7 +6,7 @@ import {
   createAlphaWorldAggregate,
   ensureAlphaWorld,
   loadAlphaPlayerSession,
-} from "../apps/web/lib/alpha-service.js";
+} from "../packages/web-adapter/src/alpha-service.js";
 
 let passed = 0;
 let failed = 0;

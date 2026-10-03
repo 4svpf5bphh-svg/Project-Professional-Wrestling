@@ -10,8 +10,8 @@
   "scripts": {
     "clean": "rm -rf dist apps/web/.next",
     "build": "tsc -p tsconfig.json",
-    "web:dev": "next dev apps/web",
-    "web:build": "next build apps/web",
+    "web:dev": "npm run build && next dev apps/web",
+    "web:build": "npm run build && next build apps/web",
     "test:core": "node dist/tests/run-tests.js",
     "test:lifecycle": "node dist/tests/run-lifecycle-tests.js",
     "test:competition": "node dist/tests/run-competition-tests.js",
