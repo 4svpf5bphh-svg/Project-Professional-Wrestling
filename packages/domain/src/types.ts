@@ -17,7 +17,8 @@ export type FinancialTransactionCategory =
   | "VENUE_COST"
   | "PRODUCTION_COST"
   | "TRAVEL_COST"
-  | "APPEARANCE_FEE";
+  | "APPEARANCE_FEE"
+  | "RESTRUCTURING_SETTLEMENT";
 
 export type ContractFamily = "ONE_OFF" | "LIMITED_NON_EXCLUSIVE" | "EXCLUSIVE";
 export type ExclusivityType = "OPEN" | "NON_EXCLUSIVE" | "EXCLUSIVE";
@@ -61,6 +62,14 @@ export interface Ruleset {
   retirementBaseAge: number;
   talentGenerationFloorRatio: number;
   maxProspectsGeneratedPerWeek: number;
+  survivalEvaluationIntervalWeeks: number;
+  survivalDistressThresholdWeeks: number;
+  survivalCrisisDormancyWeeks: number;
+  survivalUnderstaffedDormancyWeeks: number;
+  survivalRecoveryWeeks: number;
+  survivalMinimumRosterRatio: number;
+  survivalEmergencyRecruitmentPerCycle: number;
+  survivalRestructureIntervalWeeks: number;
 }
 
 export interface World {
@@ -122,6 +131,20 @@ export interface Promotion {
   financialDistress: FinancialDistressState;
   eventCadenceWeeks: number;
   aiProfile: AiProfile;
+}
+
+export interface PromotionSurvivalState {
+  worldId: Id;
+  promotionId: Id;
+  baselineWeeklyFixedOverhead: number;
+  baselineEventCadenceWeeks: number;
+  stressWeeks: number;
+  crisisWeeks: number;
+  understaffedWeeks: number;
+  healthyWeeks: number;
+  restructuringCount: number;
+  lastRestructureWeekIndex: number | null;
+  dormantSince: PpwDate | null;
 }
 
 export interface PromotionMarketState {
@@ -324,6 +347,7 @@ export interface WorldState {
   venues: Venue[];
   promotions: Promotion[];
   promotionMarketStates: PromotionMarketState[];
+  promotionSurvivalStates?: PromotionSurvivalState[];
   people: Person[];
   contracts: Contract[];
   contractOffers: ContractOffer[];
