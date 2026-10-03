@@ -13,5 +13,10 @@
     "sourceMap": true,
     "lib": ["ES2022", "DOM"]
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "tests/**/*.ts"]
+  "include": [
+    "apps/sim-cli/**/*.ts",
+    "apps/web/lib/**/*.ts",
+    "packages/**/*.ts",
+    "tests/**/*.ts"
+  ]
 }
