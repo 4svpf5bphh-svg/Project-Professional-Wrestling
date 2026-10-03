@@ -326,6 +326,7 @@ export function planWorldEvents(state: WorldState): void {
   }
 
   for (const promotion of orderedPromotions) {
+    if (promotion.controllerType !== "AI") continue;
     if (!shouldPromotionRunEvent(state, promotion)) continue;
     const type: WrestlingEventType = (weekIndex + 1) % state.ruleset.majorEventIntervalWeeks === 0 ? "MAJOR" : "REGULAR";
     const rng = new DeterministicRng(eventSeed(state, promotion, "event-plan"));
