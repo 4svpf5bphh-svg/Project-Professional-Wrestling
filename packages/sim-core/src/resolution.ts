@@ -1,4 +1,5 @@
 import type { WorldState } from "../../domain/src/types.js";
+import { decayAudienceMarketHeatForWeek } from "./audience.js";
 import { advanceWeek } from "./clock.js";
 import { processCareerProgressionForWeek, recoverWrestlersForNewWeek } from "./career.js";
 import { maintainChampionshipsForWeek, processCompetitionForWeek } from "./competition.js";
@@ -9,6 +10,7 @@ import { processPromotionSurvivalForWeek } from "./lifecycle.js";
 
 export function resolveWorldWeek(state: WorldState): void {
   recoverWrestlersForNewWeek(state);
+  decayAudienceMarketHeatForWeek(state);
   expireContracts(state);
   maintainChampionshipsForWeek(state);
   generateAiContractOffers(state);
