@@ -1,16 +1,50 @@
-import type { PromotionMarketState, WorldState, WrestlingEvent } from "../../domain/src/types.js";
+import type { Promotion, PromotionMarketState, WorldState, WrestlingEvent } from "../../domain/src/types.js";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+interface CompetitionLookupIndex {
+  promotionCount: number;
+  marketStateCount: number;
+  promotionById: Map<string, Promotion>;
+  marketStateByKey: Map<string, PromotionMarketState>;
+}
+
+const competitionLookupIndexes = new WeakMap<WorldState, CompetitionLookupIndex>();
+
+function marketStateKey(promotionId: string, marketId: string): string {
+  return `${promotionId}:${marketId}`;
+}
+
+function competitionLookupIndex(state: WorldState): CompetitionLookupIndex {
+  let index = competitionLookupIndexes.get(state);
+  if (
+    !index
+    || index.promotionCount !== state.promotions.length
+    || index.marketStateCount !== state.promotionMarketStates.length
+  ) {
+    index = {
+      promotionCount: state.promotions.length,
+      marketStateCount: state.promotionMarketStates.length,
+      promotionById: new Map(state.promotions.map((promotion) => [promotion.id, promotion])),
+      marketStateByKey: new Map(
+        state.promotionMarketStates.map((entry) => [marketStateKey(entry.promotionId, entry.marketId), entry]),
+      ),
+    };
+    competitionLookupIndexes.set(state, index);
+  }
+  return index;
+}
+
 function marketState(state: WorldState, promotionId: string, marketId: string): PromotionMarketState | undefined {
-  return state.promotionMarketStates.find((entry) => entry.promotionId === promotionId && entry.marketId === marketId);
+  return competitionLookupIndex(state).marketStateByKey.get(marketStateKey(promotionId, marketId));
 }
 
 function localAudiencePower(state: WorldState, promotionId: string, marketId: string): number {
-  const local = marketState(state, promotionId, marketId);
-  const promotion = state.promotions.find((entry) => entry.id === promotionId);
+  const index = competitionLookupIndex(state);
+  const local = index.marketStateByKey.get(marketStateKey(promotionId, marketId));
+  const promotion = index.promotionById.get(promotionId);
   if (!local || !promotion) return 0;
   const localStrength = local.liveStrength * 0.5 + local.awareness * 0.3 + local.loyalty * 0.2;
   return clamp(localStrength * 0.8 + promotion.mediaReach * 0.2, 0, 100);
