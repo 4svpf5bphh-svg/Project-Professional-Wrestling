@@ -13,6 +13,7 @@ export * from "./lifecycle.js";
 export * from "./matches.js";
 export * from "./morale.js";
 export * from "./reputation.js";
+export * from "./renewal-resistance.js";
 export * from "./resolution.js";
 export * from "./rng.js";
 export * from "./snapshot.js";
