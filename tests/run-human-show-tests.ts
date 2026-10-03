@@ -6,6 +6,7 @@ import {
   activeContractsForPromotion,
   claimIndependentPromotionForHuman,
   createWorld,
+  prepareHumanMatchCard,
   prepareHumanShow,
   resolveWorldWeek,
 } from "../packages/sim-core/src/index.js";
@@ -89,7 +90,7 @@ test("human promoter can prepare a current-week show from real roster and venue 
   ok(ledgerEvent.type === "HUMAN_EVENT_PREPARED", "prepared show was not recorded in World history");
 });
 
-test("a prepared human show resolves inside the normal living-World week", () => {
+test("a fully prepared human show resolves inside the normal living-World week", () => {
   const { state, promotionId, participantIds, marketId, venueId } = fixture(10902);
   const datesBefore = new Map(
     activeContractsForPromotion(state, promotionId).map((contract) => [contract.id, contract.datesUsed]),
@@ -102,11 +103,18 @@ test("a prepared human show resolves inside the normal living-World week", () =>
     ticketStrategy: "ACCESSIBLE",
     participantIds,
   });
+  prepareHumanMatchCard(state, event.id, [
+    { type: "SINGLES", sideAIds: [participantIds[0]!], sideBIds: [participantIds[1]!], intendedWinnerSide: "A", intent: "COMPETITIVE", plannedLengthMinutes: 12 },
+    { type: "SINGLES", sideAIds: [participantIds[2]!], sideBIds: [participantIds[3]!], intendedWinnerSide: "B", intent: "STORY", plannedLengthMinutes: 11 },
+    { type: "SINGLES", sideAIds: [participantIds[4]!], sideBIds: [participantIds[5]!], intendedWinnerSide: "A", intent: "TECHNICAL", plannedLengthMinutes: 15 },
+    { type: "SINGLES", sideAIds: [participantIds[6]!], sideBIds: [participantIds[7]!], intendedWinnerSide: "B", intent: "SHOWCASE", plannedLengthMinutes: 10 },
+    { type: "SINGLES", sideAIds: [participantIds[8]!], sideBIds: [participantIds[9]!], intendedWinnerSide: "A", intent: "EPIC", plannedLengthMinutes: 20 },
+  ]);
 
   resolveWorldWeek(state);
 
   ok(event.status === "COMPLETED", `prepared human show finished as ${event.status}`);
-  ok(event.matchCount > 0, "human show did not produce a match card");
+  ok(event.matchCount === 5, "human show did not resolve its prepared match card");
   ok(event.attendance > 0 && event.gateRevenue > 0, "human show produced no live business result");
   ok(state.world.currentDate.week === 2, "World did not advance after resolving the prepared show");
   ok(
