@@ -27,5 +27,5 @@ jobs:
       - name: Run 10-year standard-seed smoke simulation
         run: npm run sim -- --seed 20261002 --weeks 520
       - name: Run 100-year standard-seed validation
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[long]'))
         run: npm run sim -- --seed 20261002 --weeks 5200
