@@ -181,11 +181,11 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
   await sql`
     UPDATE ppw_worlds SET
       state_schema_version = ${CURRENT_WORLD_STATE_SCHEMA_VERSION},
-      world_state = ${sql.json(snapshot.world)},
+      world_state = ${sql.json(snapshot.world as never)},
       runtime_phase = ${snapshot.runtime.phase},
       runtime_revision = ${snapshot.runtime.revision},
-      locked_ppw_date = ${snapshot.runtime.lockedPpwDate ? sql.json(snapshot.runtime.lockedPpwDate) : null},
-      last_resolved_ppw_date = ${snapshot.runtime.lastResolvedPpwDate ? sql.json(snapshot.runtime.lastResolvedPpwDate) : null},
+      locked_ppw_date = ${snapshot.runtime.lockedPpwDate ? sql.json(snapshot.runtime.lockedPpwDate as never) : null},
+      last_resolved_ppw_date = ${snapshot.runtime.lastResolvedPpwDate ? sql.json(snapshot.runtime.lastResolvedPpwDate as never) : null},
       human_seat_limit = ${snapshot.ownership.humanSeatLimit},
       updated_at = now()
     WHERE world_id = ${worldId}
@@ -195,7 +195,7 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
     const membership = snapshot.ownership.memberships[ordinal]!;
     await sql`
       INSERT INTO ppw_world_memberships(world_id, ordinal, player_id, joined_date, status)
-      VALUES (${worldId}, ${ordinal}, ${membership.playerId}, ${sql.json(membership.joinedDate)}, ${membership.status})
+      VALUES (${worldId}, ${ordinal}, ${membership.playerId}, ${sql.json(membership.joinedDate as never)}, ${membership.status})
       ON CONFLICT (world_id, ordinal) DO UPDATE SET
         player_id = EXCLUDED.player_id,
         joined_date = EXCLUDED.joined_date,
@@ -211,7 +211,7 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
         world_id, ordinal, promotion_id, player_id, control_start_date, control_end_date, status
       ) VALUES (
         ${worldId}, ${ordinal}, ${control.promotionId}, ${control.playerId},
-        ${sql.json(control.controlStartDate)}, ${control.controlEndDate ? sql.json(control.controlEndDate) : null}, ${control.status}
+        ${sql.json(control.controlStartDate as never)}, ${control.controlEndDate ? sql.json(control.controlEndDate as never) : null}, ${control.status}
       )
       ON CONFLICT (world_id, ordinal) DO UPDATE SET
         promotion_id = EXCLUDED.promotion_id,
@@ -229,7 +229,7 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
         world_id, request_id, player_id, command_type, canonical_payload, result_json, committed_date, committed_revision
       ) VALUES (
         ${worldId}, ${receipt.requestId}, ${receipt.playerId}, ${receipt.commandType}, ${receipt.canonicalPayload},
-        ${receipt.resultJson}, ${sql.json(receipt.committedDate)}, ${receipt.committedRevision}
+        ${receipt.resultJson}, ${sql.json(receipt.committedDate as never)}, ${receipt.committedRevision}
       )
       ON CONFLICT (world_id, request_id) DO UPDATE SET
         player_id = EXCLUDED.player_id,
@@ -258,7 +258,7 @@ export class PostgresApplicationWorldRepository implements ApplicationWorldRepos
           world_id, state_schema_version, world_state, runtime_phase, runtime_revision,
           locked_ppw_date, last_resolved_ppw_date, human_seat_limit
         ) VALUES (
-          ${worldId}, ${CURRENT_WORLD_STATE_SCHEMA_VERSION}, ${tx.json(snapshot.world)}, ${snapshot.runtime.phase},
+          ${worldId}, ${CURRENT_WORLD_STATE_SCHEMA_VERSION}, ${tx.json(snapshot.world as never)}, ${snapshot.runtime.phase},
           ${snapshot.runtime.revision}, ${null}, ${null}, ${snapshot.ownership.humanSeatLimit}
         )
         ON CONFLICT (world_id) DO NOTHING
