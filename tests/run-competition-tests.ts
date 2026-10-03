@@ -84,6 +84,19 @@ test("persistent tag teams have exact active two-person membership", () => {
   }
 });
 
+test("a wrestler belongs to at most one active primary tag team", () => {
+  const state = createWorld(8008, DEFAULT_RULESET);
+  resolveWorldWeeks(state, 260);
+  const activeMemberships = (state.teamMemberships ?? []).filter((membership) => membership.active);
+  const activeTeamCountByPerson = new Map<string, number>();
+  for (const membership of activeMemberships) {
+    activeTeamCountByPerson.set(membership.personId, (activeTeamCountByPerson.get(membership.personId) ?? 0) + 1);
+  }
+  for (const [personId, teamCount] of activeTeamCountByPerson) {
+    ok(teamCount <= 1, `${personId} belongs to ${teamCount} active primary tag teams`);
+  }
+});
+
 test("title defenses and changes emerge rather than only inaugural champions", () => {
   const state = createWorld(8005, DEFAULT_RULESET);
   resolveWorldWeeks(state, 260);
