@@ -11,8 +11,13 @@ import {
 } from "./ownership.js";
 import {
   releaseDetailedShowReservation,
+  reservationForDraft,
   reserveDetailedShowDraft,
 } from "./planning-reservations.js";
+import {
+  assertPlayerShowPlanningActionAllowed,
+  playerShowPlanningStatus,
+} from "./planning-status.js";
 import type { DetailedShowReservation, WorldPlanningState } from "./planning.js";
 import type { WorldRuntimeState } from "./runtime.js";
 
@@ -58,6 +63,17 @@ export function reserveDetailedShowDraftCommand(
   }
   return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
     authorizeReservationMutation(state, ownership, planning, envelope.playerId, envelope.payload.promotionId);
+    const status = playerShowPlanningStatus(
+      state,
+      planning,
+      runtime,
+      envelope.payload.promotionId,
+      envelope.payload.draftId,
+    );
+    const action = reservationForDraft(planning, envelope.payload.promotionId, envelope.payload.draftId)
+      ? "REFRESH_RESERVATION"
+      : "RESERVE";
+    assertPlayerShowPlanningActionAllowed(status, action);
     return reserveDetailedShowDraft(
       state,
       planning,
@@ -81,6 +97,14 @@ export function releaseDetailedShowReservationCommand(
   }
   return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
     authorizeReservationMutation(state, ownership, planning, envelope.playerId, envelope.payload.promotionId);
+    const status = playerShowPlanningStatus(
+      state,
+      planning,
+      runtime,
+      envelope.payload.promotionId,
+      envelope.payload.draftId,
+    );
+    assertPlayerShowPlanningActionAllowed(status, "RELEASE_RESERVATION");
     return releaseDetailedShowReservation(
       planning,
       envelope.payload.promotionId,
