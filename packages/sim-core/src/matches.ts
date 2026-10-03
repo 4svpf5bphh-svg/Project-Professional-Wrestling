@@ -207,14 +207,19 @@ function resolveMatch(state: WorldState, planned: PlannedMatch, event: Wrestling
   new LedgerWriter(state.world.id, state.ledger).append({ date: event.date, type: "MATCH_COMPLETED", significance: match.criticalRatingStars >= 4.75 || (event.type === "MAJOR" && isMainEvent) ? "NOTABLE" : "ROUTINE", entityIds: [match.id, event.id, ...allPeople.map((person) => person.id)], payload: { matchType: match.type, intent: match.intent, rating: match.criticalRatingStars, crowd: match.crowdResponse, winnerSide: actualWinnerSide, finishChangedDueToInjury: match.finishChangedDueToInjury } });
 }
 
-function preparedHumanEventCard(state: WorldState, event: WrestlingEvent, appearances: ScheduledAppearance[]): PlannedMatch[] | null {
+function preparedHumanEventCard(
+  state: WorldState,
+  event: WrestlingEvent,
+  appearances: ScheduledAppearance[],
+  staffMayBookCard: boolean,
+): PlannedMatch[] | null {
   const promotion = state.promotions.find((candidate) => candidate.id === event.promotionId);
   if (!promotion || promotion.controllerType !== "HUMAN") return null;
 
   const scheduledMatches = state.matches
     .filter((match) => match.eventId === event.id && match.status === "SCHEDULED")
     .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-  if (scheduledMatches.length === 0) return [];
+  if (scheduledMatches.length === 0) return staffMayBookCard ? null : [];
 
   const appearanceIds = new Set(appearances.map((appearance) => appearance.personId));
   const peopleById = new Map(state.people.map((person) => [person.id, person]));
@@ -234,8 +239,13 @@ function preparedHumanEventCard(state: WorldState, event: WrestlingEvent, appear
   });
 }
 
-export function resolveEventCard(state: WorldState, event: WrestlingEvent, appearances: ScheduledAppearance[]): { usedPersonIds: Set<string>; completedMatches: Match[] } {
-  const preparedHumanCard = preparedHumanEventCard(state, event, appearances);
+export function resolveEventCard(
+  state: WorldState,
+  event: WrestlingEvent,
+  appearances: ScheduledAppearance[],
+  execution: { staffMayBookCard?: boolean } = {},
+): { usedPersonIds: Set<string>; completedMatches: Match[] } {
+  const preparedHumanCard = preparedHumanEventCard(state, event, appearances, execution.staffMayBookCard === true);
   const plannedMatches = preparedHumanCard ?? buildEventCard(state, event, appearances); for (let i = 0; i < plannedMatches.length; i += 1) resolveMatch(state, plannedMatches[i]!, event, i === plannedMatches.length - 1);
   const completedPlans = plannedMatches.filter((planned) => planned.match.status === "COMPLETED"); const completedMatches = completedPlans.map((planned) => planned.match); const usedPersonIds = new Set(completedPlans.flatMap((planned) => planned.participants.map((participant) => participant.personId)));
   event.matchCount = completedMatches.length; event.averageMatchRating = completedMatches.length === 0 ? 0 : Math.round((completedMatches.reduce((sum, match) => sum + match.criticalRatingStars, 0) / completedMatches.length) * 100) / 100; event.bestMatchRating = completedMatches.length === 0 ? 0 : Math.max(...completedMatches.map((match) => match.criticalRatingStars)); event.crowdResponse = completedMatches.length === 0 ? 0 : Math.round((completedMatches.reduce((sum, match) => sum + match.crowdResponse, 0) / completedMatches.length) * 10) / 10;

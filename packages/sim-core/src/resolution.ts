@@ -14,18 +14,6 @@ import { processPromotionStandingForWeek } from "./reputation.js";
 import { applyRenewalRelationshipResistance } from "./renewal-resistance.js";
 import { processTalentTrustForWeek } from "./talent-trust.js";
 
-function withTemporaryAiControl(state: WorldState, promotionIds: ReadonlySet<string>, action: () => void): void {
-  const changed = state.promotions.filter(
-    (promotion) => promotion.controllerType === "HUMAN" && promotionIds.has(promotion.id),
-  );
-  for (const promotion of changed) promotion.controllerType = "AI";
-  try {
-    action();
-  } finally {
-    for (const promotion of changed) promotion.controllerType = "HUMAN";
-  }
-}
-
 export function resolveWorldWeek(state: WorldState): void {
   const routineTakeovers = prepareRoutineContinuityForWeek(state);
   const staffPlansShow = new Set(
@@ -43,8 +31,8 @@ export function resolveWorldWeek(state: WorldState): void {
   applyRenewalRelationshipResistance(state);
   resolveContractOffers(state);
 
-  withTemporaryAiControl(state, staffPlansShow, () => planWorldEvents(state));
-  withTemporaryAiControl(state, staffControlsCard, () => resolveWorldEvents(state));
+  planWorldEvents(state, { staffMayPlanShowFor: staffPlansShow });
+  resolveWorldEvents(state, { staffMayBookCardFor: staffControlsCard });
 
   processCompetitionForWeek(state);
   settleWorldFinances(state);

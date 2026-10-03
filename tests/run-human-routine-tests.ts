@@ -9,6 +9,8 @@ import {
   humanWeekReadiness,
   prepareHumanMatchCard,
   prepareHumanShow,
+  planWorldEvents,
+  resolveWorldEvents,
   resolveWorldWeek,
 } from "../packages/sim-core/src/index.js";
 
@@ -90,6 +92,34 @@ test("human week readiness exposes show, card and ready states", () => {
   prepareSinglesCard(state, event.id, participantIds);
   const ready = humanWeekReadiness(state, promotionId);
   ok(ready.status === "READY" && ready.readyToAdvance, "fully prepared show was not ready to advance");
+});
+
+test("staff show authority plans for a human promotion without changing ownership", () => {
+  const { state, promotionId } = fixture(13006);
+  const promotion = state.promotions.find((candidate) => candidate.id === promotionId)!;
+  ok(promotion.controllerType === "HUMAN", "fixture did not begin under human ownership");
+
+  planWorldEvents(state, { staffMayPlanShowFor: new Set([promotionId]) });
+
+  ok(promotion.controllerType === "HUMAN", "staff show planning changed promotion ownership");
+  const event = state.events.find(
+    (candidate) => candidate.promotionId === promotionId && candidate.date.year === 1 && candidate.date.week === 1,
+  );
+  ok(Boolean(event), "explicit staff show authority did not plan the missing human show");
+  ok(event!.status === "SCHEDULED", "staff-planned human show did not remain scheduled for resolution");
+});
+
+test("staff card authority books a missing human card without changing ownership", () => {
+  const { state, promotionId, participantIds } = fixture(13007);
+  const promotion = state.promotions.find((candidate) => candidate.id === promotionId)!;
+  const event = prepareShow(state, promotionId, participantIds);
+  ok(promotion.controllerType === "HUMAN", "fixture did not begin under human ownership");
+
+  resolveWorldEvents(state, { staffMayBookCardFor: new Set([promotionId]) });
+
+  ok(promotion.controllerType === "HUMAN", "staff card execution changed promotion ownership");
+  ok(event.status === "COMPLETED", `staff-authorized human card finished as ${event.status}`);
+  ok(state.matches.some((match) => match.eventId === event.id && match.status === "COMPLETED"), "staff authority did not create and resolve the missing card");
 });
 
 test("fully prepared human show runs untouched without a routine takeover", () => {

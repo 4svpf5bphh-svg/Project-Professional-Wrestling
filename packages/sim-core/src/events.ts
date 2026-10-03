@@ -464,7 +464,12 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
   return event;
 }
 
-export function planWorldEvents(state: WorldState): void {
+export interface WorldEventExecutionPolicy {
+  staffMayPlanShowFor?: ReadonlySet<string>;
+  staffMayBookCardFor?: ReadonlySet<string>;
+}
+
+export function planWorldEvents(state: WorldState, execution: WorldEventExecutionPolicy = {}): void {
   const weekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
   const start = weekIndex % state.promotions.length;
   const orderedPromotions = state.promotions.map(
@@ -484,7 +489,7 @@ export function planWorldEvents(state: WorldState): void {
   }
 
   for (const promotion of orderedPromotions) {
-    if (promotion.controllerType !== "AI") continue;
+    if (promotion.controllerType !== "AI" && !execution.staffMayPlanShowFor?.has(promotion.id)) continue;
     if (!shouldPromotionRunEvent(state, promotion)) continue;
     const type: WrestlingEventType = (weekIndex + 1) % state.ruleset.majorEventIntervalWeeks === 0 ? "MAJOR" : "REGULAR";
     const rng = new DeterministicRng(eventSeed(state, promotion, "event-plan"));
@@ -567,6 +572,7 @@ function resolveEvent(
   market: Market,
   venue: Venue,
   contractsById: Map<string, Contract>,
+  staffMayBookCard: boolean,
 ): void {
   if (event.status !== "SCHEDULED") return;
   const writer = new LedgerWriter(state.world.id, state.ledger);
@@ -591,7 +597,7 @@ function resolveEvent(
     return;
   }
 
-  const { usedPersonIds, completedMatches } = resolveEventCard(state, event, eligibleAppearances);
+  const { usedPersonIds, completedMatches } = resolveEventCard(state, event, eligibleAppearances, { staffMayBookCard });
   if (!completedMatches.length || usedPersonIds.size < state.ruleset.minEventParticipants) {
     event.status = "CANCELLED";
     for (const appearance of eligibleAppearances) appearance.status = "CANCELLED";
@@ -660,7 +666,7 @@ function resolveEvent(
   });
 }
 
-export function resolveWorldEvents(state: WorldState): void {
+export function resolveWorldEvents(state: WorldState, execution: WorldEventExecutionPolicy = {}): void {
   const currentWeekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
   const events: WrestlingEvent[] = [];
   for (let i = state.events.length - 1; i >= 0; i -= 1) {
@@ -717,6 +723,7 @@ export function resolveWorldEvents(state: WorldState): void {
       market,
       venue,
       currentContractById,
+      execution.staffMayBookCardFor?.has(promotion.id) === true,
     );
   }
 }
