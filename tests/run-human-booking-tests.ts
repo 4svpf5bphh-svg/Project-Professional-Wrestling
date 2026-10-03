@@ -138,14 +138,19 @@ test("manual card must use every committed wrestler exactly once", () => {
   ok(!state.matches.some((match) => match.eventId === eventId), "invalid card partially mutated match state");
 });
 
-test("human show without a manual card is not silently AI-booked", () => {
+test("unresolved human card is staff-booked only when the week locks", () => {
   const { state, eventId } = fixture(11104);
+  const event = state.events.find((candidate) => candidate.id === eventId)!;
+  const promotionId = event.promotionId;
+
+  ok(!state.matches.some((match) => match.eventId === eventId), "staff booked the card before the week lock");
+  ok(!state.ledger.some((entry) => entry.type === "HUMAN_ROUTINE_CONTINUITY_TAKEOVER" && entry.entityIds.includes(promotionId)), "Routine Continuity triggered before the week lock");
 
   resolveWorldWeek(state);
 
-  const event = state.events.find((candidate) => candidate.id === eventId)!;
-  ok(!state.matches.some((match) => match.eventId === eventId), "AI silently generated a card for an unresolved human show");
-  ok(event.status === "CANCELLED", "unbooked human show did not expose its unresolved state");
+  ok(state.matches.some((match) => match.eventId === eventId && match.status === "COMPLETED"), "staff did not book the unresolved card at the week lock");
+  ok(event.status === "COMPLETED", `staff-booked human show finished as ${event.status}`);
+  ok(state.ledger.some((entry) => entry.type === "HUMAN_ROUTINE_CONTINUITY_TAKEOVER" && entry.entityIds.includes(promotionId) && entry.payload.scope === "CARD_ONLY"), "staff intervention was not explicitly recorded as a card-only takeover");
 });
 
 console.log(`\nHuman booking tests: ${passed} passed, ${failed} failed`);
