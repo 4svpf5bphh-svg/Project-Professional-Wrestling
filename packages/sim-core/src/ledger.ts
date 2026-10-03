@@ -1,4 +1,5 @@
 import type { Id, LedgerEvent, LedgerSignificance, PpwDate } from "../../domain/src/types.js";
+import { formatEntityId, nextLedgerSequence } from "./id-allocator.js";
 
 export class LedgerWriter {
   constructor(private readonly worldId: Id, private readonly target: LedgerEvent[]) {}
@@ -10,11 +11,9 @@ export class LedgerWriter {
     entityIds?: Id[];
     payload?: Record<string, string | number | boolean | null>;
   }): LedgerEvent {
-    // Allocate from the live target length so multiple subsystems can safely
-    // append through independent LedgerWriter instances during one resolution.
-    const order = this.target.length + 1;
+    const order = nextLedgerSequence(this.target);
     const event: LedgerEvent = {
-      id: `ledger-${String(order).padStart(6, "0")}`,
+      id: formatEntityId("ledger", order),
       worldId: this.worldId,
       date: { ...input.date },
       order,
