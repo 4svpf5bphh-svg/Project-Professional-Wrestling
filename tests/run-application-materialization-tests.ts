@@ -149,7 +149,7 @@ function completeSinglesCard(f: ReturnType<typeof fixture>, draft: DetailedShowD
       plannedLengthMinutes: index === draft.participantIds.length - 2 ? 24 : 12,
     });
   }
-  const championship = f.state.championships.find(
+  const championship = (f.state.championships ?? []).find(
     (candidate) => candidate.promotionId === f.promotionId && candidate.division === "SINGLES" && candidate.status === "ACTIVE",
   );
   if (!championship) throw new Error("fixture lacks singles championship");
