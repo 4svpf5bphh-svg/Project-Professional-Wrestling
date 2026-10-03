@@ -348,6 +348,16 @@ function titleDue(state: WorldState, championship: Championship, event: Wrestlin
   return ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear) - last >= interval;
 }
 
+function humanBookedTitleMatchId(state: WorldState, eventId: string, championshipId: string): string | null {
+  for (let index = state.ledger.length - 1; index >= 0; index -= 1) {
+    const entry = state.ledger[index]!;
+    if (entry.type !== "HUMAN_CHAMPIONSHIP_MATCH_BOOKED") continue;
+    if (entry.payload.eventId !== eventId || entry.payload.championshipId !== championshipId) continue;
+    return typeof entry.payload.matchId === "string" ? entry.payload.matchId : null;
+  }
+  return null;
+}
+
 function candidateTitleMatch(
   state: WorldState,
   championship: Championship,
@@ -355,6 +365,12 @@ function candidateTitleMatch(
   eventMatches: Match[],
   participantsByMatch: Map<string, MatchParticipant[]>,
 ): Match | null {
+  const promotion = state.promotions.find((candidate) => candidate.id === event.promotionId);
+  if (promotion?.controllerType === "HUMAN") {
+    const bookedMatchId = humanBookedTitleMatchId(state, event.id, championship.id);
+    return bookedMatchId ? eventMatches.find((match) => match.id === bookedMatchId) ?? null : null;
+  }
+
   const reign = currentReign(state, championship);
   if (!reign) {
     if (event.type !== "MAJOR") return null;
