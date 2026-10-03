@@ -158,6 +158,7 @@ test("a decade creates bounded and meaningfully differentiated promotion standin
   ok(prestigeRange >= 18, `decade prestige became too homogeneous: range ${prestigeRange}`);
   ok(fanRange >= 8, `decade fan reputation became too homogeneous: range ${fanRange}`);
   ok(talentRange >= 8, `decade talent reputation became too homogeneous: range ${talentRange}`);
+  ok(talentRange <= 60, `decade talent reputation became implausibly polarized: range ${talentRange}`);
   ok(standings.every((standing) => standing.lastEvaluatedYear === 10), "not every promotion received each annual standing evaluation");
 });
 
