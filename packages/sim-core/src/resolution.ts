@@ -4,16 +4,37 @@ import { advanceWeek } from "./clock.js";
 import { processCareerProgressionForWeek, recoverWrestlersForNewWeek } from "./career.js";
 import { maintainChampionshipsForWeek, processCompetitionForWeek } from "./competition.js";
 import { expireContracts, generateAiContractOffers, resolveContractOffers } from "./contracts.js";
-import { planAndResolveWorldEvents } from "./events.js";
+import { planWorldEvents, resolveWorldEvents } from "./events.js";
 import { settleWorldFinances } from "./finance.js";
 import { processPromotionTierGrowthForWeek } from "./growth.js";
+import { prepareRoutineContinuityForWeek } from "./human-routine.js";
 import { processPromotionSurvivalForWeek } from "./lifecycle.js";
 import { processWrestlerMoraleForWeek } from "./morale.js";
 import { processPromotionStandingForWeek } from "./reputation.js";
 import { applyRenewalRelationshipResistance } from "./renewal-resistance.js";
 import { processTalentTrustForWeek } from "./talent-trust.js";
 
+function withTemporaryAiControl(state: WorldState, promotionIds: ReadonlySet<string>, action: () => void): void {
+  const changed = state.promotions.filter(
+    (promotion) => promotion.controllerType === "HUMAN" && promotionIds.has(promotion.id),
+  );
+  for (const promotion of changed) promotion.controllerType = "AI";
+  try {
+    action();
+  } finally {
+    for (const promotion of changed) promotion.controllerType = "HUMAN";
+  }
+}
+
 export function resolveWorldWeek(state: WorldState): void {
+  const routineTakeovers = prepareRoutineContinuityForWeek(state);
+  const staffPlansShow = new Set(
+    [...routineTakeovers.entries()]
+      .filter(([, scope]) => scope === "SHOW_AND_CARD")
+      .map(([promotionId]) => promotionId),
+  );
+  const staffControlsCard = new Set(routineTakeovers.keys());
+
   recoverWrestlersForNewWeek(state);
   decayAudienceMarketHeatForWeek(state);
   expireContracts(state);
@@ -21,7 +42,10 @@ export function resolveWorldWeek(state: WorldState): void {
   generateAiContractOffers(state);
   applyRenewalRelationshipResistance(state);
   resolveContractOffers(state);
-  planAndResolveWorldEvents(state);
+
+  withTemporaryAiControl(state, staffPlansShow, () => planWorldEvents(state));
+  withTemporaryAiControl(state, staffControlsCard, () => resolveWorldEvents(state));
+
   processCompetitionForWeek(state);
   settleWorldFinances(state);
   processPromotionSurvivalForWeek(state);
