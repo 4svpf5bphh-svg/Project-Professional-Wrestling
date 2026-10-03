@@ -104,7 +104,7 @@ test("tier evaluation does not fire outside the annual boundary", () => {
   ok(!state.ledger.some((entry) => entry.type === "PROMOTION_TIER_CHANGED"), "tier history was written outside Week 52");
 });
 
-test("a decade produces bounded organic tier mobility rather than a frozen or yo-yo world", () => {
+test("a decade produces bounded organic tier mobility and preserves an industry hierarchy", () => {
   const state = createWorld(20261002, DEFAULT_RULESET);
   resolveWorldWeeks(state, 520);
   const changes = state.ledger.filter((entry) => entry.type === "PROMOTION_TIER_CHANGED");
@@ -114,10 +114,14 @@ test("a decade produces bounded organic tier mobility rather than a frozen or yo
     byPromotion.set(promotionId, (byPromotion.get(promotionId) ?? 0) + 1);
   }
   const maxChanges = Math.max(0, ...byPromotion.values());
-  console.log(`  tier mobility: ${changes.length} changes across ${byPromotion.size} promotions; max ${maxChanges} for one promotion`);
+  const topTierPromotions = state.promotions.filter((promotion) => promotion.tier === "GLOBAL" || promotion.tier === "NATIONAL").length;
+  const distinctTiers = new Set(state.promotions.map((promotion) => promotion.tier));
+  console.log(`  tier mobility: ${changes.length} changes across ${byPromotion.size} promotions; max ${maxChanges} for one promotion; ${topTierPromotions} National/Global; ${distinctTiers.size} tiers represented`);
   ok(changes.length >= 2, `world was effectively frozen with only ${changes.length} tier changes`);
   ok(changes.length <= 36, `world tiers were too volatile with ${changes.length} changes`);
   ok(maxChanges <= 6, `one promotion yo-yoed too often with ${maxChanges} tier changes`);
+  ok(topTierPromotions >= 1, "world lost every National/Global promotion");
+  ok(distinctTiers.size >= 3, `world hierarchy compressed into only ${distinctTiers.size} tiers`);
 });
 
 console.log(`\nGrowth tests: ${passed} passed, ${failed} failed`);
