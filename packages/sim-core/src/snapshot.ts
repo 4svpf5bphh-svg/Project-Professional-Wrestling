@@ -107,6 +107,13 @@ export function deterministicWorldHash(state: WorldState): string {
     ["ledger", state.ledger],
   ];
 
+  // Live player planning state must participate in deterministic diagnostics,
+  // but keeping an absent/empty collection out preserves the established
+  // all-AI SIM release hashes exactly.
+  if (state.championshipMatchBookings?.length) {
+    collections.push(["championshipMatchBookings", state.championshipMatchBookings]);
+  }
+
   for (const [name, collection] of collections) {
     hash = fnv1a32Update(hash, `|${name}:${collection.length}:[`);
     const indexes = deterministicSampleIndexes(collection.length);
