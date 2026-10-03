@@ -28,7 +28,8 @@
     "test:human-contracts": "node dist/tests/run-human-contract-tests.js",
     "test:human-booking": "node dist/tests/run-human-booking-tests.js",
     "test:human-championships": "node dist/tests/run-human-championship-tests.js",
-    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience && npm run test:growth && npm run test:market-competition && npm run test:reputation && npm run test:talent-trust && npm run test:contract-trust && npm run test:morale && npm run test:renewal-resistance && npm run test:human-control && npm run test:human-show && npm run test:human-contracts && npm run test:human-booking && npm run test:human-championships",
+    "test:human-routine": "node dist/tests/run-human-routine-tests.js",
+    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience && npm run test:growth && npm run test:market-competition && npm run test:reputation && npm run test:talent-trust && npm run test:contract-trust && npm run test:morale && npm run test:renewal-resistance && npm run test:human-control && npm run test:human-show && npm run test:human-contracts && npm run test:human-booking && npm run test:human-championships && npm run test:human-routine",
     "sim": "npm run build && node dist/apps/sim-cli/src/index.js"
   },
   "devDependencies": {
