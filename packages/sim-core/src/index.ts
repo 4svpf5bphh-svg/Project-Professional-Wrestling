@@ -6,6 +6,7 @@ export * from "./contracts.js";
 export * from "./events.js";
 export * from "./finance.js";
 export * from "./genesis.js";
+export * from "./growth.js";
 export * from "./invariants.js";
 export * from "./ledger.js";
 export * from "./lifecycle.js";
