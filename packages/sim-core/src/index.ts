@@ -6,6 +6,7 @@ export * from "./finance.js";
 export * from "./genesis.js";
 export * from "./invariants.js";
 export * from "./ledger.js";
+export * from "./lifecycle.js";
 export * from "./matches.js";
 export * from "./resolution.js";
 export * from "./rng.js";
