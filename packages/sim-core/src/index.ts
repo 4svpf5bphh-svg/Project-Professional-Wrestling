@@ -1,5 +1,6 @@
 export * from "./career.js";
 export * from "./clock.js";
+export * from "./competition.js";
 export * from "./contracts.js";
 export * from "./events.js";
 export * from "./finance.js";
