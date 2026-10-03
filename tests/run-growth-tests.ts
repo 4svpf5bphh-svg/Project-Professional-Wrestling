@@ -73,7 +73,8 @@ test("strong promotions can rise only one tier at the annual boundary", () => {
   state.world.currentDate.week = DEFAULT_RULESET.weeksPerYear;
   forceStrongScale(state, promotion.id);
   processPromotionTierGrowthForWeek(state);
-  ok(promotion.tier === "NATIONAL", `expected one-step promotion to NATIONAL, got ${promotion.tier}`);
+  const resultingTier: string = promotion.tier;
+  ok(resultingTier === "NATIONAL", `expected one-step promotion to NATIONAL, got ${promotion.tier}`);
   ok(promotion.eventCadenceWeeks === 1, `expected national cadence of 1 week, got ${promotion.eventCadenceWeeks}`);
   const ledger = state.ledger.find((entry) => entry.type === "PROMOTION_TIER_CHANGED" && entry.entityIds.includes(promotion.id));
   ok(ledger, "expected tier change to be recorded in history");
@@ -87,7 +88,8 @@ test("collapsed promotions can fall only one tier at the annual boundary", () =>
   state.world.currentDate.week = DEFAULT_RULESET.weeksPerYear;
   forceWeakScale(state, promotion.id);
   processPromotionTierGrowthForWeek(state);
-  ok(promotion.tier === "RISING", `expected one-step demotion to RISING, got ${promotion.tier}`);
+  const resultingTier: string = promotion.tier;
+  ok(resultingTier === "RISING", `expected one-step demotion to RISING, got ${promotion.tier}`);
   ok(promotion.eventCadenceWeeks === 2, `expected rising cadence of 2 weeks, got ${promotion.eventCadenceWeeks}`);
 });
 
