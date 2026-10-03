@@ -1,7 +1,7 @@
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
-import type { MatchIntent, MatchSide, MatchType, WorldState } from "../packages/domain/src/types.js";
+import type { MatchIntent, MatchSide, MatchType } from "../packages/domain/src/types.js";
 import {
   activeContractsForPromotion,
   activeTeamMemberIds,
@@ -12,6 +12,7 @@ import {
   prepareHumanMatchCard,
   prepareHumanShow,
   resolveWorldWeek,
+  unbookHumanChampionshipMatch,
 } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
@@ -94,6 +95,7 @@ test("human promoter can explicitly crown singles and tag champions from the boo
 
   bookHumanChampionshipMatch(state, event.id, singlesMatch.id, singles.id);
   bookHumanChampionshipMatch(state, event.id, tagMatch.id, tag.id);
+  ok(state.championshipMatchBookings?.length === 2, "live title bookings were not recorded before resolution");
   resolveWorldWeek(state);
 
   const singlesContest = state.championshipContests!.find(
@@ -106,6 +108,7 @@ test("human promoter can explicitly crown singles and tag champions from the boo
   ok(Boolean(tagContest), "booked tag championship match did not become a title contest");
   ok(Boolean(singles.currentReignId), "singles championship did not crown a champion");
   ok(Boolean(tag.currentReignId), "tag championship did not crown champions");
+  ok((state.championshipMatchBookings ?? []).length === 0, "resolved title bookings were retained as live planning state");
 
   const singlesParticipants = state.matchParticipants.filter((participant) => participant.matchId === singlesMatch.id);
   const singlesWinner = singlesParticipants.find((participant) => participant.side === singlesMatch.actualWinnerSide)!;
@@ -140,6 +143,10 @@ test("championship division must match the manually booked match type", () => {
     rejected = true;
   }
   ok(rejected, "tag championship could be assigned to a singles match");
+  ok(
+    !(state.championshipMatchBookings ?? []).some((booking) => booking.championshipId === tag.id),
+    "rejected title booking partially mutated live booking state",
+  );
   ok(
     !state.ledger.some((entry) => entry.type === "HUMAN_CHAMPIONSHIP_MATCH_BOOKED" && entry.payload.championshipId === tag.id),
     "rejected title booking partially mutated World history",
@@ -207,6 +214,40 @@ test("one championship and one match cannot be double-assigned on the same event
     sameMatchRejected = true;
   }
   ok(sameMatchRejected, "one match could be assigned to two championships");
+});
+
+test("unbooking and rebooking changes live title intent without rewriting history", () => {
+  const { state, event, matches, singles } = fixture(11206);
+  const firstMatch = matches[2]!;
+  const replacementMatch = matches[1]!;
+
+  bookHumanChampionshipMatch(state, event.id, firstMatch.id, singles.id);
+  unbookHumanChampionshipMatch(state, event.id, singles.id);
+  bookHumanChampionshipMatch(state, event.id, replacementMatch.id, singles.id);
+
+  const live = state.championshipMatchBookings ?? [];
+  ok(live.length === 1, `expected one live title booking after edit, found ${live.length}`);
+  ok(live[0]!.matchId === replacementMatch.id, "replacement title match was not the live source of truth");
+  ok(
+    state.ledger.filter((entry) => entry.type === "HUMAN_CHAMPIONSHIP_MATCH_BOOKED" && entry.payload.championshipId === singles.id).length === 2,
+    "historical booking decisions were rewritten instead of appended",
+  );
+  ok(
+    state.ledger.some((entry) => entry.type === "HUMAN_CHAMPIONSHIP_MATCH_UNBOOKED" && entry.payload.championshipId === singles.id),
+    "unbooking was not retained as historical audit output",
+  );
+
+  resolveWorldWeek(state);
+
+  ok(
+    state.championshipContests!.some((contest) => contest.championshipId === singles.id && contest.matchId === replacementMatch.id),
+    "competition resolution ignored the replacement live title booking",
+  );
+  ok(
+    !state.championshipContests!.some((contest) => contest.championshipId === singles.id && contest.matchId === firstMatch.id),
+    "competition resolution incorrectly treated old Ledger history as live booking intent",
+  );
+  ok((state.championshipMatchBookings ?? []).length === 0, "resolved edited booking remained live after the event");
 });
 
 console.log(`\nHuman championship tests: ${passed} passed, ${failed} failed`);
