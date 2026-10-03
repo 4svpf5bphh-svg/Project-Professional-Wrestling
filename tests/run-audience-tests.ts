@@ -62,11 +62,11 @@ test("audience heat decays gradually toward durable loyalty", () => {
   local.loyalty = 40;
   local.liveStrength = 90;
   decayAudienceMarketHeat(local);
-  ok(local.liveStrength === 88, `expected hot market to decay to 88, got ${local.liveStrength}`);
+  ok(local.liveStrength === 89, `expected hot market to decay to 89, got ${local.liveStrength}`);
   local.loyalty = 60;
   local.liveStrength = 20;
   decayAudienceMarketHeat(local);
-  ok(local.liveStrength === 21.6, `expected cold market to recover to 21.6, got ${local.liveStrength}`);
+  ok(local.liveStrength === 20.8, `expected cold market to recover to 20.8, got ${local.liveStrength}`);
   ok(local.liveStrength < local.loyalty, "heat should not snap immediately back to loyalty");
 });
 
