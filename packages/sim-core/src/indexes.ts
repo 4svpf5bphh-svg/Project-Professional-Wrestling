@@ -1,4 +1,4 @@
-import type { Contract, Id, WorldState } from "../../domain/src/types.js";
+import type { Contract, Id, Match, MatchParticipant, WorldState } from "../../domain/src/types.js";
 import { ppwDateToWeekIndex } from "./clock.js";
 
 interface ContractIndex {
@@ -14,8 +14,16 @@ interface PersonIndex {
   byId: Map<Id, WorldState["people"][number]>;
 }
 
+interface MatchHistoryIndex {
+  syncedMatches: number;
+  syncedParticipants: number;
+  matchesByEvent: Map<Id, Match[]>;
+  participantsByMatch: Map<Id, MatchParticipant[]>;
+}
+
 const contractIndexes = new WeakMap<WorldState, ContractIndex>();
 const personIndexes = new WeakMap<WorldState, PersonIndex>();
+const matchHistoryIndexes = new WeakMap<WorldState, MatchHistoryIndex>();
 
 function ensureContractIndex(state: WorldState): ContractIndex {
   let index = contractIndexes.get(state);
@@ -71,4 +79,46 @@ export function personById(state: WorldState, personId: Id): WorldState["people"
   }
   index.syncedLength = state.people.length;
   return index.byId.get(personId);
+}
+
+function ensureMatchHistoryIndex(state: WorldState): MatchHistoryIndex {
+  let index = matchHistoryIndexes.get(state);
+  if (
+    !index
+    || index.syncedMatches > state.matches.length
+    || index.syncedParticipants > state.matchParticipants.length
+  ) {
+    index = {
+      syncedMatches: 0,
+      syncedParticipants: 0,
+      matchesByEvent: new Map(),
+      participantsByMatch: new Map(),
+    };
+    matchHistoryIndexes.set(state, index);
+  }
+
+  for (let i = index.syncedMatches; i < state.matches.length; i += 1) {
+    const match = state.matches[i]!;
+    const matches = index.matchesByEvent.get(match.eventId) ?? [];
+    matches.push(match);
+    index.matchesByEvent.set(match.eventId, matches);
+  }
+  index.syncedMatches = state.matches.length;
+
+  for (let i = index.syncedParticipants; i < state.matchParticipants.length; i += 1) {
+    const participant = state.matchParticipants[i]!;
+    const participants = index.participantsByMatch.get(participant.matchId) ?? [];
+    participants.push(participant);
+    index.participantsByMatch.set(participant.matchId, participants);
+  }
+  index.syncedParticipants = state.matchParticipants.length;
+  return index;
+}
+
+export function matchesForEvent(state: WorldState, eventId: Id): readonly Match[] {
+  return ensureMatchHistoryIndex(state).matchesByEvent.get(eventId) ?? [];
+}
+
+export function participantsForMatch(state: WorldState, matchId: Id): readonly MatchParticipant[] {
+  return ensureMatchHistoryIndex(state).participantsByMatch.get(matchId) ?? [];
 }
