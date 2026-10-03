@@ -21,7 +21,7 @@ import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import { comparePpwDates } from "../packages/sim-core/src/clock.js";
 import { humanWeekReadiness } from "../packages/sim-core/src/human-routine.js";
-import { createWorld } from "../packages/sim-core/src/index.js";
+import { createWorld, ensureWorldChampionships } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -149,6 +149,7 @@ function completeSinglesCard(f: ReturnType<typeof fixture>, draft: DetailedShowD
       plannedLengthMinutes: index === draft.participantIds.length - 2 ? 24 : 12,
     });
   }
+  ensureWorldChampionships(f.state);
   const championship = (f.state.championships ?? []).find(
     (candidate) => candidate.promotionId === f.promotionId && candidate.division === "SINGLES" && candidate.status === "ACTIVE",
   );
