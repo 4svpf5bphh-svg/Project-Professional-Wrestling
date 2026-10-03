@@ -15,9 +15,19 @@ import type {
   WrestlingEvent,
 } from "../../domain/src/types.js";
 import { ppwDateToWeekIndex } from "./clock.js";
+import {
+  indexNewTeamState,
+  indexedActiveTeamForPair,
+  indexedActiveTeamMemberIds,
+  indexedLastContestWeek,
+  indexedReignById,
+  indexedTeamById,
+  indexTeamDisbanded,
+} from "./competition-indexes.js";
 import { activeContractsForPerson } from "./contracts.js";
 import { personById } from "./indexes.js";
 import { LedgerWriter } from "./ledger.js";
+import { getOrCreateChemistry } from "./matches.js";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -48,21 +58,8 @@ function championshipContests(state: WorldState): ChampionshipContest[] {
   return state.championshipContests;
 }
 
-function activeMembershipsForTeam(state: WorldState, teamId: string): TeamMembership[] {
-  return teamMemberships(state).filter((membership) => membership.teamId === teamId && membership.active);
-}
-
 export function activeTeamMemberIds(state: WorldState, teamId: string): string[] {
-  return activeMembershipsForTeam(state, teamId).map((membership) => membership.personId).sort();
-}
-
-function exactActiveTeamForPair(state: WorldState, personAId: string, personBId: string): Team | undefined {
-  const target = [personAId, personBId].sort().join(":");
-  for (const team of teams(state)) {
-    if (team.status !== "ACTIVE") continue;
-    if (activeTeamMemberIds(state, team.id).join(":") === target) return team;
-  }
-  return undefined;
+  return indexedActiveTeamMemberIds(state, teamId);
 }
 
 function teamName(a: Person, b: Person): string {
@@ -71,7 +68,7 @@ function teamName(a: Person, b: Person): string {
 
 export function ensureTeamForPair(state: WorldState, personAId: string, personBId: string, date = state.world.currentDate): Team | null {
   if (personAId === personBId) return null;
-  const existing = exactActiveTeamForPair(state, personAId, personBId);
+  const existing = indexedActiveTeamForPair(state, personAId, personBId);
   if (existing) return existing;
   const a = personById(state, personAId);
   const b = personById(state, personBId);
@@ -96,6 +93,7 @@ export function ensureTeamForPair(state: WorldState, personAId: string, personBI
       active: true,
     });
   }
+  indexNewTeamState(state);
   new LedgerWriter(state.world.id, state.ledger).append({
     date,
     type: "TAG_TEAM_FORMED",
@@ -110,10 +108,12 @@ function disbandTeam(state: WorldState, team: Team, reason: string): void {
   if (team.status !== "ACTIVE") return;
   team.status = "DISBANDED";
   team.disbandedDate = { ...state.world.currentDate };
-  for (const membership of activeMembershipsForTeam(state, team.id)) {
+  for (const membership of teamMemberships(state)) {
+    if (membership.teamId !== team.id || !membership.active) continue;
     membership.active = false;
     membership.leftDate = { ...state.world.currentDate };
   }
+  indexTeamDisbanded(state, team.id);
   new LedgerWriter(state.world.id, state.ledger).append({
     date: state.world.currentDate,
     type: "TAG_TEAM_DISBANDED",
@@ -183,7 +183,8 @@ export function ensureWorldChampionships(state: WorldState): void {
 
 function currentReign(state: WorldState, championship: Championship): ChampionshipReign | null {
   if (!championship.currentReignId) return null;
-  return championshipReigns(state).find((reign) => reign.id === championship.currentReignId && reign.status === "ACTIVE") ?? null;
+  const reign = indexedReignById(state, championship.currentReignId);
+  return reign?.status === "ACTIVE" ? reign : null;
 }
 
 function personContractedToPromotion(state: WorldState, personId: string, promotionId: string): boolean {
@@ -191,7 +192,7 @@ function personContractedToPromotion(state: WorldState, personId: string, promot
 }
 
 function teamEligibleForPromotion(state: WorldState, teamId: string, promotionId: string): boolean {
-  const team = teams(state).find((candidate) => candidate.id === teamId);
+  const team = indexedTeamById(state, teamId);
   if (!team || team.status !== "ACTIVE") return false;
   const members = activeTeamMemberIds(state, team.id);
   return members.length === 2 && members.every((personId) => {
@@ -247,7 +248,7 @@ export function maintainChampionshipsForWeek(state: WorldState): void {
       if (!person || person.status === "RETIRED") vacateChampionship(state, championship, "RETIRED");
       else if (!personContractedToPromotion(state, person.id, promotion.id)) vacateChampionship(state, championship, "CONTRACT_ENDED");
     } else if (!teamEligibleForPromotion(state, reign.holderId, promotion.id)) {
-      const team = teams(state).find((candidate) => candidate.id === reign.holderId);
+      const team = indexedTeamById(state, reign.holderId);
       vacateChampionship(state, championship, !team || team.status !== "ACTIVE" ? "TEAM_INACTIVE" : "CONTRACT_ENDED");
     }
   }
@@ -310,9 +311,11 @@ function recognizeTeamsFromMatch(state: WorldState, match: Match, participants: 
   for (const side of ["A", "B"] as const) {
     const ids = sideIds(participants, side);
     if (ids.length !== 2) continue;
-    const chemistry = state.workingChemistry.find((record) => record.context === "TAG"
-      && ((record.personAId === ids[0] && record.personBId === ids[1]) || (record.personAId === ids[1] && record.personBId === ids[0])));
-    if (chemistry && chemistry.matchesTogether >= state.ruleset.teamRecognitionMatches) ensureTeamForPair(state, ids[0]!, ids[1]!, event.date);
+    const a = personById(state, ids[0]!);
+    const b = personById(state, ids[1]!);
+    if (!a || !b) continue;
+    const chemistry = getOrCreateChemistry(state, a, b, "TAG");
+    if (chemistry.matchesTogether >= state.ruleset.teamRecognitionMatches) ensureTeamForPair(state, a.id, b.id, event.date);
   }
 }
 
@@ -335,18 +338,9 @@ function holderSide(
   return null;
 }
 
-function lastContestWeek(state: WorldState, championshipId: string): number | null {
-  const contests = championshipContests(state);
-  for (let i = contests.length - 1; i >= 0; i -= 1) {
-    const contest = contests[i]!;
-    if (contest.championshipId === championshipId) return ppwDateToWeekIndex(contest.date, state.ruleset.weeksPerYear);
-  }
-  return null;
-}
-
 function titleDue(state: WorldState, championship: Championship, event: WrestlingEvent): boolean {
   if (event.type === "MAJOR") return true;
-  const last = lastContestWeek(state, championship.id);
+  const last = indexedLastContestWeek(state, championship.id);
   if (last === null) return false;
   const interval = championship.division === "SINGLES"
     ? state.ruleset.singlesTitleDefenseIntervalWeeks
@@ -435,7 +429,7 @@ function recordChampionshipContest(
   if (!winner) return;
   const previous = currentReign(state, championship);
   const previousHolderId = previous?.holderId ?? null;
-  const titleChanged = previousHolderId !== winner.holderId;
+  const titleChanged = previous !== null && previousHolderId !== winner.holderId;
   if (!previous) {
     createReign(state, championship, winner.holderType, winner.holderId, match.id, event);
   } else if (titleChanged) {
