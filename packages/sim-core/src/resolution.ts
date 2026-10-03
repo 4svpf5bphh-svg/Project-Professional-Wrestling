@@ -10,6 +10,7 @@ import { processPromotionTierGrowthForWeek } from "./growth.js";
 import { processPromotionSurvivalForWeek } from "./lifecycle.js";
 import { processWrestlerMoraleForWeek } from "./morale.js";
 import { processPromotionStandingForWeek } from "./reputation.js";
+import { applyRenewalRelationshipResistance } from "./renewal-resistance.js";
 import { processTalentTrustForWeek } from "./talent-trust.js";
 
 export function resolveWorldWeek(state: WorldState): void {
@@ -18,6 +19,7 @@ export function resolveWorldWeek(state: WorldState): void {
   expireContracts(state);
   maintainChampionshipsForWeek(state);
   generateAiContractOffers(state);
+  applyRenewalRelationshipResistance(state);
   resolveContractOffers(state);
   planAndResolveWorldEvents(state);
   processCompetitionForWeek(state);
