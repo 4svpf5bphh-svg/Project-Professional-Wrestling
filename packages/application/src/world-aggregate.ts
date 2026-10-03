@@ -8,6 +8,7 @@ import type { WorldCommandState } from "./commands.js";
 import type { WorldOwnershipState } from "./ownership.js";
 import {
   createWorldPlanningState,
+  normalizeWorldPlanningState,
   validateWorldPlanningStateShape,
   type WorldPlanningState,
 } from "./planning.js";
@@ -75,6 +76,7 @@ function validateAggregateWorlds(aggregate: ApplicationWorldAggregate): void {
 export function createPersistedApplicationWorld(
   aggregate: ApplicationWorldAggregate,
 ): PersistedApplicationWorld {
+  aggregate.planning = normalizeWorldPlanningState(aggregate.planning);
   validateAggregateWorlds(aggregate);
   return structuredClone({
     applicationStateSchemaVersion: CURRENT_APPLICATION_STATE_SCHEMA_VERSION,
@@ -93,7 +95,9 @@ function normalizePersistedApplicationWorld(
     if (snapshot.applicationStateSchemaVersion !== CURRENT_APPLICATION_STATE_SCHEMA_VERSION) {
       throw new Error(`unsupported application state schema version: ${String(snapshot.applicationStateSchemaVersion)}`);
     }
-    return structuredClone(snapshot);
+    const normalized = structuredClone(snapshot);
+    normalized.planning = normalizeWorldPlanningState(normalized.planning);
+    return normalized;
   }
 
   return {
@@ -115,7 +119,7 @@ export function restorePersistedApplicationWorld(
     ownership: structuredClone(snapshot.ownership),
     commands: structuredClone(snapshot.commands),
     runtime: structuredClone(snapshot.runtime),
-    planning: structuredClone(snapshot.planning),
+    planning: normalizeWorldPlanningState(snapshot.planning),
   };
   validateAggregateWorlds(aggregate);
   return aggregate;
