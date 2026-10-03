@@ -41,6 +41,18 @@ Safety comes from the runtime/repository boundary:
 
 This is sufficient for the single-seat Alpha test harness without prematurely designing the final real-time multiplayer deadline service.
 
+## Validation
+
+The scratch Alpha validation proved the exact vertical slice before promotion:
+
+- full functional suite: PASS, including **5/5 Alpha web-service tests**;
+- production Next.js build: PASS;
+- live production HTTP flow against PostgreSQL: PASS for claim, readiness, one-week resolution, stale-retry rejection and persisted reload;
+- PostgreSQL repository/reservation/materialization suites: PASS;
+- 10-year standard-seed simulation: deterministic hash `6a5dcd3b`, invariants PASS.
+
+The `[long]` gate additionally requires the unchanged 100-year standard-seed hash `7662b626` before this slice is considered sealed.
+
 ## Deliberately not added
 
 This slice does **not** add:
