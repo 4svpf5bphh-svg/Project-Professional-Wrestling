@@ -20,6 +20,16 @@ import { LedgerWriter } from "./ledger.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 import { recordFinancialTransaction } from "./transactions.js";
 
+export interface HumanPromotionSurvivalAction {
+  promotionId: string;
+  kind: "RESTRUCTURE_REQUIRED";
+  financialDistress: Promotion["financialDistress"];
+  stressWeeks: number;
+  crisisWeeks: number;
+  currentRoster: number;
+  minimumViableRoster: number;
+}
+
 function survivalStates(state: WorldState): PromotionSurvivalState[] {
   if (!state.promotionSurvivalStates) state.promotionSurvivalStates = [];
   for (const promotion of state.promotions) {
@@ -239,6 +249,56 @@ function recoverPromotion(state: WorldState, promotion: Promotion, survival: Pro
   });
 }
 
+function remedialActionDue(
+  state: WorldState,
+  survival: PromotionSurvivalState,
+  weekIndex: number,
+): boolean {
+  if (survival.stressWeeks < state.ruleset.survivalDistressThresholdWeeks) return false;
+  return survival.lastRestructureWeekIndex === null
+    || weekIndex - survival.lastRestructureWeekIndex >= state.ruleset.survivalRestructureIntervalWeeks;
+}
+
+export function humanPromotionSurvivalAction(
+  state: WorldState,
+  promotionId: string,
+): HumanPromotionSurvivalAction | null {
+  const promotion = state.promotions.find((candidate) => candidate.id === promotionId);
+  if (!promotion) throw new Error(`unknown promotion ${promotionId}`);
+  if (promotion.controllerType !== "HUMAN") throw new Error("survival action is only defined for a human-controlled promotion");
+  if (promotion.lifecycle === "CLOSED" || promotion.lifecycle === "DORMANT") return null;
+
+  const weekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
+  const survival = survivalStateForPromotion(state, promotion.id);
+  if (!remedialActionDue(state, survival, weekIndex)) return null;
+
+  return {
+    promotionId: promotion.id,
+    kind: "RESTRUCTURE_REQUIRED",
+    financialDistress: promotion.financialDistress,
+    stressWeeks: survival.stressWeeks,
+    crisisWeeks: survival.crisisWeeks,
+    currentRoster: currentRosterPersonIds(state, promotion.id).length,
+    minimumViableRoster: minimumViableRoster(state, promotion),
+  };
+}
+
+export function applyHumanPromotionRestructure(state: WorldState, promotionId: string): void {
+  const promotion = state.promotions.find((candidate) => candidate.id === promotionId);
+  if (!promotion) throw new Error(`unknown promotion ${promotionId}`);
+  if (promotion.controllerType !== "HUMAN") throw new Error("human restructuring requires a human-controlled promotion");
+  if (promotion.lifecycle === "CLOSED" || promotion.lifecycle === "DORMANT") {
+    throw new Error("inactive promotion cannot restructure");
+  }
+
+  const weekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
+  const survival = survivalStateForPromotion(state, promotion.id);
+  if (!remedialActionDue(state, survival, weekIndex)) throw new Error("promotion has no restructuring action due");
+
+  restructure(state, promotion, survival, weekIndex);
+  emergencyRecruit(state, promotion);
+}
+
 export function processPromotionSurvivalForWeek(state: WorldState): void {
   const weekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
   const interval = Math.max(1, state.ruleset.survivalEvaluationIntervalWeeks);
@@ -246,7 +306,7 @@ export function processPromotionSurvivalForWeek(state: WorldState): void {
 
   survivalStates(state);
   for (const promotion of state.promotions) {
-    if (promotion.controllerType !== "AI" || promotion.lifecycle === "CLOSED" || promotion.lifecycle === "DORMANT") continue;
+    if (promotion.lifecycle === "CLOSED" || promotion.lifecycle === "DORMANT") continue;
     const survival = survivalStateForPromotion(state, promotion.id);
     const rosterBefore = currentRosterPersonIds(state, promotion.id).length;
     const minRoster = minimumViableRoster(state, promotion);
@@ -267,14 +327,16 @@ export function processPromotionSurvivalForWeek(state: WorldState): void {
 
     survival.understaffedWeeks = rosterBefore < minRoster ? survival.understaffedWeeks + interval : 0;
 
+    if (survival.stressWeeks >= state.ruleset.survivalDistressThresholdWeeks) {
+      promotion.lifecycle = "DISTRESSED";
+    }
+
     if (survival.healthyWeeks >= state.ruleset.survivalRecoveryWeeks) {
       recoverPromotion(state, promotion, survival);
     }
 
-    if (survival.stressWeeks >= state.ruleset.survivalDistressThresholdWeeks) {
-      const dueForRestructure = survival.lastRestructureWeekIndex === null
-        || weekIndex - survival.lastRestructureWeekIndex >= state.ruleset.survivalRestructureIntervalWeeks;
-      if (dueForRestructure) restructure(state, promotion, survival, weekIndex);
+    if (promotion.controllerType === "AI" && survival.stressWeeks >= state.ruleset.survivalDistressThresholdWeeks) {
+      if (remedialActionDue(state, survival, weekIndex)) restructure(state, promotion, survival, weekIndex);
       emergencyRecruit(state, promotion);
     }
 
