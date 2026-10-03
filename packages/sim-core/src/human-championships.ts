@@ -1,5 +1,6 @@
 import type {
   Championship,
+  ChampionshipMatchBooking,
   ChampionshipReign,
   Match,
   MatchParticipant,
@@ -9,6 +10,7 @@ import { activeTeamMemberIds, ensureWorldChampionships } from "./competition.js"
 import { LedgerWriter } from "./ledger.js";
 
 const BOOKING_EVENT_TYPE = "HUMAN_CHAMPIONSHIP_MATCH_BOOKED";
+const UNBOOKING_EVENT_TYPE = "HUMAN_CHAMPIONSHIP_MATCH_UNBOOKED";
 
 function activeReign(state: WorldState, championship: Championship): ChampionshipReign | null {
   if (!championship.currentReignId) return null;
@@ -45,10 +47,13 @@ function reigningHolderIsInMatch(
   return (["A", "B"] as const).some((side) => sideIds(participants, side).join(":") === members.join(":"));
 }
 
-function existingHumanTitleBookings(state: WorldState, eventId: string) {
-  return state.ledger.filter(
-    (entry) => entry.type === BOOKING_EVENT_TYPE && entry.payload.eventId === eventId,
-  );
+function championshipBookings(state: WorldState): ChampionshipMatchBooking[] {
+  if (!state.championshipMatchBookings) state.championshipMatchBookings = [];
+  return state.championshipMatchBookings;
+}
+
+function existingHumanTitleBookings(state: WorldState, eventId: string): ChampionshipMatchBooking[] {
+  return championshipBookings(state).filter((booking) => booking.eventId === eventId);
 }
 
 export function bookHumanChampionshipMatch(
@@ -83,10 +88,10 @@ export function bookHumanChampionshipMatch(
   }
 
   const bookings = existingHumanTitleBookings(state, event.id);
-  if (bookings.some((entry) => entry.payload.matchId === match.id)) {
+  if (bookings.some((booking) => booking.matchId === match.id)) {
     throw new Error("match is already assigned to a championship");
   }
-  if (bookings.some((entry) => entry.payload.championshipId === championship.id)) {
+  if (bookings.some((booking) => booking.championshipId === championship.id)) {
     throw new Error("championship is already assigned to another match on this event");
   }
 
@@ -94,6 +99,14 @@ export function bookHumanChampionshipMatch(
   if (!reigningHolderIsInMatch(state, championship, match, participants)) {
     throw new Error("reigning champion must participate in a championship defense");
   }
+
+  championshipBookings(state).push({
+    worldId: state.world.id,
+    promotionId: promotion.id,
+    eventId: event.id,
+    matchId: match.id,
+    championshipId: championship.id,
+  });
 
   new LedgerWriter(state.world.id, state.ledger).append({
     date: state.world.currentDate,
@@ -110,16 +123,50 @@ export function bookHumanChampionshipMatch(
   });
 }
 
+export function unbookHumanChampionshipMatch(
+  state: WorldState,
+  eventId: string,
+  championshipId: string,
+): void {
+  const event = state.events.find((candidate) => candidate.id === eventId);
+  if (!event) throw new Error(`unknown event ${eventId}`);
+  if (event.status !== "SCHEDULED") throw new Error("title match can only be unbooked before the event resolves");
+
+  const promotion = state.promotions.find((candidate) => candidate.id === event.promotionId);
+  if (!promotion || promotion.controllerType !== "HUMAN") {
+    throw new Error("manual championship unbooking requires a human-controlled promotion");
+  }
+
+  const bookings = championshipBookings(state);
+  const index = bookings.findIndex(
+    (booking) => booking.eventId === event.id && booking.championshipId === championshipId,
+  );
+  if (index < 0) throw new Error("championship is not currently booked on this event");
+
+  const [removed] = bookings.splice(index, 1);
+  const championship = state.championships?.find((candidate) => candidate.id === championshipId);
+
+  new LedgerWriter(state.world.id, state.ledger).append({
+    date: state.world.currentDate,
+    type: UNBOOKING_EVENT_TYPE,
+    significance: "ROUTINE",
+    entityIds: [championshipId, removed!.matchId, event.id, promotion.id],
+    payload: {
+      championshipId,
+      championshipName: championship?.name ?? championshipId,
+      eventId: event.id,
+      matchId: removed!.matchId,
+    },
+  });
+}
+
 export function humanBookedChampionshipMatchId(
   state: WorldState,
   eventId: string,
   championshipId: string,
 ): string | null {
-  for (let index = state.ledger.length - 1; index >= 0; index -= 1) {
-    const entry = state.ledger[index]!;
-    if (entry.type !== BOOKING_EVENT_TYPE) continue;
-    if (entry.payload.eventId !== eventId || entry.payload.championshipId !== championshipId) continue;
-    return typeof entry.payload.matchId === "string" ? entry.payload.matchId : null;
-  }
-  return null;
+  const booking = state.championshipMatchBookings?.find(
+    (candidate) => candidate.eventId === eventId && candidate.championshipId === championshipId,
+  );
+  return booking?.matchId ?? null;
 }
