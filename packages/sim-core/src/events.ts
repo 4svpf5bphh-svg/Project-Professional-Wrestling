@@ -306,6 +306,163 @@ export function shouldPromotionRunEvent(state: WorldState, promotion: Promotion)
   return weekIndex % Math.max(1, promotion.eventCadenceWeeks) === 0;
 }
 
+export interface HumanShowPlan {
+  promotionId: string;
+  marketId: string;
+  venueId: string;
+  day: number;
+  ticketStrategy: TicketStrategy;
+  participantIds: string[];
+}
+
+export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): WrestlingEvent {
+  const promotion = state.promotions.find((candidate) => candidate.id === plan.promotionId);
+  if (!promotion) throw new Error(`unknown promotion ${plan.promotionId}`);
+  if (promotion.controllerType !== "HUMAN") throw new Error("show preparation requires a human-controlled promotion");
+  if (!shouldPromotionRunEvent(state, promotion)) throw new Error("human promotion has no required show this PPW week");
+  if (!Number.isInteger(plan.day) || plan.day < 1 || plan.day > 7) {
+    throw new Error("show day must be an integer from 1 to 7");
+  }
+
+  const currentWeekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
+  if (state.events.some((event) => (
+    event.promotionId === promotion.id
+    && event.status !== "CANCELLED"
+    && ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear) === currentWeekIndex
+  ))) {
+    throw new Error("human promotion already has a show prepared this PPW week");
+  }
+
+  const type: WrestlingEventType = (currentWeekIndex + 1) % state.ruleset.majorEventIntervalWeeks === 0
+    ? "MAJOR"
+    : "REGULAR";
+  const market = state.markets.find((candidate) => candidate.id === plan.marketId);
+  if (!market) throw new Error(`unknown market ${plan.marketId}`);
+  const venue = state.venues.find((candidate) => candidate.id === plan.venueId);
+  if (!venue) throw new Error(`unknown venue ${plan.venueId}`);
+  if (venue.marketId !== market.id) throw new Error("selected venue is not in the selected market");
+
+  const eventDate = { ...state.world.currentDate, day: plan.day };
+  if (state.events.some((event) => (
+    event.status !== "CANCELLED"
+    && event.venueId === venue.id
+    && samePpwDate(event.date, eventDate)
+  ))) {
+    throw new Error("selected venue is already occupied on that PPW day");
+  }
+
+  const participantIds = [...new Set(plan.participantIds)];
+  if (participantIds.length !== plan.participantIds.length) throw new Error("show roster contains duplicate wrestlers");
+  if (participantIds.length % 2 !== 0) throw new Error("show roster must contain an even number of wrestlers");
+  if (participantIds.length < state.ruleset.minEventParticipants) {
+    throw new Error(`show roster requires at least ${state.ruleset.minEventParticipants} wrestlers`);
+  }
+  const rosterTarget = eventRosterTarget(promotion, type);
+  if (participantIds.length > rosterTarget) {
+    throw new Error(`show roster exceeds ${type.toLowerCase()} event target of ${rosterTarget}`);
+  }
+
+  const weeklyCounts = new Map<string, number>();
+  const dateBookings = new Set<string>();
+  for (let index = state.scheduledAppearances.length - 1; index >= 0; index -= 1) {
+    const appearance = state.scheduledAppearances[index]!;
+    const appearanceWeekIndex = ppwDateToWeekIndex(appearance.date, state.ruleset.weeksPerYear);
+    if (appearanceWeekIndex < currentWeekIndex) break;
+    if (appearanceWeekIndex !== currentWeekIndex || appearance.status === "CANCELLED") continue;
+    weeklyCounts.set(appearance.personId, (weeklyCounts.get(appearance.personId) ?? 0) + 1);
+    dateBookings.add(appearanceDateKey(appearance.personId, appearance.date));
+  }
+
+  const contractsByPerson = new Map<string, Contract[]>();
+  for (const contract of activeContractsForPromotion(state, promotion.id)) {
+    const list = contractsByPerson.get(contract.personId) ?? [];
+    list.push(contract);
+    contractsByPerson.set(contract.personId, list);
+  }
+
+  const selected: { person: Person; contract: Contract }[] = [];
+  for (const personId of participantIds) {
+    const person = personById(state, personId);
+    if (!person) throw new Error(`unknown wrestler ${personId}`);
+    if (person.status !== "ACTIVE") throw new Error(`${person.name} is not available to wrestle`);
+    if (dateBookings.has(appearanceDateKey(person.id, eventDate))) {
+      throw new Error(`${person.name} is already booked on PPW day ${plan.day}`);
+    }
+    const capacity = Math.max(1, Math.floor(serviceCapacityDatesPerWeek(person)));
+    if ((weeklyCounts.get(person.id) ?? 0) >= capacity) {
+      throw new Error(`${person.name} has no Service Capacity remaining this PPW week`);
+    }
+    const contract = chooseContractForPerson(contractsByPerson.get(person.id) ?? []);
+    if (!contract) throw new Error(`${person.name} has no usable contract date with ${promotion.name}`);
+    selected.push({ person, contract });
+  }
+
+  const expectedDemand = estimateDemand(
+    state,
+    promotion,
+    market,
+    type,
+    plan.ticketStrategy,
+    selected.map((entry) => entry.person),
+  );
+  const event: WrestlingEvent = {
+    id: `event-${String(state.events.length + 1).padStart(7, "0")}`,
+    worldId: state.world.id,
+    promotionId: promotion.id,
+    marketId: market.id,
+    venueId: venue.id,
+    date: eventDate,
+    type,
+    status: "SCHEDULED",
+    ticketStrategy: plan.ticketStrategy,
+    expectedDemand,
+    attendance: 0,
+    ticketYield: ticketYield(plan.ticketStrategy, market),
+    gateRevenue: 0,
+    totalCost: 0,
+    netResult: 0,
+    eventImportance: type === "MAJOR" ? 85 : 58,
+    matchCount: 0,
+    averageMatchRating: 0,
+    bestMatchRating: 0,
+    crowdResponse: 0,
+  };
+  state.events.push(event);
+
+  for (const entry of selected) {
+    const appearance: ScheduledAppearance = {
+      id: `appearance-${String(state.scheduledAppearances.length + 1).padStart(8, "0")}`,
+      worldId: state.world.id,
+      eventId: event.id,
+      promotionId: promotion.id,
+      personId: entry.person.id,
+      contractId: entry.contract.id,
+      date: { ...eventDate },
+      serviceCapacityAtBooking: Math.max(1, Math.floor(serviceCapacityDatesPerWeek(entry.person))),
+      status: "COMMITTED",
+    };
+    state.scheduledAppearances.push(appearance);
+    weeklyCounts.set(entry.person.id, (weeklyCounts.get(entry.person.id) ?? 0) + 1);
+    dateBookings.add(appearanceDateKey(entry.person.id, eventDate));
+  }
+
+  new LedgerWriter(state.world.id, state.ledger).append({
+    date: state.world.currentDate,
+    type: "HUMAN_EVENT_PREPARED",
+    significance: type === "MAJOR" ? "NOTABLE" : "ROUTINE",
+    entityIds: [event.id, promotion.id, market.id, venue.id],
+    payload: {
+      type,
+      day: plan.day,
+      ticketStrategy: plan.ticketStrategy,
+      participants: selected.length,
+      expectedDemand,
+    },
+  });
+
+  return event;
+}
+
 export function planWorldEvents(state: WorldState): void {
   const weekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
   const start = weekIndex % state.promotions.length;
