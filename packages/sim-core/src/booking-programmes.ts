@@ -1,5 +1,6 @@
-import type { Match, Person, WorldState, WrestlingEvent } from "../../domain/src/types.js";
+import type { Person, WorldState, WrestlingEvent } from "../../domain/src/types.js";
 import { ppwDateToWeekIndex } from "./clock.js";
+import { matchesForEvent, participantsForMatch } from "./indexes.js";
 import { DeterministicRng } from "./rng.js";
 
 export interface ProgrammeSelection {
@@ -50,30 +51,21 @@ function recentTitleMatchIds(state: WorldState, currentWeek: number, cutoffWeek:
   return result;
 }
 
-function participantsForMatches(state: WorldState, matchIds: Set<string>): Map<string, string[]> {
-  const result = new Map<string, string[]>();
-  const unresolved = new Set(matchIds);
-  for (let i = state.matchParticipants.length - 1; i >= 0 && unresolved.size > 0; i -= 1) {
-    const participant = state.matchParticipants[i]!;
-    if (!unresolved.has(participant.matchId)) continue;
-    const members = result.get(participant.matchId) ?? [];
-    members.push(participant.personId);
-    result.set(participant.matchId, members);
-    if (members.length >= 2) unresolved.delete(participant.matchId);
-  }
-  return result;
+function participantIds(state: WorldState, matchId: string): string[] {
+  return participantsForMatch(state, matchId).map((participant) => participant.personId);
 }
 
 function recentSinglesPairKeys(state: WorldState, event: WrestlingEvent, windowWeeks: number): Set<string> {
   const currentWeek = ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear);
   const cutoffWeek = Math.max(0, currentWeek - windowWeeks);
   const eventWeeks = recentEventWeeks(state, event.promotionId, currentWeek, cutoffWeek);
-  const recentMatches = state.matches.filter((match) => match.status === "COMPLETED" && match.type === "SINGLES" && eventWeeks.has(match.eventId));
-  const participants = participantsForMatches(state, new Set(recentMatches.map((match) => match.id)));
   const result = new Set<string>();
-  for (const match of recentMatches) {
-    const ids = participants.get(match.id) ?? [];
-    if (ids.length === 2) result.add(pairKey(ids[0]!, ids[1]!));
+  for (const eventId of eventWeeks.keys()) {
+    for (const match of matchesForEvent(state, eventId)) {
+      if (match.status !== "COMPLETED" || match.type !== "SINGLES") continue;
+      const ids = participantIds(state, match.id);
+      if (ids.length === 2) result.add(pairKey(ids[0]!, ids[1]!));
+    }
   }
   return result;
 }
@@ -83,28 +75,22 @@ function buildRecentHistories(state: WorldState, event: WrestlingEvent, eligible
   const cutoffWeek = Math.max(0, currentWeek - 16);
   const eventWeeks = recentEventWeeks(state, event.promotionId, currentWeek, cutoffWeek);
   const titleMatchIds = recentTitleMatchIds(state, currentWeek, cutoffWeek);
-  const recentMatches: Match[] = [];
-  for (let i = state.matches.length - 1; i >= 0; i -= 1) {
-    const match = state.matches[i]!;
-    const week = eventWeeks.get(match.eventId);
-    if (week === undefined) continue;
-    if (match.status !== "COMPLETED" || match.type !== "SINGLES" || titleMatchIds.has(match.id)) continue;
-    recentMatches.push(match);
-  }
-  const participants = participantsForMatches(state, new Set(recentMatches.map((match) => match.id)));
   const histories = new Map<string, PairHistory>();
-  for (const match of recentMatches) {
-    const ids = participants.get(match.id) ?? [];
-    if (ids.length !== 2 || !eligibleIds.has(ids[0]!) || !eligibleIds.has(ids[1]!)) continue;
-    const [personAId, personBId] = ids[0]! < ids[1]! ? [ids[0]!, ids[1]!] : [ids[1]!, ids[0]!];
-    const key = pairKey(personAId, personBId);
-    const week = eventWeeks.get(match.eventId)!;
-    const existing = histories.get(key) ?? { personAId, personBId, meetings: 0, lastWeek: -1, ratingTotal: 0, crowdTotal: 0 };
-    existing.meetings += 1;
-    existing.lastWeek = Math.max(existing.lastWeek, week);
-    existing.ratingTotal += match.criticalRatingStars;
-    existing.crowdTotal += match.crowdResponse;
-    histories.set(key, existing);
+
+  for (const [eventId, week] of eventWeeks) {
+    for (const match of matchesForEvent(state, eventId)) {
+      if (match.status !== "COMPLETED" || match.type !== "SINGLES" || titleMatchIds.has(match.id)) continue;
+      const ids = participantIds(state, match.id);
+      if (ids.length !== 2 || !eligibleIds.has(ids[0]!) || !eligibleIds.has(ids[1]!)) continue;
+      const [personAId, personBId] = ids[0]! < ids[1]! ? [ids[0]!, ids[1]!] : [ids[1]!, ids[0]!];
+      const key = pairKey(personAId, personBId);
+      const existing = histories.get(key) ?? { personAId, personBId, meetings: 0, lastWeek: -1, ratingTotal: 0, crowdTotal: 0 };
+      existing.meetings += 1;
+      existing.lastWeek = Math.max(existing.lastWeek, week);
+      existing.ratingTotal += match.criticalRatingStars;
+      existing.crowdTotal += match.crowdResponse;
+      histories.set(key, existing);
+    }
   }
   return histories;
 }
