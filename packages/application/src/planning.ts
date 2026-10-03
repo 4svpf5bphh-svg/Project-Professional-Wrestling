@@ -37,6 +37,24 @@ export interface DetailedShowDraft {
   championshipAssignments: ChampionshipDraftAssignment[];
 }
 
+export interface ReservedShowParticipant {
+  personId: Id;
+  contractId: Id;
+  serviceCapacityAtReservation: number;
+}
+
+export interface DetailedShowReservation {
+  reservationId: string;
+  sourceDraftId: string;
+  promotionId: Id;
+  targetDate: PpwDate;
+  marketId: Id;
+  venueId: Id;
+  ticketStrategy: TicketStrategy;
+  participants: ReservedShowParticipant[];
+  reservedPlanVersion: number;
+}
+
 export interface PromotionPlanningWorkspace {
   worldId: Id;
   promotionId: Id;
@@ -47,6 +65,7 @@ export interface PromotionPlanningWorkspace {
 export interface WorldPlanningState {
   worldId: Id;
   workspaces: PromotionPlanningWorkspace[];
+  showReservations: DetailedShowReservation[];
 }
 
 const TICKET_STRATEGIES = new Set<TicketStrategy>(["ACCESSIBLE", "STANDARD", "PREMIUM", "PRESTIGE"]);
@@ -130,7 +149,7 @@ function validateMatchDraft(
 }
 
 export function createWorldPlanningState(worldId: Id): WorldPlanningState {
-  return { worldId, workspaces: [] };
+  return { worldId, workspaces: [], showReservations: [] };
 }
 
 export function promotionPlanningWorkspace(
@@ -141,8 +160,19 @@ export function promotionPlanningWorkspace(
   return workspace ? structuredClone(workspace) : null;
 }
 
+export function normalizeWorldPlanningState(planning: WorldPlanningState): WorldPlanningState {
+  const legacy = planning as WorldPlanningState & { showReservations?: DetailedShowReservation[] };
+  return structuredClone({
+    worldId: legacy.worldId,
+    workspaces: legacy.workspaces ?? [],
+    showReservations: Array.isArray(legacy.showReservations) ? legacy.showReservations : [],
+  });
+}
+
 export function validateWorldPlanningStateShape(state: WorldState, planning: WorldPlanningState): void {
   if (planning.worldId !== state.world.id) throw new Error("planning state crosses World boundary");
+  if (!Array.isArray(planning.workspaces)) throw new Error("planning workspaces must be an array");
+  if (!Array.isArray(planning.showReservations)) throw new Error("planning reservations must be an array");
   const promotionIds = new Set(state.promotions.map((promotion) => promotion.id));
   const seenPromotions = new Set<Id>();
 
@@ -160,6 +190,39 @@ export function validateWorldPlanningStateShape(state: WorldState, planning: Wor
       const draftId = normalizedId(draft.draftId, "draftId");
       if (draftIds.has(draftId)) throw new Error("planning workspace contains duplicate show draft IDs");
       draftIds.add(draftId);
+    }
+  }
+
+  const reservationIds = new Set<string>();
+  for (const reservation of planning.showReservations) {
+    const reservationId = normalizedId(reservation.reservationId, "reservationId", 256);
+    if (reservationIds.has(reservationId)) throw new Error("planning state contains duplicate reservation IDs");
+    reservationIds.add(reservationId);
+    normalizedId(reservation.sourceDraftId, "reservation sourceDraftId");
+    if (!promotionIds.has(reservation.promotionId)) throw new Error("show reservation references missing promotion");
+    weekIndex(reservation.targetDate, state.ruleset.weeksPerYear);
+    const market = state.markets.find((candidate) => candidate.id === reservation.marketId);
+    if (!market) throw new Error("show reservation references missing market");
+    const venue = state.venues.find((candidate) => candidate.id === reservation.venueId);
+    if (!venue || venue.marketId !== market.id) throw new Error("show reservation references invalid venue/market pair");
+    if (!TICKET_STRATEGIES.has(reservation.ticketStrategy)) throw new Error("show reservation has invalid ticket strategy");
+    if (!Number.isSafeInteger(reservation.reservedPlanVersion) || reservation.reservedPlanVersion < 0) {
+      throw new Error("show reservation has invalid source plan version");
+    }
+    const participantIds = new Set<Id>();
+    for (const participant of reservation.participants) {
+      if (participantIds.has(participant.personId)) throw new Error("show reservation contains duplicate participant");
+      participantIds.add(participant.personId);
+      if (!state.people.some((person) => person.id === participant.personId)) {
+        throw new Error("show reservation references missing wrestler");
+      }
+      const contract = state.contracts.find((candidate) => candidate.id === participant.contractId);
+      if (!contract || contract.personId !== participant.personId || contract.promotionId !== reservation.promotionId) {
+        throw new Error("show reservation references invalid participant contract");
+      }
+      if (!Number.isSafeInteger(participant.serviceCapacityAtReservation) || participant.serviceCapacityAtReservation < 1) {
+        throw new Error("show reservation has invalid service capacity snapshot");
+      }
     }
   }
 }
