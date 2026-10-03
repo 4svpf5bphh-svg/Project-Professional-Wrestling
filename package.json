@@ -33,7 +33,8 @@
     "test:id-allocation": "node dist/tests/run-id-allocation-tests.js",
     "test:application-ownership": "node dist/tests/run-application-ownership-tests.js",
     "test:application-commands": "node dist/tests/run-application-command-tests.js",
-    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience && npm run test:growth && npm run test:market-competition && npm run test:reputation && npm run test:talent-trust && npm run test:contract-trust && npm run test:morale && npm run test:renewal-resistance && npm run test:human-control && npm run test:human-show && npm run test:human-contracts && npm run test:human-booking && npm run test:human-championships && npm run test:human-routine && npm run test:state-schema && npm run test:id-allocation && npm run test:application-ownership && npm run test:application-commands",
+    "test:application-runtime": "node dist/tests/run-application-runtime-tests.js",
+    "test": "npm run build && npm run test:core && npm run test:lifecycle && npm run test:competition && npm run test:booking && npm run test:programmes && npm run test:audience && npm run test:growth && npm run test:market-competition && npm run test:reputation && npm run test:talent-trust && npm run test:contract-trust && npm run test:morale && npm run test:renewal-resistance && npm run test:human-control && npm run test:human-show && npm run test:human-contracts && npm run test:human-booking && npm run test:human-championships && npm run test:human-routine && npm run test:state-schema && npm run test:id-allocation && npm run test:application-ownership && npm run test:application-commands && npm run test:application-runtime",
     "sim": "npm run build && node dist/apps/sim-cli/src/index.js"
   },
   "devDependencies": {
