@@ -349,13 +349,10 @@ function titleDue(state: WorldState, championship: Championship, event: Wrestlin
 }
 
 function humanBookedTitleMatchId(state: WorldState, eventId: string, championshipId: string): string | null {
-  for (let index = state.ledger.length - 1; index >= 0; index -= 1) {
-    const entry = state.ledger[index]!;
-    if (entry.type !== "HUMAN_CHAMPIONSHIP_MATCH_BOOKED") continue;
-    if (entry.payload.eventId !== eventId || entry.payload.championshipId !== championshipId) continue;
-    return typeof entry.payload.matchId === "string" ? entry.payload.matchId : null;
-  }
-  return null;
+  const booking = state.championshipMatchBookings?.find(
+    (candidate) => candidate.eventId === eventId && candidate.championshipId === championshipId,
+  );
+  return booking?.matchId ?? null;
 }
 
 function candidateTitleMatch(
@@ -481,6 +478,11 @@ function recordChampionshipContest(
   });
 }
 
+function clearResolvedChampionshipBookings(state: WorldState, eventId: string): void {
+  if (!state.championshipMatchBookings?.length) return;
+  state.championshipMatchBookings = state.championshipMatchBookings.filter((booking) => booking.eventId !== eventId);
+}
+
 export function processCompetitionForWeek(state: WorldState): void {
   ensureWorldChampionships(state);
   const events = currentWeekCompletedEvents(state);
@@ -499,5 +501,6 @@ export function processCompetitionForWeek(state: WorldState): void {
       if (championshipContests(state).some((contest) => contest.championshipId === championship.id && contest.matchId === match.id)) continue;
       recordChampionshipContest(state, championship, match, participantsByMatch.get(match.id) ?? [], event);
     }
+    clearResolvedChampionshipBookings(state, event.id);
   }
 }
