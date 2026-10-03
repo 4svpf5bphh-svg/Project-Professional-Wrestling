@@ -1,5 +1,5 @@
 import type { MatchType, Person, WorldState, WrestlingEvent, WorkingChemistry } from "../../domain/src/types.js";
-import { selectNonTitleProgramme } from "./booking-programmes.js";
+import { selectFreshSinglesPair, selectNonTitleProgramme } from "./booking-programmes.js";
 import { ppwDateToWeekIndex } from "./clock.js";
 import { DeterministicRng } from "./rng.js";
 
@@ -245,6 +245,13 @@ function reserveTagTitleMatch(state: WorldState, event: WrestlingEvent, remainin
   return { type: "TAG", sideA: champions, sideB: challengers };
 }
 
+function takeFreshSinglesCard(state: WorldState, event: WrestlingEvent, remaining: Person[]): BookingCardMatch | null {
+  const pair = selectFreshSinglesPair(state, event, remaining);
+  if (!pair) return null;
+  removePeople(remaining, pair);
+  return { type: "SINGLES", sideA: [pair[0]], sideB: [pair[1]] };
+}
+
 export function buildBookingCard(
   state: WorldState,
   event: WrestlingEvent,
@@ -267,7 +274,8 @@ export function buildBookingCard(
       if (tag) cards.push(tag);
     }
     if (cards.length === 0 && remaining.length >= 2) {
-      cards.push({ type: "SINGLES", sideA: [remaining.shift()!], sideB: [remaining.shift()!] });
+      const singles = takeFreshSinglesCard(state, event, remaining);
+      if (singles) cards.push(singles);
     }
   }
 
@@ -280,7 +288,9 @@ export function buildBookingCard(
         continue;
       }
     }
-    cards.push({ type: "SINGLES", sideA: [remaining.shift()!], sideB: [remaining.shift()!] });
+    const singles = takeFreshSinglesCard(state, event, remaining);
+    if (!singles) break;
+    cards.push(singles);
   }
 
   cards.sort((a, b) => cardPushScore(a) - cardPushScore(b));
