@@ -3,13 +3,18 @@ import {
   submitHumanContractOffer,
   type HumanContractOfferPlan,
 } from "../../sim-core/src/human-contracts.js";
+import type { HumanPromotionClaimOptions } from "../../sim-core/src/human-control.js";
 import {
   activeWorldMembership,
   claimIndependentPromotionForPlayer,
   playerControlsPromotion,
   type WorldOwnershipState,
 } from "./ownership.js";
-import type { HumanPromotionClaimOptions } from "../../sim-core/src/human-control.js";
+import {
+  assertWorldOpenForPlayerMutation,
+  incrementWorldRevision,
+  type WorldRuntimeState,
+} from "./runtime.js";
 
 export type ApplicationCommandType =
   | "CLAIM_INDEPENDENT_PROMOTION"
@@ -31,6 +36,7 @@ export interface ApplicationCommandReceipt {
   canonicalPayload: string;
   resultJson: string;
   committedDate: PpwDate;
+  committedRevision: number;
 }
 
 export interface WorldCommandState {
@@ -92,12 +98,16 @@ export function createWorldCommandState(worldId: Id): WorldCommandState {
 
 export function executeIdempotentCommand<TPayload, TResult>(
   commandState: WorldCommandState,
+  runtime: WorldRuntimeState,
   envelope: ApplicationCommandEnvelope<TPayload>,
   committedDate: PpwDate,
   execute: () => TResult,
 ): TResult {
   if (commandState.worldId !== envelope.worldId) {
     throw new Error(`command state ${commandState.worldId} does not belong to World ${envelope.worldId}`);
+  }
+  if (runtime.worldId !== envelope.worldId) {
+    throw new Error(`runtime ${runtime.worldId} does not belong to World ${envelope.worldId}`);
   }
 
   const requestId = normalizedBoundedText(envelope.requestId, "requestId", 256);
@@ -116,9 +126,12 @@ export function executeIdempotentCommand<TPayload, TResult>(
     return cloneResult<TResult>(existing.resultJson);
   }
 
+  assertWorldOpenForPlayerMutation(runtime);
+
   const result = execute();
   const resultJson = JSON.stringify(result);
   if (resultJson === undefined) throw new Error("application command result must be JSON-serializable");
+  const committedRevision = incrementWorldRevision(runtime);
 
   commandState.receipts.push({
     worldId: envelope.worldId,
@@ -128,6 +141,7 @@ export function executeIdempotentCommand<TPayload, TResult>(
     canonicalPayload,
     resultJson,
     committedDate: cloneDate(committedDate),
+    committedRevision,
   });
 
   return cloneResult<TResult>(resultJson);
@@ -137,16 +151,17 @@ export function claimIndependentPromotionCommand(
   state: WorldState,
   ownership: WorldOwnershipState,
   commandState: WorldCommandState,
+  runtime: WorldRuntimeState,
   envelope: ApplicationCommandEnvelope<ClaimIndependentPromotionPayload>,
 ): Promotion {
   if (envelope.commandType !== "CLAIM_INDEPENDENT_PROMOTION") {
     throw new Error(`expected CLAIM_INDEPENDENT_PROMOTION command, received ${envelope.commandType}`);
   }
-  if (envelope.worldId !== state.world.id) {
-    throw new Error(`command World ${envelope.worldId} does not match ${state.world.id}`);
+  if (envelope.worldId !== state.world.id || ownership.worldId !== state.world.id) {
+    throw new Error("promotion-claim command ownership/World mismatch");
   }
 
-  return executeIdempotentCommand(commandState, envelope, state.world.currentDate, () => (
+  return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => (
     claimIndependentPromotionForPlayer(
       state,
       ownership,
@@ -161,6 +176,7 @@ export function submitContractOfferCommand(
   state: WorldState,
   ownership: WorldOwnershipState,
   commandState: WorldCommandState,
+  runtime: WorldRuntimeState,
   envelope: ApplicationCommandEnvelope<HumanContractOfferPlan>,
 ): ContractOffer {
   if (envelope.commandType !== "SUBMIT_CONTRACT_OFFER") {
@@ -170,7 +186,7 @@ export function submitContractOfferCommand(
     throw new Error("contract command ownership/World mismatch");
   }
 
-  return executeIdempotentCommand(commandState, envelope, state.world.currentDate, () => {
+  return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
     if (!activeWorldMembership(ownership, envelope.playerId)) {
       throw new Error(`${envelope.playerId} is not an active member of ${state.world.id}`);
     }
