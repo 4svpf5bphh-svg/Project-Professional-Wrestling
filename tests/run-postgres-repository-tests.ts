@@ -4,10 +4,12 @@ import {
   claimIndependentPromotionCommand,
   createWorldCommandState,
   createWorldOwnershipState,
+  createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
   lockPersistedWorldForResolution,
   resolvePersistedWorldWeek,
+  upsertDetailedShowDraftCommand,
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
@@ -44,6 +46,7 @@ function fixture(seed: number): ApplicationWorldAggregate {
     ownership: createWorldOwnershipState(state.world.id, 1),
     commands: createWorldCommandState(state.world.id),
     runtime: createWorldRuntimeState(state.world.id),
+    planning: createWorldPlanningState(state.world.id),
   };
 }
 
@@ -107,6 +110,7 @@ try {
     ok(loaded.runtime.revision === 0, "rollback left revised runtime");
     ok(loaded.ownership.promotionControls.length === 0, "rollback left promotion control");
     ok(loaded.commands.receipts.length === 0, "rollback left command receipt");
+    ok(loaded.planning.workspaces.length === 0, "rollback unexpectedly created planning state");
     ok(loaded.state.promotions.find((candidate) => candidate.id === promotion.id)?.controllerType === "AI", "rollback left simulation mutation");
   });
 
@@ -126,6 +130,51 @@ try {
     ok(resolved.runtime.revision === 1, "weekly resolution did not persist exactly one revision");
     ok(resolved.runtime.lastResolvedPpwDate?.week === originalWeek, "resolved PPW week was not persisted");
     ok(resolved.state.world.currentDate.week !== originalWeek || resolved.state.world.currentDate.year > 1, "World snapshot did not advance after resolution");
+  });
+
+  await test("PostgreSQL persists editable planning state independently of simulation state", async () => {
+    const aggregate = fixture(14004);
+    joinPlayerToWorld(aggregate.ownership, "player-c", aggregate.state.world.currentDate);
+    const promotion = aggregate.state.promotions.find((candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE")!;
+    claimIndependentPromotionCommand(aggregate.state, aggregate.ownership, aggregate.commands, aggregate.runtime, {
+      requestId: "planning-claim",
+      worldId: aggregate.state.world.id,
+      playerId: "player-c",
+      commandType: "CLAIM_INDEPENDENT_PROMOTION",
+      payload: { promotionId: promotion.id },
+    });
+    await repository.initialize(aggregate);
+    const eventsBefore = aggregate.state.events.length;
+
+    await repository.transact(aggregate.state.world.id, 1, (working) => {
+      upsertDetailedShowDraftCommand(working.state, working.ownership, working.planning, working.commands, working.runtime, {
+        requestId: "postgres-plan",
+        worldId: working.state.world.id,
+        playerId: "player-c",
+        commandType: "UPSERT_DETAILED_SHOW_DRAFT",
+        payload: {
+          promotionId: promotion.id,
+          expectedPlanVersion: 0,
+          draft: {
+            draftId: "future-show",
+            promotionId: promotion.id,
+            targetDate: { ...working.state.world.currentDate },
+            marketId: null,
+            venueId: null,
+            ticketStrategy: null,
+            participantIds: [],
+            matches: [],
+            championshipAssignments: [],
+          },
+        },
+      });
+    });
+
+    const loaded = await repository.load(aggregate.state.world.id);
+    ok(loaded.runtime.revision === 2, "planning edit revision was not persisted");
+    ok(loaded.planning.workspaces[0]?.version === 1, "PostgreSQL lost planning workspace version");
+    ok(loaded.planning.workspaces[0]?.detailedShowDrafts[0]?.draftId === "future-show", "PostgreSQL lost planning draft");
+    ok(loaded.state.events.length === eventsBefore, "planning persistence created a real simulation event");
   });
 } finally {
   await close();
