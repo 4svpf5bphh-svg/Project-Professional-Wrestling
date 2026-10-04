@@ -32,6 +32,7 @@ jobs:
       DATABASE_URL: postgres://ppw:ppw@127.0.0.1:5432/ppw_test
       PPW_ALPHA_PLAYER_ID: ci-alpha-player
       PPW_ALPHA_WORLD_SEED: 20261002
+      PPW_ENABLE_MANUAL_WEEK_ADVANCE: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
