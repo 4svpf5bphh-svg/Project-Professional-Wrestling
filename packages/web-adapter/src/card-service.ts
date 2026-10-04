@@ -195,7 +195,7 @@ function championshipHolder(
     .map((personId) => state.people.find((person) => person.id === personId)?.name ?? personId)
     .join(" & ");
   return {
-    holderName: team?.name ?? memberNames || reign.holderId,
+    holderName: team?.name ?? (memberNames || reign.holderId),
     holderPersonIds,
   };
 }
