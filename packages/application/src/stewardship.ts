@@ -7,7 +7,10 @@ import {
   ppwDateToWeekIndex,
   promotionTalentTrustFor,
 } from "../../sim-core/src/index.js";
-import { activityForPlayer } from "./engagement.js";
+import {
+  activityForPlayer,
+  type StewardshipExitRequest,
+} from "./engagement.js";
 import { activePromotionControls } from "./ownership.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
@@ -16,6 +19,7 @@ export const STEWARDSHIP_EXIT_GRACE_DAYS = 14;
 export const STEWARDSHIP_EXIT_TRUST_THRESHOLD = 40;
 const STEWARDSHIP_TRUST_FLOOR = 10;
 const STEWARDSHIP_PRESSURE_LEDGER_TYPE = "STEWARDSHIP_TALENT_TRUST_PRESSURE";
+const STEWARDSHIP_EXIT_REQUEST_LEDGER_TYPE = "STEWARDSHIP_EARLY_RELEASE_REQUESTED";
 
 export interface StewardshipPressureResult {
   promotionsAffected: number;
@@ -213,4 +217,54 @@ export function stewardshipExitEligibleContracts(
     .filter((contract) => contract.status === "SIGNED")
     .map((contract) => stewardshipExitEligibilityForContract(aggregate, contract.id, rawCurrentCycleKey))
     .filter((eligibility) => eligibility.eligible);
+}
+
+export function openEligibleStewardshipExitRequests(
+  aggregate: ApplicationWorldAggregate,
+  rawCurrentCycleKey: string,
+): StewardshipExitRequest[] {
+  const engagement = aggregate.engagement;
+  if (!engagement) return [];
+  const currentCycleKey = requireUtcCycleKey(rawCurrentCycleKey);
+  const eligible = stewardshipExitEligibleContracts(aggregate, currentCycleKey);
+  if (eligible.length === 0) return [];
+
+  const writer = new LedgerWriter(aggregate.state.world.id, aggregate.state.ledger);
+  const opened: StewardshipExitRequest[] = [];
+
+  for (const candidate of eligible) {
+    const existingOpen = engagement.stewardshipExitRequests.some((request) => (
+      request.contractId === candidate.contractId && request.status === "OPEN"
+    ));
+    if (existingOpen) continue;
+
+    const request: StewardshipExitRequest = {
+      requestId: `stewardship-exit:${candidate.contractId}:${currentCycleKey}`,
+      worldId: aggregate.state.world.id,
+      promotionId: candidate.promotionId,
+      personId: candidate.personId,
+      contractId: candidate.contractId,
+      requestedDate: { ...aggregate.state.world.currentDate },
+      requestedCycleKey: currentCycleKey,
+      trustAtRequest: candidate.trust,
+      status: "OPEN",
+    };
+    engagement.stewardshipExitRequests.push(request);
+    opened.push(request);
+
+    writer.append({
+      date: aggregate.state.world.currentDate,
+      type: STEWARDSHIP_EXIT_REQUEST_LEDGER_TYPE,
+      significance: "NOTABLE",
+      entityIds: [candidate.promotionId, candidate.personId, candidate.contractId],
+      payload: {
+        requestId: request.requestId,
+        stewardedDays: candidate.stewardedDays,
+        trustAtRequest: candidate.trust,
+        reason: "prolonged stewardship and damaged promotion-specific trust",
+      },
+    });
+  }
+
+  return opened;
 }
