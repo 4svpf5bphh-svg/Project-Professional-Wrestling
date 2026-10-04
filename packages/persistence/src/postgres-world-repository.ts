@@ -9,6 +9,7 @@ import {
   type PersistedApplicationWorld,
   type WorldTransactionResult,
 } from "../../application/src/world-aggregate.js";
+import { createWorldEngagementState, type WorldEngagementState } from "../../application/src/engagement.js";
 import { createWorldPlanningState, type WorldPlanningState } from "../../application/src/planning.js";
 import type { ApplicationCommandReceipt } from "../../application/src/commands.js";
 import type { PromotionControl, WorldMembership } from "../../application/src/ownership.js";
@@ -98,6 +99,11 @@ ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS locked_real_cycle_key text NULL;
 ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS last_resolved_real_cycle_key text NULL;
 `,
   },
+  {
+    version: 4,
+    name: "player engagement and opportunity state",
+    sql: `ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS engagement_state jsonb NULL;`,
+  },
 ] as const;
 
 export const POSTGRES_APPLICATION_SCHEMA_SQL = [
@@ -111,6 +117,7 @@ type WorldRow = {
   world_id: string;
   world_state: unknown;
   planning_state: unknown | null;
+  engagement_state: unknown | null;
   runtime_phase: WorldRuntimePhase;
   runtime_revision: string | number;
   locked_ppw_date: PpwDate | null;
@@ -147,7 +154,7 @@ type ReceiptRow = {
 async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): Promise<ApplicationWorldAggregate> {
   const lock = forUpdate ? " FOR UPDATE" : "";
   const worldRows = await sql.unsafe(
-    `SELECT world_id, world_state, planning_state, runtime_phase, runtime_revision, locked_ppw_date, last_resolved_ppw_date,
+    `SELECT world_id, world_state, planning_state, engagement_state, runtime_phase, runtime_revision, locked_ppw_date, last_resolved_ppw_date,
             locked_real_cycle_key, last_resolved_real_cycle_key, human_seat_limit
        FROM ppw_worlds WHERE world_id = $1${lock}`,
     [worldId],
@@ -220,6 +227,9 @@ async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): P
     planning: row.planning_state
       ? structuredClone(row.planning_state as WorldPlanningState)
       : createWorldPlanningState(worldId),
+    engagement: row.engagement_state
+      ? structuredClone(row.engagement_state as WorldEngagementState)
+      : createWorldEngagementState(worldId),
   };
   return restorePersistedApplicationWorld(snapshot);
 }
@@ -233,6 +243,7 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
       state_schema_version = ${CURRENT_WORLD_STATE_SCHEMA_VERSION},
       world_state = ${sql.json(snapshot.world as never)},
       planning_state = ${sql.json(snapshot.planning as never)},
+      engagement_state = ${sql.json(snapshot.engagement as never)},
       runtime_phase = ${snapshot.runtime.phase},
       runtime_revision = ${snapshot.runtime.revision},
       locked_ppw_date = ${snapshot.runtime.lockedPpwDate ? sql.json(snapshot.runtime.lockedPpwDate as never) : null},
@@ -322,12 +333,13 @@ export class PostgresApplicationWorldRepository implements ApplicationWorldRepos
     await this.sql.begin(async (tx) => {
       const inserted = await tx`
         INSERT INTO ppw_worlds(
-          world_id, state_schema_version, world_state, planning_state, runtime_phase, runtime_revision,
+          world_id, state_schema_version, world_state, planning_state, engagement_state, runtime_phase, runtime_revision,
           locked_ppw_date, last_resolved_ppw_date, locked_real_cycle_key, last_resolved_real_cycle_key,
           human_seat_limit
         ) VALUES (
           ${worldId}, ${CURRENT_WORLD_STATE_SCHEMA_VERSION}, ${tx.json(snapshot.world as never)}, ${tx.json(snapshot.planning as never)},
-          ${snapshot.runtime.phase}, ${snapshot.runtime.revision}, ${null}, ${null}, ${null}, ${null}, ${snapshot.ownership.humanSeatLimit}
+          ${tx.json(snapshot.engagement as never)}, ${snapshot.runtime.phase}, ${snapshot.runtime.revision},
+          ${null}, ${null}, ${null}, ${null}, ${snapshot.ownership.humanSeatLimit}
         )
         ON CONFLICT (world_id) DO NOTHING
         RETURNING world_id
