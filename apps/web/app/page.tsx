@@ -24,9 +24,13 @@ export default function Page(): React.JSX.Element {
           bottom: "calc(78px + env(safe-area-inset-bottom))",
           zIndex: 30,
           display: "flex",
+          flexWrap: "wrap",
+          justifyContent: "flex-end",
           gap: 8,
+          maxWidth: "calc(100vw - 32px)",
         }}
       >
+        <a href="/talent" style={linkStyle}>Roster & talent</a>
         <a href="/results" style={linkStyle}>Results</a>
         <a href="/card" style={linkStyle}>Book / review card →</a>
       </nav>
