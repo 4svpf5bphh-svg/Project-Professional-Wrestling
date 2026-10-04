@@ -40,7 +40,7 @@
     "test:application-engagement": "node dist/tests/run-application-engagement-tests.js",
     "test:stewardship-exit-response": "node dist/tests/run-stewardship-exit-response-tests.js",
     "test:stewardship-release-execution": "node dist/tests/run-stewardship-release-execution-tests.js",
-    "test:stewardship-buyout": "node dist/tests/run-stewardship-buyout-tests.js",
+    "test:stewardship-buyout": "node dist/tests/run-stewardship-buyout-tests.js && node dist/tests/run-stewardship-ai-buyout-tests.js",
     "test:stewardship-auto-release": "node dist/tests/run-stewardship-auto-release-tests.js",
     "test:application-repository": "node dist/tests/run-application-repository-tests.js",
     "test:application-planning": "node dist/tests/run-application-planning-tests.js",
