@@ -1,0 +1,245 @@
+.shell {
+  min-height: 100vh;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.header h1,
+.weekHeader h2 {
+  margin: 4px 0;
+}
+
+.header p,
+.muted,
+.footerNote {
+  color: #8f9bad;
+}
+
+.backLink {
+  color: #a9b8cc;
+  text-decoration: none;
+  display: inline-block;
+  margin-bottom: 14px;
+}
+
+.eyebrow {
+  color: #65d6ff;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  font-weight: 800;
+}
+
+.button {
+  border: 1px solid #33435a;
+  background: #121922;
+  color: #eef5ff;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font: inherit;
+}
+
+.panel,
+.weekCard,
+.intro {
+  background: #10161f;
+  border: 1px solid #222f40;
+  border-radius: 16px;
+}
+
+.panel {
+  padding: 18px;
+}
+
+.error,
+.warning {
+  border: 1px solid #7c4e38;
+  background: #281a16;
+  color: #ffcab1;
+  border-radius: 12px;
+  padding: 11px 12px;
+}
+
+.error {
+  margin-bottom: 14px;
+}
+
+.intro {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.intro div {
+  padding: 14px;
+  background: #111924;
+}
+
+.intro span,
+.metrics span {
+  display: block;
+  color: #8190a4;
+  font-size: 0.78rem;
+  margin-bottom: 4px;
+}
+
+.timeline {
+  display: grid;
+  gap: 12px;
+}
+
+.weekCard {
+  padding: 16px;
+}
+
+.currentWeek {
+  border-color: #3b7592;
+}
+
+.weekHeader,
+.showTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.required,
+.optional,
+.state {
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.required {
+  background: #3a2718;
+  color: #ffc98e;
+}
+
+.optional {
+  background: #17212d;
+  color: #9eb0c6;
+}
+
+.showCard,
+.emptyShow {
+  margin-top: 12px;
+  border: 1px solid #253448;
+  border-radius: 13px;
+  background: #0c121a;
+  padding: 14px;
+}
+
+.emptyShow {
+  display: grid;
+  gap: 4px;
+  color: #8f9bad;
+}
+
+.showTop > div {
+  display: grid;
+  gap: 3px;
+}
+
+.showTop span,
+.showTop small {
+  color: #8f9bad;
+}
+
+.neutral {
+  background: #1a2431;
+  color: #b4c3d6;
+}
+
+.good {
+  background: #173125;
+  color: #9ce9b8;
+}
+
+.risk {
+  background: #3b201d;
+  color: #ffb2a8;
+}
+
+.live {
+  background: #202c45;
+  color: #b9ceff;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.metrics div {
+  background: #111a25;
+  border-radius: 10px;
+  padding: 9px;
+}
+
+.metrics strong {
+  font-size: 0.85rem;
+}
+
+.people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.people span {
+  background: #17212d;
+  border: 1px solid #27364a;
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+}
+
+.warning {
+  margin-top: 10px;
+  font-size: 0.82rem;
+}
+
+.footerNote {
+  font-size: 0.78rem;
+  margin: 14px 2px 0;
+}
+
+@media (max-width: 640px) {
+  .shell {
+    padding: 18px 12px 40px;
+  }
+
+  .header {
+    flex-direction: column;
+  }
+
+  .intro {
+    grid-template-columns: 1fr;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .weekHeader,
+  .showTop {
+    align-items: flex-start;
+  }
+}

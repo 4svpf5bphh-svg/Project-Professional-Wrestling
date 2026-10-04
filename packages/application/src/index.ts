@@ -9,6 +9,7 @@ export * from "./planning-commands.js";
 export * from "./planning-materialization.js";
 export * from "./planning-reservations.js";
 export * from "./planning-status.js";
+export * from "./planning-view.js";
 export * from "./player-view.js";
 export * from "./reservation-commands.js";
 export * from "./results-view.js";

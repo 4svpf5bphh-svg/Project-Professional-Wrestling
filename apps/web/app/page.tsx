@@ -31,6 +31,7 @@ export default function Page(): React.JSX.Element {
         }}
       >
         <a href="/talent" style={linkStyle}>Roster & talent</a>
+        <a href="/planner" style={linkStyle}>Six-week planner</a>
         <a href="/results" style={linkStyle}>Results</a>
         <a href="/card" style={linkStyle}>Book / review card →</a>
       </nav>
