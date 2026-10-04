@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import type {
+  AlphaCardChampionshipView,
   AlphaCardMatchView,
+  AlphaChampionshipAssignmentView,
   AlphaCurrentWeekCardView,
 } from "../../../../dist/packages/web-adapter/src/card-service.js";
 import styles from "./card.module.css";
@@ -65,9 +67,60 @@ function cloneCard(matches: AlphaCardMatchView[]): AlphaCardMatchView[] {
   }));
 }
 
+function titleHolderCanAppearInMatch(
+  championship: AlphaCardChampionshipView,
+  match: AlphaCardMatchView,
+): boolean {
+  if (championship.holderPersonIds.length === 0) return true;
+  if (championship.holderPersonIds.length === 1) {
+    return [...match.sideAIds, ...match.sideBIds].includes(championship.holderPersonIds[0]!);
+  }
+  if (match.type !== "TAG" || championship.holderPersonIds.length !== 2) return false;
+  const holderKey = [...championship.holderPersonIds].sort().join(":");
+  return [match.sideAIds, match.sideBIds].some((side) => [...side].sort().join(":") === holderKey);
+}
+
+function MatchDurationInput(props: {
+  value: number;
+  disabled: boolean;
+  onCommit: (minutes: number) => void;
+}): React.JSX.Element {
+  const [draft, setDraft] = useState(String(props.value));
+
+  useEffect(() => {
+    setDraft(String(props.value));
+  }, [props.value]);
+
+  function commit(): void {
+    const parsed = draft.trim() === "" ? props.value : Number(draft);
+    const finite = Number.isFinite(parsed) ? parsed : props.value;
+    const normalized = Math.max(3, Math.min(60, Math.round(finite)));
+    setDraft(String(normalized));
+    if (normalized !== props.value) props.onCommit(normalized);
+  }
+
+  return (
+    <input
+      type="number"
+      min={3}
+      max={60}
+      step={1}
+      inputMode="numeric"
+      value={draft}
+      disabled={props.disabled}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+      }}
+    />
+  );
+}
+
 export default function CardClient(): React.JSX.Element {
   const [view, setView] = useState<AlphaCurrentWeekCardView | null>(null);
   const [card, setCard] = useState<AlphaCardMatchView[]>([]);
+  const [titleAssignments, setTitleAssignments] = useState<AlphaChampionshipAssignmentView[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -85,11 +138,13 @@ export default function CardClient(): React.JSX.Element {
       }
       setView(payload);
       setCard(defaultCard(payload));
+      setTitleAssignments(payload.championshipAssignments.map((assignment) => ({ ...assignment })));
       setSaved(payload.matches.length > 0);
       requestId.current = null;
     } catch (reason) {
       setView(null);
       setCard([]);
+      setTitleAssignments([]);
       setError(reason instanceof Error ? reason.message : "Unable to load match card");
     } finally {
       setLoading(false);
@@ -112,6 +167,10 @@ export default function CardClient(): React.JSX.Element {
   function sideName(match: AlphaCardMatchView, side: "A" | "B"): string {
     const ids = side === "A" ? match.sideAIds : match.sideBIds;
     return ids.map(participantName).join(" & ");
+  }
+
+  function assignmentForMatch(draftMatchId: string): AlphaChampionshipAssignmentView | undefined {
+    return titleAssignments.find((assignment) => assignment.draftMatchId === draftMatchId);
   }
 
   function swapParticipant(matchIndex: number, side: "A" | "B", slotIndex: number, nextPersonId: string): void {
@@ -139,6 +198,18 @@ export default function CardClient(): React.JSX.Element {
     markDirty();
   }
 
+  function assignChampionship(draftMatchId: string, championshipId: string): void {
+    setTitleAssignments((current) => {
+      const withoutMatch = current.filter((assignment) => assignment.draftMatchId !== draftMatchId);
+      if (!championshipId) return withoutMatch;
+      return [
+        ...withoutMatch.filter((assignment) => assignment.championshipId !== championshipId),
+        { draftMatchId, championshipId },
+      ];
+    });
+    markDirty();
+  }
+
   function moveMatch(matchIndex: number, direction: -1 | 1): void {
     setCard((current) => {
       const destination = matchIndex + direction;
@@ -153,6 +224,13 @@ export default function CardClient(): React.JSX.Element {
   }
 
   function mergeWithNext(matchIndex: number): void {
+    const firstId = card[matchIndex]?.draftMatchId;
+    const secondId = card[matchIndex + 1]?.draftMatchId;
+    if (firstId && secondId) {
+      setTitleAssignments((current) => current.filter(
+        (assignment) => assignment.draftMatchId !== firstId && assignment.draftMatchId !== secondId,
+      ));
+    }
     setCard((current) => {
       const first = current[matchIndex];
       const second = current[matchIndex + 1];
@@ -173,6 +251,10 @@ export default function CardClient(): React.JSX.Element {
   }
 
   function splitTag(matchIndex: number): void {
+    const originalId = card[matchIndex]?.draftMatchId;
+    if (originalId) {
+      setTitleAssignments((current) => current.filter((assignment) => assignment.draftMatchId !== originalId));
+    }
     setCard((current) => {
       const match = current[matchIndex];
       if (!match || match.type !== "TAG") return current;
@@ -218,6 +300,7 @@ export default function CardClient(): React.JSX.Element {
           expectedRevision: view.world.revision,
           expectedPlanVersion: view.workspaceVersion,
           matches: card,
+          championshipAssignments: titleAssignments,
         }),
       });
       const payload = await response.json() as AlphaCurrentWeekCardView | ErrorPayload;
@@ -232,6 +315,7 @@ export default function CardClient(): React.JSX.Element {
       }
       setView(payload);
       setCard(defaultCard(payload));
+      setTitleAssignments(payload.championshipAssignments.map((assignment) => ({ ...assignment })));
       setSaved(true);
       requestId.current = null;
     } catch (reason) {
@@ -298,6 +382,10 @@ export default function CardClient(): React.JSX.Element {
           {card.map((match, matchIndex) => {
             const isMainEvent = matchIndex === card.length - 1;
             const canMerge = match.type === "SINGLES" && card[matchIndex + 1]?.type === "SINGLES";
+            const assignment = assignmentForMatch(match.draftMatchId);
+            const selectedChampionship = assignment
+              ? view.championships.find((championship) => championship.championshipId === assignment.championshipId)
+              : undefined;
             return (
               <article className={styles.matchCard} key={match.draftMatchId}>
                 <div className={styles.matchHeader}>
@@ -364,17 +452,55 @@ export default function CardClient(): React.JSX.Element {
                   </div>
                   <div className={styles.control}>
                     <label>Minutes</label>
-                    <input
-                      type="number"
-                      min={3}
-                      max={60}
-                      step={1}
+                    <MatchDurationInput
                       value={match.plannedLengthMinutes}
                       disabled={!view.canEdit}
-                      onChange={(event) => updateMatch(matchIndex, {
-                        plannedLengthMinutes: Math.max(3, Math.min(60, Number(event.target.value) || 3)),
-                      })}
+                      onCommit={(minutes) => updateMatch(matchIndex, { plannedLengthMinutes: minutes })}
                     />
+                  </div>
+                  <div className={styles.control}>
+                    <label>Championship</label>
+                    <select
+                      value={assignment?.championshipId ?? ""}
+                      disabled={!view.canEdit}
+                      onChange={(event) => assignChampionship(match.draftMatchId, event.target.value)}
+                    >
+                      <option value="">Non-title match</option>
+                      {view.championships
+                        .filter((championship) => championship.division === match.type)
+                        .map((championship) => {
+                          const usedElsewhere = titleAssignments.some((candidate) => (
+                            candidate.championshipId === championship.championshipId
+                            && candidate.draftMatchId !== match.draftMatchId
+                          ));
+                          const holderEligible = titleHolderCanAppearInMatch(championship, match);
+                          const unavailable = usedElsewhere || !holderEligible;
+                          const status = championship.holderName
+                            ? `Champion: ${championship.holderName}`
+                            : "Vacant";
+                          const suffix = usedElsewhere
+                            ? " · already used"
+                            : !holderEligible
+                              ? " · champion not in match"
+                              : "";
+                          return (
+                            <option
+                              key={championship.championshipId}
+                              value={championship.championshipId}
+                              disabled={unavailable}
+                            >
+                              {championship.name} · {status}{suffix}
+                            </option>
+                          );
+                        })}
+                    </select>
+                    {selectedChampionship ? (
+                      <div className={styles.titleStatus}>
+                        {selectedChampionship.holderName
+                          ? `Champion: ${selectedChampionship.holderName}`
+                          : "Vacant championship"}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
