@@ -1,5 +1,5 @@
 import { DEFAULT_RULESET } from "../../config/src/default-ruleset.js";
-import { realActiveMensRosterSource } from "../../content/src/real-active-mens-roster.js";
+import { calibratedRealActiveMensRosterSource } from "../../content/src/real-active-mens-calibration.js";
 import type { TicketStrategy } from "../../domain/src/types.js";
 import {
   activePromotionControlForPlayer,
@@ -96,7 +96,7 @@ export function createAlphaWorldAggregate(options: AlphaWorldBootstrapOptions): 
     seed,
     DEFAULT_RULESET,
     options.worldName ?? "PPW Alpha World",
-    realActiveMensRosterSource,
+    calibratedRealActiveMensRosterSource,
   );
   ensureWorldChampionships(state);
   const ownership = createWorldOwnershipState(state.world.id, 1);
