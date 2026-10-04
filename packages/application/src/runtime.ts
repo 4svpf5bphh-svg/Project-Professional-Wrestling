@@ -9,6 +9,8 @@ export interface WorldRuntimeState {
   revision: number;
   lockedPpwDate: PpwDate | null;
   lastResolvedPpwDate: PpwDate | null;
+  lockedRealCycleKey?: string | null;
+  lastResolvedRealCycleKey?: string | null;
 }
 
 function cloneDate(date: PpwDate): PpwDate {
@@ -21,6 +23,14 @@ function requireWorld(runtime: WorldRuntimeState, state: WorldState): void {
   }
 }
 
+function normalizedRealCycleKey(value: string | null): string | null {
+  if (value === null) return null;
+  const normalized = value.trim();
+  if (!normalized) throw new Error("real cycle key must not be empty");
+  if (normalized.length > 80) throw new Error("real cycle key is too long");
+  return normalized;
+}
+
 export function createWorldRuntimeState(worldId: Id): WorldRuntimeState {
   return {
     worldId,
@@ -28,6 +38,8 @@ export function createWorldRuntimeState(worldId: Id): WorldRuntimeState {
     revision: 0,
     lockedPpwDate: null,
     lastResolvedPpwDate: null,
+    lockedRealCycleKey: null,
+    lastResolvedRealCycleKey: null,
   };
 }
 
@@ -48,6 +60,7 @@ export function incrementWorldRevision(runtime: WorldRuntimeState): number {
 export function lockWorldForResolution(
   runtime: WorldRuntimeState,
   state: WorldState,
+  realCycleKey: string | null = null,
 ): void {
   requireWorld(runtime, state);
   if (runtime.phase !== "OPEN") {
@@ -55,6 +68,7 @@ export function lockWorldForResolution(
   }
   runtime.phase = "LOCKING";
   runtime.lockedPpwDate = cloneDate(state.world.currentDate);
+  runtime.lockedRealCycleKey = normalizedRealCycleKey(realCycleKey);
 }
 
 export function beginWorldResolution(
@@ -85,10 +99,13 @@ export function resolveLockedWorldWeek(
   if (!runtime.lockedPpwDate) throw new Error("World resolution is missing its locked PPW date");
 
   const resolvedDate = cloneDate(runtime.lockedPpwDate);
+  const resolvedRealCycleKey = runtime.lockedRealCycleKey ?? null;
   resolveWorldWeek(state);
 
   runtime.lastResolvedPpwDate = resolvedDate;
+  if (resolvedRealCycleKey !== null) runtime.lastResolvedRealCycleKey = resolvedRealCycleKey;
   runtime.lockedPpwDate = null;
+  runtime.lockedRealCycleKey = null;
   runtime.phase = "OPEN";
   incrementWorldRevision(runtime);
 }
