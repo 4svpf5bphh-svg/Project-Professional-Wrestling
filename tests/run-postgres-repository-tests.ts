@@ -68,6 +68,12 @@ try {
   });
 
   await test("one-time Alpha playtest reset deletes only the target World and cascades its relational state", async () => {
+    // The HTTP integration uses the same CI database and may already have
+    // bootstrapped the default Alpha World after migration 5 first ran.
+    // Clear that fixture so this test can deliberately replay migration 5
+    // against a known pre-reset target.
+    await inspectionSql`DELETE FROM ppw_worlds WHERE world_id = 'world-20261002'`;
+
     const target = fixture(20261002);
     joinPlayerToWorld(target.ownership, "alpha-player-1", target.state.world.currentDate);
     const targetPromotion = target.state.promotions.find(
