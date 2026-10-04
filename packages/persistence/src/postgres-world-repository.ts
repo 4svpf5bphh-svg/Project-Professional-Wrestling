@@ -15,24 +15,36 @@ import type { PromotionControl, WorldMembership } from "../../application/src/ow
 import type { WorldRuntimePhase } from "../../application/src/runtime.js";
 import { CURRENT_WORLD_STATE_SCHEMA_VERSION } from "../../sim-core/src/state-schema.js";
 
-export const POSTGRES_APPLICATION_SCHEMA_SQL = `
+interface PostgresMigration {
+  version: number;
+  name: string;
+  sql: string;
+}
+
+const POSTGRES_MIGRATION_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS ppw_schema_migrations (
+  version integer PRIMARY KEY CHECK (version >= 1),
+  name text NOT NULL,
+  applied_at timestamptz NOT NULL DEFAULT now()
+);
+`;
+
+export const POSTGRES_APPLICATION_MIGRATIONS: readonly PostgresMigration[] = [
+  {
+    version: 1,
+    name: "application world repository baseline",
+    sql: `
 CREATE TABLE IF NOT EXISTS ppw_worlds (
   world_id text PRIMARY KEY,
   state_schema_version integer NOT NULL,
   world_state jsonb NOT NULL,
-  planning_state jsonb NULL,
   runtime_phase text NOT NULL CHECK (runtime_phase IN ('OPEN', 'LOCKING', 'RESOLVING')),
   runtime_revision bigint NOT NULL CHECK (runtime_revision >= 0),
   locked_ppw_date jsonb NULL,
   last_resolved_ppw_date jsonb NULL,
-  locked_real_cycle_key text NULL,
-  last_resolved_real_cycle_key text NULL,
   human_seat_limit integer NOT NULL CHECK (human_seat_limit >= 1),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS planning_state jsonb NULL;
-ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS locked_real_cycle_key text NULL;
-ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS last_resolved_real_cycle_key text NULL;
 
 CREATE TABLE IF NOT EXISTS ppw_world_memberships (
   world_id text NOT NULL REFERENCES ppw_worlds(world_id) ON DELETE CASCADE,
@@ -71,7 +83,27 @@ CREATE TABLE IF NOT EXISTS ppw_command_receipts (
   committed_revision bigint NOT NULL CHECK (committed_revision >= 0),
   PRIMARY KEY (world_id, request_id)
 );
-`;
+`,
+  },
+  {
+    version: 2,
+    name: "editable planning state",
+    sql: `ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS planning_state jsonb NULL;`,
+  },
+  {
+    version: 3,
+    name: "scheduled resolution cycle keys",
+    sql: `
+ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS locked_real_cycle_key text NULL;
+ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS last_resolved_real_cycle_key text NULL;
+`,
+  },
+] as const;
+
+export const POSTGRES_APPLICATION_SCHEMA_SQL = [
+  POSTGRES_MIGRATION_TABLE_SQL,
+  ...POSTGRES_APPLICATION_MIGRATIONS.map((migration) => migration.sql),
+].join("\n");
 
 type SqlClient = ReturnType<typeof postgres>;
 
@@ -267,7 +299,21 @@ export class PostgresApplicationWorldRepository implements ApplicationWorldRepos
   constructor(private readonly sql: SqlClient) {}
 
   async migrate(): Promise<void> {
-    await this.sql.unsafe(POSTGRES_APPLICATION_SCHEMA_SQL);
+    await this.sql.begin(async (tx) => {
+      await tx.unsafe(POSTGRES_MIGRATION_TABLE_SQL);
+      await tx.unsafe("LOCK TABLE ppw_schema_migrations IN EXCLUSIVE MODE");
+      const appliedRows = await tx`SELECT version FROM ppw_schema_migrations ORDER BY version` as unknown as Array<{ version: number }>;
+      const applied = new Set(appliedRows.map((row) => Number(row.version)));
+
+      for (const migration of POSTGRES_APPLICATION_MIGRATIONS) {
+        if (applied.has(migration.version)) continue;
+        await tx.unsafe(migration.sql);
+        await tx`
+          INSERT INTO ppw_schema_migrations(version, name)
+          VALUES (${migration.version}, ${migration.name})
+        `;
+      }
+    });
   }
 
   async initialize(aggregate: ApplicationWorldAggregate): Promise<void> {
