@@ -135,11 +135,12 @@ export function recordPlayerActivity(
   const normalizedCycleKey = cycleKey(rawCycleKey);
   const existing = engagement.playerActivity.find((record) => record.playerId === normalizedPlayerId);
   if (existing) {
+    const returningToActive = existing.status !== "ACTIVE";
     existing.lastActivePpwDate = cloneDate(ppwDate);
     existing.lastActiveRevision = worldRevision;
     existing.lastActiveCycleKey = normalizedCycleKey;
     existing.status = "ACTIVE";
-    existing.statusSinceCycleKey = normalizedCycleKey;
+    if (returningToActive) existing.statusSinceCycleKey = normalizedCycleKey;
     return existing;
   }
 
