@@ -11,7 +11,9 @@
 .search,
 .list,
 .error,
+.notice,
 .panel,
+.editor,
 .footerNote {
   max-width: 900px;
   margin-left: auto;
@@ -26,12 +28,14 @@
   margin-bottom: 16px;
 }
 
-.header h1 {
+.header h1,
+.editor h2 {
   margin: 4px 0 6px;
 }
 
 .header p,
-.panel p {
+.panel p,
+.editor p {
   margin: 0;
   color: #9eb4b2;
 }
@@ -54,6 +58,8 @@
 }
 
 .button,
+.actionButton,
+.primaryButton,
 .tab,
 .activeTab {
   border: 1px solid rgba(93, 233, 206, .28);
@@ -62,17 +68,30 @@
   color: #b8cfcb;
   padding: 9px 13px;
   font-weight: 900;
+  cursor: pointer;
 }
 
-.button {
+.button,
+.actionButton {
   color: #72ead3;
 }
 
-.button:disabled {
+.primaryButton {
+  border-color: rgba(93, 233, 206, .7);
+  background: rgba(93, 233, 206, .14);
+  color: #8ff5df;
+  padding: 11px 16px;
+}
+
+.button:disabled,
+.actionButton:disabled,
+.primaryButton:disabled {
   opacity: .55;
+  cursor: default;
 }
 
 .error,
+.notice,
 .panel {
   margin-bottom: 14px;
   border-radius: 14px;
@@ -84,9 +103,89 @@
   background: rgba(84, 24, 24, .42);
 }
 
+.notice {
+  border: 1px solid rgba(93, 233, 206, .32);
+  background: rgba(28, 85, 74, .28);
+  color: #9df3e0;
+}
+
 .panel {
   border: 1px solid rgba(129, 187, 181, .16);
   background: rgba(10, 22, 26, .92);
+}
+
+.editor {
+  margin-bottom: 16px;
+  border: 1px solid rgba(93, 233, 206, .3);
+  border-radius: 18px;
+  background: rgba(8, 20, 24, .98);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, .32);
+  padding: 16px;
+}
+
+.editorHeader,
+.editorFooter,
+.cardActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.editorHeader {
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.formGrid label {
+  display: grid;
+  gap: 6px;
+}
+
+.formGrid label > span {
+  color: #9eb4b2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.formGrid input,
+.formGrid select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(129, 187, 181, .2);
+  border-radius: 11px;
+  background: rgba(3, 12, 15, .82);
+  color: #edf7f5;
+  padding: 11px 12px;
+  font: inherit;
+}
+
+.formGrid input:focus,
+.formGrid select:focus {
+  outline: 2px solid rgba(93, 233, 206, .28);
+  border-color: rgba(93, 233, 206, .45);
+}
+
+.formGrid input:disabled {
+  opacity: .55;
+}
+
+.editorFooter {
+  margin-top: 14px;
+  border-top: 1px solid rgba(129, 187, 181, .1);
+  padding-top: 13px;
+}
+
+.editorFooter span {
+  color: #819894;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .overview {
@@ -128,7 +227,6 @@
 .tab,
 .activeTab {
   white-space: nowrap;
-  cursor: pointer;
 }
 
 .activeTab {
@@ -318,6 +416,15 @@
   margin: 10px 0 0;
 }
 
+.cardActions {
+  align-items: flex-end;
+  margin-top: 10px;
+}
+
+.cardActions .subtle {
+  margin: 0;
+}
+
 .marketBottom {
   display: flex;
   align-items: center;
@@ -358,7 +465,8 @@
   }
 
   .overview,
-  .metricGrid {
+  .metricGrid,
+  .formGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -375,8 +483,21 @@
     text-align: left;
   }
 
-  .marketBottom {
+  .marketBottom,
+  .cardActions,
+  .editorFooter {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .primaryButton,
+  .actionButton {
+    width: 100%;
+  }
+}
+
+@media (max-width: 430px) {
+  .formGrid {
+    grid-template-columns: 1fr;
   }
 }

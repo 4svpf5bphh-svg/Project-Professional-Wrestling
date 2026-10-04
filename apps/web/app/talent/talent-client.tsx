@@ -7,12 +7,38 @@ import type {
   PlayerTalentManagementView,
   PlayerTalentMarketView,
 } from "../../../../dist/packages/application/src/talent-view.js";
+import type {
+  AlphaTalentOfferRequest,
+  AlphaTalentOfferResult,
+} from "../../../../dist/packages/web-adapter/src/talent-service.js";
 import styles from "./talent.module.css";
 
 type ErrorPayload = { error?: string };
 type Tab = "ROSTER" | "MARKET" | "OFFERS";
+type OfferFamily = AlphaTalentOfferRequest["family"];
+type OfferRole = AlphaTalentOfferRequest["roleExpectation"];
 
-function isErrorPayload(payload: PlayerTalentManagementView | ErrorPayload): payload is ErrorPayload {
+type OfferTarget = {
+  requestId: string;
+  personId: string;
+  personName: string;
+  sourceContractId: string | null;
+  referenceValue: number;
+  currentContract: PlayerRosterContractView["contract"] | null;
+};
+
+type OfferDraft = Omit<AlphaTalentOfferRequest, "requestId" | "personId" | "sourceContractId">;
+
+const ROLE_OPTIONS: OfferRole[] = [
+  "DEVELOPMENTAL",
+  "REGULAR",
+  "FEATURED",
+  "UPPER_CARD",
+  "MAIN_EVENT",
+  "SPECIAL_ATTRACTION",
+];
+
+function isErrorPayload(payload: PlayerTalentManagementView | AlphaTalentOfferResult | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
 }
 
@@ -22,10 +48,6 @@ function money(value: number): string {
     currency: "USD",
     maximumFractionDigits: 0,
   }).format(value);
-}
-
-function integer(value: number): string {
-  return new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 }).format(value);
 }
 
 function ppwDate(date: { year: number; week: number }): string {
@@ -44,12 +66,89 @@ function matchesQuery(name: string, query: string): boolean {
   return name.toLowerCase().includes(query.trim().toLowerCase());
 }
 
+function requestIdFor(personId: string): string {
+  const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `talent-offer:${personId}:${suffix}`;
+}
+
+function defaultDraft(target: OfferTarget): OfferDraft {
+  const contract = target.currentContract;
+  if (contract) {
+    const family = contract.family;
+    return {
+      family,
+      roleExpectation: contract.roleExpectation,
+      termWeeks: family === "EXCLUSIVE" ? 26 : family === "ONE_OFF" ? 1 : 13,
+      dateEntitlement: family === "ONE_OFF" ? 1 : Math.max(1, contract.dateEntitlement),
+      weeklyGuarantee: family === "ONE_OFF" ? 0 : contract.weeklyGuarantee,
+      appearanceFee: contract.appearanceFee,
+      signingBonus: contract.signingBonus,
+    };
+  }
+
+  const value = Math.max(1_000, Math.round(target.referenceValue));
+  return {
+    family: "LIMITED_NON_EXCLUSIVE",
+    roleExpectation: "REGULAR",
+    termWeeks: 13,
+    dateEntitlement: 5,
+    weeklyGuarantee: Math.round(value * 0.2),
+    appearanceFee: value,
+    signingBonus: value,
+  };
+}
+
+function draftForFamily(family: OfferFamily, referenceValue: number, current: OfferDraft): OfferDraft {
+  const value = Math.max(1_000, Math.round(referenceValue));
+  if (family === "ONE_OFF") {
+    return {
+      ...current,
+      family,
+      termWeeks: 1,
+      dateEntitlement: 1,
+      weeklyGuarantee: 0,
+      appearanceFee: Math.max(current.appearanceFee, Math.round(value * 1.35)),
+      signingBonus: 0,
+    };
+  }
+  if (family === "EXCLUSIVE") {
+    return {
+      ...current,
+      family,
+      termWeeks: 26,
+      dateEntitlement: 14,
+      weeklyGuarantee: Math.max(current.weeklyGuarantee, value),
+      appearanceFee: 0,
+      signingBonus: Math.max(current.signingBonus, value * 4),
+    };
+  }
+  return {
+    ...current,
+    family,
+    termWeeks: 13,
+    dateEntitlement: 5,
+    weeklyGuarantee: Math.max(0, Math.round(value * 0.2)),
+    appearanceFee: Math.max(current.appearanceFee, value),
+    signingBonus: Math.max(current.signingBonus, value),
+  };
+}
+
 function InjuryBadge({ injury }: { injury: { severity: string; weeksRemaining: number } | null }): React.JSX.Element | null {
   if (!injury) return null;
   return <span className={styles.injury}>{label(injury.severity)} · {injury.weeksRemaining}w</span>;
 }
 
-function RosterCard({ wrestler }: { wrestler: PlayerRosterContractView }): React.JSX.Element {
+function RosterCard({
+  wrestler,
+  pending,
+  onRenew,
+}: {
+  wrestler: PlayerRosterContractView;
+  pending: boolean;
+  onRenew: () => void;
+}): React.JSX.Element {
   const contract = wrestler.contract;
   return (
     <details className={styles.card}>
@@ -86,13 +185,24 @@ function RosterCard({ wrestler }: { wrestler: PlayerRosterContractView }): React
             <span>Signing bonus <b>{money(contract.signingBonus)}</b></span>
           </div>
         </div>
-        <p className={styles.subtle}>Age {wrestler.biologicalAge.toFixed(1)} · Fatigue {Math.round(wrestler.fatigue)} · Wear {Math.round(wrestler.wear)} · Skill {averageSkill(wrestler)}</p>
+        <div className={styles.cardActions}>
+          <p className={styles.subtle}>Age {wrestler.biologicalAge.toFixed(1)} · Fatigue {Math.round(wrestler.fatigue)} · Wear {Math.round(wrestler.wear)} · Skill {averageSkill(wrestler)}</p>
+          {pending ? <span className={styles.pending}>Your offer pending</span> : contract.renewalWindowOpen ? (
+            <button className={styles.actionButton} type="button" onClick={onRenew}>Negotiate renewal</button>
+          ) : null}
+        </div>
       </div>
     </details>
   );
 }
 
-function MarketCard({ wrestler }: { wrestler: PlayerTalentMarketView }): React.JSX.Element {
+function MarketCard({
+  wrestler,
+  onOffer,
+}: {
+  wrestler: PlayerTalentMarketView;
+  onOffer: () => void;
+}): React.JSX.Element {
   return (
     <article className={styles.card}>
       <div className={styles.marketTop}>
@@ -115,7 +225,9 @@ function MarketCard({ wrestler }: { wrestler: PlayerTalentMarketView }): React.J
       </div>
       <div className={styles.marketBottom}>
         <span>Estimated market value <b>{money(wrestler.estimatedWeeklyValue)}/wk</b></span>
-        {wrestler.hasOurPendingOffer ? <span className={styles.pending}>Your offer pending</span> : null}
+        {wrestler.hasOurPendingOffer ? <span className={styles.pending}>Your offer pending</span> : (
+          <button className={styles.actionButton} type="button" onClick={onOffer}>Make offer</button>
+        )}
       </div>
     </article>
   );
@@ -146,12 +258,90 @@ function OfferCard({ offer }: { offer: PlayerPendingContractOfferView }): React.
   );
 }
 
+function OfferEditor({
+  target,
+  draft,
+  submitting,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  target: OfferTarget;
+  draft: OfferDraft;
+  submitting: boolean;
+  onChange: (next: OfferDraft) => void;
+  onCancel: () => void;
+  onSubmit: () => void;
+}): React.JSX.Element {
+  const terms = draft.family === "ONE_OFF" ? [1] : draft.family === "EXCLUSIVE" ? [13, 26, 52] : [4, 13, 26];
+  return (
+    <section className={styles.editor} aria-label={`Contract offer for ${target.personName}`}>
+      <div className={styles.editorHeader}>
+        <div>
+          <span className={styles.eyebrow}>{target.sourceContractId ? "RENEWAL NEGOTIATION" : "CONTRACT OFFER"}</span>
+          <h2>{target.personName}</h2>
+          <p>{target.sourceContractId ? "New terms begin after the current deal expires." : "Offer enters the normal PPW negotiation queue; acceptance is not guaranteed."}</p>
+        </div>
+        <button className={styles.button} type="button" onClick={onCancel} disabled={submitting}>Cancel</button>
+      </div>
+
+      <div className={styles.formGrid}>
+        <label>
+          <span>Contract</span>
+          <select value={draft.family} onChange={(event) => onChange(draftForFamily(event.target.value as OfferFamily, target.referenceValue, draft))}>
+            <option value="ONE_OFF">One-off date</option>
+            <option value="LIMITED_NON_EXCLUSIVE">Limited non-exclusive</option>
+            <option value="EXCLUSIVE">Exclusive</option>
+          </select>
+        </label>
+        <label>
+          <span>Role promised</span>
+          <select value={draft.roleExpectation} onChange={(event) => onChange({ ...draft, roleExpectation: event.target.value as OfferRole })}>
+            {ROLE_OPTIONS.map((role) => <option key={role} value={role}>{label(role)}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Term</span>
+          <select value={draft.termWeeks} onChange={(event) => onChange({ ...draft, termWeeks: Number(event.target.value) })}>
+            {terms.map((weeks) => <option key={weeks} value={weeks}>{weeks === 1 ? "1 PPW week" : `${weeks} PPW weeks`}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Purchased dates</span>
+          <input type="number" min={1} max={104} inputMode="numeric" value={draft.dateEntitlement} disabled={draft.family === "ONE_OFF"} onChange={(event) => onChange({ ...draft, dateEntitlement: Number(event.target.value) })} />
+        </label>
+        <label>
+          <span>Weekly guarantee</span>
+          <input type="number" min={0} inputMode="numeric" value={draft.weeklyGuarantee} disabled={draft.family === "ONE_OFF"} onChange={(event) => onChange({ ...draft, weeklyGuarantee: Number(event.target.value) })} />
+        </label>
+        <label>
+          <span>Appearance fee</span>
+          <input type="number" min={0} inputMode="numeric" value={draft.appearanceFee} onChange={(event) => onChange({ ...draft, appearanceFee: Number(event.target.value) })} />
+        </label>
+        <label>
+          <span>Signing bonus</span>
+          <input type="number" min={0} inputMode="numeric" value={draft.signingBonus} onChange={(event) => onChange({ ...draft, signingBonus: Number(event.target.value) })} />
+        </label>
+      </div>
+
+      <div className={styles.editorFooter}>
+        <span>PPW will still enforce exclusivity, Service Capacity and wrestler acceptance when this is submitted/resolved.</span>
+        <button className={styles.primaryButton} type="button" disabled={submitting} onClick={onSubmit}>{submitting ? "Submitting…" : "Submit offer"}</button>
+      </div>
+    </section>
+  );
+}
+
 export default function TalentClient(): React.JSX.Element {
   const [view, setView] = useState<PlayerTalentManagementView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("ROSTER");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [target, setTarget] = useState<OfferTarget | null>(null);
+  const [draft, setDraft] = useState<OfferDraft | null>(null);
 
   async function refresh(): Promise<void> {
     setLoading(true);
@@ -172,6 +362,70 @@ export default function TalentClient(): React.JSX.Element {
 
   useEffect(() => { void refresh(); }, []);
 
+  function openMarketOffer(wrestler: PlayerTalentMarketView): void {
+    const next: OfferTarget = {
+      requestId: requestIdFor(wrestler.personId),
+      personId: wrestler.personId,
+      personName: wrestler.name,
+      sourceContractId: null,
+      referenceValue: wrestler.estimatedWeeklyValue,
+      currentContract: null,
+    };
+    setTarget(next);
+    setDraft(defaultDraft(next));
+    setError(null);
+    setNotice(null);
+  }
+
+  function openRenewal(wrestler: PlayerRosterContractView): void {
+    const next: OfferTarget = {
+      requestId: requestIdFor(wrestler.personId),
+      personId: wrestler.personId,
+      personName: wrestler.name,
+      sourceContractId: wrestler.contractId,
+      referenceValue: Math.max(wrestler.contract.weeklyGuarantee, wrestler.contract.appearanceFee, 1_000),
+      currentContract: wrestler.contract,
+    };
+    setTarget(next);
+    setDraft(defaultDraft(next));
+    setError(null);
+    setNotice(null);
+  }
+
+  async function submitOffer(): Promise<void> {
+    if (!target || !draft) return;
+    setSubmitting(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const body: AlphaTalentOfferRequest = {
+        requestId: target.requestId,
+        personId: target.personId,
+        sourceContractId: target.sourceContractId,
+        ...draft,
+      };
+      const response = await fetch("/api/talent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json() as AlphaTalentOfferResult | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to submit contract offer");
+      }
+      setView(payload.view);
+      setNotice(`${target.personName}: ${payload.offerKind === "RENEWAL" ? "renewal" : "recruitment"} offer submitted.`);
+      setTarget(null);
+      setDraft(null);
+      setTab("OFFERS");
+      setQuery("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to submit contract offer");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   const roster = useMemo(
     () => (view?.roster ?? []).filter((entry) => matchesQuery(entry.name, query)),
     [view, query],
@@ -184,6 +438,7 @@ export default function TalentClient(): React.JSX.Element {
     () => (view?.pendingOffers ?? []).filter((entry) => matchesQuery(entry.personName, query)),
     [view, query],
   );
+  const pendingPeople = useMemo(() => new Set((view?.pendingOffers ?? []).map((offer) => offer.personId)), [view]);
 
   return (
     <main className={styles.shell}>
@@ -194,11 +449,23 @@ export default function TalentClient(): React.JSX.Element {
           <h1>{view?.promotion?.name ?? "Talent management"}</h1>
           <p>{view ? `${view.world.name} · ${ppwDate(view.world.currentDate)}` : "Loading your World…"}</p>
         </div>
-        <button className={styles.button} disabled={loading} onClick={() => void refresh()}>{loading ? "Loading…" : "Refresh"}</button>
+        <button className={styles.button} disabled={loading || submitting} onClick={() => void refresh()}>{loading ? "Loading…" : "Refresh"}</button>
       </header>
 
       {error ? <div className={styles.error}>{error}</div> : null}
+      {notice ? <div className={styles.notice}>{notice}</div> : null}
       {view && !view.promotion ? <section className={styles.panel}><p>Take control of a promotion before managing talent.</p></section> : null}
+
+      {target && draft ? (
+        <OfferEditor
+          target={target}
+          draft={draft}
+          submitting={submitting}
+          onChange={setDraft}
+          onCancel={() => { setTarget(null); setDraft(null); }}
+          onSubmit={() => void submitOffer()}
+        />
+      ) : null}
 
       {view?.promotion ? (
         <>
@@ -228,15 +495,22 @@ export default function TalentClient(): React.JSX.Element {
           </label>
 
           <section className={styles.list}>
-            {tab === "ROSTER" ? roster.map((entry) => <RosterCard key={entry.contractId} wrestler={entry} />) : null}
-            {tab === "MARKET" ? market.map((entry) => <MarketCard key={entry.personId} wrestler={entry} />) : null}
+            {tab === "ROSTER" ? roster.map((entry) => (
+              <RosterCard
+                key={entry.contractId}
+                wrestler={entry}
+                pending={pendingPeople.has(entry.personId)}
+                onRenew={() => openRenewal(entry)}
+              />
+            )) : null}
+            {tab === "MARKET" ? market.map((entry) => <MarketCard key={entry.personId} wrestler={entry} onOffer={() => openMarketOffer(entry)} />) : null}
             {tab === "OFFERS" ? offers.map((entry) => <OfferCard key={entry.offerId} offer={entry} />) : null}
             {(tab === "ROSTER" && roster.length === 0) || (tab === "MARKET" && market.length === 0) || (tab === "OFFERS" && offers.length === 0) ? (
               <div className={styles.empty}>Nothing matches this view right now.</div>
             ) : null}
           </section>
 
-          {tab === "MARKET" ? <p className={styles.footerNote}>Market values are PPW estimates. Rival salary, bonus, role and pending-offer details remain private. Contract actions are the next contained Gate F slice.</p> : null}
+          {tab === "MARKET" ? <p className={styles.footerNote}>Market values are PPW estimates. Rival salary, bonus, role and pending-offer details remain private. Submitted offers resolve through the same World contract system used by AI promotions.</p> : null}
         </>
       ) : null}
     </main>
