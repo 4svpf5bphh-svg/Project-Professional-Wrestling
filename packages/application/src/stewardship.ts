@@ -11,7 +11,10 @@ import {
   activityForPlayer,
   type StewardshipExitRequest,
 } from "./engagement.js";
-import { activePromotionControls } from "./ownership.js";
+import {
+  activePromotionControls,
+  playerControlsPromotion,
+} from "./ownership.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const STEWARDSHIP_TRUST_PRESSURE_PER_WEEK = 3;
@@ -20,6 +23,8 @@ export const STEWARDSHIP_EXIT_TRUST_THRESHOLD = 40;
 const STEWARDSHIP_TRUST_FLOOR = 10;
 const STEWARDSHIP_PRESSURE_LEDGER_TYPE = "STEWARDSHIP_TALENT_TRUST_PRESSURE";
 const STEWARDSHIP_EXIT_REQUEST_LEDGER_TYPE = "STEWARDSHIP_EARLY_RELEASE_REQUESTED";
+const STEWARDSHIP_EXIT_RETAINED_LEDGER_TYPE = "STEWARDSHIP_EARLY_RELEASE_RETAINED";
+const STEWARDSHIP_EXIT_AGREED_LEDGER_TYPE = "STEWARDSHIP_EARLY_RELEASE_AGREED";
 
 export interface StewardshipPressureResult {
   promotionsAffected: number;
@@ -47,6 +52,8 @@ export interface StewardshipExitEligibility {
   stewardedDays: number;
   trust: number;
 }
+
+export type StewardshipExitResponseDecision = "RETAIN" | "AGREE_RELEASE";
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
@@ -267,4 +274,56 @@ export function openEligibleStewardshipExitRequests(
   }
 
   return opened;
+}
+
+export function respondToStewardshipExitRequest(
+  aggregate: ApplicationWorldAggregate,
+  playerId: string,
+  requestId: string,
+  decision: StewardshipExitResponseDecision,
+  rawCurrentCycleKey: string,
+): StewardshipExitRequest {
+  const engagement = aggregate.engagement;
+  if (!engagement) throw new Error("World has no engagement state");
+  const currentCycleKey = requireUtcCycleKey(rawCurrentCycleKey);
+  const normalizedPlayerId = playerId.trim();
+  if (!normalizedPlayerId) throw new Error("playerId must not be empty");
+  const normalizedRequestId = requestId.trim();
+  if (!normalizedRequestId) throw new Error("requestId must not be empty");
+
+  const request = engagement.stewardshipExitRequests.find((candidate) => candidate.requestId === normalizedRequestId);
+  if (!request) throw new Error(`unknown Stewardship exit request ${normalizedRequestId}`);
+  if (request.status !== "OPEN") throw new Error(`Stewardship exit request ${normalizedRequestId} is already ${request.status.toLowerCase()}`);
+  if (!playerControlsPromotion(aggregate.ownership, normalizedPlayerId, request.promotionId)) {
+    throw new Error("player does not control the promotion for this Stewardship exit request");
+  }
+
+  const activity = activityForPlayer(engagement, normalizedPlayerId);
+  if (activity?.status !== "ACTIVE") {
+    throw new Error("player must return to ACTIVE status before responding to a Stewardship exit request");
+  }
+
+  const contract = aggregate.state.contracts.find((candidate) => candidate.id === request.contractId);
+  if (!contract || contract.status !== "SIGNED") {
+    throw new Error("Stewardship exit request no longer has an active signed contract to resolve");
+  }
+  if (contract.promotionId !== request.promotionId || contract.personId !== request.personId) {
+    throw new Error("Stewardship exit request does not match its contract");
+  }
+
+  request.status = decision === "RETAIN" ? "WITHDRAWN" : "SETTLED";
+  new LedgerWriter(aggregate.state.world.id, aggregate.state.ledger).append({
+    date: aggregate.state.world.currentDate,
+    type: decision === "RETAIN" ? STEWARDSHIP_EXIT_RETAINED_LEDGER_TYPE : STEWARDSHIP_EXIT_AGREED_LEDGER_TYPE,
+    significance: "NOTABLE",
+    entityIds: [request.promotionId, request.personId, request.contractId],
+    payload: {
+      requestId: request.requestId,
+      playerId: normalizedPlayerId,
+      decision,
+      resolvedCycleKey: currentCycleKey,
+      contractStatus: contract.status,
+    },
+  });
+  return request;
 }
