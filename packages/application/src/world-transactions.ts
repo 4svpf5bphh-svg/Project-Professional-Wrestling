@@ -35,6 +35,7 @@ export async function lockPersistedWorldForResolution(
   repository: ApplicationWorldRepository,
   worldId: Id,
   expectedRevision: number,
+  realCycleKey: string | null = null,
 ): Promise<number> {
   const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
     const closure = closeCurrentWeekReservationsAtLock(aggregate.state, aggregate.planning);
@@ -44,7 +45,7 @@ export async function lockPersistedWorldForResolution(
     ) {
       incrementWorldRevision(aggregate.runtime);
     }
-    lockWorldForResolution(aggregate.runtime, aggregate.state);
+    lockWorldForResolution(aggregate.runtime, aggregate.state, realCycleKey);
   });
   return committed.revision;
 }
