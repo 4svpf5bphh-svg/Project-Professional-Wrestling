@@ -5,7 +5,6 @@ import {
   advanceAlphaWorldWeek,
   claimAlphaPromotion,
   createAlphaWorldAggregate,
-  loadAlphaPlayerSession,
   saveAlphaCurrentWeekShowPlan,
 } from "../packages/web-adapter/src/alpha-service.js";
 import {
@@ -93,18 +92,26 @@ function singlesCard(participantIds: string[]): AlphaCardMatchView[] {
   return matches;
 }
 
-await test("Alpha browser card booking persists a complete card and materializes it into the reserved show", async () => {
+await test("Alpha browser card booking persists a complete card, title assignment and materializes both", async () => {
   const fixture = await reservedShowFixture(61011);
   const beforeCard = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
   ok(beforeCard.matches.length === 0, "fresh reserved show unexpectedly has a manual card");
   ok(beforeCard.canEdit, "reserved show card is not editable");
   ok(beforeCard.participants.length === fixture.participantIds.length, "card planner lost reserved participants");
+  const singlesTitle = beforeCard.championships.find((championship) => championship.division === "SINGLES");
+  ok(singlesTitle, "Alpha card did not expose the promotion singles championship");
+  ok(singlesTitle?.holderName === null, "fresh Alpha championship should begin vacant");
 
+  const card = singlesCard(fixture.participantIds);
   const request = {
     requestId: "web-card-save-001",
     expectedRevision: beforeCard.world.revision,
     expectedPlanVersion: beforeCard.workspaceVersion,
-    matches: singlesCard(fixture.participantIds),
+    matches: card,
+    championshipAssignments: [{
+      draftMatchId: card[0]!.draftMatchId,
+      championshipId: singlesTitle!.championshipId,
+    }],
   };
   const saved = await saveAlphaCurrentWeekCard(
     fixture.repository,
@@ -113,12 +120,17 @@ await test("Alpha browser card booking persists a complete card and materializes
     request,
   );
   ok(saved.matches.length === fixture.participantIds.length / 2, "saved card has the wrong match count");
+  ok(saved.championshipAssignments.length === 1, "saved card lost the championship assignment");
   ok(saved.workspaceVersion === beforeCard.workspaceVersion + 1, "card save did not advance plan version exactly once");
   ok(saved.world.revision === beforeCard.world.revision + 2, "card save plus reservation refresh did not advance revision twice");
 
   const persisted = await fixture.repository.load(fixture.worldId);
   ok(persisted.planning.showReservations.length === 1, "card save duplicated or dropped the show reservation");
   ok(persisted.planning.workspaces[0]?.detailedShowDrafts[0]?.matches.length === saved.matches.length, "manual card was not persisted on the show draft");
+  ok(
+    persisted.planning.workspaces[0]?.detailedShowDrafts[0]?.championshipAssignments.length === 1,
+    "championship assignment was not persisted on the show draft",
+  );
 
   const retry = await saveAlphaCurrentWeekCard(
     fixture.repository,
@@ -140,8 +152,16 @@ await test("Alpha browser card booking persists a complete card and materializes
     "manual card preparation was not written to World history",
   );
   ok(
-    resolved.state.ledger.some((entry) => entry.type === "PLANNED_SHOW_MATERIALIZED" && entry.payload.cardMaterialized === true),
-    "reserved show did not report the manual card as materialized",
+    resolved.state.ledger.some((entry) => entry.type === "HUMAN_CHAMPIONSHIP_MATCH_BOOKED"),
+    "manual championship assignment was not materialized into the show",
+  );
+  ok(
+    resolved.state.ledger.some((entry) => (
+      entry.type === "PLANNED_SHOW_MATERIALIZED"
+      && entry.payload.cardMaterialized === true
+      && entry.payload.championshipAssignmentsApplied === 1
+    )),
+    "reserved show did not report the manual card and title assignment as materialized",
   );
 });
 
@@ -156,6 +176,7 @@ await test("Alpha browser card booking rejects incomplete cards without damaging
       expectedRevision: before.world.revision,
       expectedPlanVersion: before.workspaceVersion,
       matches: incomplete,
+      championshipAssignments: [],
     });
   } catch (error) {
     rejected = error instanceof Error && error.message.includes("every wrestler reserved");
@@ -166,6 +187,40 @@ await test("Alpha browser card booking rejects incomplete cards without damaging
   ok(after.runtime.revision === before.world.revision, "rejected card mutated World revision");
   ok(after.planning.showReservations.length === 1, "rejected card damaged the existing reservation");
   ok(after.planning.workspaces[0]?.detailedShowDrafts[0]?.matches.length === 0, "rejected card partially mutated the show draft");
+});
+
+await test("Alpha browser card booking rejects a championship on the wrong match division without mutation", async () => {
+  const fixture = await reservedShowFixture(61013);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const tagTitle = before.championships.find((championship) => championship.division === "TAG");
+  ok(tagTitle, "Alpha card did not expose the promotion tag championship");
+  const card = singlesCard(fixture.participantIds);
+
+  let rejected = false;
+  try {
+    await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: "web-card-wrong-title-division",
+      expectedRevision: before.world.revision,
+      expectedPlanVersion: before.workspaceVersion,
+      matches: card,
+      championshipAssignments: [{
+        draftMatchId: card[0]!.draftMatchId,
+        championshipId: tagTitle!.championshipId,
+      }],
+    });
+  } catch (error) {
+    rejected = error instanceof Error && error.message.includes("division does not match");
+  }
+  ok(rejected, "wrong-division championship assignment was not rejected");
+
+  const after = await fixture.repository.load(fixture.worldId);
+  ok(after.runtime.revision === before.world.revision, "rejected championship assignment mutated World revision");
+  ok(after.planning.showReservations.length === 1, "rejected championship assignment damaged the reservation");
+  ok(after.planning.workspaces[0]?.detailedShowDrafts[0]?.matches.length === 0, "rejected championship assignment partially saved the card");
+  ok(
+    after.planning.workspaces[0]?.detailedShowDrafts[0]?.championshipAssignments.length === 0,
+    "rejected championship assignment partially saved title state",
+  );
 });
 
 console.log(`\nAlpha web card service tests: ${passed} passed, ${failed} failed`);
