@@ -3,6 +3,7 @@ import type {
   MatchIntent,
   MatchSide,
   MatchType,
+  PpwDate,
   WorldState,
 } from "../../domain/src/types.js";
 import {
@@ -58,6 +59,7 @@ export interface AlphaCurrentWeekCardView {
     phase: "OPEN" | "LOCKING" | "RESOLVING";
     revision: number;
   };
+  targetDate: PpwDate;
   promotion: {
     promotionId: Id;
     name: string;
@@ -79,6 +81,7 @@ export interface AlphaShowCardRequest {
   requestId: string;
   expectedRevision: number;
   expectedPlanVersion: number;
+  draftId?: string;
   matches: AlphaCardMatchView[];
   championshipAssignments: AlphaChampionshipAssignmentView[];
 }
@@ -251,10 +254,21 @@ function normalizeChampionshipAssignments(
   });
 }
 
-export async function loadAlphaCurrentWeekCard(
+function resolveDraftId(
+  promotionId: Id,
+  currentDate: PpwDate,
+  requestedDraftId?: string,
+): string {
+  return requestedDraftId === undefined
+    ? alphaCurrentWeekShowDraftId(promotionId, currentDate)
+    : requiredText(requestedDraftId, "draftId", 128);
+}
+
+export async function loadAlphaShowCard(
   repository: ApplicationWorldRepository,
   worldId: string,
   playerId: string,
+  requestedDraftId?: string,
 ): Promise<AlphaCurrentWeekCardView> {
   const aggregate = await repository.load(worldId);
   const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
@@ -264,12 +278,12 @@ export async function loadAlphaCurrentWeekCard(
   if (!promotion) throw new Error(`controlled promotion ${control.promotionId} was not found`);
 
   const currentDate = aggregate.state.world.currentDate;
-  const draftId = alphaCurrentWeekShowDraftId(promotion.id, currentDate);
+  const draftId = resolveDraftId(promotion.id, currentDate, requestedDraftId);
   const workspace = aggregate.planning.workspaces.find((candidate) => candidate.promotionId === promotion.id);
   const draft = workspace?.detailedShowDrafts.find((candidate) => candidate.draftId === draftId);
   const reservation = reservationForDraft(aggregate.planning, promotion.id, draftId);
   if (!workspace || !draft || !reservation) {
-    throw new Error("Reserve this week's show before booking its match card");
+    throw new Error("Reserve this show before booking its match card");
   }
 
   const status = playerShowPlanningStatus(
@@ -317,6 +331,7 @@ export async function loadAlphaCurrentWeekCard(
       phase: aggregate.runtime.phase,
       revision: aggregate.runtime.revision,
     },
+    targetDate: { ...draft.targetDate },
     promotion: {
       promotionId: promotion.id,
       name: promotion.name,
@@ -347,7 +362,15 @@ export async function loadAlphaCurrentWeekCard(
   };
 }
 
-export async function saveAlphaCurrentWeekCard(
+export async function loadAlphaCurrentWeekCard(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+): Promise<AlphaCurrentWeekCardView> {
+  return loadAlphaShowCard(repository, worldId, playerId);
+}
+
+export async function saveAlphaShowCard(
   repository: ApplicationWorldRepository,
   worldId: string,
   playerId: string,
@@ -356,6 +379,9 @@ export async function saveAlphaCurrentWeekCard(
   const requestId = requiredText(request.requestId, "requestId");
   const expectedRevision = requireExpectedRevision(request.expectedRevision);
   const expectedPlanVersion = requirePlanVersion(request.expectedPlanVersion);
+  const requestedDraftId = request.draftId === undefined
+    ? undefined
+    : requiredText(request.draftId, "draftId", 128);
   const cardRequestId = `${requestId}:card`;
   const reservationRequestId = `${requestId}:reserve`;
 
@@ -370,11 +396,11 @@ export async function saveAlphaCurrentWeekCard(
       throw new Error(`stale World revision for ${worldId}: expected ${expectedRevision}, current ${aggregate.runtime.revision}`);
     }
 
-    const draftId = alphaCurrentWeekShowDraftId(control.promotionId, aggregate.state.world.currentDate);
+    const draftId = resolveDraftId(control.promotionId, aggregate.state.world.currentDate, requestedDraftId);
     const workspace = aggregate.planning.workspaces.find((candidate) => candidate.promotionId === control.promotionId);
     const draft = workspace?.detailedShowDrafts.find((candidate) => candidate.draftId === draftId);
     if (!workspace || !draft || !reservationForDraft(aggregate.planning, control.promotionId, draftId)) {
-      throw new Error("Reserve this week's show before booking its match card");
+      throw new Error("Reserve this show before booking its match card");
     }
 
     const matches = normalizeCompleteCard(request.matches, draft.participantIds);
@@ -427,5 +453,14 @@ export async function saveAlphaCurrentWeekCard(
     );
   });
 
-  return loadAlphaCurrentWeekCard(repository, worldId, playerId);
+  return loadAlphaShowCard(repository, worldId, playerId, requestedDraftId);
+}
+
+export async function saveAlphaCurrentWeekCard(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  request: AlphaShowCardRequest,
+): Promise<AlphaCurrentWeekCardView> {
+  return saveAlphaShowCard(repository, worldId, playerId, { ...request, draftId: undefined });
 }

@@ -5,8 +5,8 @@ import type {
   MatchType,
 } from "../../../../../dist/packages/domain/src/types.js";
 import {
-  loadAlphaCurrentWeekCard,
-  saveAlphaCurrentWeekCard,
+  loadAlphaShowCard,
+  saveAlphaShowCard,
   type AlphaCardMatchView,
   type AlphaChampionshipAssignmentView,
 } from "../../../../../dist/packages/web-adapter/src/card-service.js";
@@ -19,6 +19,7 @@ type ShowCardBody = {
   requestId?: unknown;
   expectedRevision?: unknown;
   expectedPlanVersion?: unknown;
+  draftId?: unknown;
   matches?: unknown;
   championshipAssignments?: unknown;
 };
@@ -42,6 +43,11 @@ function requiredText(value: unknown, label: string, maxLength: number): string 
   if (!normalized) throw new Error(`${label} must not be empty`);
   if (normalized.length > maxLength) throw new Error(`${label} is too long`);
   return normalized;
+}
+
+function optionalText(value: unknown, label: string, maxLength: number): string | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  return requiredText(value, label, maxLength);
 }
 
 function nonNegativeInteger(value: unknown, label: string): number {
@@ -119,10 +125,11 @@ function errorResponse(error: unknown, fallback: string): NextResponse {
   return NextResponse.json({ error: message }, { status });
 }
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
+    const draftId = optionalText(request.nextUrl.searchParams.get("draftId"), "draftId", 128);
     const view = await withAlphaServerContext(({ repository, worldId, playerId }) => (
-      loadAlphaCurrentWeekCard(repository, worldId, playerId)
+      loadAlphaShowCard(repository, worldId, playerId, draftId)
     ));
     return NextResponse.json(view, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -134,10 +141,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body = await request.json() as ShowCardBody;
     const view = await withAlphaServerContext(({ repository, worldId, playerId }) => (
-      saveAlphaCurrentWeekCard(repository, worldId, playerId, {
+      saveAlphaShowCard(repository, worldId, playerId, {
         requestId: requiredText(body.requestId, "requestId", 220),
         expectedRevision: nonNegativeInteger(body.expectedRevision, "expectedRevision"),
         expectedPlanVersion: nonNegativeInteger(body.expectedPlanVersion, "expectedPlanVersion"),
+        draftId: optionalText(body.draftId, "draftId", 128),
         matches: matches(body.matches),
         championshipAssignments: championshipAssignments(body.championshipAssignments ?? []),
       })

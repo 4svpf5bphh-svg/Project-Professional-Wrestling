@@ -9,9 +9,15 @@ import {
 } from "../packages/web-adapter/src/alpha-service.js";
 import {
   loadAlphaCurrentWeekCard,
+  loadAlphaShowCard,
   saveAlphaCurrentWeekCard,
+  saveAlphaShowCard,
   type AlphaCardMatchView,
 } from "../packages/web-adapter/src/card-service.js";
+import {
+  loadAlphaPlayerPlanner,
+  saveAlphaPlannerShowPlan,
+} from "../packages/web-adapter/src/planner-service.js";
 
 let passed = 0;
 let failed = 0;
@@ -98,6 +104,7 @@ await test("Alpha browser card booking persists a complete card, title assignmen
   ok(beforeCard.matches.length === 0, "fresh reserved show unexpectedly has a manual card");
   ok(beforeCard.canEdit, "reserved show card is not editable");
   ok(beforeCard.participants.length === fixture.participantIds.length, "card planner lost reserved participants");
+  ok(beforeCard.targetDate.week === beforeCard.world.week, "current-week card target does not match current week");
   const singlesTitle = beforeCard.championships.find((championship) => championship.division === "SINGLES");
   ok(singlesTitle, "Alpha card did not expose the promotion singles championship");
   ok(singlesTitle?.holderName === null, "fresh Alpha championship should begin vacant");
@@ -221,6 +228,85 @@ await test("Alpha browser card booking rejects a championship on the wrong match
     after.planning.workspaces[0]?.detailedShowDrafts[0]?.championshipAssignments.length === 0,
     "rejected championship assignment partially saved title state",
   );
+});
+
+await test("Alpha six-week card booking targets the selected future draft without changing the current card", async () => {
+  const fixture = await reservedShowFixture(61014);
+  const currentBefore = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(currentBefore.matches.length === 0, "future-card fixture current show unexpectedly has a card");
+
+  const plannerBefore = await loadAlphaPlayerPlanner(fixture.repository, fixture.worldId, "alpha-player");
+  const promotion = plannerBefore.promotion;
+  if (!promotion) throw new Error("future-card fixture lost controlled promotion");
+  const futureWeek = promotion.weeks[1];
+  if (!futureWeek || !futureWeek.showRequired) throw new Error("future-card fixture has no operating week at +1");
+  const market = promotion.markets[0];
+  const venue = market?.venues[0];
+  if (!market || !venue) throw new Error("future-card planner has no market/venue option");
+
+  let futureParticipantIds = futureWeek.eligibleParticipants
+    .slice(0, Math.min(futureWeek.maxParticipants, Math.max(futureWeek.minParticipants, 4)))
+    .map((person) => person.personId);
+  if (futureParticipantIds.length % 2 !== 0) futureParticipantIds = futureParticipantIds.slice(0, -1);
+  if (futureParticipantIds.length < futureWeek.minParticipants) throw new Error("future-card fixture has too few eligible wrestlers");
+
+  const plannerAfter = await saveAlphaPlannerShowPlan(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "future-card-show",
+    expectedRevision: plannerBefore.world.revision,
+    expectedPlanVersion: promotion.workspaceVersion,
+    year: futureWeek.year,
+    week: futureWeek.week,
+    day: 5,
+    marketId: market.marketId,
+    venueId: venue.venueId,
+    ticketStrategy: "STANDARD",
+    participantIds: futureParticipantIds,
+  });
+  const futureDraft = plannerAfter.promotion?.weeks[1]?.shows[0];
+  if (!futureDraft?.reservationId) throw new Error("future-card show was not reserved");
+
+  const futureBefore = await loadAlphaShowCard(
+    fixture.repository,
+    fixture.worldId,
+    "alpha-player",
+    futureDraft.draftId,
+  );
+  ok(futureBefore.targetDate.week === futureWeek.week, "future card loader returned the wrong PPW week");
+  ok(futureBefore.matches.length === 0, "fresh future show unexpectedly has a manual card");
+
+  const futureCard = singlesCard(futureParticipantIds).map((match, index) => ({
+    ...match,
+    draftMatchId: `${futureDraft.draftId}:manual:${index + 1}`,
+  }));
+  const request = {
+    requestId: "future-card-save",
+    expectedRevision: futureBefore.world.revision,
+    expectedPlanVersion: futureBefore.workspaceVersion,
+    draftId: futureDraft.draftId,
+    matches: futureCard,
+    championshipAssignments: [],
+  };
+  const saved = await saveAlphaShowCard(fixture.repository, fixture.worldId, "alpha-player", request);
+  ok(saved.draftId === futureDraft.draftId, "future card save returned another draft");
+  ok(saved.matches.length === futureParticipantIds.length / 2, "future card saved the wrong match count");
+  ok(saved.targetDate.week === futureWeek.week, "future card save shifted target week");
+
+  const currentAfter = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(currentAfter.draftId === currentBefore.draftId, "future card save changed the current draft identity");
+  ok(currentAfter.matches.length === 0, "future card save contaminated the current-week card");
+
+  const retry = await saveAlphaShowCard(fixture.repository, fixture.worldId, "alpha-player", request);
+  ok(retry.world.revision === saved.world.revision, "future card idempotent retry advanced revision again");
+  const reloaded = await loadAlphaShowCard(fixture.repository, fixture.worldId, "alpha-player", futureDraft.draftId);
+  ok(reloaded.matches.length === saved.matches.length, "future card did not survive reload");
+
+  let strangerRejected = false;
+  try {
+    await loadAlphaShowCard(fixture.repository, fixture.worldId, "stranger", futureDraft.draftId);
+  } catch (error) {
+    strangerRejected = error instanceof Error && error.message.includes("Take control");
+  }
+  ok(strangerRejected, "non-controller could read a future match card by draft ID");
 });
 
 console.log(`\nAlpha web card service tests: ${passed} passed, ${failed} failed`);

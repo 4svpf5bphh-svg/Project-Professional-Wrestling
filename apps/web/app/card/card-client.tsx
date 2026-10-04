@@ -80,6 +80,12 @@ function titleHolderCanAppearInMatch(
   return [match.sideAIds, match.sideBIds].some((side) => [...side].sort().join(":") === holderKey);
 }
 
+function requestedDraftId(): string | null {
+  if (typeof window === "undefined") return null;
+  const value = new URLSearchParams(window.location.search).get("draftId")?.trim() ?? "";
+  return value || null;
+}
+
 function MatchDurationInput(props: {
   value: number;
   disabled: boolean;
@@ -131,7 +137,9 @@ export default function CardClient(): React.JSX.Element {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/show-card", { cache: "no-store" });
+      const draftId = requestedDraftId();
+      const endpoint = draftId ? `/api/show-card?draftId=${encodeURIComponent(draftId)}` : "/api/show-card";
+      const response = await fetch(endpoint, { cache: "no-store" });
       const payload = await response.json() as AlphaCurrentWeekCardView | ErrorPayload;
       if (!response.ok || isErrorPayload(payload)) {
         throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to load match card");
@@ -299,6 +307,7 @@ export default function CardClient(): React.JSX.Element {
           requestId: requestId.current,
           expectedRevision: view.world.revision,
           expectedPlanVersion: view.workspaceVersion,
+          draftId: view.draftId,
           matches: card,
           championshipAssignments: titleAssignments,
         }),
@@ -342,10 +351,10 @@ export default function CardClient(): React.JSX.Element {
             <span className="eyebrow">MATCH CARD</span>
             <h1>Nothing to book yet</h1>
           </div>
-          <a className={styles.backLink} href="/">← World</a>
+          <a className={styles.backLink} href="/planner">← Planner</a>
         </div>
-        <div className={styles.errorBox}>{error ?? "Reserve this week's show before booking its card."}</div>
-        <p className="muted body-copy">Choose this week&apos;s market, venue and show roster on the World screen first. The card planner only works against a real reservation.</p>
+        <div className={styles.errorBox}>{error ?? "Reserve a show before booking its card."}</div>
+        <p className="muted body-copy">Choose the show&apos;s market, venue and roster in the six-week planner first. The card editor only works against a real reservation.</p>
         <button className="primary-button" onClick={() => load()}>Retry</button>
       </main>
     );
@@ -357,9 +366,9 @@ export default function CardClient(): React.JSX.Element {
         <div>
           <span className="eyebrow">MANUAL MATCH CARD</span>
           <h1>{view.promotion.name}</h1>
-          <p className="muted">Year {view.world.year} · Week {view.world.week}</p>
+          <p className="muted">Year {view.targetDate.year} · Week {view.targetDate.week}</p>
         </div>
-        <a className={styles.backLink} href="/">← World</a>
+        <a className={styles.backLink} href="/planner">← Planner</a>
       </div>
 
       {error ? <div className={styles.errorBox}>{error}</div> : null}

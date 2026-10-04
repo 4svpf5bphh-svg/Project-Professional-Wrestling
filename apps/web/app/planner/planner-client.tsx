@@ -271,6 +271,15 @@ export default function PlannerClient(): React.JSX.Element {
                       ) : <p className={styles.muted}>No wrestlers selected yet.</p>}
                       {show.workspaceChangedSinceReservation ? <div className={styles.warning}>Plan changed since reservation — refresh it before relying on those commitments.</div> : null}
                       {show.riskReasons.length > 0 ? <div className={styles.warning}>{show.riskReasons.map(label).join(" · ")}</div> : null}
+                      {show.reservationId && show.availableActions.includes("EDIT_DRAFT") ? (
+                        <a
+                          className={styles.editButton}
+                          style={{ display: "block", padding: "10px 14px", textAlign: "center", textDecoration: "none" }}
+                          href={`/card?draftId=${encodeURIComponent(show.draftId)}`}
+                        >
+                          {show.matchCount > 0 ? "Edit match card" : "Book match card"}
+                        </a>
+                      ) : null}
                     </section>
                   ))}
 
@@ -308,7 +317,7 @@ export default function PlannerClient(): React.JSX.Element {
                           );
                         })}
                       </div>
-                      {existing && existing.matchCount > 0 ? <p className={styles.editorNote}>This show already has a card. Existing matches are preserved; wrestlers already used on that card must remain in the show roster until card editing is available here.</p> : null}
+                      {existing && existing.matchCount > 0 ? <p className={styles.editorNote}>This show already has a card. Existing matches are preserved; wrestlers already used on that card must remain in the show roster.</p> : null}
                       <div className={styles.editorActions}>
                         <button className={styles.button} disabled={saving} onClick={cancelEdit}>Cancel</button>
                         <button className={styles.saveButton} disabled={!canSave} onClick={() => savePlan(week)}>{saving ? "Reserving…" : existing?.reservationId ? "Save & refresh reservation" : "Save & reserve"}</button>
