@@ -16,6 +16,10 @@ import {
   opportunityVisibleToPlayer,
   recordPlayerActivity,
   resolveScheduledWorldCycle,
+  STEWARDSHIP_EXIT_GRACE_DAYS,
+  STEWARDSHIP_EXIT_TRUST_THRESHOLD,
+  stewardshipExitEligibilityForContract,
+  stewardshipExitEligibleContracts,
   STEWARDSHIP_TRUST_PRESSURE_PER_WEEK,
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
@@ -169,6 +173,50 @@ await test("Stewardship applies promotion-specific Trust pressure once per PPW w
   const returnedRecord = after.engagement ? activityForPlayer(after.engagement, control.playerId) : null;
   ok(returnedRecord?.status === "ACTIVE", "returning player was not ACTIVE after the next scheduler cycle");
   ok(after.runtime.revision >= returned.runtime.revision, "return flow regressed World revision");
+});
+
+await test("Stewardship exit eligibility requires extended grace and low Trust, and closes immediately on return", () => {
+  const aggregate = stewardedWorldFixture(18103, "2026-10-01");
+  const control = aggregate.ownership.promotionControls[0];
+  if (!control || !aggregate.engagement) throw new Error("exit fixture is missing control or engagement state");
+  ensurePromotionTalentTrust(aggregate.state);
+  const contract = activeContractsForPromotion(aggregate.state, control.promotionId)
+    .find((candidate) => candidate.family !== "ONE_OFF");
+  if (!contract) throw new Error("exit fixture has no continuing contract");
+  const relationship = promotionTalentTrustFor(aggregate.state, control.promotionId, contract.personId);
+
+  evaluatePlayerInactivity(aggregate.engagement, control.playerId, "2026-10-15");
+  relationship.trust = STEWARDSHIP_EXIT_TRUST_THRESHOLD;
+
+  let eligibility = stewardshipExitEligibilityForContract(aggregate, contract.id, "2026-10-28");
+  ok(!eligibility.eligible, "contract became exit-eligible before the Stewardship grace period ended");
+  ok(eligibility.reason === "GRACE_PERIOD", "early exit was blocked for the wrong reason");
+  ok(eligibility.stewardedDays === STEWARDSHIP_EXIT_GRACE_DAYS - 1, "Stewardship duration was calculated incorrectly");
+
+  eligibility = stewardshipExitEligibilityForContract(aggregate, contract.id, "2026-10-29");
+  ok(eligibility.eligible, "low-Trust contract did not become exit-eligible after the full grace period");
+  ok(eligibility.reason === "ELIGIBLE", "eligible contract did not expose the ELIGIBLE reason");
+  ok(
+    stewardshipExitEligibleContracts(aggregate, "2026-10-29").some((candidate) => candidate.contractId === contract.id),
+    "eligible contract was missing from the World exit-eligibility list",
+  );
+
+  relationship.trust = STEWARDSHIP_EXIT_TRUST_THRESHOLD + 1;
+  eligibility = stewardshipExitEligibilityForContract(aggregate, contract.id, "2026-10-29");
+  ok(!eligibility.eligible, "high-Trust relationship incorrectly qualified for an accelerated exit");
+  ok(eligibility.reason === "TRUST_TOO_HIGH", "high Trust was blocked for the wrong reason");
+
+  relationship.trust = STEWARDSHIP_EXIT_TRUST_THRESHOLD;
+  recordPlayerActivity(
+    aggregate.engagement,
+    control.playerId,
+    aggregate.state.world.currentDate,
+    aggregate.runtime.revision,
+    "2026-10-29",
+  );
+  eligibility = stewardshipExitEligibilityForContract(aggregate, contract.id, "2026-10-29");
+  ok(!eligibility.eligible, "returning owner left an accelerated exit route open");
+  ok(eligibility.reason === "NOT_STEWARDED", "returning owner closed eligibility for the wrong reason");
 });
 
 await test("opportunity eligibility never leaks across player or promotion scopes", () => {
