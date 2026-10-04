@@ -1,0 +1,59 @@
+.shell {
+  min-height: 100vh;
+  padding: 20px 16px calc(40px + env(safe-area-inset-bottom));
+  background: radial-gradient(circle at top, rgba(36, 79, 77, .28), transparent 36%), #071014;
+  color: #edf7f5;
+}
+
+.header,
+.metricGrid,
+.panel,
+.injuryBanner,
+.error,
+.backLink {
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.backLink { display: block; margin-bottom: 16px; color: #5de9ce; text-decoration: none; font-weight: 800; }
+.header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+.header h1, .sectionHeading h2 { margin: 4px 0 6px; }
+.header p, .panel p { margin: 0; color: #9eb4b2; }
+.eyebrow { color: #72d8c6; font-size: 11px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.statusPill { border: 1px solid rgba(93, 233, 206, .32); border-radius: 999px; background: rgba(93, 233, 206, .1); color: #8ff5df; padding: 8px 11px; font-size: 11px; font-weight: 900; white-space: nowrap; }
+
+.metricGrid, .skillGrid, .statGrid, .contractBox { display: grid; gap: 8px; }
+.metricGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 14px; }
+.skillGrid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.statGrid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.contractBox { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 12px; }
+.metricGrid > div, .skillGrid > div, .statGrid > div, .contractBox > div {
+  display: grid; gap: 4px; border-radius: 12px; background: rgba(255,255,255,.035); padding: 10px;
+}
+.metricGrid span, .skillGrid span, .statGrid span, .contractBox span { color: #8da5a2; font-size: 11px; }
+.metricGrid strong { font-size: 18px; }
+
+.panel { margin-bottom: 14px; border: 1px solid rgba(129, 187, 181, .16); border-radius: 16px; background: rgba(10, 22, 26, .92); padding: 14px; }
+.sectionHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.sectionHeading > strong { color: #72ead3; }
+.injuryBanner { box-sizing: border-box; margin-bottom: 14px; border: 1px solid rgba(255, 177, 88, .38); border-radius: 13px; background: rgba(99, 59, 17, .34); color: #ffd59b; padding: 11px 13px; font-weight: 800; }
+.error { box-sizing: border-box; border: 1px solid rgba(255, 112, 112, .4); border-radius: 14px; background: rgba(84,24,24,.42); padding: 12px 14px; }
+.privateMetrics { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.privateMetrics span { border-radius: 999px; background: rgba(93,233,206,.08); color: #9eb4b2; padding: 7px 10px; font-size: 11px; }
+.privateMetrics b { color: #edf7f5; }
+.note { margin-top: 12px !important; font-size: 11px; line-height: 1.5; }
+.stack { display: grid; gap: 8px; margin-top: 10px; }
+.historyCard { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; border-top: 1px solid rgba(129,187,181,.1); padding-top: 10px; }
+.historyCard:first-child { border-top: 0; padding-top: 0; }
+.historyCard > div { display: grid; gap: 3px; }
+.historyCard span { color: #8da5a2; font-size: 11px; }
+.right { text-align: right; }
+.right b { color: #72ead3; }
+
+@media (max-width: 700px) {
+  .metricGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .skillGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .statGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .contractBox { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
