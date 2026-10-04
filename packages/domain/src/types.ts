@@ -13,6 +13,7 @@ export type FinancialTransactionCategory =
   | "FIXED_OVERHEAD"
   | "CONTRACT_GUARANTEE"
   | "CONTRACT_SIGNING_BONUS"
+  | "CONTRACT_BUYOUT"
   | "GATE_REVENUE"
   | "VENUE_COST"
   | "PRODUCTION_COST"
