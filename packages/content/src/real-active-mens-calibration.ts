@@ -17,317 +17,278 @@ type ValueBandConfig = {
   presentation: readonly [number, number];
 };
 
+function setFromText(text: string): Set<string> {
+  return new Set(text.trim().split("\n").filter(Boolean));
+}
+
 const VALUE_BANDS: Record<RealRosterValueBand, ValueBandConfig> = {
-  MEGASTAR: {
-    popularity: [90, 97],
-    recognition: [91, 98],
-    inRing: [72, 92],
-    matchCraft: [74, 94],
-    presentation: [80, 96],
-  },
-  HEADLINER: {
-    popularity: [78, 90],
-    recognition: [76, 91],
-    inRing: [66, 89],
-    matchCraft: [66, 90],
-    presentation: [68, 91],
-  },
-  FEATURED: {
-    popularity: [61, 78],
-    recognition: [56, 79],
-    inRing: [58, 84],
-    matchCraft: [58, 85],
-    presentation: [57, 82],
-  },
-  REGULAR: {
-    popularity: [39, 62],
-    recognition: [34, 64],
-    inRing: [48, 78],
-    matchCraft: [47, 79],
-    presentation: [43, 76],
-  },
-  PROSPECT: {
-    popularity: [22, 47],
-    recognition: [14, 43],
-    inRing: [43, 72],
-    matchCraft: [40, 70],
-    presentation: [38, 69],
-  },
+  MEGASTAR: { popularity: [90, 97], recognition: [91, 98], inRing: [72, 92], matchCraft: [74, 94], presentation: [80, 96] },
+  HEADLINER: { popularity: [78, 90], recognition: [76, 91], inRing: [66, 89], matchCraft: [66, 90], presentation: [68, 91] },
+  FEATURED: { popularity: [61, 78], recognition: [56, 79], inRing: [58, 84], matchCraft: [58, 85], presentation: [57, 82] },
+  REGULAR: { popularity: [39, 62], recognition: [34, 64], inRing: [48, 78], matchCraft: [47, 79], presentation: [43, 76] },
+  PROSPECT: { popularity: [22, 47], recognition: [14, 43], inRing: [43, 72], matchCraft: [40, 70], presentation: [38, 69] },
 };
 
-const MEGASTARS = new Set([
-  "Cody Rhodes",
-  "Roman Reigns",
-  "CM Punk",
-  "Seth Rollins",
-  "Randy Orton",
-  "Gunther",
-  "Drew McIntyre",
-  "Jey Uso",
-  "MJF",
-  "Jon Moxley",
-  "Kenny Omega",
-  "Will Ospreay",
-  "Kazuchika Okada",
-  "Swerve Strickland",
-  "\"Hangman\" Adam Page",
-  "Samoa Joe",
-  "Orange Cassidy",
-  "Místico",
-  "Zack Sabre Jr.",
-  "LA Knight",
-]);
+const MEGASTARS = setFromText(`Cody Rhodes
+Roman Reigns
+CM Punk
+Seth Rollins
+Randy Orton
+Gunther
+Drew McIntyre
+Jey Uso
+MJF
+Jon Moxley
+Kenny Omega
+Will Ospreay
+Kazuchika Okada
+Swerve Strickland
+"Hangman" Adam Page
+Samoa Joe
+Orange Cassidy
+Místico
+Zack Sabre Jr.
+LA Knight`);
 
-const HEADLINERS = new Set([
-  "Dominik Mysterio",
-  "Kevin Owens",
-  "Sami Zayn",
-  "Damian Priest",
-  "Bron Breakker",
-  "Jacob Fatu",
-  "Penta",
-  "Rey Fenix",
-  "Rey Mysterio",
-  "Logan Paul",
-  "Rusev",
-  "Trick Williams",
-  "Oba Femi",
-  "Ilja Dragunov",
-  "Carmelo Hayes",
-  "Adam Cole",
-  "Adam Copeland",
-  "Bobby Lashley",
-  "Christian Cage",
-  "Darby Allin",
-  "Claudio Castagnoli",
-  "Jay White",
-  "Bandido",
-  "Konosuke Takeshita",
-  "Kyle Fletcher",
-  "Mark Briscoe",
-  "Ricochet",
-  "Rush",
-  "Chris Jericho",
-  "Shelton Benjamin",
-  "Hijo del Vikingo",
-  "Psycho Clown",
-  "Máscara Dorada",
-  "Shingo Takagi",
-  "David Finlay",
-  "Gabe Kidd",
-  "SANADA",
-  "El Desperado",
-  "KENTA",
-  "Joe Hendry",
-  "Moose",
-  "Nic Nemeth",
-  "Mustafa Ali",
-  "Josh Alexander",
-  "Matt Cardona",
-  "Matt Riddle",
-  "Michael Oku",
-  "Jeff Hardy",
-  "Matt Hardy",
-  "MVP",
-]);
+const HEADLINERS = setFromText(`Dominik Mysterio
+Kevin Owens
+Sami Zayn
+Damian Priest
+Bron Breakker
+Jacob Fatu
+Penta
+Rey Fenix
+Rey Mysterio
+Logan Paul
+Rusev
+Trick Williams
+Oba Femi
+Ilja Dragunov
+Carmelo Hayes
+Adam Cole
+Adam Copeland
+Bobby Lashley
+Christian Cage
+Darby Allin
+Claudio Castagnoli
+Jay White
+Bandido
+Konosuke Takeshita
+Kyle Fletcher
+Mark Briscoe
+Ricochet
+Rush
+Chris Jericho
+Shelton Benjamin
+Hijo del Vikingo
+Psycho Clown
+Máscara Dorada
+Shingo Takagi
+David Finlay
+Gabe Kidd
+SANADA
+El Desperado
+KENTA
+Joe Hendry
+Moose
+Nic Nemeth
+Mustafa Ali
+Josh Alexander
+Matt Cardona
+Matt Riddle
+Michael Oku
+Jeff Hardy
+Matt Hardy
+MVP`);
 
-const FEATURED = new Set([
-  "Austin Theory",
-  "Angelo Dawkins",
-  "Bronson Reed",
-  "Carmelo Hayes",
-  "Chad Gable",
-  "Dragon Lee",
-  "Ethan Page",
-  "Finn Bálor",
-  "Grayson Waller",
-  "Ivar",
-  "JD McDonagh",
-  "Jimmy Uso",
-  "Johnny Gargano",
-  "Julius Creed",
-  "Montez Ford",
-  "Nathan Frazer",
-  "Noam Dar",
-  "Omos",
-  "Otis",
-  "Ricky Saints",
-  "Shinsuke Nakamura",
-  "Solo Sikoa",
-  "Tama Tonga",
-  "Tony D'Angelo",
-  "Ace Austin",
-  "Alex Shelley",
-  "Andrade El Ídolo",
-  "Anthony Bowens",
-  "AR Fox",
-  "Austin Gunn",
-  "The Beast Mortos",
-  "Brody King",
-  "Buddy Matthews",
-  "Cash Wheeler",
-  "Chris Sabin",
-  "Clark Connors",
-  "Colten Gunn",
-  "Daniel Garcia",
-  "Dante Martin",
-  "Dax Harwood",
-  "Dustin Rhodes",
-  "Eddie Kingston",
-  "Hook",
-  "Jay Lethal",
-  "Juice Robinson",
-  "Jack Perry",
-  "Katsuyori Shibata",
-  "Kevin Knight",
-  "Komander",
-  "Kota Ibushi",
-  "Kyle O'Reilly",
-  "Lance Archer",
-  "Lee Moriarty",
-  "Lio Rush",
-  "Luchasaurus",
-  "Mark Davis",
-  "Max Caster",
-  "Mike Bennett",
-  "Myron Reed",
-  "Alex Zayne",
-  "Great-O-Khan",
-  "HENARE",
-  "Hirooki Goto",
-  "Kosei Fujita",
-  "Master Wato",
-  "Robbie Eagles",
-  "Ryohei Oiwa",
-  "SHO",
-  "Shota Umino",
-  "Taichi",
-  "Taiji Ishimori",
-  "Templario",
-  "AJ Francis",
-  "Brian Myers",
-  "Cedric Alexander",
-  "Eddie Edwards",
-  "Elijah",
-  "Frankie Kazarian",
-  "Leon Slater",
-  "Laredo Kid",
-  "Pagano",
-  "Killer Kross",
-  "Tom Lawlor",
-  "Joey Janela",
-  "Josh Barnett",
-  "Jack Cartwheel",
-  "Zack Gibson",
-  "Luke Jacobs",
-  "Mark Andrews",
-  "Zak Knight",
-  "Keith Lee",
-  "Tommaso Ciampa",
-  "Tyler Breeze",
-]);
+const FEATURED = setFromText(`Austin Theory
+Angelo Dawkins
+Bronson Reed
+Chad Gable
+Dragon Lee
+Ethan Page
+Finn Bálor
+Grayson Waller
+Ivar
+JD McDonagh
+Jimmy Uso
+Johnny Gargano
+Julius Creed
+Montez Ford
+Nathan Frazer
+Noam Dar
+Omos
+Otis
+Ricky Saints
+Shinsuke Nakamura
+Solo Sikoa
+Tama Tonga
+Tony D'Angelo
+Ace Austin
+Alex Shelley
+Andrade El Ídolo
+Anthony Bowens
+AR Fox
+Austin Gunn
+The Beast Mortos
+Brody King
+Buddy Matthews
+Cash Wheeler
+Chris Sabin
+Clark Connors
+Colten Gunn
+Daniel Garcia
+Dante Martin
+Dax Harwood
+Dustin Rhodes
+Eddie Kingston
+Hook
+Jay Lethal
+Juice Robinson
+Jack Perry
+Katsuyori Shibata
+Kevin Knight
+Komander
+Kota Ibushi
+Kyle O'Reilly
+Lance Archer
+Lee Moriarty
+Lio Rush
+Luchasaurus
+Mark Davis
+Max Caster
+Mike Bennett
+Myron Reed
+Alex Zayne
+Great-O-Khan
+HENARE
+Hirooki Goto
+Kosei Fujita
+Master Wato
+Robbie Eagles
+Ryohei Oiwa
+SHO
+Shota Umino
+Taichi
+Taiji Ishimori
+Templario
+AJ Francis
+Brian Myers
+Cedric Alexander
+Eddie Edwards
+Elijah
+Frankie Kazarian
+Leon Slater
+Laredo Kid
+Pagano
+Killer Kross
+Tom Lawlor
+Joey Janela
+Josh Barnett
+Jack Cartwheel
+Zack Gibson
+Luke Jacobs
+Mark Andrews
+Zak Knight
+Keith Lee
+Tommaso Ciampa
+Tyler Breeze`);
 
-const PROSPECT_VALUE = new Set([
-  "Blake Howard",
-  "Brad Baylor",
-  "Cutler James",
-  "Dion Lennox",
-  "Dorian Van Dux",
-  "EK Prosper",
-  "Elio LeFleur",
-  "Hank Walker",
-  "Jackson Drake",
-  "Jasper Troy",
-  "Je'Von Evans",
-  "Kam Hendrix",
-  "Keanu Carver",
-  "Lucien Price",
-  "Mark Nash",
-  "Mason Rook",
-  "Myles Borne",
-  "Niko Vance",
-  "Osiris Griffin",
-  "Ricky Smokes",
-  "Romeo Moreno",
-  "Royce Keys",
-  "Saquon Shugars",
-  "Sean Legacy",
-  "Shiloh Hill",
-  "Tank Ledger",
-  "Tate Wilder",
-  "Tavion Heights",
-  "Tristan Angels",
-  "Daiki Nagai",
-  "Katsuya Murashima",
-  "Masatora Yasuda",
-  "Shoma Kato",
-  "Taisei Nakahara",
-  "Tatsuya Matsumoto",
-  "Aaron Wolf",
-  "Uriah Connors",
-  "Braxton Cole",
-  "Harley Riggins",
-  "Jax Presley",
-  "Shido Ash",
-  "Cappuccino Jones",
-  "Chazz \"Starboy\" Hall",
-  "CJ Valor",
-  "Elijah Holyfield",
-  "Harlem Lewis",
-]);
+const PROSPECT_VALUE = setFromText(`Blake Howard
+Brad Baylor
+Cutler James
+Dion Lennox
+Dorian Van Dux
+EK Prosper
+Elio LeFleur
+Hank Walker
+Jackson Drake
+Jasper Troy
+Je'Von Evans
+Kam Hendrix
+Keanu Carver
+Lucien Price
+Mark Nash
+Mason Rook
+Myles Borne
+Niko Vance
+Osiris Griffin
+Ricky Smokes
+Romeo Moreno
+Royce Keys
+Saquon Shugars
+Sean Legacy
+Shiloh Hill
+Tank Ledger
+Tate Wilder
+Tavion Heights
+Tristan Angels
+Daiki Nagai
+Katsuya Murashima
+Masatora Yasuda
+Shoma Kato
+Taisei Nakahara
+Tatsuya Matsumoto
+Aaron Wolf
+Uriah Connors
+Braxton Cole
+Harley Riggins
+Jax Presley
+Shido Ash
+Cappuccino Jones
+Chazz "Starboy" Hall
+CJ Valor
+Elijah Holyfield
+Harlem Lewis`);
 
-const SPECIAL_ATTRACTIONS = new Set([
-  "Billy Gunn",
-  "Jeff Jarrett",
-  "Chris Jericho",
-  "R-Truth",
-  "Rey Mysterio",
-  "Dustin Rhodes",
-  "Matt Hardy",
-  "Jeff Hardy",
-  "Hiroyoshi Tenzan",
-  "Satoshi Kojima",
-  "TAKA Michinoku",
-  "Super Crazy",
-  "Ricky Morton",
-  "MVP",
-]);
+const SPECIAL_ATTRACTIONS = setFromText(`Billy Gunn
+Jeff Jarrett
+Chris Jericho
+R-Truth
+Rey Mysterio
+Dustin Rhodes
+Matt Hardy
+Jeff Hardy
+Hiroyoshi Tenzan
+Satoshi Kojima
+TAKA Michinoku
+Super Crazy
+Ricky Morton
+MVP`);
 
-const VETERANS = new Set([
-  "CM Punk",
-  "Randy Orton",
-  "The Miz",
-  "Kevin Owens",
-  "Sami Zayn",
-  "Shinsuke Nakamura",
-  "Adam Copeland",
-  "Christian Cage",
-  "Bobby Lashley",
-  "Shelton Benjamin",
-  "Claudio Castagnoli",
-  "Jay Lethal",
-  "Colt Cabana",
-  "Johnny TV",
-  "Samoa Joe",
-  "Katsuyori Shibata",
-  "Kota Ibushi",
-  "Lance Archer",
-  "Rocky Romero",
-  "Hirooki Goto",
-  "KENTA",
-  "Taichi",
-  "Taiji Ishimori",
-  "Naomichi Marufuji",
-  "Kazuyuki Fujita",
-  "Masato Tanaka",
-  "Eddie Edwards",
-  "Frankie Kazarian",
-  "Nic Nemeth",
-  "Matt Cardona",
-  "Tom Lawlor",
-  "Josh Barnett",
-  "Tyler Breeze",
-]);
+const VETERANS = setFromText(`CM Punk
+Randy Orton
+The Miz
+Kevin Owens
+Sami Zayn
+Shinsuke Nakamura
+Adam Copeland
+Christian Cage
+Bobby Lashley
+Shelton Benjamin
+Claudio Castagnoli
+Jay Lethal
+Colt Cabana
+Johnny TV
+Samoa Joe
+Katsuyori Shibata
+Kota Ibushi
+Lance Archer
+Rocky Romero
+Hirooki Goto
+KENTA
+Taichi
+Taiji Ishimori
+Naomichi Marufuji
+Kazuyuki Fujita
+Masato Tanaka
+Eddie Edwards
+Frankie Kazarian
+Nic Nemeth
+Matt Cardona
+Tom Lawlor
+Josh Barnett
+Tyler Breeze`);
 
 const PROSPECT_STAGE = new Set([
   ...PROSPECT_VALUE,
@@ -336,73 +297,66 @@ const PROSPECT_STAGE = new Set([
   "Ryohei Oiwa",
 ]);
 
-const WORKRATE_ACES = new Set([
-  "Will Ospreay",
-  "Kenny Omega",
-  "Zack Sabre Jr.",
-  "Kazuchika Okada",
-  "Gunther",
-  "Ilja Dragunov",
-  "Konosuke Takeshita",
-  "Kyle Fletcher",
-  "Bandido",
-  "Místico",
-  "Hijo del Vikingo",
-  "Shingo Takagi",
-  "KENTA",
-  "El Desperado",
-  "Claudio Castagnoli",
-  "Chris Sabin",
-  "Alex Shelley",
-  "Michael Oku",
-  "Luke Jacobs",
-  "Ricochet",
-  "Chad Gable",
-  "Finn Bálor",
-  "Johnny Gargano",
-  "Nathan Frazer",
-  "Dragon Lee",
-  "Rey Fenix",
-  "Penta",
-]);
+const WORKRATE_ACES = setFromText(`Will Ospreay
+Kenny Omega
+Zack Sabre Jr.
+Kazuchika Okada
+Gunther
+Ilja Dragunov
+Konosuke Takeshita
+Kyle Fletcher
+Bandido
+Místico
+Hijo del Vikingo
+Shingo Takagi
+KENTA
+El Desperado
+Claudio Castagnoli
+Chris Sabin
+Alex Shelley
+Michael Oku
+Luke Jacobs
+Ricochet
+Chad Gable
+Finn Bálor
+Johnny Gargano
+Nathan Frazer
+Dragon Lee
+Rey Fenix
+Penta`);
 
-const PRESENTATION_ACES = new Set([
-  "Cody Rhodes",
-  "Roman Reigns",
-  "CM Punk",
-  "Seth Rollins",
-  "Randy Orton",
-  "LA Knight",
-  "Drew McIntyre",
-  "Gunther",
-  "Jey Uso",
-  "Dominik Mysterio",
-  "MJF",
-  "Swerve Strickland",
-  "Jon Moxley",
-  "\"Hangman\" Adam Page",
-  "Samoa Joe",
-  "Orange Cassidy",
-  "Christian Cage",
-  "Adam Copeland",
-  "Chris Jericho",
-  "Joe Hendry",
-  "Trick Williams",
-  "Moose",
-  "Matt Cardona",
-  "Mustafa Ali",
-  "Psycho Clown",
-  "Logan Paul",
-]);
+const PRESENTATION_ACES = setFromText(`Cody Rhodes
+Roman Reigns
+CM Punk
+Seth Rollins
+Randy Orton
+LA Knight
+Drew McIntyre
+Gunther
+Jey Uso
+Dominik Mysterio
+MJF
+Swerve Strickland
+Jon Moxley
+"Hangman" Adam Page
+Samoa Joe
+Orange Cassidy
+Christian Cage
+Adam Copeland
+Chris Jericho
+Joe Hendry
+Trick Williams
+Moose
+Matt Cardona
+Mustafa Ali
+Psycho Clown
+Logan Paul`);
 
-function rosterNames(): Set<string> {
-  return new Set(REAL_ACTIVE_MENS_ROSTER_NAMES);
-}
+const KNOWN_ROSTER_NAMES = new Set(REAL_ACTIVE_MENS_ROSTER_NAMES);
 
 function assertKnownNames(label: string, names: ReadonlySet<string>): void {
-  const known = rosterNames();
   for (const name of names) {
-    if (!known.has(name)) throw new Error(`${label} calibration references unknown wrestler ${name}`);
+    if (!KNOWN_ROSTER_NAMES.has(name)) throw new Error(`${label} calibration references unknown wrestler ${name}`);
   }
 }
 
