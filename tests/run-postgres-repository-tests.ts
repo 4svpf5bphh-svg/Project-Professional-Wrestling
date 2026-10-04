@@ -1,5 +1,6 @@
 declare const process: { env: Record<string, string | undefined>; exitCode?: number };
 
+import postgres from "postgres";
 import {
   claimIndependentPromotionCommand,
   createWorldCommandState,
@@ -13,7 +14,10 @@ import {
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
-import { createPostgresApplicationWorldRepository } from "../packages/persistence/src/index.js";
+import {
+  POSTGRES_APPLICATION_MIGRATIONS,
+  createPostgresApplicationWorldRepository,
+} from "../packages/persistence/src/postgres-world-repository.js";
 import { createWorld } from "../packages/sim-core/src/index.js";
 
 function ok(value: unknown, message: string): void {
@@ -24,6 +28,7 @@ const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for PostgreSQL repository integration tests");
 
 const { repository, close } = createPostgresApplicationWorldRepository(connectionString);
+const inspectionSql = postgres(connectionString, { max: 1 });
 let passed = 0;
 let failed = 0;
 
@@ -52,6 +57,15 @@ function fixture(seed: number): ApplicationWorldAggregate {
 
 try {
   await repository.migrate();
+
+  await test("PostgreSQL migration ledger is numbered and idempotent", async () => {
+    await repository.migrate();
+    const rows = await inspectionSql`SELECT version, name FROM ppw_schema_migrations ORDER BY version` as unknown as Array<{ version: number; name: string }>;
+    const expected = POSTGRES_APPLICATION_MIGRATIONS.map((migration) => migration.version);
+    const actual = rows.map((row) => Number(row.version));
+    ok(JSON.stringify(actual) === JSON.stringify(expected), `migration ledger mismatch: expected ${expected.join(",")}, got ${actual.join(",")}`);
+    ok(new Set(actual).size === actual.length, "migration ledger contains duplicate versions");
+  });
 
   await test("PostgreSQL repository atomically persists command ownership receipt and World state", async () => {
     const aggregate = fixture(14001);
@@ -177,6 +191,7 @@ try {
     ok(loaded.state.events.length === eventsBefore, "planning persistence created a real simulation event");
   });
 } finally {
+  await inspectionSql.end({ timeout: 5 });
   await close();
 }
 
