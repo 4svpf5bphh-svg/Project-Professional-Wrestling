@@ -1,4 +1,9 @@
 import type { Id } from "../../domain/src/types.js";
+import {
+  createWorldEngagementState,
+  evaluatePlayerInactivity,
+} from "./engagement.js";
+import { activePromotionControls } from "./ownership.js";
 import type { ApplicationWorldRepository } from "./world-aggregate.js";
 import {
   lockPersistedWorldForResolution,
@@ -53,6 +58,25 @@ async function claimExistingLockForCycle(
   return { revision: committed.revision, stale: committed.result };
 }
 
+async function evaluateScheduledPlayerInactivity(
+  repository: ApplicationWorldRepository,
+  worldId: Id,
+  expectedRevision: number,
+  cycleKey: string,
+): Promise<number> {
+  const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
+    const controls = activePromotionControls(aggregate.ownership);
+    if (controls.length === 0) return;
+
+    const engagement = aggregate.engagement ?? createWorldEngagementState(worldId);
+    aggregate.engagement = engagement;
+    for (const control of controls) {
+      evaluatePlayerInactivity(engagement, control.playerId, cycleKey);
+    }
+  });
+  return committed.revision;
+}
+
 export async function resolveScheduledWorldCycle(
   repository: ApplicationWorldRepository,
   worldId: Id,
@@ -97,10 +121,16 @@ export async function resolveScheduledWorldCycle(
         continue;
       }
 
-      const materialized = await materializePersistedCurrentWeekReservations(
+      const activityRevision = await evaluateScheduledPlayerInactivity(
         repository,
         worldId,
         before.runtime.revision,
+        cycleKey,
+      );
+      const materialized = await materializePersistedCurrentWeekReservations(
+        repository,
+        worldId,
+        activityRevision,
       );
       const lockedRevision = await lockPersistedWorldForResolution(
         repository,
