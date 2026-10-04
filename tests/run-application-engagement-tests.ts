@@ -219,6 +219,46 @@ await test("Stewardship exit eligibility requires extended grace and low Trust, 
   ok(eligibility.reason === "NOT_STEWARDED", "returning owner closed eligibility for the wrong reason");
 });
 
+await test("eligible Stewardship talent raises one persisted early release request without terminating the contract", async () => {
+  const aggregate = stewardedWorldFixture(18104, "2026-09-01");
+  const control = aggregate.ownership.promotionControls[0];
+  if (!control || !aggregate.engagement) throw new Error("release-request fixture is missing control or engagement state");
+  ensurePromotionTalentTrust(aggregate.state);
+  const contract = activeContractsForPromotion(aggregate.state, control.promotionId)
+    .find((candidate) => candidate.family !== "ONE_OFF");
+  if (!contract) throw new Error("release-request fixture has no continuing contract");
+
+  const activity = activityForPlayer(aggregate.engagement, control.playerId);
+  if (!activity) throw new Error("release-request fixture has no activity record");
+  activity.status = "STEWARDED";
+  activity.statusSinceCycleKey = "2026-10-01";
+  const relationship = promotionTalentTrustFor(aggregate.state, control.promotionId, contract.personId);
+  relationship.trust = STEWARDSHIP_EXIT_TRUST_THRESHOLD + STEWARDSHIP_TRUST_PRESSURE_PER_WEEK;
+
+  const repository = new InMemoryApplicationWorldRepository();
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+
+  await resolveScheduledWorldCycle(repository, worldId, "2026-10-15");
+  let after = await repository.load(worldId);
+  const requests = after.engagement?.stewardshipExitRequests ?? [];
+  const request = requests.find((candidate) => candidate.contractId === contract.id);
+  ok(request?.status === "OPEN", "eligible wrestler did not raise an OPEN early release request");
+  ok(request?.trustAtRequest === STEWARDSHIP_EXIT_TRUST_THRESHOLD, "release request did not capture Trust at the eligibility threshold");
+  ok(after.state.contracts.find((candidate) => candidate.id === contract.id)?.status === "SIGNED", "release request terminated the contract prematurely");
+  ok(
+    after.state.ledger.filter((entry) => entry.type === "STEWARDSHIP_EARLY_RELEASE_REQUESTED" && entry.entityIds[2] === contract.id).length === 1,
+    "early release request was not recorded exactly once in World history",
+  );
+
+  await resolveScheduledWorldCycle(repository, worldId, "2026-10-15");
+  after = await repository.load(worldId);
+  ok(
+    (after.engagement?.stewardshipExitRequests ?? []).filter((candidate) => candidate.contractId === contract.id && candidate.status === "OPEN").length === 1,
+    "duplicate scheduler delivery created a second open release request",
+  );
+});
+
 await test("opportunity eligibility never leaks across player or promotion scopes", () => {
   const engagement = createWorldEngagementState("world-test");
   const opportunity = addOpportunity(engagement, {
