@@ -12,5 +12,6 @@ export * from "./reservation-commands.js";
 export * from "./runtime.js";
 export * from "./scheduler.js";
 export * from "./stewardship.js";
+export * from "./stewardship-release.js";
 export * from "./world-aggregate.js";
 export * from "./world-transactions.js";
