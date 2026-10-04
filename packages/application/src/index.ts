@@ -8,5 +8,6 @@ export * from "./planning-status.js";
 export * from "./player-view.js";
 export * from "./reservation-commands.js";
 export * from "./runtime.js";
+export * from "./scheduler.js";
 export * from "./world-aggregate.js";
 export * from "./world-transactions.js";
