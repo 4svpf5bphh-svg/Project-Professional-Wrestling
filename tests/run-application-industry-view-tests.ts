@@ -78,12 +78,15 @@ test("industry view exposes current roster names without rival contract terms or
   rivalContract!.weeklyGuarantee = 432_198_765;
   rivalContract!.appearanceFee = 321_987_654;
   rivalContract!.signingBonus = 219_876_543;
+  const rivalPerson = aggregate.state.people.find((person) => person.id === rivalContract!.personId);
+  ok(rivalPerson, "rival wrestler is missing");
+  rivalPerson!.popularity = 100;
+  rivalPerson!.recognition = 100;
 
   const view = buildPlayerIndustryView(aggregate, "player-a");
   const rivalView = view.promotions.find((promotion) => promotion.promotionId === rival!.id);
   ok(rivalView, "rival promotion missing from industry view");
-  const rivalPerson = aggregate.state.people.find((person) => person.id === rivalContract!.personId);
-  ok(rivalPerson && rivalView!.featuredTalent.some((person) => person.personId === rivalPerson.id), "public rival roster identity was not surfaced");
+  ok(rivalView!.featuredTalent.some((person) => person.personId === rivalPerson!.id), "public rival roster identity was not surfaced");
   const serialized = JSON.stringify(rivalView);
   for (const sentinel of ["987654321", "876543219", "765432198", "654321987", "543219876", "432198765", "321987654", "219876543"]) {
     ok(!serialized.includes(sentinel), `private rival value ${sentinel} leaked into industry view`);
