@@ -1,0 +1,147 @@
+.shell {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: max(22px, env(safe-area-inset-top)) 16px calc(36px + env(safe-area-inset-bottom));
+  color: #f4f7fb;
+}
+
+.backLink, .inlineLink {
+  color: #5de9ce;
+  text-decoration: none;
+  font-weight: 800;
+}
+
+.backLink { display: inline-block; margin-bottom: 18px; font-size: 13px; }
+.inlineLink { font-size: 12px; white-space: nowrap; }
+
+.header, .sectionHeading, .rowCard, .transaction {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.header { margin-bottom: 18px; }
+.header h1 { margin: 0 0 5px; font-size: clamp(28px, 8vw, 42px); line-height: 1; letter-spacing: -.045em; }
+.header p { margin: 0; color: #8d99a8; }
+
+.eyebrow {
+  display: block;
+  margin-bottom: 8px;
+  color: #5de9ce;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: .13em;
+}
+
+.button {
+  min-height: 42px;
+  border: 1px solid #2b3748;
+  border-radius: 12px;
+  padding: 0 13px;
+  background: #10161e;
+  color: #dce5ef;
+  font-weight: 800;
+}
+.button:disabled { opacity: .45; }
+
+.error, .panel, .overview > div, .rowCard {
+  border: 1px solid #202938;
+  background: rgba(14, 19, 27, .93);
+  border-radius: 18px;
+}
+
+.error { padding: 13px 15px; margin-bottom: 14px; color: #ffb1b1; border-color: rgba(255,103,103,.35); }
+.panel { padding: 17px; margin-bottom: 14px; }
+.panel h2 { margin: 0 0 12px; font-size: 20px; letter-spacing: -.025em; }
+
+.overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.overview > div { padding: 14px; }
+.overview span, .overview strong { display: block; }
+.overview span { margin-bottom: 7px; color: #8996a6; font-size: 11px; }
+.overview strong { font-size: 18px; letter-spacing: -.025em; overflow-wrap: anywhere; }
+
+.sectionHeading { margin-bottom: 12px; }
+.sectionHeading h2 { margin-bottom: 0; }
+
+.status {
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: #171d27;
+  color: #bac5d2;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .05em;
+}
+.statusHEALTHY { color: #65e6ad; background: rgba(50,190,125,.11); }
+.statusWATCH { color: #f4ce72; background: rgba(244,206,114,.1); }
+.statusDISTRESSED, .statusCRISIS { color: #ff9292; background: rgba(255,91,91,.1); }
+
+.detailGrid, .standingGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+.detailGrid > div, .standingGrid > div {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #202938;
+  border-radius: 12px;
+  background: #0b1118;
+}
+.detailGrid span, .detailGrid strong, .standingGrid span, .standingGrid strong { display: block; }
+.detailGrid span, .standingGrid span { color: #788698; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; font-weight: 800; }
+.detailGrid strong, .standingGrid strong { margin-top: 5px; font-size: 14px; overflow-wrap: anywhere; }
+.standingGrid strong { font-size: 24px; }
+
+.moneyRows { display: grid; gap: 1px; border-radius: 13px; overflow: hidden; border: 1px solid #202938; }
+.moneyRows > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 12px;
+  background: #0b1118;
+  font-size: 13px;
+}
+.moneyRows span { color: #8d99a8; }
+
+.breakdown { display: grid; margin-top: 12px; }
+.breakdown > div, .transaction {
+  padding: 10px 0;
+  border-top: 1px solid #202938;
+}
+.breakdown > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+.breakdown span { color: #8d99a8; text-transform: capitalize; }
+
+.list { display: grid; gap: 8px; }
+.rowCard { padding: 12px; border-radius: 13px; }
+.rowCard > div { min-width: 0; }
+.rowCard strong, .rowCard span, .transaction strong, .transaction span { display: block; }
+.rowCard > div > strong { font-size: 13px; }
+.rowCard span { margin-top: 5px; color: #7c8999; font-size: 10px; line-height: 1.4; }
+.rowCard > strong { flex: 0 0 auto; font-size: 13px; }
+
+.transaction { align-items: center; }
+.transaction > div strong { font-size: 12px; text-transform: capitalize; }
+.transaction > div span { margin-top: 3px; color: #718092; font-size: 10px; }
+.transaction > strong { flex: 0 0 auto; font-size: 12px; }
+
+.note { margin: 11px 0 0; color: #718092; font-size: 11px; line-height: 1.5; }
+.positive { color: #65e6ad; }
+.negative { color: #ff9292; }
+
+@media (min-width: 620px) {
+  .shell { padding-left: 24px; padding-right: 24px; }
+  .overview { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .detailGrid, .standingGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
