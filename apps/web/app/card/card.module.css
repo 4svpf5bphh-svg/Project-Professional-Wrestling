@@ -107,7 +107,7 @@
 
 .controls {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
 }
@@ -120,6 +120,13 @@
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: .06em;
+}
+
+.titleStatus {
+  margin-top: 5px;
+  color: #8ca0b6;
+  font-size: 10px;
+  line-height: 1.35;
 }
 
 .actions {
@@ -174,6 +181,12 @@
   background: rgba(68, 20, 24, .2);
   color: #ffb1b1;
   line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 560px) {
