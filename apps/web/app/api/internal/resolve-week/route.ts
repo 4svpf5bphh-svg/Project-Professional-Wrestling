@@ -17,9 +17,10 @@ export async function GET(request: Request): Promise<NextResponse> {
   }
 
   try {
-    const result = await withAlphaServerContext(({ repository, worldId }) => (
-      resolveScheduledWorldCycle(repository, worldId, utcCycleKey())
-    ));
+    const result = await withAlphaServerContext(
+      ({ repository, worldId }) => resolveScheduledWorldCycle(repository, worldId, utcCycleKey()),
+      { trackPlayerActivity: false },
+    );
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to resolve scheduled PPW week";
