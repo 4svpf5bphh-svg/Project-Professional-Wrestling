@@ -104,6 +104,21 @@ ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS last_resolved_real_cycle_key tex
     name: "player engagement and opportunity state",
     sql: `ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS engagement_state jsonb NULL;`,
   },
+  {
+    version: 5,
+    name: "reset Alpha playtest World for calibrated real roster",
+    sql: `
+DELETE FROM ppw_worlds AS worlds
+WHERE worlds.world_id = 'world-20261002'
+   OR worlds.world_state->'world'->>'name' = 'PPW Alpha World'
+   OR EXISTS (
+     SELECT 1
+     FROM ppw_world_memberships AS memberships
+     WHERE memberships.world_id = worlds.world_id
+       AND memberships.player_id = 'alpha-player-1'
+   );
+`,
+  },
 ] as const;
 
 export const POSTGRES_APPLICATION_SCHEMA_SQL = [
