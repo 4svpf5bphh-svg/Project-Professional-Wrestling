@@ -2,6 +2,7 @@ import type { Id, PpwDate } from "../../domain/src/types.js";
 
 export type PlayerActivityStatus = "ACTIVE" | "WARNING" | "STEWARDED";
 export type OpportunityCategory = "TALENT" | "MARKET" | "BUSINESS" | "WORLD";
+export type StewardshipExitRequestStatus = "OPEN" | "SETTLED" | "WITHDRAWN";
 
 export interface PlayerActivityRecord {
   playerId: string;
@@ -32,11 +33,24 @@ export interface OpportunityRecord {
   deepLink: string | null;
 }
 
+export interface StewardshipExitRequest {
+  requestId: string;
+  worldId: Id;
+  promotionId: Id;
+  personId: Id;
+  contractId: Id;
+  requestedDate: PpwDate;
+  requestedCycleKey: string;
+  trustAtRequest: number;
+  status: StewardshipExitRequestStatus;
+}
+
 export interface WorldEngagementState {
   worldId: Id;
   playerActivity: PlayerActivityRecord[];
   attentionDismissals: AttentionDismissalRecord[];
   opportunities: OpportunityRecord[];
+  stewardshipExitRequests: StewardshipExitRequest[];
 }
 
 export interface InactivityThresholds {
@@ -93,6 +107,7 @@ export function createWorldEngagementState(worldId: Id): WorldEngagementState {
     playerActivity: [],
     attentionDismissals: [],
     opportunities: [],
+    stewardshipExitRequests: [],
   };
 }
 
@@ -119,6 +134,10 @@ export function normalizeWorldEngagementState(
       eligiblePlayerIds: [...(record.eligiblePlayerIds ?? [])],
       eligiblePromotionIds: [...(record.eligiblePromotionIds ?? [])],
       deepLink: record.deepLink ?? null,
+    })),
+    stewardshipExitRequests: (input.stewardshipExitRequests ?? []).map((record) => ({
+      ...record,
+      requestedDate: cloneDate(record.requestedDate),
     })),
   };
 }
