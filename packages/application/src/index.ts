@@ -1,6 +1,7 @@
 export * from "./attention.js";
 export * from "./commands.js";
 export * from "./engagement.js";
+export * from "./opportunity-actions.js";
 export * from "./opportunity-generation.js";
 export * from "./ownership.js";
 export * from "./planning.js";
