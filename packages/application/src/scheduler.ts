@@ -31,7 +31,26 @@ function retryableSchedulerConflict(message: string): boolean {
   return message.includes("stale World revision")
     || message.includes("cannot lock from phase")
     || message.includes("cannot accept player mutations")
-    || message.includes("cannot begin resolution from phase");
+    || message.includes("cannot begin resolution from phase")
+    || message.includes("scheduled lock changed before recovery");
+}
+
+async function claimExistingLockForCycle(
+  repository: ApplicationWorldRepository,
+  worldId: Id,
+  expectedRevision: number,
+  cycleKey: string,
+): Promise<{ revision: number; stale: boolean }> {
+  const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
+    if (aggregate.runtime.phase !== "LOCKING") {
+      throw new Error("scheduled lock changed before recovery");
+    }
+    const existing = aggregate.runtime.lockedRealCycleKey ?? null;
+    if (existing !== null && existing > cycleKey) return true;
+    aggregate.runtime.lockedRealCycleKey = cycleKey;
+    return false;
+  });
+  return { revision: committed.revision, stale: committed.result };
 }
 
 export async function resolveScheduledWorldCycle(
@@ -56,18 +75,22 @@ export async function resolveScheduledWorldCycle(
 
     try {
       if (before.runtime.phase === "LOCKING") {
-        const lockedCycle = before.runtime.lockedRealCycleKey ?? null;
-        await resolvePersistedWorldWeek(repository, worldId, before.runtime.revision);
-        if (lockedCycle === cycleKey) {
-          const after = await repository.load(worldId);
+        const claimed = await claimExistingLockForCycle(
+          repository,
+          worldId,
+          before.runtime.revision,
+          cycleKey,
+        );
+        if (claimed.stale) {
           return {
             worldId,
             cycleKey,
-            status: "RESOLVED",
-            revision: after.runtime.revision,
+            status: "ALREADY_RESOLVED",
+            revision: claimed.revision,
           };
         }
-        continue;
+        const revision = await resolvePersistedWorldWeek(repository, worldId, claimed.revision);
+        return { worldId, cycleKey, status: "RESOLVED", revision };
       }
 
       if (before.runtime.phase === "RESOLVING") {
