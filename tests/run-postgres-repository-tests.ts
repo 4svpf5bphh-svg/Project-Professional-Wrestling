@@ -67,6 +67,65 @@ try {
     ok(new Set(actual).size === actual.length, "migration ledger contains duplicate versions");
   });
 
+  await test("one-time Alpha playtest reset deletes only the target World and cascades its relational state", async () => {
+    const target = fixture(20261002);
+    joinPlayerToWorld(target.ownership, "alpha-player-1", target.state.world.currentDate);
+    const targetPromotion = target.state.promotions.find(
+      (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+    )!;
+    claimIndependentPromotionCommand(target.state, target.ownership, target.commands, target.runtime, {
+      requestId: "alpha-reset-target-claim",
+      worldId: target.state.world.id,
+      playerId: "alpha-player-1",
+      commandType: "CLAIM_INDEPENDENT_PROMOTION",
+      payload: { promotionId: targetPromotion.id },
+    });
+    await repository.initialize(target);
+
+    const unrelated = fixture(14000);
+    joinPlayerToWorld(unrelated.ownership, "unrelated-player", unrelated.state.world.currentDate);
+    await repository.initialize(unrelated);
+
+    const beforeChildren = await inspectionSql`
+      SELECT
+        (SELECT count(*)::int FROM ppw_world_memberships WHERE world_id = ${target.state.world.id}) AS memberships,
+        (SELECT count(*)::int FROM ppw_promotion_controls WHERE world_id = ${target.state.world.id}) AS controls,
+        (SELECT count(*)::int FROM ppw_command_receipts WHERE world_id = ${target.state.world.id}) AS receipts
+    ` as unknown as Array<{ memberships: number; controls: number; receipts: number }>;
+    ok(Number(beforeChildren[0]?.memberships) > 0, "reset fixture did not persist membership children");
+    ok(Number(beforeChildren[0]?.controls) > 0, "reset fixture did not persist promotion-control children");
+    ok(Number(beforeChildren[0]?.receipts) > 0, "reset fixture did not persist command-receipt children");
+
+    await inspectionSql`DELETE FROM ppw_schema_migrations WHERE version = 5`;
+    await repository.migrate();
+
+    let targetMissing = false;
+    try {
+      await repository.load(target.state.world.id);
+    } catch (error) {
+      targetMissing = (error instanceof Error ? error.message : String(error)).includes("was not found");
+    }
+    ok(targetMissing, "Alpha reset migration did not remove the target World");
+
+    const preserved = await repository.load(unrelated.state.world.id);
+    ok(preserved.state.world.id === unrelated.state.world.id, "Alpha reset migration removed an unrelated World");
+
+    const afterChildren = await inspectionSql`
+      SELECT
+        (SELECT count(*)::int FROM ppw_world_memberships WHERE world_id = ${target.state.world.id}) AS memberships,
+        (SELECT count(*)::int FROM ppw_promotion_controls WHERE world_id = ${target.state.world.id}) AS controls,
+        (SELECT count(*)::int FROM ppw_command_receipts WHERE world_id = ${target.state.world.id}) AS receipts
+    ` as unknown as Array<{ memberships: number; controls: number; receipts: number }>;
+    ok(Number(afterChildren[0]?.memberships) === 0, "Alpha reset left membership rows behind");
+    ok(Number(afterChildren[0]?.controls) === 0, "Alpha reset left promotion-control rows behind");
+    ok(Number(afterChildren[0]?.receipts) === 0, "Alpha reset left command-receipt rows behind");
+
+    const migrationRows = await inspectionSql`
+      SELECT count(*)::int AS count FROM ppw_schema_migrations WHERE version = 5
+    ` as unknown as Array<{ count: number }>;
+    ok(Number(migrationRows[0]?.count) === 1, "Alpha reset migration was not recorded exactly once after replay");
+  });
+
   await test("PostgreSQL repository atomically persists command ownership receipt and World state", async () => {
     const aggregate = fixture(14001);
     joinPlayerToWorld(aggregate.ownership, "player-a", aggregate.state.world.currentDate);
