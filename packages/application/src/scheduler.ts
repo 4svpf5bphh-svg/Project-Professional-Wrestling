@@ -9,6 +9,7 @@ import {
   applyStewardshipTalentTrustPressure,
   openEligibleStewardshipExitRequests,
 } from "./stewardship.js";
+import { settleOverdueStewardshipExitRequests } from "./stewardship-auto-release.js";
 import type { ApplicationWorldRepository } from "./world-aggregate.js";
 import {
   lockPersistedWorldForResolution,
@@ -81,7 +82,10 @@ async function evaluateScheduledPlayerInactivity(
 
     const stewardship = applyStewardshipTalentTrustPressure(aggregate);
     openEligibleStewardshipExitRequests(aggregate, cycleKey);
-    if (stewardship.promotionsAffected > 0) incrementWorldRevision(aggregate.runtime);
+    const automaticReleases = settleOverdueStewardshipExitRequests(aggregate, cycleKey);
+    if (stewardship.promotionsAffected > 0 || automaticReleases.releasedContracts > 0) {
+      incrementWorldRevision(aggregate.runtime);
+    }
   });
   return committed.revision;
 }
