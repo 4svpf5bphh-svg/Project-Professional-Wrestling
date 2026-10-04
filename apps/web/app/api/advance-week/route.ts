@@ -20,6 +20,13 @@ function statusForError(message: string): number {
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
+  if (process.env.PPW_ENABLE_MANUAL_WEEK_ADVANCE !== "1") {
+    return NextResponse.json(
+      { error: "World progression is server-scheduled; manual week advancement is disabled" },
+      { status: 403 },
+    );
+  }
+
   let body: AdvanceWeekBody;
   try {
     body = await request.json() as AdvanceWeekBody;
