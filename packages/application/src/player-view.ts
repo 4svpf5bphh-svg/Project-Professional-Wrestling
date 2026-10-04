@@ -9,6 +9,7 @@ import type {
   TicketStrategy,
 } from "../../domain/src/types.js";
 import { humanWeekReadiness, type HumanWeekReadinessStatus } from "../../sim-core/src/human-routine.js";
+import { buildPlayerAttention, type PlayerAttentionItem } from "./attention.js";
 import {
   activePromotionControlForPlayer,
   activeWorldMembership,
@@ -134,6 +135,7 @@ export interface AlphaPlayerWorldView {
     promotionId: Id | null;
   };
   promotion: AlphaControlledPromotionView | null;
+  attention: PlayerAttentionItem[];
   availableIndependentPromotions: AlphaPromotionChoiceView[];
 }
 
@@ -153,6 +155,23 @@ function samePpwWeek(left: PpwDate, right: PpwDate): boolean {
 
 function currentWeekDraftId(promotionId: Id, date: PpwDate): string {
   return `alpha-show:${promotionId}:Y${date.year}:W${date.week}`;
+}
+
+function alphaAttentionDeepLink(item: PlayerAttentionItem): string | null {
+  if (item.deepLink && item.deepLink !== "#show-plan") return item.deepLink;
+  if (item.sourceOpportunityCategory === "TALENT") return "/talent";
+  if (
+    item.attentionId.startsWith("required-show:")
+    || item.attentionId.startsWith("at-risk-show:")
+    || item.attentionId.startsWith("watching-show:")
+  ) return "/planner";
+  if (
+    item.attentionId.startsWith("roster-shortage:")
+    || item.attentionId.startsWith("contract-expiry:")
+    || item.attentionId.startsWith("injury:")
+  ) return "/talent";
+  if (item.attentionId.startsWith("show-resolved:")) return "/results";
+  return null;
 }
 
 function maxShowParticipants(
@@ -368,6 +387,10 @@ export function buildAlphaPlayerWorldView(
       promotionId: control?.promotionId ?? null,
     },
     promotion: controlledPromotion,
+    attention: buildPlayerAttention(aggregate, playerId).map((item) => ({
+      ...item,
+      deepLink: alphaAttentionDeepLink(item),
+    })),
     availableIndependentPromotions,
   };
 }

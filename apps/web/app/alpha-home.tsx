@@ -5,6 +5,7 @@ import type { AlphaPlayerWorldView } from "../../../dist/packages/application/sr
 
 type ErrorPayload = { error?: string };
 type TicketStrategy = "ACCESSIBLE" | "STANDARD" | "PREMIUM" | "PRESTIGE";
+type AttentionItem = AlphaPlayerWorldView["attention"][number];
 type ShowPlanForm = {
   day: number;
   marketId: string;
@@ -12,6 +13,8 @@ type ShowPlanForm = {
   ticketStrategy: TicketStrategy;
   participantIds: string[];
 };
+
+const ATTENTION_DAY_NAMES = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 function isErrorPayload(payload: AlphaPlayerWorldView | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
@@ -51,6 +54,22 @@ function readinessLabel(status: string): string {
 
 function planningStateLabel(state: string): string {
   return state.replaceAll("_", " ");
+}
+
+function attentionLabel(category: AttentionItem["category"]): string {
+  return category.replaceAll("_", " ");
+}
+
+function attentionPillClass(category: AttentionItem["category"]): string {
+  if (category === "ACTION_REQUIRED") return "readiness-pill readiness-attention";
+  if (category === "OPPORTUNITY") return "plan-pill plan-reserved";
+  return "plan-pill";
+}
+
+function attentionDeadline(item: AttentionItem): string | null {
+  if (!item.deadline) return null;
+  const day = ATTENTION_DAY_NAMES[item.deadline.day] ?? `Day ${item.deadline.day}`;
+  return `Year ${item.deadline.year} · Week ${item.deadline.week} · ${day}`;
 }
 
 function defaultShowPlan(view: AlphaPlayerWorldView): ShowPlanForm | null {
@@ -252,6 +271,7 @@ export default function AlphaHome(): React.JSX.Element {
     promotion && planning?.canPlanThisWeek && showPlan && showPlan.marketId && showPlan.venueId
     && validRosterCount && view.world.phase === "OPEN" && !savingShowPlan,
   );
+  const actionRequiredCount = view.attention.filter((item) => item.category === "ACTION_REQUIRED").length;
 
   return (
     <main className="app-shell">
@@ -300,6 +320,42 @@ export default function AlphaHome(): React.JSX.Element {
         </section>
       ) : (
         <>
+          <section className="panel">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">ATTENTION</span>
+                <h2>What needs you</h2>
+              </div>
+              <span className={actionRequiredCount > 0 ? "readiness-pill readiness-attention" : "readiness-pill readiness-ready"}>
+                {actionRequiredCount > 0 ? `${actionRequiredCount} ACTION REQUIRED` : "CLEAR"}
+              </span>
+            </div>
+            {view.attention.length === 0 ? (
+              <p className="muted body-copy no-margin">Nothing currently needs your attention. The World can stay quiet when there is nothing meaningful to surface.</p>
+            ) : (
+              <div className="choice-grid">
+                {view.attention.map((item) => {
+                  const deadline = attentionDeadline(item);
+                  return (
+                    <article className="choice-card" key={item.attentionId}>
+                      <div className="choice-card-top">
+                        <div>
+                          <span className="eyebrow">{attentionLabel(item.category)}</span>
+                          <h3>{item.title}</h3>
+                        </div>
+                        {deadline ? <span className="revision">{deadline}</span> : <span className={attentionPillClass(item.category)}>{attentionLabel(item.category)}</span>}
+                      </div>
+                      <p className="muted body-copy">{item.summary}</p>
+                      {item.deepLink ? (
+                        <a href={item.deepLink} style={{ color: "#5de9ce", fontWeight: 850, textDecoration: "none" }}>Open →</a>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
           <section className="metric-grid">
             <article className="metric-card"><span>Cash</span><strong>{money(promotion.cash)}</strong></article>
             <article className="metric-card"><span>Last week</span><strong>{promotion.lastWeeklyNet >= 0 ? "+" : ""}{money(promotion.lastWeeklyNet)}</strong></article>

@@ -1,6 +1,7 @@
 declare const process: { exitCode?: number };
 
 import {
+  buildAlphaPlayerWorldView,
   buildPlayerAttention,
   claimIndependentPromotionForPlayer,
   createWorldCommandState,
@@ -179,6 +180,27 @@ await test("Attention flags a human roster below the minimum viable floor", () =
   ok(item?.category === "ACTION_REQUIRED", "minimum-roster shortage was not Action Required");
   ok(item?.dismissible === false, "minimum-roster shortage was dismissible");
   ok(item?.summary.includes(String(floor)), "minimum-roster shortage did not expose the required floor");
+});
+
+await test("Alpha player home view carries the same player-scoped Attention with playable destinations", () => {
+  const f = fixture(18505);
+  const promotion = f.aggregate.state.promotions.find((candidate) => candidate.id === f.promotionId)!;
+  promotion.eventCadenceWeeks = 1;
+  const contract = f.aggregate.state.contracts.find((candidate) => candidate.id === f.contractId)!;
+  contract.endDate = addPpwWeeks(f.aggregate.state.world.currentDate, 2, f.aggregate.state.ruleset.weeksPerYear);
+
+  const raw = buildPlayerAttention(f.aggregate, f.playerId);
+  const view = buildAlphaPlayerWorldView(f.aggregate, f.playerId);
+  ok(view.attention.length === raw.length, "Alpha home dropped or added Attention items outside the projection");
+  ok(
+    view.attention.map((item) => item.attentionId).join("|") === raw.map((item) => item.attentionId).join("|"),
+    "Alpha home changed Attention ordering or player scope",
+  );
+
+  const renewal = view.attention.find((item) => item.attentionId === `contract-expiry:${contract.id}`);
+  ok(renewal?.deepLink === "/talent", "renewal Attention did not link to Talent");
+  const show = view.attention.find((item) => item.attentionId.startsWith("required-show:"));
+  ok(show?.deepLink === "/planner", "required-show Attention did not link to the six-week Planner");
 });
 
 console.log(`\nAttention projection tests: ${passed} passed, ${failed} failed`);
