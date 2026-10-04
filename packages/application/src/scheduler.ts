@@ -4,6 +4,8 @@ import {
   evaluatePlayerInactivity,
 } from "./engagement.js";
 import { activePromotionControls } from "./ownership.js";
+import { incrementWorldRevision } from "./runtime.js";
+import { applyStewardshipTalentTrustPressure } from "./stewardship.js";
 import type { ApplicationWorldRepository } from "./world-aggregate.js";
 import {
   lockPersistedWorldForResolution,
@@ -73,6 +75,9 @@ async function evaluateScheduledPlayerInactivity(
     for (const control of controls) {
       evaluatePlayerInactivity(engagement, control.playerId, cycleKey);
     }
+
+    const stewardship = applyStewardshipTalentTrustPressure(aggregate);
+    if (stewardship.promotionsAffected > 0) incrementWorldRevision(aggregate.runtime);
   });
   return committed.revision;
 }
