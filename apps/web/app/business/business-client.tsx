@@ -94,7 +94,7 @@ export default function BusinessClient(): React.JSX.Element {
               <div><span>Lifecycle</span><strong>{label(promotion.lifecycle)}</strong></div>
               <div><span>Media reach</span><strong>{Math.round(promotion.mediaReach)}</strong></div>
               <div><span>Show cadence</span><strong>Every {promotion.eventCadenceWeeks} PPW week{promotion.eventCadenceWeeks === 1 ? "" : "s"}</strong></div>
-              <div><span>World revision</span><strong>r{view.world.revision}</strong></div>
+              <div><span>World revision</span><strong>r{view?.world.revision ?? "—"}</strong></div>
             </div>
           </section>
 
