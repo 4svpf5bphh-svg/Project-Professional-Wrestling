@@ -1,6 +1,7 @@
-import type { Id, WorldState } from "../../domain/src/types.js";
+import type { ContractFamily, Id, WorldState } from "../../domain/src/types.js";
 import {
   activeContractsForPromotion,
+  contractIsActive,
   ensurePromotionTalentTrust,
   LedgerWriter,
   ppwDateToWeekIndex,
@@ -11,6 +12,8 @@ import { activePromotionControls } from "./ownership.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const STEWARDSHIP_TRUST_PRESSURE_PER_WEEK = 3;
+export const STEWARDSHIP_EXIT_GRACE_DAYS = 14;
+export const STEWARDSHIP_EXIT_TRUST_THRESHOLD = 40;
 const STEWARDSHIP_TRUST_FLOOR = 10;
 const STEWARDSHIP_PRESSURE_LEDGER_TYPE = "STEWARDSHIP_TALENT_TRUST_PRESSURE";
 
@@ -20,8 +23,57 @@ export interface StewardshipPressureResult {
   totalTrustDrop: number;
 }
 
+export type StewardshipExitEligibilityReason =
+  | "ELIGIBLE"
+  | "NO_ACTIVE_HUMAN_CONTROL"
+  | "NOT_STEWARDED"
+  | "STEWARDSHIP_START_UNKNOWN"
+  | "GRACE_PERIOD"
+  | "ONE_OFF_CONTRACT"
+  | "INACTIVE_CONTRACT"
+  | "TRUST_TOO_HIGH";
+
+export interface StewardshipExitEligibility {
+  contractId: Id;
+  promotionId: Id;
+  personId: Id;
+  family: ContractFamily;
+  eligible: boolean;
+  reason: StewardshipExitEligibilityReason;
+  stewardedDays: number;
+  trust: number;
+}
+
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+function requireUtcCycleKey(value: string): string {
+  const normalized = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    throw new Error("Stewardship exit cycle key must use YYYY-MM-DD UTC format");
+  }
+  const parsed = new Date(`${normalized}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== normalized) {
+    throw new Error("Stewardship exit cycle key is not a valid UTC date");
+  }
+  return normalized;
+}
+
+function realDaysBetween(startCycleKey: string, endCycleKey: string): number {
+  const startMs = Date.parse(`${startCycleKey}T00:00:00.000Z`);
+  const endMs = Date.parse(`${endCycleKey}T00:00:00.000Z`);
+  return Math.max(0, Math.floor((endMs - startMs) / 86_400_000));
+}
+
+function currentRelationshipTrust(
+  aggregate: ApplicationWorldAggregate,
+  promotionId: Id,
+  personId: Id,
+): number {
+  return aggregate.state.promotionTalentTrust?.find((relationship) => (
+    relationship.promotionId === promotionId && relationship.personId === personId
+  ))?.trust ?? 50;
 }
 
 function stewardshipPressureAlreadyAppliedThisWeek(state: WorldState, promotionId: Id): boolean {
@@ -96,4 +148,69 @@ export function applyStewardshipTalentTrustPressure(
   }
 
   return result;
+}
+
+export function stewardshipExitEligibilityForContract(
+  aggregate: ApplicationWorldAggregate,
+  contractId: Id,
+  rawCurrentCycleKey: string,
+): StewardshipExitEligibility {
+  const currentCycleKey = requireUtcCycleKey(rawCurrentCycleKey);
+  const contract = aggregate.state.contracts.find((candidate) => candidate.id === contractId);
+  if (!contract) throw new Error(`unknown contract ${contractId}`);
+
+  const trust = currentRelationshipTrust(aggregate, contract.promotionId, contract.personId);
+  const base = {
+    contractId: contract.id,
+    promotionId: contract.promotionId,
+    personId: contract.personId,
+    family: contract.family,
+    stewardedDays: 0,
+    trust,
+  };
+
+  if (contract.family === "ONE_OFF") {
+    return { ...base, eligible: false, reason: "ONE_OFF_CONTRACT" };
+  }
+  if (!contractIsActive(aggregate.state, contract)) {
+    return { ...base, eligible: false, reason: "INACTIVE_CONTRACT" };
+  }
+
+  const control = activePromotionControls(aggregate.ownership)
+    .find((candidate) => candidate.promotionId === contract.promotionId);
+  if (!control) {
+    return { ...base, eligible: false, reason: "NO_ACTIVE_HUMAN_CONTROL" };
+  }
+
+  const activity = aggregate.engagement
+    ? activityForPlayer(aggregate.engagement, control.playerId)
+    : null;
+  if (activity?.status !== "STEWARDED") {
+    return { ...base, eligible: false, reason: "NOT_STEWARDED" };
+  }
+  if (activity.statusSinceCycleKey === null) {
+    return { ...base, eligible: false, reason: "STEWARDSHIP_START_UNKNOWN" };
+  }
+
+  const stewardshipStart = requireUtcCycleKey(activity.statusSinceCycleKey);
+  const stewardedDays = realDaysBetween(stewardshipStart, currentCycleKey);
+  const withDuration = { ...base, stewardedDays };
+  if (stewardedDays < STEWARDSHIP_EXIT_GRACE_DAYS) {
+    return { ...withDuration, eligible: false, reason: "GRACE_PERIOD" };
+  }
+  if (trust > STEWARDSHIP_EXIT_TRUST_THRESHOLD) {
+    return { ...withDuration, eligible: false, reason: "TRUST_TOO_HIGH" };
+  }
+
+  return { ...withDuration, eligible: true, reason: "ELIGIBLE" };
+}
+
+export function stewardshipExitEligibleContracts(
+  aggregate: ApplicationWorldAggregate,
+  rawCurrentCycleKey: string,
+): StewardshipExitEligibility[] {
+  return aggregate.state.contracts
+    .filter((contract) => contract.status === "SIGNED")
+    .map((contract) => stewardshipExitEligibilityForContract(aggregate, contract.id, rawCurrentCycleKey))
+    .filter((eligibility) => eligibility.eligible);
 }
