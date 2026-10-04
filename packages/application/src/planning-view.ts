@@ -166,22 +166,21 @@ function eligibleParticipantsForWeek(
     remainingByPerson.set(contract.personId, (remainingByPerson.get(contract.personId) ?? 0) + remaining);
   }
 
-  return [...remainingByPerson.entries()]
-    .map(([personId, datesRemaining]) => {
-      const person = peopleById.get(personId);
-      if (!person || person.status !== "ACTIVE") return null;
-      return {
-        personId,
-        name: person.name,
-        status: person.status,
-        popularity: person.popularity,
-        momentum: person.momentum,
-        morale: person.morale,
-        datesRemaining,
-      } satisfies PlayerPlannerTalentOptionView;
-    })
-    .filter((entry): entry is PlayerPlannerTalentOptionView => entry !== null)
-    .sort((left, right) => right.popularity - left.popularity || left.name.localeCompare(right.name));
+  const result: PlayerPlannerTalentOptionView[] = [];
+  for (const [personId, datesRemaining] of remainingByPerson.entries()) {
+    const person = peopleById.get(personId);
+    if (!person || person.status !== "ACTIVE") continue;
+    result.push({
+      personId,
+      name: person.name,
+      status: person.status,
+      popularity: person.popularity,
+      momentum: person.momentum,
+      morale: person.morale,
+      datesRemaining,
+    });
+  }
+  return result.sort((left, right) => right.popularity - left.popularity || left.name.localeCompare(right.name));
 }
 
 function showView(
