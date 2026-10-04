@@ -4,6 +4,7 @@ import {
   activePromotionControlForPlayer,
   alphaCurrentWeekShowDraftId,
   buildAlphaPlayerWorldView,
+  buildPlayerShowHistory,
   claimIndependentPromotionCommand,
   createWorldCommandState,
   createWorldOwnershipState,
@@ -19,6 +20,7 @@ import {
   type ApplicationWorldAggregate,
   type ApplicationWorldRepository,
   type DetailedShowDraft,
+  type PlayerShowHistoryView,
 } from "../../application/src/index.js";
 import { ensureWorldChampionships } from "../../sim-core/src/competition.js";
 import { createWorld } from "../../sim-core/src/genesis.js";
@@ -130,6 +132,14 @@ export async function loadAlphaPlayerSession(
   playerId: string,
 ): Promise<AlphaPlayerWorldView> {
   return buildAlphaPlayerWorldView(await repository.load(worldId), playerId);
+}
+
+export async function loadAlphaPlayerResults(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+): Promise<PlayerShowHistoryView> {
+  return buildPlayerShowHistory(await repository.load(worldId), playerId);
 }
 
 export async function claimAlphaPromotion(

@@ -11,6 +11,7 @@ export * from "./planning-reservations.js";
 export * from "./planning-status.js";
 export * from "./player-view.js";
 export * from "./reservation-commands.js";
+export * from "./results-view.js";
 export * from "./runtime.js";
 export * from "./scheduler.js";
 export * from "./stewardship.js";
