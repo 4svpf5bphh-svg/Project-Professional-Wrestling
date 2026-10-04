@@ -1,0 +1,74 @@
+.shell {
+  min-height: 100vh;
+  padding: 20px 16px calc(40px + env(safe-area-inset-bottom));
+  background: radial-gradient(circle at top, rgba(36, 79, 77, .28), transparent 36%), #071014;
+  color: #edf7f5;
+}
+
+.header,
+.intro,
+.filters,
+.list,
+.error,
+.panel,
+.privacy,
+.backLink {
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.backLink { display: block; margin-bottom: 14px; color: #5de9ce; text-decoration: none; font-weight: 800; }
+.header { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; margin-bottom: 14px; }
+.header h1 { margin: 4px 0 6px; }
+.header p, .muted, .privacy { margin: 0; color: #9eb4b2; }
+.eyebrow { color: #72d8c6; font-size: 11px; font-weight: 900; letter-spacing: .12em; }
+.button { min-height: 42px; border: 1px solid rgba(93,233,206,.28); border-radius: 12px; background: rgba(93,233,206,.08); color: #8ff5df; padding: 0 13px; font: inherit; font-weight: 850; }
+
+.intro { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+.intro > div, .metrics > div { display: grid; gap: 4px; border: 1px solid rgba(129,187,181,.12); border-radius: 12px; background: rgba(255,255,255,.035); padding: 10px; }
+.intro span, .metrics span, .summary span, .row span, .talent span, .filters span { color: #8da5a2; font-size: 11px; }
+.intro strong { font-size: 16px; }
+
+.filters { display: grid; grid-template-columns: minmax(0, 1fr) 170px; gap: 8px; margin-bottom: 14px; }
+.filters label { display: grid; gap: 6px; }
+.filters input, .filters select { min-height: 44px; box-sizing: border-box; border: 1px solid rgba(129,187,181,.2); border-radius: 12px; background: rgba(3,12,15,.72); color: #edf7f5; padding: 0 12px; font: inherit; }
+
+.list { display: grid; gap: 9px; }
+.promotionCard { border: 1px solid rgba(129,187,181,.16); border-radius: 15px; background: rgba(10,22,26,.92); overflow: hidden; }
+.ours { border-color: rgba(93,233,206,.42); box-shadow: inset 0 0 0 1px rgba(93,233,206,.07); }
+.summary { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 14px; cursor: pointer; list-style: none; }
+.summary::-webkit-details-marker { display: none; }
+.rank { font-size: 18px; font-weight: 950; color: #72ead3; }
+.identity { display: grid; gap: 4px; min-width: 0; }
+.nameLine { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.nameLine strong { font-size: 15px; }
+.you { border-radius: 999px; background: rgba(93,233,206,.12); color: #8ff5df !important; padding: 3px 6px; font-weight: 900; }
+.score { display: grid; text-align: right; }
+.score strong { font-size: 18px; }
+.body { display: grid; gap: 18px; border-top: 1px solid rgba(129,187,181,.1); padding: 14px; }
+.sectionTitle { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; color: #72d8c6; font-size: 11px; font-weight: 900; letter-spacing: .08em; }
+.sectionTitle b { color: #9eb4b2; letter-spacing: 0; }
+.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.talentGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.talent { display: grid; gap: 3px; border: 1px solid rgba(129,187,181,.1); border-radius: 11px; background: rgba(255,255,255,.025); color: #edf7f5; padding: 9px 10px; text-decoration: none; }
+.talent strong { color: #8ff5df; }
+.stack { display: grid; gap: 7px; }
+.row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; border-top: 1px solid rgba(129,187,181,.08); padding-top: 8px; }
+.row:first-child { border-top: 0; padding-top: 0; }
+.row > div { display: grid; gap: 3px; }
+.right { text-align: right; }
+.right b { color: #72ead3; }
+.error, .panel { box-sizing: border-box; margin-bottom: 14px; border-radius: 14px; padding: 12px 14px; }
+.error { border: 1px solid rgba(255,112,112,.4); background: rgba(84,24,24,.42); }
+.panel { border: 1px solid rgba(129,187,181,.16); background: rgba(10,22,26,.92); }
+.privacy { margin-top: 14px; font-size: 11px; line-height: 1.5; }
+
+@media (max-width: 650px) {
+  .intro { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .filters { grid-template-columns: 1fr; }
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .talentGrid { grid-template-columns: 1fr; }
+  .summary { grid-template-columns: 42px minmax(0, 1fr) auto; gap: 9px; }
+  .row { align-items: flex-start; }
+}
