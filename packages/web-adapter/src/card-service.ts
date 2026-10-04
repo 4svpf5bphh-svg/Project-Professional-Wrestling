@@ -3,6 +3,7 @@ import type {
   MatchIntent,
   MatchSide,
   MatchType,
+  WorldState,
 } from "../../domain/src/types.js";
 import {
   activePromotionControlForPlayer,
@@ -12,6 +13,7 @@ import {
   reserveDetailedShowDraftCommand,
   upsertDetailedShowDraftCommand,
   type ApplicationWorldRepository,
+  type ChampionshipDraftAssignment,
   type DetailedMatchDraft,
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
@@ -32,6 +34,20 @@ export interface AlphaCardMatchView {
   intendedWinnerSide: MatchSide;
   intent: MatchIntent;
   plannedLengthMinutes: number;
+}
+
+export interface AlphaCardChampionshipView {
+  championshipId: Id;
+  name: string;
+  division: MatchType;
+  prestige: number;
+  holderName: string | null;
+  holderPersonIds: Id[];
+}
+
+export interface AlphaChampionshipAssignmentView {
+  draftMatchId: string;
+  championshipId: Id;
 }
 
 export interface AlphaCurrentWeekCardView {
@@ -55,6 +71,8 @@ export interface AlphaCurrentWeekCardView {
   venueName: string;
   participants: AlphaCardParticipantView[];
   matches: AlphaCardMatchView[];
+  championships: AlphaCardChampionshipView[];
+  championshipAssignments: AlphaChampionshipAssignmentView[];
 }
 
 export interface AlphaShowCardRequest {
@@ -62,6 +80,7 @@ export interface AlphaShowCardRequest {
   expectedRevision: number;
   expectedPlanVersion: number;
   matches: AlphaCardMatchView[];
+  championshipAssignments: AlphaChampionshipAssignmentView[];
 }
 
 const MATCH_TYPES = new Set<MatchType>(["SINGLES", "TAG"]);
@@ -145,6 +164,93 @@ function normalizeCompleteCard(
   return normalized;
 }
 
+function activeReign(state: WorldState, championshipId: Id) {
+  const championship = state.championships?.find((candidate) => candidate.id === championshipId);
+  if (!championship?.currentReignId) return null;
+  return state.championshipReigns?.find(
+    (reign) => reign.id === championship.currentReignId && reign.status === "ACTIVE",
+  ) ?? null;
+}
+
+function activeTeamMemberIds(state: WorldState, teamId: Id): Id[] {
+  return (state.teamMemberships ?? [])
+    .filter((membership) => membership.teamId === teamId && membership.active)
+    .map((membership) => membership.personId)
+    .sort();
+}
+
+function championshipHolder(
+  state: WorldState,
+  championshipId: Id,
+): { holderName: string | null; holderPersonIds: Id[] } {
+  const reign = activeReign(state, championshipId);
+  if (!reign) return { holderName: null, holderPersonIds: [] };
+  if (reign.holderType === "PERSON") {
+    const person = state.people.find((candidate) => candidate.id === reign.holderId);
+    return { holderName: person?.name ?? reign.holderId, holderPersonIds: [reign.holderId] };
+  }
+  const holderPersonIds = activeTeamMemberIds(state, reign.holderId);
+  const team = state.teams?.find((candidate) => candidate.id === reign.holderId);
+  const memberNames = holderPersonIds
+    .map((personId) => state.people.find((person) => person.id === personId)?.name ?? personId)
+    .join(" & ");
+  return {
+    holderName: team?.name ?? memberNames || reign.holderId,
+    holderPersonIds,
+  };
+}
+
+function sameSideContainsHolder(match: DetailedMatchDraft, holderPersonIds: Id[]): boolean {
+  if (holderPersonIds.length === 0) return true;
+  if (holderPersonIds.length === 1) {
+    return [...match.sideAIds, ...match.sideBIds].includes(holderPersonIds[0]!);
+  }
+  if (match.type !== "TAG" || holderPersonIds.length !== 2) return false;
+  const holderKey = [...holderPersonIds].sort().join(":");
+  return [match.sideAIds, match.sideBIds].some((side) => [...side].sort().join(":") === holderKey);
+}
+
+function normalizeChampionshipAssignments(
+  assignments: AlphaChampionshipAssignmentView[],
+  matches: DetailedMatchDraft[],
+  state: WorldState,
+  promotionId: Id,
+): ChampionshipDraftAssignment[] {
+  if (!Array.isArray(assignments)) throw new Error("championshipAssignments must be an array");
+  const usedMatches = new Set<string>();
+  const usedChampionships = new Set<Id>();
+
+  return assignments.map((assignment, index) => {
+    const draftMatchId = requiredText(
+      assignment.draftMatchId,
+      `championshipAssignments[${index}].draftMatchId`,
+      128,
+    );
+    const championshipId = requiredText(
+      assignment.championshipId,
+      `championshipAssignments[${index}].championshipId`,
+      128,
+    );
+    const match = matches.find((candidate) => candidate.draftMatchId === draftMatchId);
+    if (!match) throw new Error(`championship assignment references missing match ${draftMatchId}`);
+    const championship = state.championships?.find((candidate) => candidate.id === championshipId);
+    if (!championship || championship.status !== "ACTIVE") throw new Error(`active championship ${championshipId} was not found`);
+    if (championship.promotionId !== promotionId) throw new Error("championship belongs to another promotion");
+    if (championship.division !== match.type) throw new Error("championship division does not match match type");
+    if (usedMatches.has(draftMatchId)) throw new Error("one match cannot carry multiple championships");
+    if (usedChampionships.has(championshipId)) throw new Error("one championship cannot be assigned twice on the card");
+
+    const holder = championshipHolder(state, championshipId);
+    if (!sameSideContainsHolder(match, holder.holderPersonIds)) {
+      throw new Error("reigning champion must participate in a championship defense");
+    }
+
+    usedMatches.add(draftMatchId);
+    usedChampionships.add(championshipId);
+    return { draftMatchId, championshipId };
+  });
+}
+
 export async function loadAlphaCurrentWeekCard(
   repository: ApplicationWorldRepository,
   worldId: string,
@@ -188,6 +294,20 @@ export async function loadAlphaCurrentWeekCard(
 
   const market = aggregate.state.markets.find((candidate) => candidate.id === reservation.marketId);
   const venue = aggregate.state.venues.find((candidate) => candidate.id === reservation.venueId);
+  const championships = (aggregate.state.championships ?? [])
+    .filter((championship) => championship.promotionId === promotion.id && championship.status === "ACTIVE")
+    .sort((a, b) => a.division.localeCompare(b.division) || a.name.localeCompare(b.name))
+    .map((championship) => {
+      const holder = championshipHolder(aggregate.state, championship.id);
+      return {
+        championshipId: championship.id,
+        name: championship.name,
+        division: championship.division,
+        prestige: championship.prestige,
+        holderName: holder.holderName,
+        holderPersonIds: holder.holderPersonIds,
+      } satisfies AlphaCardChampionshipView;
+    });
 
   return {
     world: {
@@ -222,6 +342,8 @@ export async function loadAlphaCurrentWeekCard(
         } satisfies AlphaCardMatchView]
         : []
     )),
+    championships,
+    championshipAssignments: draft.championshipAssignments.map((assignment) => ({ ...assignment })),
   };
 }
 
@@ -256,6 +378,12 @@ export async function saveAlphaCurrentWeekCard(
     }
 
     const matches = normalizeCompleteCard(request.matches, draft.participantIds);
+    const championshipAssignments = normalizeChampionshipAssignments(
+      request.championshipAssignments,
+      matches,
+      aggregate.state,
+      control.promotionId,
+    );
     const nextWorkspace = upsertDetailedShowDraftCommand(
       aggregate.state,
       aggregate.ownership,
@@ -273,7 +401,7 @@ export async function saveAlphaCurrentWeekCard(
           draft: {
             ...structuredClone(draft),
             matches,
-            championshipAssignments: [],
+            championshipAssignments,
           },
         },
       },
