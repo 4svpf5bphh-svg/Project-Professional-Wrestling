@@ -1,4 +1,5 @@
 import type { Id } from "../../domain/src/types.js";
+import { generateWorldOpportunities } from "./opportunity-generation.js";
 import {
   closeCurrentWeekReservationsAtLock,
   materializeCurrentWeekReservations,
@@ -59,6 +60,7 @@ export async function resolvePersistedWorldWeek(
     beginWorldResolution(aggregate.runtime, aggregate.state);
     resolveLockedWorldWeek(aggregate.runtime, aggregate.state);
     materializeCurrentWeekReservations(aggregate.state, aggregate.planning);
+    generateWorldOpportunities(aggregate);
   });
   return committed.revision;
 }
