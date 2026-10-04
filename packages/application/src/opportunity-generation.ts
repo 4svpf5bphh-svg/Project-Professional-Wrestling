@@ -1,4 +1,4 @@
-import type { Contract, Person, Promotion } from "../../domain/src/types.js";
+import type { Contract, Person, Promotion, PpwDate } from "../../domain/src/types.js";
 import {
   addPpwWeeks,
   comparePpwDates,
@@ -79,8 +79,8 @@ function availabilityEpisodeKey(
 
 function opportunityIsOpen(
   aggregate: ApplicationWorldAggregate,
-  opensDate: { year: number; week: number; day: number },
-  closesDate: { year: number; week: number; day: number },
+  opensDate: PpwDate,
+  closesDate: PpwDate,
 ): boolean {
   const currentDate = aggregate.state.world.currentDate;
   const weeksPerYear = aggregate.state.ruleset.weeksPerYear;
