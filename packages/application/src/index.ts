@@ -2,6 +2,7 @@ export * from "./attention.js";
 export * from "./business-view.js";
 export * from "./commands.js";
 export * from "./engagement.js";
+export * from "./industry-view.js";
 export * from "./opportunity-actions.js";
 export * from "./opportunity-generation.js";
 export * from "./ownership.js";
