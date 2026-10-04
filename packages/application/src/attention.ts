@@ -127,14 +127,14 @@ export function buildPlayerAttention(
     if (promotion.financialDistress !== "HEALTHY") {
       pushIfVisible(aggregate, playerId, items, {
         attentionId: `financial-distress:${promotion.id}:${promotion.financialDistress}`,
-        category: promotion.financialDistress === "CRITICAL" ? "ACTION_REQUIRED" : "IMPORTANT",
+        category: promotion.financialDistress === "CRISIS" ? "ACTION_REQUIRED" : "IMPORTANT",
         title: `Promotion finances are ${promotion.financialDistress.toLowerCase()}`,
         summary: promotion.runwayWeeks === null
           ? "The promotion is under financial pressure. Review costs and upcoming commitments."
           : `Current estimated runway is ${promotion.runwayWeeks.toFixed(1)} weeks.`,
         deadline: null,
         deepLink: null,
-        dismissible: promotion.financialDistress !== "CRITICAL",
+        dismissible: promotion.financialDistress !== "CRISIS",
         sourceOpportunityCategory: null,
       });
     }
