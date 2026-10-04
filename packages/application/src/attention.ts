@@ -1,6 +1,11 @@
 import type { Id, PpwDate } from "../../domain/src/types.js";
+import {
+  activeContractsForPromotion,
+  currentRosterPersonIds,
+} from "../../sim-core/src/contracts.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { humanWeekReadiness } from "../../sim-core/src/human-routine.js";
+import { minimumViableRoster } from "../../sim-core/src/lifecycle.js";
 import {
   activityForPlayer,
   attentionIsDismissed,
@@ -32,6 +37,10 @@ function weekIndex(aggregate: ApplicationWorldAggregate, date: PpwDate): number 
   return ppwDateToWeekIndex(date, aggregate.state.ruleset.weeksPerYear);
 }
 
+function dateOrder(aggregate: ApplicationWorldAggregate, date: PpwDate): number {
+  return weekIndex(aggregate, date) * 7 + Math.max(1, Math.min(7, date.day));
+}
+
 function opportunityIsOpen(aggregate: ApplicationWorldAggregate, opensDate: PpwDate, closesDate: PpwDate): boolean {
   const current = weekIndex(aggregate, aggregate.state.world.currentDate);
   return current >= weekIndex(aggregate, opensDate) && current <= weekIndex(aggregate, closesDate);
@@ -57,6 +66,14 @@ function pushIfVisible(
   items.push(item);
 }
 
+function personName(aggregate: ApplicationWorldAggregate, personId: Id): string {
+  return aggregate.state.people.find((person) => person.id === personId)?.name ?? "A roster member";
+}
+
+function contractFamilyLabel(family: string): string {
+  return family.replaceAll("_", " ").toLowerCase();
+}
+
 export function buildPlayerAttention(
   aggregate: ApplicationWorldAggregate,
   playerId: string,
@@ -67,6 +84,7 @@ export function buildPlayerAttention(
     ? aggregate.state.promotions.find((candidate) => candidate.id === control.promotionId) ?? null
     : null;
   const currentDate = aggregate.state.world.currentDate;
+  const activity = aggregate.engagement ? activityForPlayer(aggregate.engagement, playerId) : null;
 
   if (promotion) {
     const readiness = humanWeekReadiness(aggregate.state, promotion.id);
@@ -124,6 +142,87 @@ export function buildPlayerAttention(
       }
     }
 
+    const activeContracts = activeContractsForPromotion(aggregate.state, promotion.id);
+    const rosterPersonIds = new Set(currentRosterPersonIds(aggregate.state, promotion.id));
+    const rosterFloor = minimumViableRoster(aggregate.state, promotion);
+    if (rosterPersonIds.size < rosterFloor) {
+      items.push({
+        attentionId: `roster-shortage:${promotion.id}`,
+        category: "ACTION_REQUIRED",
+        title: "Roster is below minimum viability",
+        summary: `${promotion.name} has ${rosterPersonIds.size} available contracted roster members against a minimum viable roster of ${rosterFloor}.`,
+        deadline: null,
+        deepLink: null,
+        dismissible: false,
+        sourceOpportunityCategory: null,
+      });
+    }
+
+    for (const contract of activeContracts) {
+      if (contract.family === "ONE_OFF") continue;
+      const weeksRemaining = weekIndex(aggregate, contract.endDate) - weekIndex(aggregate, currentDate);
+      if (weeksRemaining < 0 || weeksRemaining > aggregate.state.ruleset.renewalWindowWeeks) continue;
+      const urgent = weeksRemaining <= 1;
+      const name = personName(aggregate, contract.personId);
+      pushIfVisible(aggregate, playerId, items, {
+        attentionId: `contract-expiry:${contract.id}`,
+        category: urgent ? "ACTION_REQUIRED" : "IMPORTANT",
+        title: urgent ? `${name}’s contract decision is due` : `${name} is entering the renewal window`,
+        summary: `${name}’s ${contractFamilyLabel(contract.family)} contract expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`,
+        deadline: { ...contract.endDate },
+        deepLink: null,
+        dismissible: !urgent,
+        sourceOpportunityCategory: null,
+      });
+    }
+
+    for (const injury of aggregate.state.injuries) {
+      if (injury.status !== "ACTIVE" || !rosterPersonIds.has(injury.personId)) continue;
+      const name = personName(aggregate, injury.personId);
+      pushIfVisible(aggregate, playerId, items, {
+        attentionId: `injury:${injury.id}`,
+        category: "IMPORTANT",
+        title: `${name} is injured`,
+        summary: `${injury.severity.toLowerCase()} injury — ${injury.weeksRemaining} PPW week${injury.weeksRemaining === 1 ? "" : "s"} of recovery currently remain.`,
+        deadline: null,
+        deepLink: null,
+        dismissible: true,
+        sourceOpportunityCategory: null,
+      });
+    }
+
+    if (aggregate.engagement) {
+      for (const request of aggregate.engagement.stewardshipExitRequests) {
+        if (request.promotionId !== promotion.id) continue;
+        const contract = aggregate.state.contracts.find((candidate) => candidate.id === request.contractId);
+        if (!contract || contract.status !== "SIGNED") continue;
+        const name = personName(aggregate, request.personId);
+        if (request.status === "OPEN") {
+          items.push({
+            attentionId: `release-request:${request.requestId}`,
+            category: "ACTION_REQUIRED",
+            title: `${name} has requested an early release`,
+            summary: `Prolonged Stewardship and damaged Trust triggered a formal release request. Trust was ${request.trustAtRequest} when the request was raised.`,
+            deadline: null,
+            deepLink: null,
+            dismissible: false,
+            sourceOpportunityCategory: null,
+          });
+        } else if (request.status === "SETTLED") {
+          items.push({
+            attentionId: `release-agreed:${request.requestId}`,
+            category: "ACTION_REQUIRED",
+            title: `${name}’s agreed release is awaiting execution`,
+            summary: "The release request has been agreed but the underlying contract is still signed. Complete the release before making conflicting plans.",
+            deadline: null,
+            deepLink: null,
+            dismissible: false,
+            sourceOpportunityCategory: null,
+          });
+        }
+      }
+    }
+
     if (promotion.financialDistress !== "HEALTHY") {
       pushIfVisible(aggregate, playerId, items, {
         attentionId: `financial-distress:${promotion.id}:${promotion.financialDistress}`,
@@ -140,7 +239,6 @@ export function buildPlayerAttention(
     }
   }
 
-  const activity = aggregate.engagement ? activityForPlayer(aggregate.engagement, playerId) : null;
   if (activity?.status === "WARNING") {
     items.push({
       attentionId: `inactivity-warning:${playerId}`,
@@ -204,7 +302,7 @@ export function buildPlayerAttention(
   return items.sort((left, right) => {
     const category = categoryRank(left.category) - categoryRank(right.category);
     if (category !== 0) return category;
-    if (left.deadline && right.deadline) return weekIndex(aggregate, left.deadline) - weekIndex(aggregate, right.deadline);
+    if (left.deadline && right.deadline) return dateOrder(aggregate, left.deadline) - dateOrder(aggregate, right.deadline);
     if (left.deadline) return -1;
     if (right.deadline) return 1;
     return left.attentionId.localeCompare(right.attentionId);
