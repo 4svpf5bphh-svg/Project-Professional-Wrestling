@@ -5,7 +5,10 @@ import {
 } from "./engagement.js";
 import { activePromotionControls } from "./ownership.js";
 import { incrementWorldRevision } from "./runtime.js";
-import { applyStewardshipTalentTrustPressure } from "./stewardship.js";
+import {
+  applyStewardshipTalentTrustPressure,
+  openEligibleStewardshipExitRequests,
+} from "./stewardship.js";
 import type { ApplicationWorldRepository } from "./world-aggregate.js";
 import {
   lockPersistedWorldForResolution,
@@ -77,6 +80,7 @@ async function evaluateScheduledPlayerInactivity(
     }
 
     const stewardship = applyStewardshipTalentTrustPressure(aggregate);
+    openEligibleStewardshipExitRequests(aggregate, cycleKey);
     if (stewardship.promotionsAffected > 0) incrementWorldRevision(aggregate.runtime);
   });
   return committed.revision;
