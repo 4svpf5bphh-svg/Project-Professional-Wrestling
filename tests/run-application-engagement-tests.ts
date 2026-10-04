@@ -16,11 +16,17 @@ import {
   opportunityVisibleToPlayer,
   recordPlayerActivity,
   resolveScheduledWorldCycle,
+  STEWARDSHIP_TRUST_PRESSURE_PER_WEEK,
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/memory-world-repository.js";
-import { createWorld } from "../packages/sim-core/src/index.js";
+import {
+  activeContractsForPromotion,
+  createWorld,
+  ensurePromotionTalentTrust,
+  promotionTalentTrustFor,
+} from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -51,8 +57,9 @@ function stewardedWorldFixture(seed: number, lastActiveCycleKey: string): Applic
     candidate.controllerType === "AI"
     && candidate.tier === "INDEPENDENT"
     && candidate.lifecycle === "ACTIVE"
+    && activeContractsForPromotion(state, candidate.id).some((contract) => contract.family !== "ONE_OFF")
   ));
-  if (!promotion) throw new Error("stewardship fixture could not find an Independent promotion");
+  if (!promotion) throw new Error("stewardship fixture could not find a contracted Independent promotion");
   claimIndependentPromotionForPlayer(state, ownership, playerId, promotion.id);
 
   const engagement = createWorldEngagementState(state.world.id);
@@ -110,6 +117,58 @@ await test("scheduled World resolution evaluates real inactivity before lock", a
   ok(record?.status === "STEWARDED", "scheduler did not move fourteen-day inactive player to STEWARDED");
   ok(record?.statusSinceCycleKey === "2026-10-15", "scheduler did not record STEWARDED transition cycle");
   ok(after.runtime.phase === "OPEN", "stewardship evaluation interfered with World resolution");
+});
+
+await test("Stewardship applies promotion-specific Trust pressure once per PPW week and stops on return", async () => {
+  const aggregate = stewardedWorldFixture(18102, "2026-10-01");
+  const control = aggregate.ownership.promotionControls[0];
+  if (!control) throw new Error("stewardship fixture has no promotion control");
+  ensurePromotionTalentTrust(aggregate.state);
+  const contract = activeContractsForPromotion(aggregate.state, control.promotionId)
+    .find((candidate) => candidate.family !== "ONE_OFF");
+  if (!contract) throw new Error("stewardship fixture has no continuing contract");
+  const initialTrust = promotionTalentTrustFor(aggregate.state, control.promotionId, contract.personId).trust;
+
+  const repository = new InMemoryApplicationWorldRepository();
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+
+  await resolveScheduledWorldCycle(repository, worldId, "2026-10-15");
+  let after = await repository.load(worldId);
+  let trust = promotionTalentTrustFor(after.state, control.promotionId, contract.personId).trust;
+  ok(
+    trust === Math.max(10, initialTrust - STEWARDSHIP_TRUST_PRESSURE_PER_WEEK),
+    "first STEWARDED week did not apply the expected Trust pressure",
+  );
+  const pressureEvents = after.state.ledger.filter((entry) => (
+    entry.type === "STEWARDSHIP_TALENT_TRUST_PRESSURE"
+    && entry.entityIds[0] === control.promotionId
+  ));
+  ok(pressureEvents.length === 1, "Stewardship Trust pressure was not recorded exactly once");
+
+  await resolveScheduledWorldCycle(repository, worldId, "2026-10-15");
+  after = await repository.load(worldId);
+  const duplicateTrust = promotionTalentTrustFor(after.state, control.promotionId, contract.personId).trust;
+  ok(duplicateTrust === trust, "duplicate scheduler delivery applied Stewardship Trust pressure twice");
+
+  await repository.transact(worldId, after.runtime.revision, (current) => {
+    if (!current.engagement) throw new Error("engagement state disappeared before return activity");
+    recordPlayerActivity(
+      current.engagement,
+      control.playerId,
+      current.state.world.currentDate,
+      current.runtime.revision,
+      "2026-10-16",
+    );
+  });
+  const returned = await repository.load(worldId);
+  await resolveScheduledWorldCycle(repository, worldId, "2026-10-16");
+  after = await repository.load(worldId);
+  trust = promotionTalentTrustFor(after.state, control.promotionId, contract.personId).trust;
+  ok(trust === duplicateTrust, "returning player still received Stewardship Trust pressure");
+  const returnedRecord = after.engagement ? activityForPlayer(after.engagement, control.playerId) : null;
+  ok(returnedRecord?.status === "ACTIVE", "returning player was not ACTIVE after the next scheduler cycle");
+  ok(after.runtime.revision >= returned.runtime.revision, "return flow regressed World revision");
 });
 
 await test("opportunity eligibility never leaks across player or promotion scopes", () => {
