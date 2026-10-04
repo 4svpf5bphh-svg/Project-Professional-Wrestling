@@ -25,10 +25,14 @@ CREATE TABLE IF NOT EXISTS ppw_worlds (
   runtime_revision bigint NOT NULL CHECK (runtime_revision >= 0),
   locked_ppw_date jsonb NULL,
   last_resolved_ppw_date jsonb NULL,
+  locked_real_cycle_key text NULL,
+  last_resolved_real_cycle_key text NULL,
   human_seat_limit integer NOT NULL CHECK (human_seat_limit >= 1),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS planning_state jsonb NULL;
+ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS locked_real_cycle_key text NULL;
+ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS last_resolved_real_cycle_key text NULL;
 
 CREATE TABLE IF NOT EXISTS ppw_world_memberships (
   world_id text NOT NULL REFERENCES ppw_worlds(world_id) ON DELETE CASCADE,
@@ -79,6 +83,8 @@ type WorldRow = {
   runtime_revision: string | number;
   locked_ppw_date: PpwDate | null;
   last_resolved_ppw_date: PpwDate | null;
+  locked_real_cycle_key: string | null;
+  last_resolved_real_cycle_key: string | null;
   human_seat_limit: number;
 };
 
@@ -109,7 +115,8 @@ type ReceiptRow = {
 async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): Promise<ApplicationWorldAggregate> {
   const lock = forUpdate ? " FOR UPDATE" : "";
   const worldRows = await sql.unsafe(
-    `SELECT world_id, world_state, planning_state, runtime_phase, runtime_revision, locked_ppw_date, last_resolved_ppw_date, human_seat_limit
+    `SELECT world_id, world_state, planning_state, runtime_phase, runtime_revision, locked_ppw_date, last_resolved_ppw_date,
+            locked_real_cycle_key, last_resolved_real_cycle_key, human_seat_limit
        FROM ppw_worlds WHERE world_id = $1${lock}`,
     [worldId],
   ) as unknown as WorldRow[];
@@ -175,6 +182,8 @@ async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): P
       revision: Number(row.runtime_revision),
       lockedPpwDate: row.locked_ppw_date,
       lastResolvedPpwDate: row.last_resolved_ppw_date,
+      lockedRealCycleKey: row.locked_real_cycle_key,
+      lastResolvedRealCycleKey: row.last_resolved_real_cycle_key,
     },
     planning: row.planning_state
       ? structuredClone(row.planning_state as WorldPlanningState)
@@ -196,6 +205,8 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
       runtime_revision = ${snapshot.runtime.revision},
       locked_ppw_date = ${snapshot.runtime.lockedPpwDate ? sql.json(snapshot.runtime.lockedPpwDate as never) : null},
       last_resolved_ppw_date = ${snapshot.runtime.lastResolvedPpwDate ? sql.json(snapshot.runtime.lastResolvedPpwDate as never) : null},
+      locked_real_cycle_key = ${snapshot.runtime.lockedRealCycleKey ?? null},
+      last_resolved_real_cycle_key = ${snapshot.runtime.lastResolvedRealCycleKey ?? null},
       human_seat_limit = ${snapshot.ownership.humanSeatLimit},
       updated_at = now()
     WHERE world_id = ${worldId}
@@ -266,10 +277,11 @@ export class PostgresApplicationWorldRepository implements ApplicationWorldRepos
       const inserted = await tx`
         INSERT INTO ppw_worlds(
           world_id, state_schema_version, world_state, planning_state, runtime_phase, runtime_revision,
-          locked_ppw_date, last_resolved_ppw_date, human_seat_limit
+          locked_ppw_date, last_resolved_ppw_date, locked_real_cycle_key, last_resolved_real_cycle_key,
+          human_seat_limit
         ) VALUES (
           ${worldId}, ${CURRENT_WORLD_STATE_SCHEMA_VERSION}, ${tx.json(snapshot.world as never)}, ${tx.json(snapshot.planning as never)},
-          ${snapshot.runtime.phase}, ${snapshot.runtime.revision}, ${null}, ${null}, ${snapshot.ownership.humanSeatLimit}
+          ${snapshot.runtime.phase}, ${snapshot.runtime.revision}, ${null}, ${null}, ${null}, ${null}, ${snapshot.ownership.humanSeatLimit}
         )
         ON CONFLICT (world_id) DO NOTHING
         RETURNING world_id
