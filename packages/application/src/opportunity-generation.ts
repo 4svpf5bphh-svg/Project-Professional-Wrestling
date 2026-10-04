@@ -2,7 +2,6 @@ import type { Contract, Person, Promotion } from "../../domain/src/types.js";
 import {
   addPpwWeeks,
   comparePpwDates,
-  contractsForPerson,
   marketWeeklyValue,
 } from "../../sim-core/src/index.js";
 import {
@@ -22,6 +21,18 @@ export interface OpportunityGenerationResult {
   talentWindowsCreated: number;
 }
 
+type ContractsByPerson = Map<string, Contract[]>;
+
+function indexContractsByPerson(aggregate: ApplicationWorldAggregate): ContractsByPerson {
+  const indexed: ContractsByPerson = new Map();
+  for (const contract of aggregate.state.contracts) {
+    const contracts = indexed.get(contract.personId) ?? [];
+    contracts.push(contract);
+    indexed.set(contract.personId, contracts);
+  }
+  return indexed;
+}
+
 function personPublicValue(person: Person): number {
   const skill = (person.skills.inRingQuality + person.skills.matchCraft + person.skills.presentation) / 3;
   return person.recognition * 0.45 + person.popularity * 0.30 + skill * 0.25;
@@ -34,10 +45,10 @@ function meaningfulTalentOpportunity(person: Person): boolean {
 
 function hasCurrentOrFutureSignedContract(
   aggregate: ApplicationWorldAggregate,
-  personId: string,
+  contracts: readonly Contract[],
 ): boolean {
   const currentDate = aggregate.state.world.currentDate;
-  return contractsForPerson(aggregate.state, personId).some((contract) => (
+  return contracts.some((contract) => (
     contract.status === "SIGNED"
     && comparePpwDates(contract.endDate, currentDate, aggregate.state.ruleset.weeksPerYear) >= 0
   ));
@@ -45,10 +56,10 @@ function hasCurrentOrFutureSignedContract(
 
 function latestEndedContract(
   aggregate: ApplicationWorldAggregate,
-  personId: string,
+  contracts: readonly Contract[],
 ): Contract | null {
   const currentDate = aggregate.state.world.currentDate;
-  return [...contractsForPerson(aggregate.state, personId)]
+  return [...contracts]
     .filter((contract) => (
       contract.status !== "SIGNED"
       || comparePpwDates(contract.endDate, currentDate, aggregate.state.ruleset.weeksPerYear) < 0
@@ -61,9 +72,9 @@ function latestEndedContract(
 
 function availabilityEpisodeKey(
   aggregate: ApplicationWorldAggregate,
-  personId: string,
+  contracts: readonly Contract[],
 ): string {
-  return latestEndedContract(aggregate, personId)?.id ?? "initial";
+  return latestEndedContract(aggregate, contracts)?.id ?? "initial";
 }
 
 function opportunityIsOpen(
@@ -101,11 +112,12 @@ function canPlausiblyPursue(
 function candidatePool(
   aggregate: ApplicationWorldAggregate,
   promotion: Promotion,
+  contractsByPerson: ContractsByPerson,
 ): Person[] {
   return aggregate.state.people
     .filter((person) => person.status === "ACTIVE")
     .filter((person) => meaningfulTalentOpportunity(person))
-    .filter((person) => !hasCurrentOrFutureSignedContract(aggregate, person.id))
+    .filter((person) => !hasCurrentOrFutureSignedContract(aggregate, contractsByPerson.get(person.id) ?? []))
     .filter((person) => canPlausiblyPursue(promotion, person))
     .sort((left, right) => (
       personPublicValue(right) - personPublicValue(left)
@@ -134,6 +146,7 @@ export function generateWorldOpportunities(
 
   const engagement = aggregate.engagement ?? createWorldEngagementState(aggregate.state.world.id);
   aggregate.engagement = engagement;
+  const contractsByPerson = indexContractsByPerson(aggregate);
   const currentDate = aggregate.state.world.currentDate;
   const closesDate = addPpwWeeks(
     currentDate,
@@ -151,8 +164,8 @@ export function generateWorldOpportunities(
     result.promotionsConsidered += 1;
     if (hasOpenTalentWindow(aggregate, promotion.id)) continue;
 
-    for (const person of candidatePool(aggregate, promotion)) {
-      const episodeKey = availabilityEpisodeKey(aggregate, person.id);
+    for (const person of candidatePool(aggregate, promotion, contractsByPerson)) {
+      const episodeKey = availabilityEpisodeKey(aggregate, contractsByPerson.get(person.id) ?? []);
       const opportunityId = `talent-window:${promotion.id}:${person.id}:${episodeKey}`;
       if (engagement.opportunities.some((opportunity) => opportunity.opportunityId === opportunityId)) continue;
 
