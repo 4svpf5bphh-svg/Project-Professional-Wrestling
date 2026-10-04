@@ -15,6 +15,7 @@ export * from "./stewardship.js";
 export * from "./stewardship-ai-buyouts.js";
 export * from "./stewardship-auto-release.js";
 export * from "./stewardship-buyout.js";
+export * from "./stewardship-caretaker.js";
 export * from "./stewardship-release.js";
 export * from "./world-aggregate.js";
 export * from "./world-transactions.js";

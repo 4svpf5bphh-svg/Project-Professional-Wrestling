@@ -11,6 +11,7 @@ import {
 } from "./stewardship.js";
 import { settleOverdueStewardshipExitRequests } from "./stewardship-auto-release.js";
 import { runAiStewardshipBuyouts } from "./stewardship-ai-buyouts.js";
+import { runStewardshipCaretakerRecruitment } from "./stewardship-caretaker.js";
 import type { ApplicationWorldRepository } from "./world-aggregate.js";
 import {
   lockPersistedWorldForResolution,
@@ -85,10 +86,12 @@ async function evaluateScheduledPlayerInactivity(
     openEligibleStewardshipExitRequests(aggregate, cycleKey);
     const aiBuyouts = runAiStewardshipBuyouts(aggregate, cycleKey);
     const automaticReleases = settleOverdueStewardshipExitRequests(aggregate, cycleKey);
+    const caretaker = runStewardshipCaretakerRecruitment(aggregate, cycleKey);
     if (
       stewardship.promotionsAffected > 0
       || aiBuyouts.executedBuyouts > 0
       || automaticReleases.releasedContracts > 0
+      || caretaker.cyclesProcessed > 0
     ) {
       incrementWorldRevision(aggregate.runtime);
     }
