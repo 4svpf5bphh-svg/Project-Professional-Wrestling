@@ -20,6 +20,7 @@ import {
   type ApplicationWorldRepository,
   type DetailedShowDraft,
 } from "../../application/src/index.js";
+import { ensureWorldChampionships } from "../../sim-core/src/competition.js";
 import { createWorld } from "../../sim-core/src/genesis.js";
 
 export interface AlphaWorldBootstrapOptions {
@@ -89,6 +90,7 @@ export function alphaWorldId(seed: number): string {
 export function createAlphaWorldAggregate(options: AlphaWorldBootstrapOptions): ApplicationWorldAggregate {
   const seed = normalizedSeed(options.seed);
   const state = createWorld(seed, DEFAULT_RULESET, options.worldName ?? "PPW Alpha World");
+  ensureWorldChampionships(state);
   const ownership = createWorldOwnershipState(state.world.id, 1);
   joinPlayerToWorld(ownership, options.playerId, state.world.currentDate);
   return {
