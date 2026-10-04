@@ -2,9 +2,15 @@ declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import {
+  REAL_ACTIVE_MENS_CALIBRATION_VERSION,
+  calibratedRealActiveMensRosterSource,
+  realRosterValueBand,
+} from "../packages/content/src/real-active-mens-calibration.js";
+import {
   REAL_ACTIVE_MENS_ROSTER_NAMES,
   realActiveMensRosterSource,
 } from "../packages/content/src/real-active-mens-roster.js";
+import { marketWeeklyValue } from "../packages/sim-core/src/contracts.js";
 import {
   createWorld,
   generatedFictionalRosterSource,
@@ -44,6 +50,12 @@ function expectThrow(fn: () => void, expected: string): void {
 function personWithoutName(person: ReturnType<typeof createWorld>["people"][number]): unknown {
   const { name: _name, ...rest } = person;
   return rest;
+}
+
+function requirePerson(state: ReturnType<typeof createWorld>, name: string) {
+  const person = state.people.find((candidate) => candidate.name === name);
+  if (!person) throw new Error(`missing expected wrestler ${name}`);
+  return person;
 }
 
 test("default World genesis is identical to explicitly supplying the fictional roster source", () => {
@@ -120,7 +132,7 @@ test("real active men's identity pool contains exactly 400 unique starting wrest
   }
 });
 
-test("real identity overlay preserves deterministic wrestler attributes and genesis contracts", () => {
+test("raw real identity overlay preserves deterministic wrestler attributes and genesis contracts", () => {
   const seed = 77104;
   const fictional = createWorld(seed, DEFAULT_RULESET, "Identity Overlay", generatedFictionalRosterSource);
   const real = createWorld(seed, DEFAULT_RULESET, "Identity Overlay", realActiveMensRosterSource);
@@ -129,15 +141,53 @@ test("real identity overlay preserves deterministic wrestler attributes and gene
   ok(real.people[0]?.name !== fictional.people[0]?.name, "real identity overlay did not replace display names");
   ok(
     JSON.stringify(real.people.map(personWithoutName)) === JSON.stringify(fictional.people.map(personWithoutName)),
-    "real identity overlay changed deterministic wrestler attributes or stable IDs",
+    "raw real identity overlay changed deterministic wrestler attributes or stable IDs",
   );
   ok(
     JSON.stringify(real.contracts) === JSON.stringify(fictional.contracts),
-    "real identity overlay changed genesis contract allocation or economics",
+    "raw real identity overlay changed genesis contract allocation or economics",
   );
 });
 
-test("player-facing Alpha World genesis uses the real active roster source", () => {
+test("calibrated real roster gives recognisable talent sensible broad game bands", () => {
+  const seed = 77106;
+  const raw = createWorld(seed, DEFAULT_RULESET, "Calibration Raw", realActiveMensRosterSource);
+  const calibrated = createWorld(seed, DEFAULT_RULESET, "Calibration Raw", calibratedRealActiveMensRosterSource);
+
+  ok(REAL_ACTIVE_MENS_CALIBRATION_VERSION.length > 0, "calibration version must be declared");
+  ok(JSON.stringify(calibrated) === JSON.stringify(createWorld(seed, DEFAULT_RULESET, "Calibration Raw", calibratedRealActiveMensRosterSource)), "calibrated roster is not deterministic");
+
+  const cody = requirePerson(calibrated, "Cody Rhodes");
+  ok(realRosterValueBand(cody.name) === "MEGASTAR", "Cody Rhodes is not in the megastar band");
+  ok(cody.popularity >= 90 && cody.recognition >= 91, "megastar fame calibration is too low");
+  ok(cody.skills.presentation >= 87, "presentation ace calibration is too low");
+
+  const ospreay = requirePerson(calibrated, "Will Ospreay");
+  ok(ospreay.skills.inRingQuality >= 87 && ospreay.skills.matchCraft >= 85, "workrate ace calibration is too low");
+
+  const zack = requirePerson(calibrated, "Zack Sabre Jr.");
+  ok(zack.skills.inRingQuality >= 87 && zack.skills.matchCraft >= 85, "technical headliner calibration is too low");
+
+  const prospect = requirePerson(calibrated, "Je'Von Evans");
+  ok(realRosterValueBand(prospect.name) === "PROSPECT", "Je'Von Evans is not in the prospect value band");
+  ok(prospect.careerStage === "PROSPECT", "prospect career-stage calibration did not apply");
+  ok(prospect.biologicalAge <= 25.5 && prospect.developmentAptitude >= 72, "prospect age/development calibration is implausible");
+
+  const veteran = requirePerson(calibrated, "Chris Jericho");
+  ok(veteran.careerStage === "SPECIAL_ATTRACTION", "special-attraction career stage did not apply");
+  ok(veteran.biologicalAge >= 43.5 && veteran.skills.stamina <= 75, "special-attraction age/service calibration is implausible");
+
+  const rawCody = requirePerson(raw, "Cody Rhodes");
+  ok(cody.id === rawCody.id && cody.homeMarketId === rawCody.homeMarketId, "calibration changed stable identity/location plumbing");
+  ok(JSON.stringify(cody.priorities) === JSON.stringify(rawCody.priorities), "calibration invented different wrestler priorities");
+  ok(cody.morale === rawCody.morale && cody.momentum === rawCody.momentum && cody.fatigue === rawCody.fatigue, "calibration changed behavioural/current-form state");
+  ok(cody.skills.safety === rawCody.skills.safety, "calibration changed the synthetic safety dimension");
+
+  const developmental = requirePerson(calibrated, "Braxton Cole");
+  ok(marketWeeklyValue(cody) > marketWeeklyValue(developmental) * 1.6, "star/prospect contract value separation is too small");
+});
+
+test("player-facing Alpha World genesis uses the calibrated real active roster source", () => {
   const aggregate = createAlphaWorldAggregate({ seed: 77105, playerId: "real-roster-player" });
   const names = new Set(aggregate.state.people.map((person) => person.name));
   ok(aggregate.state.people.length === 400, "Alpha World did not create the 400-person real roster");
@@ -145,6 +195,11 @@ test("player-facing Alpha World genesis uses the real active roster source", () 
   ok(names.has("Cody Rhodes"), "Alpha World did not use the real roster source");
   ok(names.has("Swerve Strickland"), "Alpha World is missing a real active roster identity");
   ok(!names.has("PAC"), "Alpha World included a deliberately excluded non-active identity");
+
+  const cody = aggregate.state.people.find((person) => person.name === "Cody Rhodes");
+  const prospect = aggregate.state.people.find((person) => person.name === "Je'Von Evans");
+  ok(cody?.popularity !== undefined && cody.popularity >= 90, "Alpha World did not apply megastar calibration");
+  ok(prospect?.careerStage === "PROSPECT", "Alpha World did not apply prospect career calibration");
 });
 
 console.log(`\nRoster source tests: ${passed} passed, ${failed} failed`);
