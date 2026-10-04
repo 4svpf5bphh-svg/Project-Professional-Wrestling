@@ -8,6 +8,7 @@ import {
   loadAlphaCurrentWeekCard,
   saveAlphaCurrentWeekCard,
   type AlphaCardMatchView,
+  type AlphaChampionshipAssignmentView,
 } from "../../../../../dist/packages/web-adapter/src/card-service.js";
 import { withAlphaServerContext } from "../../../../../dist/packages/web-adapter/src/server-world.js";
 
@@ -19,6 +20,7 @@ type ShowCardBody = {
   expectedRevision?: unknown;
   expectedPlanVersion?: unknown;
   matches?: unknown;
+  championshipAssignments?: unknown;
 };
 
 const MATCH_TYPES = new Set<MatchType>(["SINGLES", "TAG"]);
@@ -89,6 +91,28 @@ function matches(value: unknown): AlphaCardMatchView[] {
   });
 }
 
+function championshipAssignments(value: unknown): AlphaChampionshipAssignmentView[] {
+  if (!Array.isArray(value)) throw new Error("championshipAssignments must be an array");
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object") {
+      throw new Error(`championshipAssignments[${index}] must be an object`);
+    }
+    const candidate = entry as Record<string, unknown>;
+    return {
+      draftMatchId: requiredText(
+        candidate.draftMatchId,
+        `championshipAssignments[${index}].draftMatchId`,
+        128,
+      ),
+      championshipId: requiredText(
+        candidate.championshipId,
+        `championshipAssignments[${index}].championshipId`,
+        128,
+      ),
+    };
+  });
+}
+
 function errorResponse(error: unknown, fallback: string): NextResponse {
   const message = error instanceof Error ? error.message : fallback;
   const status = message.includes("DATABASE_URL") ? 500 : 409;
@@ -115,6 +139,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         expectedRevision: nonNegativeInteger(body.expectedRevision, "expectedRevision"),
         expectedPlanVersion: nonNegativeInteger(body.expectedPlanVersion, "expectedPlanVersion"),
         matches: matches(body.matches),
+        championshipAssignments: championshipAssignments(body.championshipAssignments ?? []),
       })
     ));
     return NextResponse.json(view, { headers: { "Cache-Control": "no-store" } });
