@@ -1,4 +1,8 @@
-import type { ApplicationWorldRepository } from "../../application/src/world-aggregate.js";
+import {
+  createWorldEngagementState,
+  recordPlayerActivity,
+  type ApplicationWorldRepository,
+} from "../../application/src/index.js";
 import { createPostgresApplicationWorldRepository } from "../../persistence/src/postgres-world-repository.js";
 import { ensureAlphaWorld } from "./alpha-service.js";
 
@@ -6,6 +10,10 @@ export interface AlphaServerContext {
   repository: ApplicationWorldRepository;
   worldId: string;
   playerId: string;
+}
+
+export interface AlphaServerContextOptions {
+  trackPlayerActivity?: boolean;
 }
 
 function integerEnvironment(name: string, fallback: number): number {
@@ -16,8 +24,13 @@ function integerEnvironment(name: string, fallback: number): number {
   return parsed;
 }
 
+function currentUtcCycleKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export async function withAlphaServerContext<TResult>(
   action: (context: AlphaServerContext) => Promise<TResult>,
+  options: AlphaServerContextOptions = {},
 ): Promise<TResult> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) throw new Error("DATABASE_URL is required to run the PPW Alpha web app");
@@ -31,6 +44,21 @@ export async function withAlphaServerContext<TResult>(
   try {
     await repository.migrate();
     const worldId = await ensureAlphaWorld(repository, { seed, playerId, worldName });
+
+    if (options.trackPlayerActivity !== false) {
+      await repository.transact(worldId, null, (aggregate) => {
+        const engagement = aggregate.engagement ?? createWorldEngagementState(worldId);
+        aggregate.engagement = engagement;
+        recordPlayerActivity(
+          engagement,
+          playerId,
+          aggregate.state.world.currentDate,
+          aggregate.runtime.revision,
+          currentUtcCycleKey(),
+        );
+      });
+    }
+
     return await action({ repository, worldId, playerId });
   } finally {
     await close();
