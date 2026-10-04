@@ -2,6 +2,7 @@ declare const process: { exitCode?: number };
 
 import { lockPersistedWorldForResolution } from "../packages/application/src/index.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
+import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
 import {
   advanceAlphaWorldWeek,
   claimAlphaPromotion,
@@ -10,6 +11,10 @@ import {
   loadAlphaPlayerSession,
   saveAlphaCurrentWeekShowPlan,
 } from "../packages/web-adapter/src/alpha-service.js";
+import {
+  loadAlphaPlayerPlanner,
+  saveAlphaPlannerShowPlan,
+} from "../packages/web-adapter/src/planner-service.js";
 
 let passed = 0;
 let failed = 0;
@@ -56,6 +61,43 @@ function showPlanRequest(view: Awaited<ReturnType<typeof loadAlphaPlayerSession>
     venueId: venue.venueId,
     ticketStrategy: "STANDARD" as const,
     participantIds,
+  };
+}
+
+function futurePlannerRequest(
+  view: Awaited<ReturnType<typeof loadAlphaPlayerPlanner>>,
+  requestId: string,
+) {
+  const promotion = view.promotion;
+  if (!promotion) throw new Error("test player does not control a promotion");
+  const week = promotion.weeks.find((candidate) => candidate.offset > 0 && candidate.showRequired);
+  if (!week) throw new Error("planner fixture has no future operating week inside the six-week horizon");
+  const market = promotion.markets[0];
+  const venue = market?.venues[0];
+  if (!market || !venue) throw new Error("planner has no market/venue option");
+  let participantIds = week.eligibleParticipants
+    .slice(0, Math.min(week.maxParticipants, Math.max(week.minParticipants, 4)))
+    .map((person) => person.personId);
+  if (participantIds.length % 2 !== 0) participantIds = participantIds.slice(0, -1);
+  if (participantIds.length < week.minParticipants) {
+    participantIds = week.eligibleParticipants.slice(0, week.maxParticipants).map((person) => person.personId);
+    if (participantIds.length % 2 !== 0) participantIds = participantIds.slice(0, -1);
+  }
+  if (participantIds.length < week.minParticipants) throw new Error("future planner week has too few eligible wrestlers");
+  return {
+    week,
+    request: {
+      requestId,
+      expectedRevision: view.world.revision,
+      expectedPlanVersion: promotion.workspaceVersion,
+      year: week.year,
+      week: week.week,
+      day: 6,
+      marketId: market.marketId,
+      venueId: venue.venueId,
+      ticketStrategy: "STANDARD" as const,
+      participantIds,
+    },
   };
 }
 
@@ -148,6 +190,127 @@ await test("Alpha show planning atomically commits a current-week draft and scar
   ok(retry.world.revision === planned.world.revision, "idempotent show-plan retry advanced revision again");
   const afterRetry = await repository.load(worldId);
   ok(afterRetry.planning.showReservations.length === 1, "show-plan retry duplicated reservation");
+});
+
+await test("six-week planner reserves a future operating week transactionally and idempotently", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 61007, playerId: "alpha-player" });
+  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
+  ok(independent, "planner fixture has no Independent promotion");
+  independent!.eventCadenceWeeks = 2;
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "alpha-player", {
+    promotionId: independent!.id,
+    requestId: "future-plan-claim",
+  });
+
+  const before = await loadAlphaPlayerPlanner(repository, worldId, "alpha-player");
+  const { week, request } = futurePlannerRequest(before, "future-plan-save");
+  const planned = await saveAlphaPlannerShowPlan(repository, worldId, "alpha-player", request);
+  const plannedWeek = planned.promotion?.weeks.find((candidate) => candidate.year === week.year && candidate.week === week.week);
+  ok(planned.world.revision === before.world.revision + 2, "future draft plus reservation did not advance revision twice");
+  ok(plannedWeek?.shows.length === 1, "future planner did not expose exactly one planned show");
+  ok(plannedWeek?.shows[0]?.state === "RESERVED", "future show was not reserved");
+  ok(plannedWeek?.shows[0]?.participants.length === request.participantIds.length, "future reservation lost selected wrestlers");
+
+  const retry = await saveAlphaPlannerShowPlan(repository, worldId, "alpha-player", request);
+  ok(retry.world.revision === planned.world.revision, "future planner retry advanced World revision twice");
+  const persisted = await repository.load(worldId);
+  const matchingReservations = persisted.planning.showReservations.filter((reservation) => (
+    reservation.promotionId === independent!.id
+    && reservation.targetDate.year === week.year
+    && reservation.targetDate.week === week.week
+  ));
+  ok(matchingReservations.length === 1, "future planner retry duplicated the reservation");
+});
+
+await test("future planner edits preserve an existing match card and refresh the reservation", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 61008, playerId: "alpha-player" });
+  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
+  ok(independent, "planner fixture has no Independent promotion");
+  independent!.eventCadenceWeeks = 2;
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "alpha-player", {
+    promotionId: independent!.id,
+    requestId: "future-card-claim",
+  });
+  const initialView = await loadAlphaPlayerPlanner(repository, worldId, "alpha-player");
+  const { week, request } = futurePlannerRequest(initialView, "future-card-initial");
+  await saveAlphaPlannerShowPlan(repository, worldId, "alpha-player", request);
+
+  await repository.transact(worldId, null, (current) => {
+    const workspace = current.planning.workspaces.find((candidate) => candidate.promotionId === independent!.id);
+    const draft = workspace?.detailedShowDrafts.find((candidate) => candidate.targetDate.year === week.year && candidate.targetDate.week === week.week);
+    if (!workspace || !draft) throw new Error("future planner draft missing before card preservation test");
+    if (draft.participantIds.length < 2) throw new Error("future planner draft has too few wrestlers for card preservation test");
+    draft.matches.push({
+      draftMatchId: "future-preserved-match",
+      type: "SINGLES",
+      sideAIds: [draft.participantIds[0]!],
+      sideBIds: [draft.participantIds[1]!],
+      intendedWinnerSide: "A",
+      intent: "COMPETITIVE",
+      plannedLengthMinutes: 12,
+    });
+    workspace.version += 1;
+  });
+
+  const beforeEdit = await loadAlphaPlayerPlanner(repository, worldId, "alpha-player");
+  const editableWeek = beforeEdit.promotion?.weeks.find((candidate) => candidate.year === week.year && candidate.week === week.week);
+  ok(editableWeek?.shows[0]?.matchCount === 1, "fixture did not expose existing future card");
+  const editRequest = {
+    ...request,
+    requestId: "future-card-edit",
+    expectedRevision: beforeEdit.world.revision,
+    expectedPlanVersion: beforeEdit.promotion!.workspaceVersion,
+    ticketStrategy: "PREMIUM" as const,
+  };
+  const edited = await saveAlphaPlannerShowPlan(repository, worldId, "alpha-player", editRequest);
+  const editedWeek = edited.promotion?.weeks.find((candidate) => candidate.year === week.year && candidate.week === week.week);
+  ok(editedWeek?.shows[0]?.matchCount === 1, "future logistics edit wiped the existing match card");
+  ok(editedWeek?.shows[0]?.ticketStrategy === "PREMIUM", "future logistics edit did not update ticket strategy");
+  ok(!editedWeek?.shows[0]?.workspaceChangedSinceReservation, "refreshed future reservation remained stale");
+});
+
+await test("future planner rejects non-owners and targets outside the six-week horizon", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 61009, playerId: "alpha-player" });
+  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
+  ok(independent, "planner fixture has no Independent promotion");
+  independent!.eventCadenceWeeks = 1;
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "alpha-player", {
+    promotionId: independent!.id,
+    requestId: "future-guard-claim",
+  });
+  const view = await loadAlphaPlayerPlanner(repository, worldId, "alpha-player");
+  const { request } = futurePlannerRequest(view, "future-guard-save");
+
+  let ownerRejected = false;
+  try {
+    await saveAlphaPlannerShowPlan(repository, worldId, "stranger", request);
+  } catch (error) {
+    ownerRejected = error instanceof Error && error.message.includes("control a promotion");
+  }
+  ok(ownerRejected, "non-owner could mutate future planner state");
+
+  const outside = addPpwWeeks(view.world.currentDate, 6, 52);
+  let horizonRejected = false;
+  try {
+    await saveAlphaPlannerShowPlan(repository, worldId, "alpha-player", {
+      ...request,
+      requestId: "future-horizon-reject",
+      year: outside.year,
+      week: outside.week,
+    });
+  } catch (error) {
+    horizonRejected = error instanceof Error && error.message.includes("detailed show drafts must target");
+  }
+  ok(horizonRejected, "planner accepted a target outside the six-week horizon");
 });
 
 await test("Alpha week finish resolves exactly one World week and exposes the previous show result", async () => {

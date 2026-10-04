@@ -38,13 +38,22 @@
   font-weight: 800;
 }
 
-.button {
+.button,
+.editButton,
+.saveButton {
   border: 1px solid #33435a;
   background: #121922;
   color: #eef5ff;
   padding: 10px 14px;
   border-radius: 10px;
   font: inherit;
+}
+
+.button:disabled,
+.editButton:disabled,
+.saveButton:disabled,
+.talentPick:disabled {
+  opacity: .46;
 }
 
 .panel,
@@ -216,6 +225,135 @@
   font-size: 0.82rem;
 }
 
+.editButton {
+  width: 100%;
+  margin-top: 12px;
+  border-color: #31576b;
+  color: #78dcff;
+  font-weight: 800;
+}
+
+.editor {
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid #31576b;
+  border-radius: 13px;
+  background: #0a1219;
+}
+
+.editorGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.editorGrid label {
+  display: grid;
+  gap: 5px;
+  color: #8f9bad;
+  font-size: .78rem;
+}
+
+.editorGrid select {
+  width: 100%;
+  border: 1px solid #2b3d52;
+  background: #101924;
+  color: #eef5ff;
+  border-radius: 9px;
+  padding: 10px;
+  font: inherit;
+}
+
+.venueSummary {
+  margin-top: 10px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: #111a25;
+  color: #9fadc0;
+  font-size: .8rem;
+}
+
+.talentHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-end;
+  margin: 14px 0 8px;
+}
+
+.talentHeader div {
+  display: grid;
+  gap: 2px;
+}
+
+.talentHeader span,
+.editorNote {
+  color: #8f9bad;
+  font-size: .78rem;
+}
+
+.countGood {
+  color: #9ce9b8;
+}
+
+.countWarn {
+  color: #ffc98e;
+}
+
+.talentGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.talentPick {
+  border: 1px solid #27364a;
+  background: #111a25;
+  color: #eef5ff;
+  border-radius: 10px;
+  padding: 9px 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+
+.talentPick span {
+  display: grid;
+  gap: 2px;
+}
+
+.talentPick small {
+  color: #8291a6;
+}
+
+.talentSelected {
+  border-color: #2f8c75;
+  background: #10261f;
+}
+
+.editorNote {
+  margin: 10px 0 0;
+  line-height: 1.45;
+}
+
+.editorActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.saveButton {
+  border-color: #2f8c75;
+  background: #153527;
+  color: #a9f0c5;
+  font-weight: 800;
+}
+
 .footerNote {
   font-size: 0.78rem;
   margin: 14px 2px 0;
@@ -234,12 +372,21 @@
     grid-template-columns: 1fr;
   }
 
-  .metrics {
-    grid-template-columns: repeat(2, 1fr);
+  .metrics,
+  .editorGrid,
+  .talentGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .weekHeader,
   .showTop {
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 430px) {
+  .editorGrid,
+  .talentGrid {
+    grid-template-columns: 1fr;
   }
 }
