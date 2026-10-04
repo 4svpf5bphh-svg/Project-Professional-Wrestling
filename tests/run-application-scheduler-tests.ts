@@ -112,8 +112,44 @@ await test("scheduler recovers a durable lock for the same cycle without double 
   ok(finalState.state.world.currentDate.week === 2, "retry after recovery double-resolved the World");
 });
 
-await test("an older scheduler delivery is harmless after a newer cycle has resolved", async () => {
+await test("scheduler consumes the current cycle when recovering a legacy lock", async () => {
   const aggregate = fixture(18005);
+  const repository = new InMemoryApplicationWorldRepository();
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+
+  await lockPersistedWorldForResolution(repository, worldId, 0);
+  const recovered = await resolveScheduledWorldCycle(repository, worldId, "2026-10-04");
+  const afterRecovery = await repository.load(worldId);
+  const duplicate = await resolveScheduledWorldCycle(repository, worldId, "2026-10-04");
+  const finalState = await repository.load(worldId);
+
+  ok(recovered.status === "RESOLVED", "legacy lock was not recovered");
+  ok(afterRecovery.state.world.currentDate.week === 2, "legacy lock recovery advanced the wrong number of weeks");
+  ok(afterRecovery.runtime.lastResolvedRealCycleKey === "2026-10-04", "legacy recovery did not consume the active real cycle");
+  ok(duplicate.status === "ALREADY_RESOLVED", "same-cycle retry after legacy recovery was not blocked");
+  ok(finalState.state.world.currentDate.week === 2, "same-cycle retry after legacy recovery double-resolved the World");
+});
+
+await test("scheduler consumes today rather than double advancing when an older cycle lock is recovered", async () => {
+  const aggregate = fixture(18006);
+  const repository = new InMemoryApplicationWorldRepository();
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+
+  await lockPersistedWorldForResolution(repository, worldId, 0, "2026-10-03");
+  const recovered = await resolveScheduledWorldCycle(repository, worldId, "2026-10-04");
+  const afterRecovery = await repository.load(worldId);
+  const duplicate = await resolveScheduledWorldCycle(repository, worldId, "2026-10-04");
+
+  ok(recovered.status === "RESOLVED", "older durable lock was not recovered");
+  ok(afterRecovery.state.world.currentDate.week === 2, "older lock recovery advanced more than one PPW week");
+  ok(afterRecovery.runtime.lastResolvedRealCycleKey === "2026-10-04", "older lock recovery did not consume today's cycle");
+  ok(duplicate.status === "ALREADY_RESOLVED", "today's duplicate delivery was not blocked after older lock recovery");
+});
+
+await test("an older scheduler delivery is harmless after a newer cycle has resolved", async () => {
+  const aggregate = fixture(18007);
   const repository = new InMemoryApplicationWorldRepository();
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
@@ -128,8 +164,24 @@ await test("an older scheduler delivery is harmless after a newer cycle has reso
   ok(after.runtime.revision === before.runtime.revision, "older scheduler delivery changed World revision");
 });
 
+await test("an older scheduler delivery cannot interfere with a newer durable lock", async () => {
+  const aggregate = fixture(18008);
+  const repository = new InMemoryApplicationWorldRepository();
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+
+  await lockPersistedWorldForResolution(repository, worldId, 0, "2026-10-05");
+  const stale = await resolveScheduledWorldCycle(repository, worldId, "2026-10-04");
+  const after = await repository.load(worldId);
+
+  ok(stale.status === "ALREADY_RESOLVED", "stale scheduler delivery did not back away from newer lock");
+  ok(after.runtime.phase === "LOCKING", "stale scheduler delivery changed newer lock phase");
+  ok(after.runtime.lockedRealCycleKey === "2026-10-05", "stale scheduler delivery rewrote newer lock cycle");
+  ok(after.state.world.currentDate.week === 1, "stale scheduler delivery resolved a newer lock");
+});
+
 await test("scheduler rejects malformed real-cycle keys", async () => {
-  const aggregate = fixture(18006);
+  const aggregate = fixture(18009);
   const repository = new InMemoryApplicationWorldRepository();
   await repository.initialize(aggregate);
 
