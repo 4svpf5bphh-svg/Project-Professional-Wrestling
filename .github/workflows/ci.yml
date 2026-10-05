@@ -44,14 +44,6 @@ jobs:
         run: npm install
       - name: Run full test suite
         run: npm test
-      - name: Run team-history projection tests
-        run: node dist/tests/run-application-team-history-view-tests.js
-      - name: Run team-history service tests
-        run: node dist/tests/run-web-team-history-service-tests.js
-      - name: Run World-results projection tests
-        run: node dist/tests/run-application-world-results-view-tests.js
-      - name: Run World-results service tests
-        run: node dist/tests/run-web-world-results-service-tests.js
       - name: Build Alpha web app
         run: npm run web:build
       - name: Run Alpha HTTP integration
