@@ -74,6 +74,29 @@ function showPlanBody(view) {
   };
 }
 
+function completeSinglesCard(cardView) {
+  const ids = cardView.participants.map((participant) => participant.personId);
+  ok(ids.length >= 2 && ids.length % 2 === 0, "HTTP card view did not expose an even reserved roster");
+  const matches = [];
+  for (let index = 0; index < ids.length; index += 2) {
+    matches.push({
+      draftMatchId: `${cardView.draftId}:ci-match:${matches.length + 1}`,
+      type: "SINGLES",
+      sideAIds: [ids[index]],
+      sideBIds: [ids[index + 1]],
+      intendedWinnerSide: "A",
+      intent: "COMPETITIVE",
+      plannedLengthMinutes: 12,
+    });
+  }
+  return matches;
+}
+
+async function assertPage(path, label) {
+  const response = await fetch(`${baseUrl}${path}`, { cache: "no-store" });
+  ok(response.ok, `${label} page returned HTTP ${response.status}`);
+}
+
 try {
   await waitForServer();
 
@@ -111,13 +134,40 @@ try {
   ok(afterClaim.promotion?.promotionId === promotionId, "HTTP reload lost promotion dashboard state");
   ok(afterClaim.world?.revision === 1, "HTTP reload returned the wrong persisted World revision");
 
-  const plan = showPlanBody(afterClaim);
+  const talent = await json(await fetch(`${baseUrl}/api/talent`, { cache: "no-store" }));
+  ok(talent.promotion?.promotionId === promotionId, "HTTP talent management lost controlled promotion");
+  ok(Array.isArray(talent.market) && talent.market.length > 0, "HTTP talent market exposed no available wrestlers");
+  const candidate = talent.market[0];
+  const talentOffer = {
+    requestId: "ci-http-talent-offer-001",
+    personId: candidate.personId,
+    family: "ONE_OFF",
+    roleExpectation: "REGULAR",
+    termWeeks: 1,
+    dateEntitlement: 1,
+    weeklyGuarantee: 0,
+    appearanceFee: Math.max(1_000, Math.round(candidate.estimatedWeeklyValue * 1.35)),
+    signingBonus: 0,
+  };
+  const offered = await json(await fetch(`${baseUrl}/api/talent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(talentOffer),
+  }));
+  ok(offered.offerId, "HTTP talent offer did not return an offer ID");
+  ok(offered.offerKind === "RECRUITMENT", "HTTP talent offer did not use the recruitment path");
+  ok(offered.view?.pendingOffers?.some((offer) => offer.offerId === offered.offerId), "HTTP talent offer was not persisted into pending offers");
+
+  const afterOffer = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
+  ok(afterOffer.world.revision > afterClaim.world.revision, "HTTP talent offer did not advance World revision");
+
+  const plan = showPlanBody(afterOffer);
   const planned = await json(await fetch(`${baseUrl}/api/show-plan`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(plan),
   }));
-  ok(planned.world.revision === afterClaim.world.revision + 2, "HTTP show plan did not commit draft and reservation revisions");
+  ok(planned.world.revision === afterOffer.world.revision + 2, "HTTP show plan did not commit draft and reservation revisions");
   ok(planned.promotion?.showPlanning?.currentPlan?.state === "RESERVED", "HTTP show plan did not return a reserved state");
   ok(planned.promotion?.showPlanning?.currentPlan?.venueId === plan.venueId, "HTTP show plan lost selected venue");
   ok(planned.promotion?.showPlanning?.currentPlan?.participantIds?.length === plan.participantIds.length, "HTTP show plan lost selected talent");
@@ -130,8 +180,32 @@ try {
   ok(planRetry.world.revision === planned.world.revision, "HTTP show-plan retry advanced revision twice");
   ok(planRetry.promotion?.showPlanning?.currentPlan?.state === "RESERVED", "HTTP show-plan retry lost reservation");
 
-  const weekBefore = weekKey(planned);
-  const revisionBeforeAdvance = planned.world.revision;
+  const draftId = planned.promotion.showPlanning.currentPlan.draftId;
+  const cardView = await json(await fetch(`${baseUrl}/api/show-card?draftId=${encodeURIComponent(draftId)}`, { cache: "no-store" }));
+  ok(cardView.draftId === draftId, "HTTP card editor opened the wrong reserved show");
+  ok(cardView.reservationId, "HTTP card editor did not load a real reservation");
+  ok(cardView.participants.length === plan.participantIds.length, "HTTP card editor lost reserved wrestlers");
+  const matches = completeSinglesCard(cardView);
+  const savedCard = await json(await fetch(`${baseUrl}/api/show-card`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requestId: "ci-http-show-card-001",
+      expectedRevision: cardView.world.revision,
+      expectedPlanVersion: cardView.workspaceVersion,
+      draftId,
+      matches,
+      championshipAssignments: [],
+    }),
+  }));
+  ok(savedCard.matches.length === matches.length, "HTTP match card did not persist every booked match");
+  ok(savedCard.matches.every((match) => match.type === "SINGLES"), "HTTP match card changed booked match types");
+
+  const ready = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
+  ok(ready.promotion?.weekReadiness?.status === "READY", "HTTP booked card did not make the required show ready");
+
+  const weekBefore = weekKey(ready);
+  const revisionBeforeAdvance = ready.world.revision;
   const advanced = await json(await fetch(`${baseUrl}/api/advance-week`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -147,6 +221,36 @@ try {
     .find((venue) => venue.venueId === plan.venueId)?.name;
   ok(advanced.promotion.lastResolvedShow.venueName === selectedVenueName, "resolved show did not use the reserved venue");
 
+  const playerResults = await json(await fetch(`${baseUrl}/api/results`, { cache: "no-store" }));
+  const resolvedEventId = advanced.promotion.lastResolvedShow.eventId;
+  const playerShow = playerResults.shows?.find((show) => show.eventId === resolvedEventId);
+  ok(playerShow, "HTTP player results did not include the newly resolved show");
+  ok(playerShow.matches.length === matches.length, "HTTP player results did not preserve the booked card");
+  ok(playerShow.matches.every((match) => match.winnerNames.length > 0), "HTTP player results omitted match winners");
+
+  const worldResults = await json(await fetch(`${baseUrl}/api/world-results`, { cache: "no-store" }));
+  const worldShow = worldResults.shows?.find((show) => show.eventId === resolvedEventId);
+  ok(worldShow, "HTTP World results did not include the player's resolved show");
+  ok(worldShow.isPlayerPromotion === true, "HTTP World results did not identify the player's promotion");
+  ok(!("gateRevenue" in worldShow) && !("totalCost" in worldShow) && !("netResult" in worldShow), "HTTP World results leaked private show economics");
+
+  const industry = await json(await fetch(`${baseUrl}/api/industry`, { cache: "no-store" }));
+  ok(Array.isArray(industry.promotions) && industry.promotions.some((promotion) => promotion.promotionId === promotionId), "HTTP Industry view omitted the controlled promotion");
+  const championships = await json(await fetch(`${baseUrl}/api/championships`, { cache: "no-store" }));
+  ok(Array.isArray(championships.championships), "HTTP championship history did not return a title collection");
+  const teams = await json(await fetch(`${baseUrl}/api/teams`, { cache: "no-store" }));
+  ok(Array.isArray(teams.teams), "HTTP team history did not return a team collection");
+  const profilePersonId = plan.participantIds[0];
+  const profile = await json(await fetch(`${baseUrl}/api/talent/profile?personId=${encodeURIComponent(profilePersonId)}`, { cache: "no-store" }));
+  ok(profile.person?.personId === profilePersonId, "HTTP wrestler profile did not load the requested wrestler");
+  ok(profile.careerStats?.completedMatches >= 1, "HTTP wrestler profile did not reflect the resolved show");
+
+  await assertPage("/results", "Results");
+  await assertPage("/industry", "Industry");
+  await assertPage("/championships", "Championship history");
+  await assertPage("/teams", "Team history");
+  await assertPage(`/talent/profile?personId=${encodeURIComponent(profilePersonId)}`, "Wrestler profile");
+
   const staleResponse = await fetch(`${baseUrl}/api/advance-week`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -160,7 +264,7 @@ try {
   ok(weekKey(afterAdvance) === weekKey(advanced), "stale HTTP retry advanced the World a second time");
   ok(afterAdvance.world.revision === advanced.world.revision, "stale HTTP retry changed the persisted World revision");
 
-  console.log("PASS Alpha Next HTTP bootstrap, claim, show reservation, retry, week resolution and stale-retry safety");
+  console.log("PASS Alpha Next HTTP full player journey, public history views and stale-retry safety");
 } finally {
   if (server.exitCode === null) server.kill("SIGTERM");
   await new Promise((resolve) => {
