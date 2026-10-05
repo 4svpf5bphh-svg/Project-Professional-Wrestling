@@ -1,9 +1,19 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "installCommand": "npm install",
+  "buildCommand": "npm run web:build",
+  "outputDirectory": "apps/web/.next",
   "git": {
     "deploymentEnabled": {
       "alpha1a-freeze-*": false,
       "alpha-freeze-*": false
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/internal/resolve-week",
+      "schedule": "0 8 * * *"
+    }
+  ]
 }
