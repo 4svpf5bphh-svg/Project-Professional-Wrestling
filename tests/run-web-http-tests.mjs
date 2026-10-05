@@ -48,6 +48,15 @@ function weekKey(view) {
   return `${view.world.year}:${view.world.week}`;
 }
 
+function minimumServiceCapacity(entry) {
+  const stageBase = entry.careerStage === "PRIME" ? 1.9
+    : entry.careerStage === "PROSPECT" ? 1.55
+      : entry.careerStage === "VETERAN" ? 1.4
+        : 1.0;
+  const staminaFactor = 0.8 + entry.skills.stamina / 250;
+  return stageBase * staminaFactor * 0.65;
+}
+
 function showPlanBody(view) {
   const promotion = view.promotion;
   const planning = promotion?.showPlanning;
@@ -137,8 +146,10 @@ try {
   const talent = await json(await fetch(`${baseUrl}/api/talent`, { cache: "no-store" }));
   ok(talent.promotion?.promotionId === promotionId, "HTTP talent management lost controlled promotion");
   ok(Array.isArray(talent.market) && talent.market.length > 0, "HTTP talent market exposed no available wrestlers");
-  const candidate = talent.market.find((entry) => entry.availability === "FREE_AGENT");
-  ok(candidate, "HTTP talent market exposed no genuine free agent for the recruitment journey");
+  const candidate = talent.market.find((entry) => (
+    entry.availability === "FREE_AGENT" && minimumServiceCapacity(entry) >= 1.001
+  ));
+  ok(candidate, "HTTP talent market exposed no free agent guaranteed to have one-date Service Capacity");
   const talentOffer = {
     requestId: "ci-http-talent-offer-001",
     personId: candidate.personId,
