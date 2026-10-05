@@ -91,6 +91,7 @@ export default function AlphaHome(): React.JSX.Element {
   const [view, setView] = useState<AlphaPlayerWorldView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyPromotionId, setBusyPromotionId] = useState<string | null>(null);
+  const [busyAttentionId, setBusyAttentionId] = useState<string | null>(null);
   const requestIds = useRef(new Map<string, string>());
 
   async function refresh(): Promise<void> {
@@ -133,6 +134,27 @@ export default function AlphaHome(): React.JSX.Element {
       setError(reason instanceof Error ? reason.message : "Unable to claim promotion");
     } finally {
       setBusyPromotionId(null);
+    }
+  }
+
+  async function dismissAttentionItem(attentionId: string): Promise<void> {
+    setBusyAttentionId(attentionId);
+    setError(null);
+    try {
+      const response = await fetch("/api/attention/dismiss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attentionId }),
+      });
+      const payload = await response.json() as AlphaPlayerWorldView | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to dismiss Attention item");
+      }
+      setView(payload);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to dismiss Attention item");
+    } finally {
+      setBusyAttentionId(null);
     }
   }
 
@@ -241,7 +263,26 @@ export default function AlphaHome(): React.JSX.Element {
                         {deadline ? <span className="revision">{deadline}</span> : <span className={attentionPillClass(item.category)}>{attentionLabel(item.category)}</span>}
                       </div>
                       <p className="muted body-copy">{item.summary}</p>
-                      {item.deepLink ? <a href={item.deepLink} style={{ color: "#5de9ce", fontWeight: 850, textDecoration: "none" }}>Open →</a> : null}
+                      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                        {item.deepLink ? <a href={item.deepLink} style={{ color: "#5de9ce", fontWeight: 850, textDecoration: "none" }}>Open →</a> : null}
+                        {item.dismissible ? (
+                          <button
+                            type="button"
+                            disabled={busyAttentionId !== null}
+                            onClick={() => void dismissAttentionItem(item.attentionId)}
+                            style={{
+                              border: 0,
+                              background: "transparent",
+                              color: "#8ea0b4",
+                              fontWeight: 800,
+                              padding: 0,
+                              cursor: busyAttentionId === null ? "pointer" : "default",
+                            }}
+                          >
+                            {busyAttentionId === item.attentionId ? "Dismissing…" : "Dismiss"}
+                          </button>
+                        ) : null}
+                      </div>
                     </article>
                   );
                 })}

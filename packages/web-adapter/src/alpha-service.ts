@@ -5,12 +5,15 @@ import {
   activePromotionControlForPlayer,
   alphaCurrentWeekShowDraftId,
   buildAlphaPlayerWorldView,
+  buildPlayerAttention,
   buildPlayerShowHistory,
   claimIndependentPromotionCommand,
   createWorldCommandState,
+  createWorldEngagementState,
   createWorldOwnershipState,
   createWorldPlanningState,
   createWorldRuntimeState,
+  dismissAttention,
   joinPlayerToWorld,
   lockPersistedWorldForResolution,
   materializePersistedCurrentWeekReservations,
@@ -40,6 +43,10 @@ export interface AlphaClaimRequest {
 
 export interface AlphaAdvanceWeekRequest {
   expectedRevision: number;
+}
+
+export interface AlphaDismissAttentionRequest {
+  attentionId: string;
 }
 
 export interface AlphaShowPlanRequest {
@@ -78,6 +85,13 @@ function requireRequestId(value: string): string {
   const normalized = value.trim();
   if (!normalized) throw new Error("requestId must not be empty");
   if (normalized.length > 220) throw new Error("requestId is too long");
+  return normalized;
+}
+
+function requireAttentionId(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) throw new Error("attentionId must not be empty");
+  if (normalized.length > 240) throw new Error("attentionId is too long");
   return normalized;
 }
 
@@ -146,6 +160,32 @@ export async function loadAlphaPlayerResults(
   playerId: string,
 ): Promise<PlayerShowHistoryView> {
   return buildPlayerShowHistory(await repository.load(worldId), playerId);
+}
+
+export async function dismissAlphaAttention(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  request: AlphaDismissAttentionRequest,
+): Promise<AlphaPlayerWorldView> {
+  const attentionId = requireAttentionId(request.attentionId);
+  await repository.transact(worldId, null, (aggregate) => {
+    const visibleItem = buildPlayerAttention(aggregate, playerId)
+      .find((item) => item.attentionId === attentionId);
+    if (!visibleItem) {
+      const alreadyDismissed = aggregate.engagement?.attentionDismissals.some((record) => (
+        record.playerId === playerId && record.attentionId === attentionId
+      ));
+      if (alreadyDismissed) return;
+      throw new Error("Attention item is not currently visible");
+    }
+    if (!visibleItem.dismissible) throw new Error("Attention item cannot be dismissed");
+
+    const engagement = aggregate.engagement ?? createWorldEngagementState(worldId);
+    aggregate.engagement = engagement;
+    dismissAttention(engagement, playerId, attentionId, aggregate.runtime.revision);
+  });
+  return loadAlphaPlayerSession(repository, worldId, playerId);
 }
 
 export async function claimAlphaPromotion(
