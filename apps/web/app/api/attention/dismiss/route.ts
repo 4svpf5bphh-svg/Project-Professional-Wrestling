@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { dismissAlphaAttention } from "../../../../../../../dist/packages/web-adapter/src/alpha-service.js";
-import { withAlphaServerContext } from "../../../../../../../dist/packages/web-adapter/src/server-world.js";
+import { dismissAlphaAttention } from "../../../../../../dist/packages/web-adapter/src/alpha-service.js";
+import { withAlphaServerContext } from "../../../../../../dist/packages/web-adapter/src/server-world.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
