@@ -214,7 +214,8 @@ try {
   ok(savedCard.matches.every((match) => match.type === "SINGLES"), "HTTP match card changed booked match types");
 
   const ready = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
-  ok(ready.promotion?.weekReadiness?.status === "READY", "HTTP booked card did not make the required show ready");
+  ok(ready.promotion?.showPlanning?.currentPlan?.state === "RESERVED", "HTTP booked show lost its reserved planning state before lock");
+  ok(ready.promotion?.showPlanning?.currentPlan?.reservationId, "HTTP booked show lost its committed reservation before lock");
 
   const weekBefore = weekKey(ready);
   const revisionBeforeAdvance = ready.world.revision;
