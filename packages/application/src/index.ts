@@ -25,6 +25,7 @@ export * from "./stewardship-buyout.js";
 export * from "./stewardship-caretaker.js";
 export * from "./stewardship-release.js";
 export * from "./talent-view.js";
+export * from "./team-history-view.js";
 export * from "./world-aggregate.js";
 export * from "./world-transactions.js";
 export * from "./wrestler-profile-view.js";
