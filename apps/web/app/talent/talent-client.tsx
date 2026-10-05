@@ -17,6 +17,10 @@ type ErrorPayload = { error?: string };
 type Tab = "ROSTER" | "MARKET" | "OFFERS";
 type OfferFamily = AlphaTalentOfferRequest["family"];
 type OfferRole = AlphaTalentOfferRequest["roleExpectation"];
+type RosterSort = "POPULARITY" | "RECOGNITION" | "DATES_ASC" | "DATES_DESC" | "EXPIRY" | "NAME";
+type RosterContractFilter = "ALL" | "EXCLUSIVE" | "NON_EXCLUSIVE";
+type MarketSort = "POPULARITY" | "RECOGNITION" | "VALUE_HIGH" | "VALUE_LOW" | "NAME";
+type MarketAvailabilityFilter = "ALL" | "FREE_AGENT" | "NON_EXCLUSIVE";
 
 type OfferTarget = {
   requestId: string;
@@ -157,6 +161,7 @@ function RosterCard({
           <div className={styles.nameLine}>
             <strong>{wrestler.name}</strong>
             <InjuryBadge injury={wrestler.injury} />
+            <span className={styles.availability}>{contract.exclusivity === "EXCLUSIVE" ? "Exclusive" : "Non-exclusive"}</span>
           </div>
           <span>{label(wrestler.careerStage)} · {label(contract.roleExpectation)} · {label(contract.family)}</span>
         </div>
@@ -338,6 +343,10 @@ export default function TalentClient(): React.JSX.Element {
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("ROSTER");
   const [query, setQuery] = useState("");
+  const [rosterSort, setRosterSort] = useState<RosterSort>("POPULARITY");
+  const [rosterContractFilter, setRosterContractFilter] = useState<RosterContractFilter>("ALL");
+  const [marketSort, setMarketSort] = useState<MarketSort>("VALUE_HIGH");
+  const [marketAvailabilityFilter, setMarketAvailabilityFilter] = useState<MarketAvailabilityFilter>("ALL");
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [target, setTarget] = useState<OfferTarget | null>(null);
@@ -426,14 +435,31 @@ export default function TalentClient(): React.JSX.Element {
     }
   }
 
-  const roster = useMemo(
-    () => (view?.roster ?? []).filter((entry) => matchesQuery(entry.name, query)),
-    [view, query],
-  );
-  const market = useMemo(
-    () => (view?.market ?? []).filter((entry) => matchesQuery(entry.name, query)),
-    [view, query],
-  );
+  const roster = useMemo(() => {
+    const entries = (view?.roster ?? [])
+      .filter((entry) => matchesQuery(entry.name, query))
+      .filter((entry) => rosterContractFilter === "ALL" || entry.contract.exclusivity === rosterContractFilter);
+    return [...entries].sort((left, right) => {
+      if (rosterSort === "RECOGNITION") return right.recognition - left.recognition || left.name.localeCompare(right.name);
+      if (rosterSort === "DATES_ASC") return left.contract.datesRemaining - right.contract.datesRemaining || left.name.localeCompare(right.name);
+      if (rosterSort === "DATES_DESC") return right.contract.datesRemaining - left.contract.datesRemaining || left.name.localeCompare(right.name);
+      if (rosterSort === "EXPIRY") return left.contract.weeksToExpiry - right.contract.weeksToExpiry || left.name.localeCompare(right.name);
+      if (rosterSort === "NAME") return left.name.localeCompare(right.name);
+      return right.popularity - left.popularity || right.recognition - left.recognition || left.name.localeCompare(right.name);
+    });
+  }, [view, query, rosterContractFilter, rosterSort]);
+  const market = useMemo(() => {
+    const entries = (view?.market ?? [])
+      .filter((entry) => matchesQuery(entry.name, query))
+      .filter((entry) => marketAvailabilityFilter === "ALL" || entry.availability === marketAvailabilityFilter);
+    return [...entries].sort((left, right) => {
+      if (marketSort === "POPULARITY") return right.popularity - left.popularity || left.name.localeCompare(right.name);
+      if (marketSort === "RECOGNITION") return right.recognition - left.recognition || left.name.localeCompare(right.name);
+      if (marketSort === "VALUE_LOW") return left.estimatedWeeklyValue - right.estimatedWeeklyValue || left.name.localeCompare(right.name);
+      if (marketSort === "NAME") return left.name.localeCompare(right.name);
+      return right.estimatedWeeklyValue - left.estimatedWeeklyValue || right.popularity - left.popularity || left.name.localeCompare(right.name);
+    });
+  }, [view, query, marketAvailabilityFilter, marketSort]);
   const offers = useMemo(
     () => (view?.pendingOffers ?? []).filter((entry) => matchesQuery(entry.personName, query)),
     [view, query],
@@ -494,6 +520,53 @@ export default function TalentClient(): React.JSX.Element {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Wrestler name" />
           </label>
 
+          {tab === "ROSTER" ? (
+            <section className={`${styles.search} ${styles.formGrid}`} aria-label="Roster filters">
+              <label>
+                <span>Sort roster</span>
+                <select value={rosterSort} onChange={(event) => setRosterSort(event.target.value as RosterSort)}>
+                  <option value="POPULARITY">Most popular</option>
+                  <option value="RECOGNITION">Most recognised</option>
+                  <option value="DATES_ASC">Fewest dates remaining</option>
+                  <option value="DATES_DESC">Most dates remaining</option>
+                  <option value="EXPIRY">Contract expiring soonest</option>
+                  <option value="NAME">Name A–Z</option>
+                </select>
+              </label>
+              <label>
+                <span>Contract status</span>
+                <select value={rosterContractFilter} onChange={(event) => setRosterContractFilter(event.target.value as RosterContractFilter)}>
+                  <option value="ALL">All contracts</option>
+                  <option value="EXCLUSIVE">Exclusive</option>
+                  <option value="NON_EXCLUSIVE">Non-exclusive</option>
+                </select>
+              </label>
+            </section>
+          ) : null}
+
+          {tab === "MARKET" ? (
+            <section className={`${styles.search} ${styles.formGrid}`} aria-label="Talent market filters">
+              <label>
+                <span>Sort market</span>
+                <select value={marketSort} onChange={(event) => setMarketSort(event.target.value as MarketSort)}>
+                  <option value="VALUE_HIGH">Highest estimated value</option>
+                  <option value="VALUE_LOW">Lowest estimated value</option>
+                  <option value="POPULARITY">Most popular</option>
+                  <option value="RECOGNITION">Most recognised</option>
+                  <option value="NAME">Name A–Z</option>
+                </select>
+              </label>
+              <label>
+                <span>Availability</span>
+                <select value={marketAvailabilityFilter} onChange={(event) => setMarketAvailabilityFilter(event.target.value as MarketAvailabilityFilter)}>
+                  <option value="ALL">All available talent</option>
+                  <option value="FREE_AGENT">Free agents</option>
+                  <option value="NON_EXCLUSIVE">Under non-exclusive deal</option>
+                </select>
+              </label>
+            </section>
+          ) : null}
+
           <section className={styles.list}>
             {tab === "ROSTER" ? roster.map((entry) => (
               <RosterCard
@@ -510,7 +583,7 @@ export default function TalentClient(): React.JSX.Element {
             ) : null}
           </section>
 
-          {tab === "MARKET" ? <p className={styles.footerNote}>Market values are PPW estimates. Rival salary, bonus, role and pending-offer details remain private. Submitted offers resolve through the same World contract system used by AI promotions.</p> : null}
+          {tab === "MARKET" ? <p className={styles.footerNote}>Exclusive wrestlers are unavailable to recruit and are not listed here. Market values are PPW estimates; rival salary, bonus, role and pending-offer details remain private. Submitted offers resolve through the same World contract system used by AI promotions.</p> : null}
         </>
       ) : null}
     </main>
