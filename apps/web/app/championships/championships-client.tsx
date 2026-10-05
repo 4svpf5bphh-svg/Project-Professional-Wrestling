@@ -143,7 +143,9 @@ export default function ChampionshipsClient(): React.JSX.Element {
                     <div className={styles.holder}>
                       {reign.holderType === "PERSON" ? (
                         <a href={`/talent/profile?personId=${encodeURIComponent(reign.holderId)}`}>{reign.holderName}</a>
-                      ) : <strong>{reign.holderName}</strong>}
+                      ) : (
+                        <a href={`/teams?teamId=${encodeURIComponent(reign.holderId)}`}>{reign.holderName}</a>
+                      )}
                       <span>{label(reign.holderType)}</span>
                     </div>
                     <div className={styles.reignDetail}>
