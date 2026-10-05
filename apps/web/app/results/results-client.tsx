@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { PlayerShowHistoryView } from "../../../../dist/packages/application/src/results-view.js";
+import type { PlayerWorldResultsView } from "../../../../dist/packages/application/src/world-results-view.js";
 import styles from "./results.module.css";
 
 type ErrorPayload = { error?: string };
+type ResultsTab = "PROMOTION" | "WORLD";
 
 const DAY_NAMES = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-function isErrorPayload(payload: PlayerShowHistoryView | ErrorPayload): payload is ErrorPayload {
-  return "error" in payload;
+function isErrorPayload(payload: unknown): payload is ErrorPayload {
+  return typeof payload === "object" && payload !== null && "error" in payload;
 }
 
 function money(value: number): string {
@@ -33,33 +35,74 @@ function label(value: string): string {
 }
 
 export default function ResultsClient(): React.JSX.Element {
-  const [view, setView] = useState<PlayerShowHistoryView | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [promotionView, setPromotionView] = useState<PlayerShowHistoryView | null>(null);
+  const [worldView, setWorldView] = useState<PlayerWorldResultsView | null>(null);
+  const [promotionError, setPromotionError] = useState<string | null>(null);
+  const [worldError, setWorldError] = useState<string | null>(null);
+  const [tab, setTab] = useState<ResultsTab>("PROMOTION");
+  const [worldPromotionId, setWorldPromotionId] = useState("ALL");
 
-  async function refresh(): Promise<void> {
-    setError(null);
+  async function refreshPromotion(): Promise<void> {
+    setPromotionError(null);
     const response = await fetch("/api/results", { cache: "no-store" });
     const payload = await response.json() as PlayerShowHistoryView | ErrorPayload;
     if (!response.ok || isErrorPayload(payload)) {
       throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to load show history");
     }
-    setView(payload);
+    setPromotionView(payload);
+  }
+
+  async function refreshWorld(): Promise<void> {
+    setWorldError(null);
+    const response = await fetch("/api/world-results", { cache: "no-store" });
+    const payload = await response.json() as PlayerWorldResultsView | ErrorPayload;
+    if (!response.ok || isErrorPayload(payload)) {
+      throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to load World results");
+    }
+    setWorldView(payload);
   }
 
   useEffect(() => {
-    refresh().catch((reason: unknown) => {
-      setError(reason instanceof Error ? reason.message : "Unable to load show history");
+    refreshPromotion().catch((reason: unknown) => {
+      setPromotionError(reason instanceof Error ? reason.message : "Unable to load show history");
+    });
+    refreshWorld().catch((reason: unknown) => {
+      setWorldError(reason instanceof Error ? reason.message : "Unable to load World results");
     });
   }, []);
 
-  if (!view) {
+  const worldPromotions = useMemo(() => {
+    if (!worldView) return [];
+    const promotions = new Map<string, string>();
+    for (const show of worldView.shows) promotions.set(show.promotionId, show.promotionName);
+    return [...promotions.entries()].sort((left, right) => left[1].localeCompare(right[1]));
+  }, [worldView]);
+
+  const visibleWorldShows = useMemo(() => {
+    if (!worldView) return [];
+    if (worldPromotionId === "ALL") return worldView.shows;
+    return worldView.shows.filter((show) => show.promotionId === worldPromotionId);
+  }, [worldPromotionId, worldView]);
+
+  const activeWorld = promotionView?.world ?? worldView?.world ?? null;
+
+  if (!promotionView && promotionError) {
     return (
       <main className={styles.shell}>
         <a className={styles.backLink} href="/">← Promotion</a>
         <section className={styles.panel}>
-          <p>{error ?? "Loading show history…"}</p>
-          {error ? <button className={styles.button} onClick={() => refresh().catch(() => undefined)}>Retry</button> : null}
+          <p>{promotionError}</p>
+          <button className={styles.button} onClick={() => refreshPromotion().catch(() => undefined)}>Retry</button>
         </section>
+      </main>
+    );
+  }
+
+  if (!promotionView) {
+    return (
+      <main className={styles.shell}>
+        <a className={styles.backLink} href="/">← Promotion</a>
+        <section className={styles.panel}><p>Loading Results & history…</p></section>
       </main>
     );
   }
@@ -70,91 +113,235 @@ export default function ResultsClient(): React.JSX.Element {
         <div>
           <a className={styles.backLink} href="/">← Promotion</a>
           <div className={styles.eyebrow}>RESULTS & HISTORY</div>
-          <h1>{view.promotion?.name ?? "Show history"}</h1>
-          <p>{view.world.name} · Year {view.world.currentDate.year}, Week {view.world.currentDate.week}</p>
+          <h1>Results & history</h1>
+          <p>{activeWorld?.name} · Year {activeWorld?.currentDate.year}, Week {activeWorld?.currentDate.week}</p>
         </div>
-        <button className={styles.button} onClick={() => refresh().catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Unable to refresh"))}>Refresh</button>
+        <button
+          className={styles.button}
+          onClick={() => {
+            const action = tab === "PROMOTION" ? refreshPromotion() : refreshWorld();
+            action.catch((reason: unknown) => {
+              const message = reason instanceof Error ? reason.message : "Unable to refresh";
+              if (tab === "PROMOTION") setPromotionError(message);
+              else setWorldError(message);
+            });
+          }}
+        >Refresh</button>
       </header>
 
-      {error ? <div className={styles.error}>{error}</div> : null}
+      <nav className={styles.tabs} aria-label="Results view">
+        <button className={`${styles.tab} ${tab === "PROMOTION" ? styles.activeTab : ""}`} onClick={() => setTab("PROMOTION")} aria-pressed={tab === "PROMOTION"}>
+          <strong>My promotion</strong>
+          <span>Full cards + private show economics</span>
+        </button>
+        <button className={`${styles.tab} ${tab === "WORLD" ? styles.activeTab : ""}`} onClick={() => setTab("WORLD")} aria-pressed={tab === "WORLD"}>
+          <strong>World results</strong>
+          <span>What happened across PPW</span>
+        </button>
+      </nav>
 
-      {!view.promotion ? (
-        <section className={styles.panel}>
-          <h2>No promotion yet</h2>
-          <p>Take control of a promotion before show history is available.</p>
-        </section>
-      ) : view.shows.length === 0 ? (
-        <section className={styles.panel}>
-          <div className={styles.eyebrow}>NO COMPLETED SHOWS</div>
-          <h2>Your history starts here</h2>
-          <p>Once your first show resolves, its full card and consequences will appear here.</p>
-        </section>
-      ) : (
-        <section className={styles.history}>
-          {view.shows.map((show, index) => (
-            <details className={styles.showCard} key={show.eventId} open={index === 0}>
-              <summary className={styles.showSummary}>
-                <div>
-                  <span className={styles.eyebrow}>{show.type} SHOW · {DAY_NAMES[show.date.day] ?? `Day ${show.date.day}`}</span>
-                  <strong>Year {show.date.year}, Week {show.date.week} · {show.venueName}</strong>
-                  <span>{show.marketName} · {integer(show.attendance)} attendance ({decimal(show.attendancePercentOfCapacity)}%)</span>
-                </div>
-                <div className={show.netResult >= 0 ? styles.positive : styles.negative}>
-                  {show.netResult >= 0 ? "+" : ""}{money(show.netResult)}
-                </div>
-              </summary>
+      {tab === "PROMOTION" ? (
+        <>
+          {promotionError ? <div className={styles.error}>{promotionError}</div> : null}
 
-              <div className={styles.showBody}>
-                <div className={styles.metrics}>
-                  <div><span>Gate</span><strong>{money(show.gateRevenue)}</strong></div>
-                  <div><span>Cost</span><strong>{money(show.totalCost)}</strong></div>
-                  <div><span>Average</span><strong>★ {decimal(show.averageMatchRating)}</strong></div>
-                  <div><span>Best match</span><strong>★ {decimal(show.bestMatchRating)}</strong></div>
-                  <div><span>Crowd</span><strong>{decimal(show.crowdResponse)}</strong></div>
-                  <div><span>Consequences</span><strong>{show.titleChangeCount} title · {show.injuryCount} inj.</strong></div>
-                </div>
-
-                <div className={styles.matches}>
-                  {show.matches.map((match) => {
-                    const sideA = match.participants.filter((participant) => participant.side === "A");
-                    const sideB = match.participants.filter((participant) => participant.side === "B");
-                    return (
-                      <article className={styles.matchCard} key={match.matchId}>
-                        <div className={styles.matchTop}>
-                          <span>{match.isMainEvent ? "MAIN EVENT" : `MATCH ${match.order}`} · {label(match.type)}</span>
-                          <strong>★ {decimal(match.criticalRatingStars)}</strong>
-                        </div>
-                        <div className={styles.versus}>
-                          <div>{sideA.map((participant) => <span className={participant.won ? styles.winner : undefined} key={participant.personId}>{participant.name}{participant.won ? " ✓" : ""}</span>)}</div>
-                          <b>vs</b>
-                          <div>{sideB.map((participant) => <span className={participant.won ? styles.winner : undefined} key={participant.personId}>{participant.name}{participant.won ? " ✓" : ""}</span>)}</div>
-                        </div>
-                        <div className={styles.matchMeta}>
-                          <span>{label(match.intent)} intent</span>
-                          <span>{match.actualLengthMinutes} min{match.actualLengthMinutes !== match.plannedLengthMinutes ? ` / ${match.plannedLengthMinutes} planned` : ""}</span>
-                          <span>Crowd {decimal(match.crowdResponse)}</span>
-                        </div>
-                        {match.titleOutcomes.map((title) => (
-                          <div className={styles.consequence} key={title.championshipId}>
-                            <strong>{title.championshipName}</strong>
-                            <span>{title.titleChanged ? `Title change → ${title.winnerHolderName}` : `${title.winnerHolderName} retained`}</span>
-                          </div>
-                        ))}
-                        {match.injuries.map((injury) => (
-                          <div className={`${styles.consequence} ${styles.injury}`} key={injury.injuryId}>
-                            <strong>{injury.personName} injured</strong>
-                            <span>{label(injury.severity)} · {injury.weeksOut} PPW week{injury.weeksOut === 1 ? "" : "s"} out</span>
-                          </div>
-                        ))}
-                        {match.finishChangedDueToInjury ? <div className={styles.warning}>Finish changed because of injury</div> : null}
-                      </article>
-                    );
-                  })}
-                </div>
+          {!promotionView.promotion ? (
+            <section className={styles.panel}>
+              <h2>No promotion yet</h2>
+              <p>Take control of a promotion before your private show history is available.</p>
+            </section>
+          ) : promotionView.shows.length === 0 ? (
+            <section className={styles.panel}>
+              <div className={styles.eyebrow}>NO COMPLETED SHOWS</div>
+              <h2>Your history starts here</h2>
+              <p>Once your first show resolves, its full card and consequences will appear here.</p>
+            </section>
+          ) : (
+            <section className={styles.history}>
+              <div className={styles.sectionHeading}>
+                <div><span className={styles.eyebrow}>YOUR RECORD</span><strong>{promotionView.promotion.name}</strong></div>
+                <span>{promotionView.shows.length} recent completed show{promotionView.shows.length === 1 ? "" : "s"}</span>
               </div>
-            </details>
-          ))}
-        </section>
+              {promotionView.shows.map((show, index) => (
+                <details className={styles.showCard} key={show.eventId} open={index === 0}>
+                  <summary className={styles.showSummary}>
+                    <div>
+                      <span className={styles.eyebrow}>{show.type} SHOW · {DAY_NAMES[show.date.day] ?? `Day ${show.date.day}`}</span>
+                      <strong>Year {show.date.year}, Week {show.date.week} · {show.venueName}</strong>
+                      <span>{show.marketName} · {integer(show.attendance)} attendance ({decimal(show.attendancePercentOfCapacity)}%)</span>
+                    </div>
+                    <div className={show.netResult >= 0 ? styles.positive : styles.negative}>
+                      {show.netResult >= 0 ? "+" : ""}{money(show.netResult)}
+                    </div>
+                  </summary>
+
+                  <div className={styles.showBody}>
+                    <div className={styles.metrics}>
+                      <div><span>Gate</span><strong>{money(show.gateRevenue)}</strong></div>
+                      <div><span>Cost</span><strong>{money(show.totalCost)}</strong></div>
+                      <div><span>Average</span><strong>★ {decimal(show.averageMatchRating)}</strong></div>
+                      <div><span>Best match</span><strong>★ {decimal(show.bestMatchRating)}</strong></div>
+                      <div><span>Crowd</span><strong>{decimal(show.crowdResponse)}</strong></div>
+                      <div><span>Consequences</span><strong>{show.titleChangeCount} title · {show.injuryCount} inj.</strong></div>
+                    </div>
+
+                    <div className={styles.matches}>
+                      {show.matches.map((match) => {
+                        const sideA = match.participants.filter((participant) => participant.side === "A");
+                        const sideB = match.participants.filter((participant) => participant.side === "B");
+                        return (
+                          <article className={styles.matchCard} key={match.matchId}>
+                            <div className={styles.matchTop}>
+                              <span>{match.isMainEvent ? "MAIN EVENT" : `MATCH ${match.order}`} · {label(match.type)}</span>
+                              <strong>★ {decimal(match.criticalRatingStars)}</strong>
+                            </div>
+                            <div className={styles.versus}>
+                              <div>{sideA.map((participant) => <span className={participant.won ? styles.winner : undefined} key={participant.personId}>{participant.name}{participant.won ? " ✓" : ""}</span>)}</div>
+                              <b>vs</b>
+                              <div>{sideB.map((participant) => <span className={participant.won ? styles.winner : undefined} key={participant.personId}>{participant.name}{participant.won ? " ✓" : ""}</span>)}</div>
+                            </div>
+                            <div className={styles.matchMeta}>
+                              <span>{label(match.intent)} intent</span>
+                              <span>{match.actualLengthMinutes} min{match.actualLengthMinutes !== match.plannedLengthMinutes ? ` / ${match.plannedLengthMinutes} planned` : ""}</span>
+                              <span>Crowd {decimal(match.crowdResponse)}</span>
+                            </div>
+                            {match.titleOutcomes.map((title) => (
+                              <div className={styles.consequence} key={title.championshipId}>
+                                <strong>{title.championshipName}</strong>
+                                <span>{title.titleChanged ? `Title change → ${title.winnerHolderName}` : `${title.winnerHolderName} retained`}</span>
+                              </div>
+                            ))}
+                            {match.injuries.map((injury) => (
+                              <div className={`${styles.consequence} ${styles.injury}`} key={injury.injuryId}>
+                                <strong>{injury.personName} injured</strong>
+                                <span>{label(injury.severity)} · {injury.weeksOut} PPW week{injury.weeksOut === 1 ? "" : "s"} out</span>
+                              </div>
+                            ))}
+                            {match.finishChangedDueToInjury ? <div className={styles.warning}>Finish changed because of injury</div> : null}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </details>
+              ))}
+            </section>
+          )}
+        </>
+      ) : (
+        <>
+          {worldError ? <div className={styles.error}>{worldError}</div> : null}
+
+          {!worldView ? (
+            <section className={styles.panel}>
+              <p>{worldError ?? "Loading the World results timeline…"}</p>
+              {worldError ? <button className={styles.button} onClick={() => refreshWorld().catch(() => undefined)}>Retry</button> : null}
+            </section>
+          ) : (
+            <>
+              <section className={styles.worldIntro}>
+                <div><span>Recent shows</span><strong>{visibleWorldShows.length}</strong></div>
+                <div><span>Promotions</span><strong>{new Set(visibleWorldShows.map((show) => show.promotionId)).size}</strong></div>
+                <div><span>Title changes</span><strong>{visibleWorldShows.reduce((sum, show) => sum + show.titleChangeCount, 0)}</strong></div>
+                <div><span>Injuries</span><strong>{visibleWorldShows.reduce((sum, show) => sum + show.injuryCount, 0)}</strong></div>
+              </section>
+
+              <section className={styles.worldTools}>
+                <div>
+                  <span className={styles.eyebrow}>WORLD TIMELINE</span>
+                  <strong>Latest completed shows across PPW</strong>
+                </div>
+                <label>
+                  <span>Promotion</span>
+                  <select value={worldPromotionId} onChange={(event) => setWorldPromotionId(event.target.value)}>
+                    <option value="ALL">All promotions</option>
+                    {worldPromotions.map(([promotionId, promotionName]) => (
+                      <option value={promotionId} key={promotionId}>{promotionName}</option>
+                    ))}
+                  </select>
+                </label>
+              </section>
+
+              {visibleWorldShows.length === 0 ? (
+                <section className={styles.panel}><p>No completed shows match that promotion.</p></section>
+              ) : (
+                <section className={styles.history}>
+                  {visibleWorldShows.map((show, index) => (
+                    <details className={`${styles.showCard} ${show.isPlayerPromotion ? styles.playerWorldShow : ""}`} key={show.eventId} open={index === 0}>
+                      <summary className={styles.showSummary}>
+                        <div>
+                          <div className={styles.worldIdentity}>
+                            <span className={styles.eyebrow}>{show.promotionName} · {show.type} SHOW</span>
+                            {show.isPlayerPromotion ? <span className={styles.youBadge}>YOU</span> : null}
+                          </div>
+                          <strong>Year {show.date.year}, Week {show.date.week} · {show.venueName}</strong>
+                          <span>{show.marketName} · {integer(show.attendance)} attendance ({decimal(show.attendancePercentOfCapacity)}%)</span>
+                        </div>
+                        <div className={styles.worldRating}><span>BEST</span><strong>★ {decimal(show.bestMatchRating)}</strong></div>
+                      </summary>
+
+                      <div className={styles.showBody}>
+                        <div className={styles.metrics}>
+                          <div><span>Average</span><strong>★ {decimal(show.averageMatchRating)}</strong></div>
+                          <div><span>Best match</span><strong>★ {decimal(show.bestMatchRating)}</strong></div>
+                          <div><span>Crowd</span><strong>{decimal(show.crowdResponse)}</strong></div>
+                          <div><span>Capacity</span><strong>{decimal(show.attendancePercentOfCapacity)}%</strong></div>
+                          <div><span>Matches</span><strong>{show.matchCount}</strong></div>
+                          <div><span>Consequences</span><strong>{show.titleChangeCount} title · {show.injuryCount} inj.</strong></div>
+                        </div>
+
+                        <div className={styles.matches}>
+                          {show.matches.map((match) => {
+                            const sideA = match.participants.filter((participant) => participant.side === "A");
+                            const sideB = match.participants.filter((participant) => participant.side === "B");
+                            return (
+                              <article className={styles.matchCard} key={match.matchId}>
+                                <div className={styles.matchTop}>
+                                  <span>{match.isMainEvent ? "MAIN EVENT" : `MATCH ${match.order}`} · {label(match.type)}</span>
+                                  <strong>★ {decimal(match.criticalRatingStars)}</strong>
+                                </div>
+                                <div className={styles.versus}>
+                                  <div>{sideA.map((participant) => (
+                                    <a className={`${styles.participantLink} ${participant.won ? styles.winner : ""}`} href={`/talent/profile?personId=${encodeURIComponent(participant.personId)}`} key={participant.personId}>
+                                      {participant.name}{participant.won ? " ✓" : ""}
+                                    </a>
+                                  ))}</div>
+                                  <b>vs</b>
+                                  <div>{sideB.map((participant) => (
+                                    <a className={`${styles.participantLink} ${participant.won ? styles.winner : ""}`} href={`/talent/profile?personId=${encodeURIComponent(participant.personId)}`} key={participant.personId}>
+                                      {participant.name}{participant.won ? " ✓" : ""}
+                                    </a>
+                                  ))}</div>
+                                </div>
+                                <div className={styles.matchMeta}>
+                                  <span>{match.actualLengthMinutes} min</span>
+                                  <span>Crowd {decimal(match.crowdResponse)}</span>
+                                </div>
+                                {match.titleOutcomes.map((title) => (
+                                  <a className={`${styles.consequence} ${styles.titleLink}`} href="/championships" key={title.championshipId}>
+                                    <strong>{title.championshipName}</strong>
+                                    <span>{title.titleChanged ? `Title change → ${title.winnerHolderName}` : `${title.winnerHolderName} retained`}</span>
+                                  </a>
+                                ))}
+                                {match.injuries.map((injury) => (
+                                  <a className={`${styles.consequence} ${styles.injury} ${styles.titleLink}`} href={`/talent/profile?personId=${encodeURIComponent(injury.personId)}`} key={injury.injuryId}>
+                                    <strong>{injury.personName} injured</strong>
+                                    <span>{label(injury.severity)} · {injury.weeksOut} PPW week{injury.weeksOut === 1 ? "" : "s"} out</span>
+                                  </a>
+                                ))}
+                              </article>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </details>
+                  ))}
+                </section>
+              )}
+
+              <p className={styles.worldPrivacy}>World Results contains public wrestling history only. Rival gate revenue, costs, profit, contracts, private condition, booking intent and future plans remain hidden.</p>
+            </>
+          )}
+        </>
       )}
     </main>
   );
