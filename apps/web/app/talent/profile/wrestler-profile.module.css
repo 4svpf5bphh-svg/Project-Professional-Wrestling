@@ -16,7 +16,19 @@
   margin-right: auto;
 }
 
-.backLink { display: block; margin-bottom: 16px; color: #5de9ce; text-decoration: none; font-weight: 800; }
+.backLink {
+  display: block;
+  width: fit-content;
+  margin-bottom: 16px;
+  border: 0;
+  background: transparent;
+  color: #5de9ce;
+  padding: 0;
+  text-decoration: none;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
 .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
 .header h1, .sectionHeading h2 { margin: 4px 0 6px; }
 .header p, .panel p { margin: 0; color: #9eb4b2; }
