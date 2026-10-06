@@ -57,15 +57,21 @@ export function showFlowAudienceStrengthDelta(showFlowAdjustment: number): numbe
 }
 
 /**
- * Applies the frozen current-week show-flow consequence exactly once. The effect is
- * intentionally restricted to liveStrength: show pacing can heat or cool a territory,
- * but durable loyalty and awareness remain governed by the established audience model.
- * Exact before/after values are retained on the event ledger for historical truth.
+ * Applies the frozen current-week show-flow consequence exactly once for a human-run
+ * promotion. AI promotions retain the established event-quality market model during
+ * the ALPHA playtest so this new feedback loop cannot silently rebalance decade-scale
+ * AI booking/economy behavior before it has been tuned separately.
+ *
+ * The effect is intentionally restricted to liveStrength: show pacing can heat or
+ * cool a territory, but durable loyalty and awareness remain governed by the existing
+ * audience model. Exact before/after values are retained on event history.
  */
 export function applyCurrentWeekShowFlowAudienceConsequences(state: WorldState): number {
   let applied = 0;
   for (const event of state.events) {
     if (event.status !== "COMPLETED" || !sameWeek(event.date, state.world.currentDate)) continue;
+    const promotion = state.promotions.find((candidate) => candidate.id === event.promotionId);
+    if (!promotion || promotion.controllerType !== "HUMAN") continue;
 
     const eventLedger = eventCompletedLedgerEntry(state, event.id);
     if (!eventLedger || eventLedger.payload.showFlowFrozen !== true) continue;
