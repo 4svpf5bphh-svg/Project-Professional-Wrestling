@@ -190,19 +190,27 @@
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
 }
 
 .metrics div {
+  min-width: 0;
   background: #111a25;
   border-radius: 10px;
   padding: 9px;
 }
 
 .metrics strong {
+  display: block;
   font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeOver {
+  color: #ffad9f;
 }
 
 .people {
@@ -218,6 +226,82 @@
   border-radius: 999px;
   padding: 5px 8px;
   font-size: 0.78rem;
+}
+
+.runningOrder {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid #1e2a39;
+}
+
+.runningOrderHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  color: #dce7f5;
+}
+
+.runningOrderHeader span {
+  color: #7f8fa4;
+  font-size: .72rem;
+}
+
+.matchRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid #233144;
+  border-radius: 11px;
+  background: #101721;
+}
+
+.matchRow > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.matchRow > div strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .83rem;
+}
+
+.matchRow > div strong span,
+.matchRow small {
+  color: #8291a6;
+}
+
+.matchRow small {
+  font-size: .72rem;
+}
+
+.matchNumber {
+  color: #7fa8bd;
+  font-size: .7rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.matchRow > b {
+  border: 1px solid rgba(244, 206, 114, .32);
+  border-radius: 999px;
+  background: rgba(244, 206, 114, .08);
+  color: #f4ce72;
+  padding: 4px 7px;
+  font-size: .62rem;
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+
+.mainEventRow {
+  border-color: rgba(244, 206, 114, .38);
 }
 
 .warning {
@@ -359,6 +443,12 @@
   margin: 14px 2px 0;
 }
 
+@media (max-width: 820px) {
+  .metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 640px) {
   .shell {
     padding: 18px 12px 40px;
@@ -382,11 +472,26 @@
   .showTop {
     align-items: flex-start;
   }
+
+  .matchRow {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .matchRow > b {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 
 @media (max-width: 430px) {
   .editorGrid,
   .talentGrid {
     grid-template-columns: 1fr;
+  }
+
+  .runningOrderHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
   }
 }
