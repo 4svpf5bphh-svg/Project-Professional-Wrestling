@@ -5,6 +5,12 @@ import type { PlayerWrestlerProfileView } from "../../../../../dist/packages/app
 import styles from "./wrestler-profile.module.css";
 
 type ErrorPayload = { error?: string };
+export type WrestlerProfileOrigin = "talent" | "directory" | "industry";
+
+type BackDestination = {
+  href: string;
+  label: string;
+};
 
 function isErrorPayload(payload: PlayerWrestlerProfileView | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
@@ -32,9 +38,22 @@ function matchDescription(match: PlayerWrestlerProfileView["recentMatches"][numb
   return `${label(match.type)}${allies}${opponents}`;
 }
 
-export default function WrestlerProfileClient({ personId }: { personId: string }): React.JSX.Element {
+function backDestination(origin: WrestlerProfileOrigin): BackDestination {
+  if (origin === "industry") return { href: "/industry", label: "Industry" };
+  if (origin === "talent") return { href: "/talent", label: "Talent management" };
+  return { href: "/talent/directory", label: "Wrestler profiles" };
+}
+
+export default function WrestlerProfileClient({
+  personId,
+  origin,
+}: {
+  personId: string;
+  origin: WrestlerProfileOrigin;
+}): React.JSX.Element {
   const [view, setView] = useState<PlayerWrestlerProfileView | null>(null);
   const [error, setError] = useState<string | null>(personId ? null : "No wrestler was selected.");
+  const back = backDestination(origin);
 
   useEffect(() => {
     if (!personId) return;
@@ -50,10 +69,29 @@ export default function WrestlerProfileClient({ personId }: { personId: string }
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Unable to load wrestler profile"));
   }, [personId]);
 
+  function returnToOrigin(): void {
+    if (typeof window !== "undefined" && document.referrer) {
+      try {
+        const referrer = new URL(document.referrer);
+        if (referrer.origin === window.location.origin) {
+          window.history.back();
+          return;
+        }
+      } catch {
+        // Fall through to the known-safe origin below.
+      }
+    }
+    window.location.assign(back.href);
+  }
+
+  const backControl = (
+    <button className={styles.backLink} type="button" onClick={returnToOrigin}>← {back.label}</button>
+  );
+
   if (!view) {
     return (
       <main className={styles.shell}>
-        <a className={styles.backLink} href="/talent/directory">← Wrestler profiles</a>
+        {backControl}
         <section className={error ? styles.error : styles.panel}>{error ?? "Loading wrestler profile…"}</section>
       </main>
     );
@@ -64,7 +102,7 @@ export default function WrestlerProfileClient({ personId }: { personId: string }
 
   return (
     <main className={styles.shell}>
-      <a className={styles.backLink} href="/talent/directory">← Wrestler profiles</a>
+      {backControl}
       <header className={styles.header}>
         <div>
           <span className={styles.eyebrow}>{label(view.person.careerStage)} · {label(view.person.status)}</span>
@@ -109,7 +147,7 @@ export default function WrestlerProfileClient({ personId }: { personId: string }
                 <span>Fatigue <b>{Math.round(relationship.fatigue ?? 0)}</b></span>
                 <span>Wear <b>{Math.round(relationship.wear ?? 0)}</b></span>
               </div>
-            ) : <p className={styles.note}>Another promotion's private contract terms, Morale, fatigue and Wear are not exposed here.</p>}
+            ) : <p className={styles.note}>Another promotion&apos;s private contract terms, Morale, fatigue and Wear are not exposed here.</p>}
           </>
         )}
       </section>
