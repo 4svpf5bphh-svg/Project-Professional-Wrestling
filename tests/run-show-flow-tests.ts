@@ -162,7 +162,7 @@ test("a card that builds toward intensity outperforms one that burns hot then fi
     wellBuilt.crowdResponse > burnedThenFlat.crowdResponse + 0.5,
     `well-built flow ${wellBuilt.crowdResponse} should beat burned/flat flow ${burnedThenFlat.crowdResponse}`,
   );
-  ok(wellBuilt.matches.at(-1)?.pacingReason === "BIG_CLOSER", "hot closer did not retain an explainable pacing reason");
+  ok(wellBuilt.matches.at(-1)?.pacingReason === "BACK_TO_BACK_INTENSITY", "high-intensity closer did not retain its dominant fatigue signal");
   ok(burnedThenFlat.matches.at(-1)?.pacingReason === "FLAT_CLOSER", "flat closer did not retain an explainable pacing reason");
 });
 
