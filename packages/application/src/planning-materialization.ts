@@ -16,6 +16,7 @@ import {
 } from "../../sim-core/src/human-booking.js";
 import { bookHumanChampionshipMatch } from "../../sim-core/src/human-championships.js";
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
+import { defaultPlannedFinishForIntent } from "../../sim-core/src/match-finishes.js";
 import type {
   DetailedShowDraft,
   DetailedShowReservation,
@@ -265,6 +266,7 @@ function completeCardPlans(
       intendedWinnerSide: match.intendedWinnerSide,
       intent: match.intent,
       plannedLengthMinutes: match.plannedLengthMinutes,
+      plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
     });
     draftMatchIds.push(match.draftMatchId);
   }

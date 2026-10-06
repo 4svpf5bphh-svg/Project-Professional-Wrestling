@@ -24,6 +24,8 @@ type ShowCardBody = {
   championshipAssignments?: unknown;
 };
 
+type BookableFinish = NonNullable<AlphaCardMatchView["plannedFinish"]>;
+
 const MATCH_TYPES = new Set<MatchType>(["SINGLES", "TAG"]);
 const MATCH_SIDES = new Set<MatchSide>(["A", "B"]);
 const MATCH_INTENTS = new Set<MatchIntent>([
@@ -35,6 +37,12 @@ const MATCH_INTENTS = new Set<MatchIntent>([
   "STORY",
   "PROTECTIVE",
   "EPIC",
+]);
+const MATCH_FINISHES = new Set<BookableFinish>([
+  "CLEAN_PIN",
+  "SUBMISSION",
+  "FLASH_PIN",
+  "PROTECTED_FINISH",
 ]);
 
 function requiredText(value: unknown, label: string, maxLength: number): string {
@@ -81,9 +89,14 @@ function matches(value: unknown): AlphaCardMatchView[] {
       8,
     ) as MatchSide;
     const intent = requiredText(candidate.intent, `matches[${index}].intent`, 32) as MatchIntent;
+    const plannedFinishText = optionalText(candidate.plannedFinish, `matches[${index}].plannedFinish`, 32);
+    const plannedFinish = plannedFinishText as BookableFinish | undefined;
     if (!MATCH_TYPES.has(type)) throw new Error(`unsupported match type ${type}`);
     if (!MATCH_SIDES.has(intendedWinnerSide)) throw new Error("intended winner side must be A or B");
     if (!MATCH_INTENTS.has(intent)) throw new Error(`unsupported match intent ${intent}`);
+    if (plannedFinish !== undefined && !MATCH_FINISHES.has(plannedFinish)) {
+      throw new Error(`unsupported match finish ${plannedFinish}`);
+    }
 
     return {
       draftMatchId: requiredText(candidate.draftMatchId, `matches[${index}].draftMatchId`, 128),
@@ -93,6 +106,7 @@ function matches(value: unknown): AlphaCardMatchView[] {
       intendedWinnerSide,
       intent,
       plannedLengthMinutes: plannedLength(candidate.plannedLengthMinutes, `matches[${index}].plannedLengthMinutes`),
+      ...(plannedFinish === undefined ? {} : { plannedFinish }),
     };
   });
 }

@@ -18,6 +18,8 @@ type ParticipantBooking = {
   slotIndex: number;
 };
 
+type BookableFinish = NonNullable<AlphaCardMatchView["plannedFinish"]>;
+
 const SHOW_TIME_GUIDE_MINUTES = 120;
 const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
   "COMPETITIVE",
@@ -29,6 +31,12 @@ const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
   "PROTECTIVE",
   "EPIC",
 ];
+const MATCH_FINISHES: BookableFinish[] = [
+  "CLEAN_PIN",
+  "SUBMISSION",
+  "FLASH_PIN",
+  "PROTECTED_FINISH",
+];
 
 function isErrorPayload(payload: AlphaCurrentWeekCardView | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
@@ -36,6 +44,19 @@ function isErrorPayload(payload: AlphaCurrentWeekCardView | ErrorPayload): paylo
 
 function intentLabel(value: AlphaCardMatchView["intent"]): string {
   return value.replaceAll("_", " ");
+}
+
+function defaultFinishForIntent(intent: AlphaCardMatchView["intent"]): BookableFinish {
+  if (intent === "TECHNICAL") return "SUBMISSION";
+  if (intent === "STORY" || intent === "PROTECTIVE") return "PROTECTED_FINISH";
+  return "CLEAN_PIN";
+}
+
+function finishLabel(value: BookableFinish): string {
+  if (value === "CLEAN_PIN") return "Clean pin";
+  if (value === "SUBMISSION") return "Submission";
+  if (value === "FLASH_PIN") return "Flash pin";
+  return "Protected / controversial";
 }
 
 function freshMatchId(): string {
@@ -47,6 +68,7 @@ function defaultCard(view: AlphaCurrentWeekCardView): AlphaCardMatchView[] {
     ...match,
     sideAIds: [...match.sideAIds],
     sideBIds: [...match.sideBIds],
+    plannedFinish: match.plannedFinish ?? defaultFinishForIntent(match.intent),
   }));
 
   const matches: AlphaCardMatchView[] = [];
@@ -62,6 +84,7 @@ function defaultCard(view: AlphaCurrentWeekCardView): AlphaCardMatchView[] {
       intendedWinnerSide: "A",
       intent: "COMPETITIVE",
       plannedLengthMinutes: 12,
+      plannedFinish: "CLEAN_PIN",
     });
   }
   return matches;
@@ -279,6 +302,7 @@ export default function CardClient(): React.JSX.Element {
         intendedWinnerSide: first.intendedWinnerSide,
         intent: first.intent,
         plannedLengthMinutes: Math.min(60, Math.max(8, first.plannedLengthMinutes + second.plannedLengthMinutes - 5)),
+        plannedFinish: first.plannedFinish ?? defaultFinishForIntent(first.intent),
       });
       return next;
     });
@@ -295,6 +319,7 @@ export default function CardClient(): React.JSX.Element {
       if (!match || match.type !== "TAG") return current;
       if ([...match.sideAIds, ...match.sideBIds].some((personId) => !personId)) return current;
       const length = Math.max(3, Math.floor(match.plannedLengthMinutes / 2));
+      const plannedFinish = match.plannedFinish ?? defaultFinishForIntent(match.intent);
       const next = cloneCard(current);
       next.splice(matchIndex, 1,
         {
@@ -305,6 +330,7 @@ export default function CardClient(): React.JSX.Element {
           intendedWinnerSide: match.intendedWinnerSide,
           intent: match.intent,
           plannedLengthMinutes: length,
+          plannedFinish,
         },
         {
           draftMatchId: freshMatchId(),
@@ -314,6 +340,7 @@ export default function CardClient(): React.JSX.Element {
           intendedWinnerSide: match.intendedWinnerSide,
           intent: match.intent,
           plannedLengthMinutes: length,
+          plannedFinish,
         },
       );
       return next;
@@ -468,12 +495,13 @@ export default function CardClient(): React.JSX.Element {
               ? view.championships.find((championship) => championship.championshipId === assignment.championshipId)
               : undefined;
             const context = recentContext(match);
+            const plannedFinish = match.plannedFinish ?? defaultFinishForIntent(match.intent);
             return (
               <article className={`${styles.matchCard} ${isMainEvent ? styles.mainEventCard : ""}`} key={match.draftMatchId}>
                 <div className={styles.matchHeader}>
                   <div>
                     <strong>Match {matchIndex + 1} · {match.type === "TAG" ? "Tag Team" : "Singles"}</strong>
-                    <div className={styles.matchMeta}>{match.plannedLengthMinutes} min · {intentLabel(match.intent)}</div>
+                    <div className={styles.matchMeta}>{match.plannedLengthMinutes} min · {intentLabel(match.intent)} · {finishLabel(plannedFinish)}</div>
                   </div>
                   {isMainEvent ? <span className={styles.mainEvent}>MAIN EVENT</span> : null}
                 </div>
@@ -555,6 +583,16 @@ export default function CardClient(): React.JSX.Element {
                     </select>
                   </div>
                   <div className={styles.control}>
+                    <label>Finish</label>
+                    <select
+                      value={plannedFinish}
+                      disabled={!view.canEdit}
+                      onChange={(event) => updateMatch(matchIndex, { plannedFinish: event.target.value as BookableFinish })}
+                    >
+                      {MATCH_FINISHES.map((finish) => <option key={finish} value={finish}>{finishLabel(finish)}</option>)}
+                    </select>
+                  </div>
+                  <div className={styles.control}>
                     <label>Minutes</label>
                     <MatchDurationInput
                       value={match.plannedLengthMinutes}
@@ -622,6 +660,7 @@ export default function CardClient(): React.JSX.Element {
           })}
         </div>
 
+        <p className={styles.hint}>Winner and finish are separate choices. A protected / controversial finish protects the loser more but can hurt the crowd when it clashes with the match intent. Injury stoppages can still override what you booked.</p>
         <p className={styles.hint}>To change a pairing, set a slot to Unassigned first. Wrestlers already booked elsewhere stay greyed out and show the match they are currently in; nothing is silently swapped.</p>
         {!cardComplete ? (
           <div className={styles.assignmentWarning}>

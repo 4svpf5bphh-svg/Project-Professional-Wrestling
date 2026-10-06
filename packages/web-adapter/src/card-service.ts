@@ -18,6 +18,11 @@ import {
   type DetailedMatchDraft,
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
+import {
+  defaultPlannedFinishForIntent,
+  isBookableMatchFinish,
+  type MatchFinish,
+} from "../../sim-core/src/match-finishes.js";
 
 export interface AlphaCardParticipantView {
   personId: Id;
@@ -35,6 +40,7 @@ export interface AlphaCardMatchView {
   intendedWinnerSide: MatchSide;
   intent: MatchIntent;
   plannedLengthMinutes: number;
+  plannedFinish?: MatchFinish;
 }
 
 export interface AlphaCardChampionshipView {
@@ -143,6 +149,8 @@ function normalizeCompleteCard(
     if (!MATCH_TYPES.has(match.type)) throw new Error(`unsupported match type ${String(match.type)}`);
     if (!MATCH_SIDES.has(match.intendedWinnerSide)) throw new Error("intended winner side must be A or B");
     if (!MATCH_INTENTS.has(match.intent)) throw new Error(`unsupported match intent ${String(match.intent)}`);
+    const plannedFinish = match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent);
+    if (!isBookableMatchFinish(plannedFinish)) throw new Error("planned match finish must be clean, submission, flash or protected");
     if (!Number.isInteger(match.plannedLengthMinutes) || match.plannedLengthMinutes < 3 || match.plannedLengthMinutes > 60) {
       throw new Error("planned match length must be an integer from 3 to 60 minutes");
     }
@@ -168,6 +176,7 @@ function normalizeCompleteCard(
       intendedWinnerSide: match.intendedWinnerSide,
       intent: match.intent,
       plannedLengthMinutes: match.plannedLengthMinutes,
+      plannedFinish,
     } satisfies DetailedMatchDraft;
   });
 
@@ -438,6 +447,7 @@ export async function loadAlphaShowCard(
           intendedWinnerSide: match.intendedWinnerSide,
           intent: match.intent,
           plannedLengthMinutes: match.plannedLengthMinutes,
+          plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
         } satisfies AlphaCardMatchView]
         : []
     )),

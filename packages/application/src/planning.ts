@@ -7,6 +7,7 @@ import type {
   TicketStrategy,
   WorldState,
 } from "../../domain/src/types.js";
+import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
 
 export const DETAILED_PLANNING_HORIZON_WEEKS = 6 as const;
 
@@ -18,6 +19,7 @@ export interface DetailedMatchDraft {
   intendedWinnerSide: MatchSide | null;
   intent: MatchIntent | null;
   plannedLengthMinutes: number | null;
+  plannedFinish?: MatchFinish;
 }
 
 export interface ChampionshipDraftAssignment {
@@ -88,6 +90,12 @@ const MATCH_INTENTS = new Set<MatchIntent>([
   "PROTECTIVE",
   "EPIC",
 ]);
+const BOOKABLE_MATCH_FINISHES = new Set<MatchFinish>([
+  "CLEAN_PIN",
+  "SUBMISSION",
+  "FLASH_PIN",
+  "PROTECTED_FINISH",
+]);
 
 function normalizedId(value: string, label: string, maxLength = 128): string {
   const normalized = value.trim();
@@ -143,6 +151,9 @@ function validateMatchDraft(
   ) {
     throw new Error("draft planned match length must be an integer from 3 to 60 minutes or null");
   }
+  if (draft.plannedFinish !== undefined && !BOOKABLE_MATCH_FINISHES.has(draft.plannedFinish)) {
+    throw new Error("draft planned match finish must be clean, submission, flash or protected");
+  }
 
   return {
     draftMatchId,
@@ -152,6 +163,7 @@ function validateMatchDraft(
     intendedWinnerSide: draft.intendedWinnerSide,
     intent: draft.intent,
     plannedLengthMinutes: draft.plannedLengthMinutes,
+    ...(draft.plannedFinish === undefined ? {} : { plannedFinish: draft.plannedFinish }),
   };
 }
 
