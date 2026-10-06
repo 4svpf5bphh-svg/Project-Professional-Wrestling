@@ -6,11 +6,19 @@ import type {
   AlphaCardMatchView,
   AlphaChampionshipAssignmentView,
   AlphaCurrentWeekCardView,
+  AlphaRecentMeetingView,
 } from "../../../../dist/packages/web-adapter/src/card-service.js";
 import styles from "./card.module.css";
 
 type ErrorPayload = { error?: string };
 
+type ParticipantBooking = {
+  matchIndex: number;
+  side: "A" | "B";
+  slotIndex: number;
+};
+
+const SHOW_TIME_GUIDE_MINUTES = 120;
 const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
   "COMPETITIVE",
   "SHOWCASE",
@@ -169,33 +177,50 @@ export default function CardClient(): React.JSX.Element {
   }
 
   function participantName(personId: string): string {
+    if (!personId) return "Unassigned";
     return view?.participants.find((person) => person.personId === personId)?.name ?? personId;
   }
 
   function sideName(match: AlphaCardMatchView, side: "A" | "B"): string {
     const ids = side === "A" ? match.sideAIds : match.sideBIds;
-    return ids.map(participantName).join(" & ");
+    const names = ids.filter(Boolean).map(participantName);
+    return names.length > 0 ? names.join(" & ") : "Unassigned";
   }
 
   function assignmentForMatch(draftMatchId: string): AlphaChampionshipAssignmentView | undefined {
     return titleAssignments.find((assignment) => assignment.draftMatchId === draftMatchId);
   }
 
-  function swapParticipant(matchIndex: number, side: "A" | "B", slotIndex: number, nextPersonId: string): void {
+  function bookingForPerson(personId: string): ParticipantBooking | null {
+    for (let matchIndex = 0; matchIndex < card.length; matchIndex += 1) {
+      const match = card[matchIndex]!;
+      const sideAIndex = match.sideAIds.indexOf(personId);
+      if (sideAIndex >= 0) return { matchIndex, side: "A", slotIndex: sideAIndex };
+      const sideBIndex = match.sideBIds.indexOf(personId);
+      if (sideBIndex >= 0) return { matchIndex, side: "B", slotIndex: sideBIndex };
+    }
+    return null;
+  }
+
+  function setParticipant(
+    matchIndex: number,
+    side: "A" | "B",
+    slotIndex: number,
+    nextPersonId: string,
+  ): void {
+    const occupied = nextPersonId ? bookingForPerson(nextPersonId) : null;
+    if (
+      occupied
+      && (occupied.matchIndex !== matchIndex || occupied.side !== side || occupied.slotIndex !== slotIndex)
+    ) return;
+
     setCard((current) => {
       const next = cloneCard(current);
       const targetMatch = next[matchIndex];
       if (!targetMatch) return current;
       const targetSide = side === "A" ? targetMatch.sideAIds : targetMatch.sideBIds;
-      const previousPersonId = targetSide[slotIndex];
-      if (!previousPersonId || previousPersonId === nextPersonId) return current;
-
-      for (const match of next) {
-        match.sideAIds = match.sideAIds.map((personId) => personId === nextPersonId ? previousPersonId : personId);
-        match.sideBIds = match.sideBIds.map((personId) => personId === nextPersonId ? previousPersonId : personId);
-      }
-      const refreshedTarget = side === "A" ? next[matchIndex]!.sideAIds : next[matchIndex]!.sideBIds;
-      refreshedTarget[slotIndex] = nextPersonId;
+      if (targetSide[slotIndex] === nextPersonId) return current;
+      targetSide[slotIndex] = nextPersonId;
       return next;
     });
     markDirty();
@@ -243,6 +268,8 @@ export default function CardClient(): React.JSX.Element {
       const first = current[matchIndex];
       const second = current[matchIndex + 1];
       if (!first || !second || first.type !== "SINGLES" || second.type !== "SINGLES") return current;
+      const ids = [...first.sideAIds, ...first.sideBIds, ...second.sideAIds, ...second.sideBIds];
+      if (ids.some((personId) => !personId)) return current;
       const next = cloneCard(current);
       next.splice(matchIndex, 2, {
         draftMatchId: first.draftMatchId,
@@ -266,6 +293,7 @@ export default function CardClient(): React.JSX.Element {
     setCard((current) => {
       const match = current[matchIndex];
       if (!match || match.type !== "TAG") return current;
+      if ([...match.sideAIds, ...match.sideBIds].some((personId) => !personId)) return current;
       const length = Math.max(3, Math.floor(match.plannedLengthMinutes / 2));
       const next = cloneCard(current);
       next.splice(matchIndex, 1,
@@ -293,8 +321,47 @@ export default function CardClient(): React.JSX.Element {
     markDirty();
   }
 
+  function meetingForPair(leftId: string, rightId: string): AlphaRecentMeetingView | undefined {
+    if (!view || !leftId || !rightId) return undefined;
+    return view.recentMeetings.find((meeting) => (
+      (meeting.personAId === leftId && meeting.personBId === rightId)
+      || (meeting.personAId === rightId && meeting.personBId === leftId)
+    ));
+  }
+
+  function recentContext(match: AlphaCardMatchView): string | null {
+    if (!view) return null;
+    let latest: AlphaRecentMeetingView | undefined;
+    for (const leftId of match.sideAIds.filter(Boolean)) {
+      for (const rightId of match.sideBIds.filter(Boolean)) {
+        const meeting = meetingForPair(leftId, rightId);
+        if (meeting && (!latest || meeting.weeksAgo < latest.weeksAgo)) latest = meeting;
+      }
+    }
+    if (!latest) return null;
+    const winners = latest.winnerPersonIds
+      .filter((personId) => view.participants.some((person) => person.personId === personId))
+      .map(participantName);
+    const ago = latest.weeksAgo === 0 ? "this week" : `${latest.weeksAgo} week${latest.weeksAgo === 1 ? "" : "s"} ago`;
+    return `Last faced: Year ${latest.year}, Week ${latest.week} · ${ago}${winners.length > 0 ? ` · ${winners.join(" & ")} won` : ""}`;
+  }
+
+  const assignedIds = card.flatMap((match) => [...match.sideAIds, ...match.sideBIds]).filter(Boolean);
+  const uniqueAssignedIds = new Set(assignedIds);
+  const unassignedParticipants = view
+    ? view.participants.filter((person) => !uniqueAssignedIds.has(person.personId))
+    : [];
+  const cardComplete = Boolean(
+    view
+    && assignedIds.length === view.participants.length
+    && uniqueAssignedIds.size === view.participants.length
+    && unassignedParticipants.length === 0,
+  );
+  const bookedMinutes = card.reduce((sum, match) => sum + match.plannedLengthMinutes, 0);
+  const minutesRemaining = SHOW_TIME_GUIDE_MINUTES - bookedMinutes;
+
   async function saveCard(): Promise<void> {
-    if (!view || !view.canEdit || saving) return;
+    if (!view || !view.canEdit || saving || !cardComplete) return;
     setSaving(true);
     setError(null);
     if (!requestId.current) requestId.current = crypto.randomUUID();
@@ -385,18 +452,24 @@ export default function CardClient(): React.JSX.Element {
         <div className={styles.summary}>
           <div><span>Market</span><strong>{view.marketName}</strong></div>
           <div><span>Talent committed</span><strong>{view.participants.length}</strong></div>
+          <div><span>Match time booked</span><strong>{bookedMinutes} / {SHOW_TIME_GUIDE_MINUTES} min</strong></div>
+          <div><span>Time remaining</span><strong className={minutesRemaining < 0 ? styles.timeOver : undefined}>{minutesRemaining >= 0 ? `${minutesRemaining} min` : `${Math.abs(minutesRemaining)} min over`}</strong></div>
         </div>
+        <p className={styles.timeGuide}>120 minutes is an Alpha planning guide, not a simulation limit.</p>
 
         <div className={styles.cardList}>
           {card.map((match, matchIndex) => {
             const isMainEvent = matchIndex === card.length - 1;
-            const canMerge = match.type === "SINGLES" && card[matchIndex + 1]?.type === "SINGLES";
+            const canMerge = match.type === "SINGLES"
+              && card[matchIndex + 1]?.type === "SINGLES"
+              && [...match.sideAIds, ...match.sideBIds, ...card[matchIndex + 1]!.sideAIds, ...card[matchIndex + 1]!.sideBIds].every(Boolean);
             const assignment = assignmentForMatch(match.draftMatchId);
             const selectedChampionship = assignment
               ? view.championships.find((championship) => championship.championshipId === assignment.championshipId)
               : undefined;
+            const context = recentContext(match);
             return (
-              <article className={styles.matchCard} key={match.draftMatchId}>
+              <article className={`${styles.matchCard} ${isMainEvent ? styles.mainEventCard : ""}`} key={match.draftMatchId}>
                 <div className={styles.matchHeader}>
                   <div>
                     <strong>Match {matchIndex + 1} · {match.type === "TAG" ? "Tag Team" : "Singles"}</strong>
@@ -414,9 +487,19 @@ export default function CardClient(): React.JSX.Element {
                         key={`A-${slotIndex}`}
                         value={personId}
                         disabled={!view.canEdit}
-                        onChange={(event) => swapParticipant(matchIndex, "A", slotIndex, event.target.value)}
+                        onChange={(event) => setParticipant(matchIndex, "A", slotIndex, event.target.value)}
                       >
-                        {view.participants.map((person) => <option key={person.personId} value={person.personId}>{person.name}</option>)}
+                        <option value="">Unassigned</option>
+                        {view.participants.map((person) => {
+                          const booking = bookingForPerson(person.personId);
+                          const isCurrent = person.personId === personId;
+                          const unavailable = Boolean(booking && !isCurrent);
+                          return (
+                            <option key={person.personId} value={person.personId} disabled={unavailable}>
+                              {person.name}{unavailable && booking ? ` — Booked · Match ${booking.matchIndex + 1}` : ""}
+                            </option>
+                          );
+                        })}
                       </select>
                     ))}
                   </div>
@@ -429,13 +512,25 @@ export default function CardClient(): React.JSX.Element {
                         key={`B-${slotIndex}`}
                         value={personId}
                         disabled={!view.canEdit}
-                        onChange={(event) => swapParticipant(matchIndex, "B", slotIndex, event.target.value)}
+                        onChange={(event) => setParticipant(matchIndex, "B", slotIndex, event.target.value)}
                       >
-                        {view.participants.map((person) => <option key={person.personId} value={person.personId}>{person.name}</option>)}
+                        <option value="">Unassigned</option>
+                        {view.participants.map((person) => {
+                          const booking = bookingForPerson(person.personId);
+                          const isCurrent = person.personId === personId;
+                          const unavailable = Boolean(booking && !isCurrent);
+                          return (
+                            <option key={person.personId} value={person.personId} disabled={unavailable}>
+                              {person.name}{unavailable && booking ? ` — Booked · Match ${booking.matchIndex + 1}` : ""}
+                            </option>
+                          );
+                        })}
                       </select>
                     ))}
                   </div>
                 </div>
+
+                {context ? <div className={styles.recentContext}>{context}</div> : null}
 
                 <div className={styles.controls}>
                   <div className={styles.control}>
@@ -517,7 +612,7 @@ export default function CardClient(): React.JSX.Element {
                   <button className={styles.secondaryButton} disabled={!view.canEdit || matchIndex === 0} onClick={() => moveMatch(matchIndex, -1)}>↑ Earlier</button>
                   <button className={styles.secondaryButton} disabled={!view.canEdit || isMainEvent} onClick={() => moveMatch(matchIndex, 1)}>↓ Later</button>
                   {match.type === "TAG" ? (
-                    <button className={styles.secondaryButton} disabled={!view.canEdit} onClick={() => splitTag(matchIndex)}>Split to singles</button>
+                    <button className={styles.secondaryButton} disabled={!view.canEdit || [...match.sideAIds, ...match.sideBIds].some((personId) => !personId)} onClick={() => splitTag(matchIndex)}>Split to singles</button>
                   ) : (
                     <button className={styles.secondaryButton} disabled={!view.canEdit || !canMerge} onClick={() => mergeWithNext(matchIndex)}>Merge next → tag</button>
                   )}
@@ -527,10 +622,15 @@ export default function CardClient(): React.JSX.Element {
           })}
         </div>
 
-        <p className={styles.hint}>To change pairings, choose a wrestler in any slot. The planner swaps them with whoever currently occupies that wrestler&apos;s slot, so nobody is duplicated or lost.</p>
+        <p className={styles.hint}>To change a pairing, set a slot to Unassigned first. Wrestlers already booked elsewhere stay greyed out and show the match they are currently in; nothing is silently swapped.</p>
+        {!cardComplete ? (
+          <div className={styles.assignmentWarning}>
+            Complete the card before saving. Unassigned talent: {unassignedParticipants.length > 0 ? unassignedParticipants.map((person) => person.name).join(", ") : "check empty match slots"}.
+          </div>
+        ) : null}
 
         <div className={styles.saveBar}>
-          <button className="primary-button" disabled={!view.canEdit || saving || card.length === 0} onClick={saveCard}>
+          <button className="primary-button" disabled={!view.canEdit || saving || card.length === 0 || !cardComplete} onClick={saveCard}>
             {saving ? "Saving card…" : saved ? "Save card again" : "Save complete card"}
           </button>
           {saved ? <div className={styles.saved}>✓ Manual card saved to the reserved show</div> : null}
