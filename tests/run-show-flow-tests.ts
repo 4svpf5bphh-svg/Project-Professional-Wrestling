@@ -125,6 +125,20 @@ function attachSinglesParticipants(
   );
 }
 
+function addMatchLedger(state: WorldState, event: WrestlingEvent, match: Match, order: number): void {
+  state.ledger.push({
+    id: `${match.id}:ledger`,
+    worldId: state.world.id,
+    date: { ...event.date },
+    order,
+    type: "MATCH_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: [match.id, event.id],
+    payload: { crowd: match.crowdResponse },
+  });
+}
+
 test("a card that builds toward intensity outperforms one that burns hot then finishes flat", () => {
   const { state, event, personIds } = fixture(84101);
   const story = completedMatch(state, event, "flow-story", 1, "STORY");
@@ -148,6 +162,8 @@ test("a card that builds toward intensity outperforms one that burns hot then fi
     wellBuilt.crowdResponse > burnedThenFlat.crowdResponse + 0.5,
     `well-built flow ${wellBuilt.crowdResponse} should beat burned/flat flow ${burnedThenFlat.crowdResponse}`,
   );
+  ok(wellBuilt.matches.at(-1)?.pacingReason === "BIG_CLOSER", "hot closer did not retain an explainable pacing reason");
+  ok(burnedThenFlat.matches.at(-1)?.pacingReason === "FLAT_CLOSER", "flat closer did not retain an explainable pacing reason");
 });
 
 test("face versus heel clarity adds a modest emotional hook without becoming match quality", () => {
@@ -163,6 +179,8 @@ test("face versus heel clarity adds a modest emotional hook without becoming mat
   const sameSide = evaluateShowFlow(state, event, [match]);
 
   ok(clear.crowdResponse > sameSide.crowdResponse + 1.5, "face/heel clarity did not create the intended modest crowd edge");
+  ok(clear.matches[0]?.alignmentReason === "FACE_HEEL_CLARITY", "alignment edge did not retain its reason");
+  ok(sameSide.matches[0]?.alignmentReason === "SAME_ALIGNMENT", "same-side matchup did not retain its reason");
   ok(match.crowdResponse === 68, "show-flow evaluation rewrote the underlying match crowd response");
 });
 
@@ -213,18 +231,26 @@ test("hot fresh Programmes help while repetition can exhaust the same story", ()
   state.programmes[0]!.repetition = 95;
   const exhausted = evaluateShowFlow(state, event, [match]);
   ok(fresh.crowdResponse > exhausted.crowdResponse + 2.5, "Programme repetition did not meaningfully offset hot-story investment");
+  ok(fresh.matches[0]?.programmeReason === "HOT_PROGRAMME", "fresh hot Programme did not retain its crowd reason");
+  ok(exhausted.matches[0]?.programmeReason === "PROGRAMME_REPETITION", "overexposed Programme did not retain its crowd reason");
 });
 
-test("weekly show-flow application is idempotent and mutates only event-level crowd context", () => {
+test("weekly show-flow freezes exact historical evidence and remains retry-safe", () => {
   const { state, event, personIds } = fixture(84104);
   const first = completedMatch(state, event, "apply-flow-a", 1, "STORY", 62);
   const second = completedMatch(state, event, "apply-flow-b", 2, "EPIC", 78);
   attachSinglesParticipants(state, event, first, personIds[0]!, personIds[1]!);
   attachSinglesParticipants(state, event, second, personIds[2]!, personIds[3]!);
+  setWrestlerAlignment(state.people.find((person) => person.id === personIds[0])!, "FACE");
+  setWrestlerAlignment(state.people.find((person) => person.id === personIds[1])!, "HEEL");
+  setWrestlerAlignment(state.people.find((person) => person.id === personIds[2])!, "FACE");
+  setWrestlerAlignment(state.people.find((person) => person.id === personIds[3])!, "HEEL");
   state.events.push(event);
   state.matches.push(first, second);
   event.matchCount = 2;
   event.crowdResponse = 70;
+  addMatchLedger(state, event, first, 997);
+  addMatchLedger(state, event, second, 998);
   state.ledger.push({
     id: "show-flow-ledger",
     worldId: state.world.id,
@@ -240,12 +266,19 @@ test("weekly show-flow application is idempotent and mutates only event-level cr
 
   ok(applyCurrentWeekShowFlow(state) === 1, "current show was not evaluated");
   const firstCrowd = event.crowdResponse;
-  const firstLedgerCrowd = state.ledger.at(-1)!.payload.crowdResponse;
-  ok(applyCurrentWeekShowFlow(state) === 1, "idempotent retry did not re-evaluate the same show");
-  ok(event.crowdResponse === firstCrowd, "show-flow retry changed the result");
-  ok(state.ledger.at(-1)!.payload.crowdResponse === firstLedgerCrowd, "ledger crowd changed on retry");
+  const eventLedger = state.ledger.find((entry) => entry.id === "show-flow-ledger")!;
+  const secondMatchLedger = state.ledger.find((entry) => entry.id === `${second.id}:ledger`)!;
+  ok(eventLedger.payload.showFlowFrozen === true, "event ledger did not freeze show-flow history");
+  ok(typeof eventLedger.payload.showFlowBaseCrowdResponse === "number", "event ledger did not retain the pre-flow crowd baseline");
+  ok(eventLedger.payload.showFlowAdjustment !== undefined, "event ledger did not retain show-flow adjustment");
+  ok(secondMatchLedger.payload.showFlowPacingReason === "BIG_CLOSER", "match ledger did not retain pacing reason");
+  ok(secondMatchLedger.payload.showFlowAdjustedCrowd !== undefined, "match ledger did not retain adjusted crowd evidence");
+
+  setWrestlerAlignment(state.people.find((person) => person.id === personIds[2])!, "HEEL");
+  event.crowdResponse = 1;
+  ok(applyCurrentWeekShowFlow(state) === 1, "frozen retry did not recognise the same show");
+  ok(event.crowdResponse === firstCrowd, "frozen show-flow retry reinterpreted historical crowd context");
   ok(JSON.stringify(state.matches) === beforeMatches, "show-flow application mutated resolved match facts");
-  ok(state.ledger.at(-1)!.payload.showFlowAdjustment !== undefined, "event ledger did not retain show-flow context");
 });
 
 console.log(`\nShow-flow tests: ${passed} passed, ${failed} failed`);

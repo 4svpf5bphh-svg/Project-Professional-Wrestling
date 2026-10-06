@@ -15,13 +15,37 @@ const INTENT_INTENSITY: Record<MatchIntent, number> = {
 
 type SideAlignment = WrestlerAlignment | "MIXED" | null;
 
+export type ShowFlowReasonCode =
+  | "FACE_HEEL_CLARITY"
+  | "SAME_ALIGNMENT"
+  | "TWEENER_TENSION"
+  | "HOT_PROGRAMME"
+  | "PROGRAMME_REPETITION"
+  | "COOL_PROGRAMME"
+  | "REPEATED_INTENT"
+  | "BACK_TO_BACK_INTENSITY"
+  | "PACE_CONTRAST"
+  | "INTENSITY_BUILD"
+  | "BREATHER"
+  | "HIGH_INTENSITY_STREAK"
+  | "FLAT_CLOSER"
+  | "BIG_CLOSER";
+
+interface ModifierEvaluation {
+  modifier: number;
+  reason: ShowFlowReasonCode | null;
+}
+
 export interface ShowFlowMatchEvaluation {
   matchId: string;
   order: number;
   baseCrowdResponse: number;
   alignmentModifier: number;
+  alignmentReason: ShowFlowReasonCode | null;
   programmeModifier: number;
+  programmeReason: ShowFlowReasonCode | null;
   pacingModifier: number;
+  pacingReason: ShowFlowReasonCode | null;
   adjustedCrowdResponse: number;
   weight: number;
 }
@@ -66,18 +90,24 @@ function sideAlignment(
   return unique.size === 1 ? alignments[0]! : "MIXED";
 }
 
-function alignmentModifierForMatch(state: WorldState, match: Match): number {
+function alignmentModifierForMatch(state: WorldState, match: Match): ModifierEvaluation {
   const participants = participantsForMatch(state, match.id);
   const a = sideAlignment(state, participants, "A");
   const b = sideAlignment(state, participants, "B");
-  if (!a || !b || a === "MIXED" || b === "MIXED") return 0;
-  if ((a === "FACE" && b === "HEEL") || (a === "HEEL" && b === "FACE")) return 2.2;
-  if (a === b) return a === "TWEENER" ? -0.1 : -0.3;
-  if (a === "TWEENER" || b === "TWEENER") return 0.7;
-  return 0;
+  if (!a || !b || a === "MIXED" || b === "MIXED") return { modifier: 0, reason: null };
+  if ((a === "FACE" && b === "HEEL") || (a === "HEEL" && b === "FACE")) {
+    return { modifier: 2.2, reason: "FACE_HEEL_CLARITY" };
+  }
+  if (a === b) {
+    return { modifier: a === "TWEENER" ? -0.1 : -0.3, reason: "SAME_ALIGNMENT" };
+  }
+  if (a === "TWEENER" || b === "TWEENER") {
+    return { modifier: 0.7, reason: "TWEENER_TENSION" };
+  }
+  return { modifier: 0, reason: null };
 }
 
-function programmeModifierForMatch(state: WorldState, event: WrestlingEvent, match: Match): number {
+function programmeModifierForMatch(state: WorldState, event: WrestlingEvent, match: Match): ModifierEvaluation {
   const programmeIds = new Set(
     (state.programmeActivities ?? [])
       .filter((activity) => (
@@ -87,30 +117,39 @@ function programmeModifierForMatch(state: WorldState, event: WrestlingEvent, mat
       ))
       .map((activity) => activity.programmeId),
   );
-  if (programmeIds.size === 0) return 0;
+  if (programmeIds.size === 0) return { modifier: 0, reason: null };
 
-  const modifiers = (state.programmes ?? [])
+  const components = (state.programmes ?? [])
     .filter((programme) => (
       programmeIds.has(programme.id)
       && programme.status === "ACTIVE"
       && programme.promotionId === event.promotionId
     ))
-    .map((programme) => {
-      const heatEffect = programme.heat === null
-        ? 0
-        : clamp((programme.heat - 50) / 15, -2, 2.5);
-      const repetitionPenalty = Math.min(3.5, programme.repetition * 0.04);
-      return heatEffect - repetitionPenalty;
-    });
-  if (modifiers.length === 0) return 0;
-  return clamp(modifiers.reduce((sum, value) => sum + value, 0) / modifiers.length, -3.5, 2.5);
+    .map((programme) => ({
+      heatEffect: programme.heat === null ? 0 : clamp((programme.heat - 50) / 15, -2, 2.5),
+      repetitionPenalty: Math.min(3.5, programme.repetition * 0.04),
+    }));
+  if (components.length === 0) return { modifier: 0, reason: null };
+
+  const heatEffect = components.reduce((sum, component) => sum + component.heatEffect, 0) / components.length;
+  const repetitionPenalty = components.reduce((sum, component) => sum + component.repetitionPenalty, 0) / components.length;
+  const modifier = clamp(heatEffect - repetitionPenalty, -3.5, 2.5);
+  let reason: ShowFlowReasonCode | null = null;
+  if (repetitionPenalty >= Math.abs(heatEffect) && repetitionPenalty >= 0.25) reason = "PROGRAMME_REPETITION";
+  else if (heatEffect >= 0.25) reason = "HOT_PROGRAMME";
+  else if (heatEffect <= -0.25) reason = "COOL_PROGRAMME";
+  else if (repetitionPenalty >= 0.25) reason = "PROGRAMME_REPETITION";
+  return { modifier, reason };
 }
 
-function pacingModifier(matches: Match[], index: number): number {
+function pacingModifier(matches: Match[], index: number): ModifierEvaluation {
   const match = matches[index]!;
   const intensity = INTENT_INTENSITY[match.intent];
   const isLast = index === matches.length - 1;
-  let modifier = 0;
+  const signals = new Map<ShowFlowReasonCode, number>();
+  const add = (reason: ShowFlowReasonCode, impact: number): void => {
+    signals.set(reason, (signals.get(reason) ?? 0) + impact);
+  };
 
   if (index > 0) {
     const previous = matches[index - 1]!;
@@ -118,12 +157,12 @@ function pacingModifier(matches: Match[], index: number): number {
     const difference = intensity - previousIntensity;
     const absoluteDifference = Math.abs(difference);
 
-    if (match.intent === previous.intent) modifier -= 0.8;
-    if (intensity >= 76 && previousIntensity >= 76) modifier -= 1.8;
-    if (absoluteDifference >= 14 && absoluteDifference <= 42) modifier += 0.6;
-    if (difference >= 10 && difference <= 45) modifier += 0.5;
-    if (previousIntensity >= 76 && intensity <= 48 && !isLast) modifier += 0.8;
-    if (previousIntensity - intensity >= 30 && isLast) modifier -= 0.8;
+    if (match.intent === previous.intent) add("REPEATED_INTENT", -0.8);
+    if (intensity >= 76 && previousIntensity >= 76) add("BACK_TO_BACK_INTENSITY", -1.8);
+    if (absoluteDifference >= 14 && absoluteDifference <= 42) add("PACE_CONTRAST", 0.6);
+    if (difference >= 10 && difference <= 45) add("INTENSITY_BUILD", 0.5);
+    if (previousIntensity >= 76 && intensity <= 48 && !isLast) add("BREATHER", 0.8);
+    if (previousIntensity - intensity >= 30 && isLast) add("FLAT_CLOSER", -0.8);
   }
 
   if (intensity >= 76) {
@@ -131,15 +170,20 @@ function pacingModifier(matches: Match[], index: number): number {
     for (let prior = index - 1; prior >= 0 && INTENT_INTENSITY[matches[prior]!.intent] >= 76; prior -= 1) {
       highIntensityStreak += 1;
     }
-    if (highIntensityStreak >= 3) modifier -= Math.min(2.4, (highIntensityStreak - 2) * 1.2);
+    if (highIntensityStreak >= 3) {
+      add("HIGH_INTENSITY_STREAK", -Math.min(2.4, (highIntensityStreak - 2) * 1.2));
+    }
   }
 
   if (isLast) {
-    if (intensity >= 78) modifier += 1.2;
-    else if (intensity <= 45) modifier -= 1.3;
+    if (intensity >= 78) add("BIG_CLOSER", 1.2);
+    else if (intensity <= 45) add("FLAT_CLOSER", -1.3);
   }
 
-  return clamp(modifier, -5, 3);
+  const rawModifier = [...signals.values()].reduce((sum, value) => sum + value, 0);
+  const reason = [...signals.entries()]
+    .sort((left, right) => Math.abs(right[1]) - Math.abs(left[1]))[0]?.[0] ?? null;
+  return { modifier: clamp(rawModifier, -5, 3), reason };
 }
 
 function matchWeight(index: number, total: number): number {
@@ -171,11 +215,11 @@ export function evaluateShowFlow(
     matches.reduce((sum, match) => sum + match.crowdResponse, 0) / matches.length,
   );
   const evaluations = matches.map((match, index): ShowFlowMatchEvaluation => {
-    const alignmentModifier = alignmentModifierForMatch(state, match);
-    const programmeModifier = programmeModifierForMatch(state, event, match);
+    const alignment = alignmentModifierForMatch(state, match);
+    const programme = programmeModifierForMatch(state, event, match);
     const pacing = pacingModifier(matches, index);
     const adjustedCrowdResponse = round1(clamp(
-      match.crowdResponse + alignmentModifier + programmeModifier + pacing,
+      match.crowdResponse + alignment.modifier + programme.modifier + pacing.modifier,
       0,
       100,
     ));
@@ -183,9 +227,12 @@ export function evaluateShowFlow(
       matchId: match.id,
       order: match.order,
       baseCrowdResponse: match.crowdResponse,
-      alignmentModifier: round1(alignmentModifier),
-      programmeModifier: round1(programmeModifier),
-      pacingModifier: round1(pacing),
+      alignmentModifier: round1(alignment.modifier),
+      alignmentReason: alignment.reason,
+      programmeModifier: round1(programme.modifier),
+      programmeReason: programme.reason,
+      pacingModifier: round1(pacing.modifier),
+      pacingReason: pacing.reason,
       adjustedCrowdResponse,
       weight: matchWeight(index, matches.length),
     };
@@ -204,11 +251,27 @@ export function evaluateShowFlow(
   };
 }
 
+function eventCompletedLedgerEntry(state: WorldState, eventId: string) {
+  for (let index = state.ledger.length - 1; index >= 0; index -= 1) {
+    const entry = state.ledger[index]!;
+    if (entry.type === "EVENT_COMPLETED" && entry.entityIds.includes(eventId)) return entry;
+  }
+  return null;
+}
+
+function matchCompletedLedgerEntry(state: WorldState, matchId: string) {
+  for (let index = state.ledger.length - 1; index >= 0; index -= 1) {
+    const entry = state.ledger[index]!;
+    if (entry.type === "MATCH_COMPLETED" && entry.entityIds.includes(matchId)) return entry;
+  }
+  return null;
+}
+
 /**
  * Applies show-flow aggregation after current-week Programme matches/segments
  * have been recorded but before Programme signals and annual promotion standing
- * are evaluated. It changes only the event-level crowd response and keeps the
- * already-written event ledger payload consistent with that final value.
+ * are evaluated. The exact explanatory evidence is frozen into ledger history,
+ * so old shows never get reinterpreted using later Programme heat/repetition.
  */
 export function applyCurrentWeekShowFlow(state: WorldState): number {
   let updated = 0;
@@ -217,14 +280,33 @@ export function applyCurrentWeekShowFlow(state: WorldState): number {
     const matches = state.matches.filter((match) => match.eventId === event.id && match.status === "COMPLETED");
     if (matches.length === 0) continue;
 
+    const eventLedger = eventCompletedLedgerEntry(state, event.id);
+    if (eventLedger?.payload.showFlowFrozen === true && typeof eventLedger.payload.crowdResponse === "number") {
+      event.crowdResponse = eventLedger.payload.crowdResponse;
+      updated += 1;
+      continue;
+    }
+
     const evaluation = evaluateShowFlow(state, event, matches);
     event.crowdResponse = evaluation.crowdResponse;
-    for (let index = state.ledger.length - 1; index >= 0; index -= 1) {
-      const entry = state.ledger[index]!;
-      if (entry.type !== "EVENT_COMPLETED" || !entry.entityIds.includes(event.id)) continue;
-      entry.payload.crowdResponse = evaluation.crowdResponse;
-      entry.payload.showFlowAdjustment = evaluation.adjustment;
-      break;
+    if (eventLedger) {
+      eventLedger.payload.crowdResponse = evaluation.crowdResponse;
+      eventLedger.payload.showFlowBaseCrowdResponse = evaluation.baseCrowdResponse;
+      eventLedger.payload.showFlowAdjustment = evaluation.adjustment;
+      eventLedger.payload.showFlowFrozen = true;
+    }
+
+    for (const matchEvaluation of evaluation.matches) {
+      const matchLedger = matchCompletedLedgerEntry(state, matchEvaluation.matchId);
+      if (!matchLedger) continue;
+      matchLedger.payload.showFlowAlignmentModifier = matchEvaluation.alignmentModifier;
+      matchLedger.payload.showFlowAlignmentReason = matchEvaluation.alignmentReason;
+      matchLedger.payload.showFlowProgrammeModifier = matchEvaluation.programmeModifier;
+      matchLedger.payload.showFlowProgrammeReason = matchEvaluation.programmeReason;
+      matchLedger.payload.showFlowPacingModifier = matchEvaluation.pacingModifier;
+      matchLedger.payload.showFlowPacingReason = matchEvaluation.pacingReason;
+      matchLedger.payload.showFlowAdjustedCrowd = matchEvaluation.adjustedCrowdResponse;
+      matchLedger.payload.showFlowWeight = round1(matchEvaluation.weight);
     }
     updated += 1;
   }
