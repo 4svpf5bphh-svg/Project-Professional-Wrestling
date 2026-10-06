@@ -4,6 +4,7 @@
   "installCommand": "npm install",
   "buildCommand": "npm run web:build",
   "outputDirectory": "apps/web/.next",
+  "regions": ["lhr1"],
   "git": {
     "deploymentEnabled": {
       "alpha1a-freeze-*": false,
