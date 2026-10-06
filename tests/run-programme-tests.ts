@@ -99,13 +99,22 @@ test("persistent Programme lifecycle tracks participants, signals and winner his
   expectReject(() => recordProgrammeActivity(state, { programmeId: programme.id, kind: "OTHER" }), "ended Programme");
 });
 
-test("Programme foundation rejects duplicate participants and duplicate active stories", () => {
+test("Programme foundation rejects invalid or unavailable participants and duplicate active stories", () => {
   const { state, promotion, personIds } = programmeFixture(9082);
   expectReject(() => createProgramme(state, {
     promotionId: promotion.id,
     sideA: [{ kind: "PERSON", entityId: personIds[0]! }],
     sideB: [{ kind: "PERSON", entityId: personIds[0]! }],
   }), "same wrestler or team twice");
+
+  const rosterPersonIds = new Set(activeContractsForPromotion(state, promotion.id).map((contract) => contract.personId));
+  const outsideRoster = state.people.find((person) => person.status === "ACTIVE" && !rosterPersonIds.has(person.id));
+  ok(Boolean(outsideRoster), "Programme fixture needs an active wrestler outside the promotion roster");
+  expectReject(() => createProgramme(state, {
+    promotionId: promotion.id,
+    sideA: [{ kind: "PERSON", entityId: personIds[0]! }],
+    sideB: [{ kind: "PERSON", entityId: outsideRoster!.id }],
+  }), "current roster");
 
   createProgramme(state, {
     promotionId: promotion.id,
