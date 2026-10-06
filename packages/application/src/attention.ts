@@ -73,6 +73,23 @@ function contractFamilyLabel(family: string): string {
   return family.replaceAll("_", " ").toLowerCase();
 }
 
+function contractOfferRejectionSummary(reason: string | null): string {
+  switch (reason) {
+    case "offer utility below acceptance threshold":
+      return "The proposed terms did not meet the wrestler’s expectations.";
+    case "exclusive offer overlaps another signed contract":
+    case "existing exclusive contract blocks outside work":
+      return "An existing exclusive commitment prevented the deal.";
+    case "service capacity exceeded":
+      return "The wrestler’s existing schedule could not accommodate the proposed dates.";
+    case "stronger exclusive offer accepted":
+    case "overlaps accepted exclusive offer":
+      return "The wrestler accepted a conflicting exclusive offer elsewhere.";
+    default:
+      return "The wrestler declined the proposed terms.";
+  }
+}
+
 export function buildPlayerAttention(
   aggregate: ApplicationWorldAggregate,
   playerId: string,
@@ -160,6 +177,28 @@ export function buildPlayerAttention(
         dismissible: false,
         sourceOpportunityCategory: null,
       });
+    }
+
+    const resolvedDate = aggregate.runtime.lastResolvedPpwDate;
+    if (resolvedDate) {
+      for (const offer of aggregate.state.contractOffers) {
+        if (offer.promotionId !== promotion.id || offer.status === "PENDING") continue;
+        if (!sameWeek(offer.submittedDate, resolvedDate)) continue;
+        const name = personName(aggregate, offer.personId);
+        const accepted = offer.status === "ACCEPTED";
+        pushIfVisible(aggregate, playerId, items, {
+          attentionId: `contract-offer-result:${offer.id}`,
+          category: "IMPORTANT",
+          title: accepted ? `${name} accepted your contract offer` : `${name} rejected your contract offer`,
+          summary: accepted
+            ? `${name} accepted your ${contractFamilyLabel(offer.family)} offer for ${offer.dateEntitlement} date${offer.dateEntitlement === 1 ? "" : "s"}. The contract is now signed.`
+            : contractOfferRejectionSummary(offer.rejectionReason),
+          deadline: null,
+          deepLink: "/business",
+          dismissible: true,
+          sourceOpportunityCategory: null,
+        });
+      }
     }
 
     for (const contract of activeContracts) {

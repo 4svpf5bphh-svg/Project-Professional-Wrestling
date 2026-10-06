@@ -107,6 +107,21 @@ export async function saveAlphaPlannerShowPlan(
     }
     const existing = draftsInWeek[0] ?? null;
     const draftId = existing?.draftId ?? plannerDraftId(control.promotionId, year, week);
+    const selectedParticipantIds = new Set(request.participantIds);
+    const matches = existing?.matches
+      .filter((match) => [...match.sideAIds, ...match.sideBIds].every((personId) => selectedParticipantIds.has(personId)))
+      .map((match) => ({
+        ...match,
+        sideAIds: [...match.sideAIds],
+        sideBIds: [...match.sideBIds],
+      })) ?? [];
+    const retainedMatchIds = new Set(matches.map((match) => match.draftMatchId));
+    const championshipAssignments = existing?.championshipAssignments
+      .filter((assignment) => retainedMatchIds.has(assignment.draftMatchId))
+      .map((assignment) => ({ ...assignment })) ?? [];
+    const programmeSegments = existing?.programmeSegments
+      ?.filter((segment) => segment.participantIds.every((personId) => selectedParticipantIds.has(personId)))
+      .map((segment) => ({ ...segment, participantIds: [...segment.participantIds] }));
     const draft: DetailedShowDraft = {
       draftId,
       promotionId: control.promotionId,
@@ -115,12 +130,9 @@ export async function saveAlphaPlannerShowPlan(
       venueId: request.venueId,
       ticketStrategy: request.ticketStrategy,
       participantIds: [...request.participantIds],
-      matches: existing?.matches.map((match) => ({
-        ...match,
-        sideAIds: [...match.sideAIds],
-        sideBIds: [...match.sideBIds],
-      })) ?? [],
-      championshipAssignments: existing?.championshipAssignments.map((assignment) => ({ ...assignment })) ?? [],
+      matches,
+      championshipAssignments,
+      ...(programmeSegments === undefined ? {} : { programmeSegments }),
     };
 
     const workspace = upsertDetailedShowDraftCommand(

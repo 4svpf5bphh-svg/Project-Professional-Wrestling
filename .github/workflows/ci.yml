@@ -44,6 +44,10 @@ jobs:
         run: npm install
       - name: Run full test suite
         run: npm test
+      - name: Run planner roster-edit regression coverage
+        run: node dist/tests/run-planner-edit-regression-tests.js
+      - name: Run contract-offer Attention coverage
+        run: node dist/tests/run-contract-offer-attention-tests.js
       - name: Run alignment foundation coverage
         run: node dist/tests/run-alignment-tests.js
       - name: Run show-flow coverage
