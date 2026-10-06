@@ -11,7 +11,7 @@ import {
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
-import { createWorld } from "../packages/sim-core/src/index.js";
+import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -209,6 +209,8 @@ test("show history exposes match-level consequences for the controlled promotion
   ok(show.matches[0]!.winnerNames.length === 1, "match result did not expose a winner");
   ok(show.injuryCount === 1 && show.matches[0]!.injuries.length === 1, "show result did not expose injury consequences");
   ok(show.titleChangeCount === 1 && show.matches[0]!.titleOutcomes[0]?.titleChanged, "show result did not expose the title change");
+  ok(show.crowdStory === null, "legacy show without frozen flow evidence invented a crowd diagnosis");
+  ok(show.matches[0]!.crowdFlowFactors.length === 0, "legacy match without frozen flow evidence invented crowd factors");
 });
 
 test("show history remains scoped to each player's controlled promotion", () => {
@@ -219,6 +221,94 @@ test("show history remains scoped to each player's controlled promotion", () => 
   ok(playerB.shows.every((show) => aggregate.state.events.find((event) => event.id === show.eventId)?.promotionId === promotionBId), "player B received rival show history");
   ok(!playerA.shows.some((show) => show.eventId === "results-event-b"), "player A leaked player B's show");
   ok(!playerB.shows.some((show) => show.eventId === "results-event-a"), "player B leaked player A's show");
+});
+
+test("frozen crowd-flow evidence is projected without reinterpreting mutable World state", () => {
+  const { aggregate, promotionAId } = twoPlayerFixture(72004);
+  const event = aggregate.state.events.find((candidate) => candidate.id === "results-event-a")!;
+  event.crowdResponse = 73;
+  aggregate.state.ledger.push(
+    {
+      id: "results-match-a-ledger",
+      worldId: aggregate.state.world.id,
+      date: { ...event.date },
+      order: 1001,
+      type: "MATCH_COMPLETED",
+      significanceAtTime: "ROUTINE",
+      historicalSignificance: "ROUTINE",
+      entityIds: ["results-match-a", "results-event-a"],
+      payload: {
+        showFlowAlignmentModifier: 2.2,
+        showFlowAlignmentReason: "FACE_HEEL_CLARITY",
+        showFlowProgrammeModifier: -1.4,
+        showFlowProgrammeReason: "PROGRAMME_REPETITION",
+        showFlowPacingModifier: 1.2,
+        showFlowPacingReason: "BIG_CLOSER",
+        showFlowAdjustedCrowd: 74,
+        showFlowWeight: 1,
+      },
+    },
+    {
+      id: "results-event-a-ledger",
+      worldId: aggregate.state.world.id,
+      date: { ...event.date },
+      order: 1002,
+      type: "EVENT_COMPLETED",
+      significanceAtTime: "ROUTINE",
+      historicalSignificance: "ROUTINE",
+      entityIds: ["results-event-a", promotionAId],
+      payload: {
+        crowdResponse: 73,
+        showFlowBaseCrowdResponse: 71,
+        showFlowAdjustment: 2,
+        showFlowFrozen: true,
+      },
+    },
+  );
+
+  const before = buildPlayerShowHistory(aggregate, "player-a");
+  const show = before.shows[0]!;
+  ok(show.crowdStory !== null, "frozen crowd evidence did not produce a crowd story");
+  ok(show.crowdStory!.baseCrowdResponse === 71, "crowd story did not use frozen baseline");
+  ok(show.crowdStory!.finalCrowdResponse === 73 && show.crowdStory!.adjustment === 2, "crowd story did not use frozen final result");
+  ok(show.crowdStory!.tone === "POSITIVE", "positive flow adjustment did not classify correctly");
+  ok(show.crowdStory!.positiveDrivers.some((driver) => driver.reason === "FACE_HEEL_CLARITY"), "alignment driver was not explained");
+  ok(show.crowdStory!.positiveDrivers.some((driver) => driver.reason === "BIG_CLOSER"), "pacing driver was not explained");
+  ok(show.crowdStory!.negativeDrivers.some((driver) => driver.reason === "PROGRAMME_REPETITION"), "Programme repetition drag was not explained");
+  ok(show.matches[0]!.crowdFlowFactors.length === 3, "material match crowd factors were not projected");
+
+  const matchPeople = aggregate.state.matchParticipants
+    .filter((participant) => participant.matchId === "results-match-a")
+    .map((participant) => aggregate.state.people.find((person) => person.id === participant.personId)!)
+    .filter(Boolean);
+  for (const person of matchPeople) setWrestlerAlignment(person, "HEEL");
+  aggregate.state.programmes ??= [];
+  aggregate.state.programmes.push({
+    id: "results-later-programme",
+    worldId: aggregate.state.world.id,
+    promotionId: promotionAId,
+    status: "ACTIVE",
+    sideA: [{ kind: "PERSON", entityId: matchPeople[0]!.id }],
+    sideB: [{ kind: "PERSON", entityId: matchPeople[1]!.id }],
+    championshipId: null,
+    startedDate: { year: 1, week: 3, day: 1 },
+    endedDate: null,
+    heat: 5,
+    repetition: 100,
+    activityCount: 20,
+    matchCount: 15,
+    segmentCount: 5,
+    sideAWins: 8,
+    sideBWins: 7,
+    draws: 0,
+    lastActivityDate: { year: 1, week: 3, day: 1 },
+  });
+
+  const after = buildPlayerShowHistory(aggregate, "player-a");
+  ok(
+    JSON.stringify(after.shows[0]!.crowdStory) === JSON.stringify(show.crowdStory),
+    "old show crowd story changed after present-day alignment or Programme state changed",
+  );
 });
 
 test("non-members cannot read World show history", () => {

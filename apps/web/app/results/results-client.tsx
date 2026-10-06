@@ -34,8 +34,20 @@ function decimal(value: number): string {
   return new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(value);
 }
 
+function signedDecimal(value: number): string {
+  if (value > 0) return `+${decimal(value)}`;
+  if (value < 0) return `−${decimal(Math.abs(value))}`;
+  return decimal(value);
+}
+
 function label(value: string): string {
   return value.replaceAll("_", " ").toLowerCase();
+}
+
+function crowdStoryTitle(tone: "POSITIVE" | "NEUTRAL" | "NEGATIVE"): string {
+  if (tone === "POSITIVE") return "The card lifted the room";
+  if (tone === "NEGATIVE") return "The card left energy on the table";
+  return "The room matched the card";
 }
 
 export default function ResultsClient(): React.JSX.Element {
@@ -178,6 +190,52 @@ export default function ResultsClient(): React.JSX.Element {
                       <div><span>Consequences</span><strong>{show.titleChangeCount} title · {show.injuryCount} inj.</strong></div>
                     </div>
 
+                    {show.crowdStory ? (
+                      <section className={`${styles.crowdStory} ${show.crowdStory.tone === "POSITIVE" ? styles.crowdStoryPositive : show.crowdStory.tone === "NEGATIVE" ? styles.crowdStoryNegative : ""}`}>
+                        <div className={styles.crowdStoryTop}>
+                          <div>
+                            <span className={styles.eyebrow}>CROWD STORY</span>
+                            <strong>{crowdStoryTitle(show.crowdStory.tone)}</strong>
+                            <p>{show.crowdStory.summary}</p>
+                          </div>
+                          <div className={styles.crowdStoryScore}>
+                            <span>Raw {decimal(show.crowdStory.baseCrowdResponse)}</span>
+                            <b>→</b>
+                            <span>Final {decimal(show.crowdStory.finalCrowdResponse)}</span>
+                            <em className={show.crowdStory.adjustment >= 0 ? styles.crowdPositive : styles.crowdNegative}>{signedDecimal(show.crowdStory.adjustment)}</em>
+                          </div>
+                        </div>
+                        {show.crowdStory.positiveDrivers.length > 0 || show.crowdStory.negativeDrivers.length > 0 ? (
+                          <div className={styles.crowdDrivers}>
+                            {show.crowdStory.positiveDrivers.length > 0 ? (
+                              <div className={styles.crowdDriverGroup}>
+                                <span>Helped</span>
+                                {show.crowdStory.positiveDrivers.map((driver) => (
+                                  <div className={`${styles.crowdDriver} ${styles.crowdPositive}`} key={`positive-${driver.matchId}-${driver.scope}`}>
+                                    <small>Match {driver.matchOrder}</small>
+                                    <strong>{driver.label}</strong>
+                                    <em>{signedDecimal(driver.impact)}</em>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                            {show.crowdStory.negativeDrivers.length > 0 ? (
+                              <div className={styles.crowdDriverGroup}>
+                                <span>Hurt</span>
+                                {show.crowdStory.negativeDrivers.map((driver) => (
+                                  <div className={`${styles.crowdDriver} ${styles.crowdNegative}`} key={`negative-${driver.matchId}-${driver.scope}`}>
+                                    <small>Match {driver.matchOrder}</small>
+                                    <strong>{driver.label}</strong>
+                                    <em>{signedDecimal(driver.impact)}</em>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </section>
+                    ) : null}
+
                     <div className={styles.matches}>
                       {show.matches.map((match) => {
                         const sideA = match.participants.filter((participant) => participant.side === "A");
@@ -198,6 +256,18 @@ export default function ResultsClient(): React.JSX.Element {
                               <span>{match.actualLengthMinutes} min{match.actualLengthMinutes !== match.plannedLengthMinutes ? ` / ${match.plannedLengthMinutes} planned` : ""}</span>
                               <span>Crowd {decimal(match.crowdResponse)}</span>
                             </div>
+                            {match.crowdFlowFactors.length > 0 ? (
+                              <div className={styles.crowdContext}>
+                                <span>Crowd context</span>
+                                <div>
+                                  {match.crowdFlowFactors.map((factor) => (
+                                    <span className={factor.impact >= 0 ? styles.crowdFactorPositive : styles.crowdFactorNegative} key={`${factor.scope}-${factor.reason}`}>
+                                      {factor.label} <b>{signedDecimal(factor.impact)}</b>
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
                             {match.titleOutcomes.map((title) => (
                               <div className={styles.consequence} key={title.championshipId}>
                                 <strong>{title.championshipName}</strong>

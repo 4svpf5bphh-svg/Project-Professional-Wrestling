@@ -15,6 +15,43 @@ import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const PLAYER_SHOW_HISTORY_LIMIT = 12;
 
+export type PlayerShowCrowdFactorScope = "ALIGNMENT" | "PROGRAMME" | "PACING";
+export type PlayerShowCrowdTone = "POSITIVE" | "NEUTRAL" | "NEGATIVE";
+export type PlayerShowCrowdReasonCode =
+  | "FACE_HEEL_CLARITY"
+  | "SAME_ALIGNMENT"
+  | "TWEENER_TENSION"
+  | "HOT_PROGRAMME"
+  | "PROGRAMME_REPETITION"
+  | "COOL_PROGRAMME"
+  | "REPEATED_INTENT"
+  | "BACK_TO_BACK_INTENSITY"
+  | "PACE_CONTRAST"
+  | "INTENSITY_BUILD"
+  | "BREATHER"
+  | "HIGH_INTENSITY_STREAK"
+  | "FLAT_CLOSER"
+  | "BIG_CLOSER";
+
+export interface PlayerShowCrowdFactorView {
+  scope: PlayerShowCrowdFactorScope;
+  matchId: Id;
+  matchOrder: number;
+  reason: PlayerShowCrowdReasonCode;
+  label: string;
+  impact: number;
+}
+
+export interface PlayerShowCrowdStoryView {
+  baseCrowdResponse: number;
+  finalCrowdResponse: number;
+  adjustment: number;
+  tone: PlayerShowCrowdTone;
+  summary: string;
+  positiveDrivers: PlayerShowCrowdFactorView[];
+  negativeDrivers: PlayerShowCrowdFactorView[];
+}
+
 export interface PlayerShowParticipantView {
   personId: Id;
   name: string;
@@ -54,6 +91,7 @@ export interface PlayerShowMatchView {
   winnerNames: string[];
   titleOutcomes: PlayerShowTitleOutcomeView[];
   injuries: PlayerShowInjuryView[];
+  crowdFlowFactors: PlayerShowCrowdFactorView[];
 }
 
 export interface PlayerShowResultView {
@@ -74,6 +112,7 @@ export interface PlayerShowResultView {
   matchCount: number;
   titleChangeCount: number;
   injuryCount: number;
+  crowdStory: PlayerShowCrowdStoryView | null;
   matches: PlayerShowMatchView[];
 }
 
@@ -93,6 +132,25 @@ export interface PlayerShowHistoryView {
   } | null;
   shows: PlayerShowResultView[];
 }
+
+type LedgerEntry = ApplicationWorldAggregate["state"]["ledger"][number];
+
+const CROWD_REASON_LABELS: Record<PlayerShowCrowdReasonCode, string> = {
+  FACE_HEEL_CLARITY: "Clear face-versus-heel dynamic",
+  SAME_ALIGNMENT: "Less obvious emotional side",
+  TWEENER_TENSION: "Uncertain allegiance added intrigue",
+  HOT_PROGRAMME: "Hot Programme investment",
+  PROGRAMME_REPETITION: "Programme felt overexposed",
+  COOL_PROGRAMME: "Programme lacked heat",
+  REPEATED_INTENT: "Similar match rhythm repeated",
+  BACK_TO_BACK_INTENSITY: "Back-to-back intensity taxed the crowd",
+  PACE_CONTRAST: "Change of pace refreshed the room",
+  INTENSITY_BUILD: "Card intensity built at the right time",
+  BREATHER: "Breather reset the crowd",
+  HIGH_INTENSITY_STREAK: "Too much sustained intensity",
+  FLAT_CLOSER: "Closing slot felt too low-key",
+  BIG_CLOSER: "Big closer landed in the right slot",
+};
 
 function dateOrdinal(aggregate: ApplicationWorldAggregate, date: PpwDate): number {
   return (((date.year - 1) * aggregate.state.ruleset.weeksPerYear) + (date.week - 1)) * 7 + date.day;
@@ -116,9 +174,97 @@ function validatedLimit(limit: number): number {
   return limit;
 }
 
+function isCrowdReasonCode(value: unknown): value is PlayerShowCrowdReasonCode {
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(CROWD_REASON_LABELS, value);
+}
+
+function crowdFactor(
+  entry: LedgerEntry | undefined,
+  scope: PlayerShowCrowdFactorScope,
+  matchId: Id,
+  matchOrder: number,
+  modifierKey: string,
+  reasonKey: string,
+): PlayerShowCrowdFactorView | null {
+  if (!entry) return null;
+  const impact = entry.payload[modifierKey];
+  const reason = entry.payload[reasonKey];
+  if (typeof impact !== "number" || !Number.isFinite(impact) || Math.abs(impact) < 0.45) return null;
+  if (!isCrowdReasonCode(reason)) return null;
+  return {
+    scope,
+    matchId,
+    matchOrder,
+    reason,
+    label: CROWD_REASON_LABELS[reason],
+    impact: Math.round(impact * 10) / 10,
+  };
+}
+
+function frozenCrowdFactors(
+  entry: LedgerEntry | undefined,
+  matchId: Id,
+  matchOrder: number,
+): PlayerShowCrowdFactorView[] {
+  const factors = [
+    crowdFactor(entry, "ALIGNMENT", matchId, matchOrder, "showFlowAlignmentModifier", "showFlowAlignmentReason"),
+    crowdFactor(entry, "PROGRAMME", matchId, matchOrder, "showFlowProgrammeModifier", "showFlowProgrammeReason"),
+    crowdFactor(entry, "PACING", matchId, matchOrder, "showFlowPacingModifier", "showFlowPacingReason"),
+  ];
+  return factors.filter((factor): factor is PlayerShowCrowdFactorView => factor !== null);
+}
+
+function frozenCrowdStory(
+  eventLedger: LedgerEntry | undefined,
+  matches: PlayerShowMatchView[],
+): PlayerShowCrowdStoryView | null {
+  if (!eventLedger || eventLedger.payload.showFlowFrozen !== true) return null;
+  const base = eventLedger.payload.showFlowBaseCrowdResponse;
+  const final = eventLedger.payload.crowdResponse;
+  const adjustment = eventLedger.payload.showFlowAdjustment;
+  if (
+    typeof base !== "number" || !Number.isFinite(base)
+    || typeof final !== "number" || !Number.isFinite(final)
+    || typeof adjustment !== "number" || !Number.isFinite(adjustment)
+  ) return null;
+
+  const factors = matches.flatMap((match) => match.crowdFlowFactors);
+  const positiveDrivers = factors
+    .filter((factor) => factor.impact > 0)
+    .sort((left, right) => right.impact - left.impact || left.matchOrder - right.matchOrder)
+    .slice(0, 2);
+  const negativeDrivers = factors
+    .filter((factor) => factor.impact < 0)
+    .sort((left, right) => left.impact - right.impact || left.matchOrder - right.matchOrder)
+    .slice(0, 2);
+  const tone: PlayerShowCrowdTone = adjustment >= 0.5
+    ? "POSITIVE"
+    : adjustment <= -0.5
+      ? "NEGATIVE"
+      : "NEUTRAL";
+  const summary = tone === "POSITIVE"
+    ? "The way the card was structured lifted the room above the crowd response generated by the matches alone."
+    : tone === "NEGATIVE"
+      ? "The card lost some crowd energy between matches even though the individual performances still stood on their own."
+      : "The card broadly delivered the crowd response its individual matches generated.";
+
+  return {
+    baseCrowdResponse: Math.round(base * 10) / 10,
+    finalCrowdResponse: Math.round(final * 10) / 10,
+    adjustment: Math.round(adjustment * 10) / 10,
+    tone,
+    summary,
+    positiveDrivers,
+    negativeDrivers,
+  };
+}
+
 /**
  * Builds a player-safe show-history projection for the promotion they control.
  * It deliberately exposes no rival contract, planning or private business data.
+ * Crowd-flow diagnosis is read only from frozen historical ledger evidence; old
+ * shows without that evidence remain compatible and are never reinterpreted from
+ * mutable present-day Programme or alignment state.
  */
 export function buildPlayerShowHistory(
   aggregate: ApplicationWorldAggregate,
@@ -164,6 +310,14 @@ export function buildPlayerShowHistory(
     const participants = participantsByMatch.get(participant.matchId) ?? [];
     participants.push(participant);
     participantsByMatch.set(participant.matchId, participants);
+  }
+  const eventLedgerByEvent = new Map<Id, LedgerEntry>();
+  const matchLedgerByMatch = new Map<Id, LedgerEntry>();
+  for (const entry of aggregate.state.ledger) {
+    const primaryId = entry.entityIds[0];
+    if (!primaryId) continue;
+    if (entry.type === "EVENT_COMPLETED") eventLedgerByEvent.set(primaryId, entry);
+    if (entry.type === "MATCH_COMPLETED") matchLedgerByMatch.set(primaryId, entry);
   }
 
   const shows = aggregate.state.events
@@ -217,6 +371,7 @@ export function buildPlayerShowHistory(
           winnerNames: participants.filter((participant) => participant.won).map((participant) => participant.name),
           titleOutcomes,
           injuries,
+          crowdFlowFactors: frozenCrowdFactors(matchLedgerByMatch.get(match.id), match.id, match.order),
         };
       });
 
@@ -245,6 +400,7 @@ export function buildPlayerShowHistory(
         matchCount: matches.length,
         titleChangeCount,
         injuryCount,
+        crowdStory: frozenCrowdStory(eventLedgerByEvent.get(event.id), matches),
         matches,
       };
     });
