@@ -1,7 +1,19 @@
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
-import { createWorld, resolveWorldWeeks } from "../packages/sim-core/src/index.js";
+import {
+  activeContractsForPromotion,
+  createPersistedWorldState,
+  createProgramme,
+  createWorld,
+  endProgramme,
+  programmeActivities,
+  recordProgrammeActivity,
+  resolveWorldWeeks,
+  restorePersistedWorldState,
+  setProgrammeSignals,
+  validateProgrammeState,
+} from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -22,6 +34,16 @@ function ok(value: unknown, message: string): void {
   if (!value) throw new Error(message);
 }
 
+function expectReject(fn: () => void, fragment: string): void {
+  let message = "";
+  try {
+    fn();
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error);
+  }
+  ok(message.includes(fragment), `expected rejection containing "${fragment}", got "${message}"`);
+}
+
 function pairKey(a: string, b: string): string {
   return a < b ? `${a}:${b}` : `${b}:${a}`;
 }
@@ -33,6 +55,91 @@ function weekIndex(date: { year: number; week: number }): number {
 function pushScore(person: ReturnType<typeof createWorld>["people"][number]): number {
   return person.momentum * 0.4 + person.popularity * 0.3 + person.recognition * 0.2 + person.skills.presentation * 0.1;
 }
+
+function programmeFixture(seed: number) {
+  const state = createWorld(seed, DEFAULT_RULESET);
+  const promotion = state.promotions.find((candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE")!;
+  const personIds = [...new Set(activeContractsForPromotion(state, promotion.id).map((contract) => contract.personId))].slice(0, 4);
+  ok(personIds.length >= 4, "Programme fixture needs four contracted wrestlers");
+  return { state, promotion, personIds };
+}
+
+test("persistent Programme lifecycle tracks participants, signals and winner history", () => {
+  const { state, promotion, personIds } = programmeFixture(9081);
+  const programme = createProgramme(state, {
+    promotionId: promotion.id,
+    sideA: [{ kind: "PERSON", entityId: personIds[0]! }, { kind: "PERSON", entityId: personIds[1]! }],
+    sideB: [{ kind: "PERSON", entityId: personIds[2]! }, { kind: "PERSON", entityId: personIds[3]! }],
+  });
+
+  ok(programme.status === "ACTIVE", "new Programme was not active");
+  ok(programme.heat === null && programme.repetition === 0, "foundation should not invent tuned Programme signals");
+  ok(state.ledger.some((entry) => entry.type === "PROGRAMME_STARTED" && entry.entityIds.includes(programme.id)), "Programme start was not written to World history");
+
+  recordProgrammeActivity(state, {
+    programmeId: programme.id,
+    kind: "SEGMENT",
+    participantEntityIds: [personIds[0]!, personIds[2]!],
+  });
+  recordProgrammeActivity(state, {
+    programmeId: programme.id,
+    kind: "OTHER",
+    participantEntityIds: [personIds[1]!, personIds[3]!],
+  });
+  setProgrammeSignals(state, programme.id, { heat: 64.25, repetition: 18.5 });
+
+  ok(programme.activityCount === 2 && programme.segmentCount === 1, "Programme activity counters were not updated");
+  ok(programme.heat === 64.25 && programme.repetition === 18.5, "Programme signals were not stored");
+  ok(programmeActivities(state, programme.id).length === 2, "Programme history did not return recorded activities");
+  ok(validateProgrammeState(state).length === 0, "valid Programme state failed validation");
+
+  endProgramme(state, programme.id);
+  ok(programme.status === "ENDED" && programme.endedDate !== null, "Programme did not end cleanly");
+  ok(state.ledger.some((entry) => entry.type === "PROGRAMME_ENDED" && entry.entityIds.includes(programme.id)), "Programme end was not written to World history");
+  expectReject(() => recordProgrammeActivity(state, { programmeId: programme.id, kind: "OTHER" }), "ended Programme");
+});
+
+test("Programme foundation rejects duplicate participants and duplicate active stories", () => {
+  const { state, promotion, personIds } = programmeFixture(9082);
+  expectReject(() => createProgramme(state, {
+    promotionId: promotion.id,
+    sideA: [{ kind: "PERSON", entityId: personIds[0]! }],
+    sideB: [{ kind: "PERSON", entityId: personIds[0]! }],
+  }), "same wrestler or team twice");
+
+  createProgramme(state, {
+    promotionId: promotion.id,
+    sideA: [{ kind: "PERSON", entityId: personIds[0]! }],
+    sideB: [{ kind: "PERSON", entityId: personIds[1]! }],
+  });
+  expectReject(() => createProgramme(state, {
+    promotionId: promotion.id,
+    sideA: [{ kind: "PERSON", entityId: personIds[1]! }],
+    sideB: [{ kind: "PERSON", entityId: personIds[0]! }],
+  }), "already exists");
+});
+
+test("Programme state survives persistence and schema restore", () => {
+  const { state, promotion, personIds } = programmeFixture(9083);
+  const programme = createProgramme(state, {
+    promotionId: promotion.id,
+    sideA: [{ kind: "PERSON", entityId: personIds[0]! }],
+    sideB: [{ kind: "PERSON", entityId: personIds[1]! }],
+  });
+  recordProgrammeActivity(state, {
+    programmeId: programme.id,
+    kind: "SEGMENT",
+    participantEntityIds: [personIds[0]!, personIds[1]!],
+  });
+  setProgrammeSignals(state, programme.id, { heat: 58, repetition: 7 });
+
+  const restored = restorePersistedWorldState(JSON.parse(JSON.stringify(createPersistedWorldState(state))));
+  const restoredProgramme = restored.programmes?.find((candidate) => candidate.id === programme.id);
+  ok(Boolean(restoredProgramme), "Programme disappeared during persistence round-trip");
+  ok(restoredProgramme?.heat === 58 && restoredProgramme.repetition === 7, "Programme signals changed during persistence round-trip");
+  ok(restored.programmeActivities?.length === 1, "Programme activity history disappeared during persistence round-trip");
+  ok(validateProgrammeState(restored).length === 0, "restored Programme state failed validation");
+});
 
 test("non-title singles programmes recur with spacing instead of immediate endless rematches", () => {
   const state = createWorld(9101, DEFAULT_RULESET);
