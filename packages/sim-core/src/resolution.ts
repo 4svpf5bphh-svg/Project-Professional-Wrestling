@@ -11,6 +11,7 @@ import { prepareRoutineContinuityForWeek } from "./human-routine.js";
 import { processPromotionSurvivalForWeek } from "./lifecycle.js";
 import { processWrestlerMoraleForWeek } from "./morale.js";
 import { recordCurrentWeekProgrammeMatches } from "./programme-match-integration.js";
+import { updateProgrammeSignalsForCurrentWeek } from "./programme-signals.js";
 import { processPromotionStandingForWeek } from "./reputation.js";
 import { applyRenewalRelationshipResistance } from "./renewal-resistance.js";
 import { processTalentTrustForWeek } from "./talent-trust.js";
@@ -35,6 +36,7 @@ export function resolveWorldWeek(state: WorldState): void {
   planWorldEvents(state, { staffMayPlanShowFor: staffPlansShow });
   resolveWorldEvents(state, { staffMayBookCardFor: staffControlsCard });
   recordCurrentWeekProgrammeMatches(state);
+  updateProgrammeSignalsForCurrentWeek(state);
 
   processCompetitionForWeek(state);
   settleWorldFinances(state);
