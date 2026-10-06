@@ -1,4 +1,5 @@
 import type { PromotionMarketState, WorldState } from "../../domain/src/types.js";
+import { eventsForWeek } from "./indexes.js";
 
 const SHOW_FLOW_STRENGTH_PER_CROWD_POINT = 0.1;
 const MAX_SHOW_FLOW_STRENGTH_DELTA = 0.5;
@@ -11,9 +12,6 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-function sameWeek(left: { year: number; week: number }, right: { year: number; week: number }): boolean {
-  return left.year === right.year && left.week === right.week;
-}
 
 function eventCompletedLedgerEntry(state: WorldState, eventId: string) {
   for (let index = state.ledger.length - 1; index >= 0; index -= 1) {
@@ -68,8 +66,8 @@ export function showFlowAudienceStrengthDelta(showFlowAdjustment: number): numbe
  */
 export function applyCurrentWeekShowFlowAudienceConsequences(state: WorldState): number {
   let applied = 0;
-  for (const event of state.events) {
-    if (event.status !== "COMPLETED" || !sameWeek(event.date, state.world.currentDate)) continue;
+  for (const event of eventsForWeek(state, state.world.currentDate)) {
+    if (event.status !== "COMPLETED") continue;
     const promotion = state.promotions.find((candidate) => candidate.id === event.promotionId);
     if (!promotion || promotion.controllerType !== "HUMAN") continue;
 
