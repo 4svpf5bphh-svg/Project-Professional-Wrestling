@@ -1,4 +1,4 @@
-import type { Id, PersonStatus, PpwDate, PromotionTier, TicketStrategy } from "../../domain/src/types.js";
+import type { Id, MatchType, PersonStatus, PpwDate, PromotionTier, TicketStrategy } from "../../domain/src/types.js";
 import { addPpwWeeks, comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { activePromotionControlForPlayer, activeWorldMembership } from "./ownership.js";
 import { DETAILED_PLANNING_HORIZON_WEEKS, type DetailedShowDraft } from "./planning.js";
@@ -15,6 +15,16 @@ export type PlayerPlannerShowState = "UNPLANNED" | PlayerShowPlanningState;
 export interface PlayerPlannerParticipantView {
   personId: Id;
   name: string;
+}
+
+export interface PlayerPlannerMatchView {
+  draftMatchId: string;
+  order: number;
+  isMainEvent: boolean;
+  type: MatchType;
+  sideANames: string[];
+  sideBNames: string[];
+  plannedLengthMinutes: number | null;
 }
 
 export interface PlayerPlannerTalentOptionView {
@@ -53,6 +63,8 @@ export interface PlayerPlannerShowView {
   venueName: string | null;
   ticketStrategy: TicketStrategy | null;
   participants: PlayerPlannerParticipantView[];
+  matches: PlayerPlannerMatchView[];
+  plannedMatchMinutes: number;
   reservedParticipantCount: number;
   matchCount: number;
   reservationId: string | null;
@@ -205,6 +217,15 @@ function showView(
   const reservation = aggregate.planning.showReservations.find((candidate) => (
     candidate.promotionId === promotionId && candidate.sourceDraftId === draft.draftId
   )) ?? null;
+  const matches = draft.matches.map((match, index): PlayerPlannerMatchView => ({
+    draftMatchId: match.draftMatchId,
+    order: index + 1,
+    isMainEvent: index === draft.matches.length - 1,
+    type: match.type,
+    sideANames: match.sideAIds.map((personId) => peopleById.get(personId)?.name ?? "Unknown wrestler"),
+    sideBNames: match.sideBIds.map((personId) => peopleById.get(personId)?.name ?? "Unknown wrestler"),
+    plannedLengthMinutes: match.plannedLengthMinutes,
+  }));
 
   return {
     draftId: draft.draftId,
@@ -220,6 +241,8 @@ function showView(
       personId,
       name: peopleById.get(personId)?.name ?? "Unknown wrestler",
     })),
+    matches,
+    plannedMatchMinutes: matches.reduce((sum, match) => sum + (match.plannedLengthMinutes ?? 0), 0),
     reservedParticipantCount: reservation?.participants.length ?? 0,
     matchCount: draft.matches.length,
     reservationId: status.reservationId,
