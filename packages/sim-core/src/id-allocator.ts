@@ -18,6 +18,8 @@ export type EntityIdKind =
   | "championship"
   | "championshipReign"
   | "championshipContest"
+  | "programme"
+  | "programmeActivity"
   | "financialTransaction"
   | "ledger";
 
@@ -47,6 +49,8 @@ const ENTITY_ID_SPECS: Record<EntityIdKind, EntityIdSpec> = {
   championship: { prefix: "championship-", width: 6, ids: (state) => (state.championships ?? []).map((entry) => entry.id) },
   championshipReign: { prefix: "championship-reign-", width: 7, ids: (state) => (state.championshipReigns ?? []).map((entry) => entry.id) },
   championshipContest: { prefix: "championship-contest-", width: 8, ids: (state) => (state.championshipContests ?? []).map((entry) => entry.id) },
+  programme: { prefix: "programme-", width: 7, ids: (state) => (state.programmes ?? []).map((entry) => entry.id) },
+  programmeActivity: { prefix: "programme-activity-", width: 8, ids: (state) => (state.programmeActivities ?? []).map((entry) => entry.id) },
   financialTransaction: { prefix: "finance-", width: 8, ids: (state) => state.financialTransactions.map((entry) => entry.id) },
   ledger: { prefix: "ledger-", width: 6, ids: (state) => state.ledger.map((entry) => entry.id) },
 };
@@ -87,7 +91,7 @@ export function registerEntityIdCounters(state: WorldState, counters?: EntityIdC
   const observed = deriveEntityIdCounters(state);
   const registered = counters ? { ...counters } : observed;
   for (const kind of ENTITY_ID_KINDS) {
-    registered[kind] = Math.max(registered[kind], observed[kind]);
+    registered[kind] = Math.max(registered[kind] ?? 0, observed[kind]);
   }
   countersByState.set(state, registered);
   countersByLedger.set(state.ledger, registered);
