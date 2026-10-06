@@ -59,9 +59,13 @@ function twoPlayerFixture(seed: number): {
   const marketB = state.markets.find((market) => market.id === promotions[1]!.homeMarketId) ?? state.markets[1]!;
   const venueA = state.venues.find((venue) => venue.marketId === marketA.id) ?? state.venues[0]!;
   const venueB = state.venues.find((venue) => venue.marketId === marketB.id) ?? state.venues[1]!;
-  const personA = state.contracts.find((contract) => contract.promotionId === promotions[0]!.id)?.personId;
+  const personAIds = state.contracts
+    .filter((contract) => contract.promotionId === promotions[0]!.id && contract.status === "SIGNED")
+    .map((contract) => contract.personId)
+    .filter((personId, index, all) => all.indexOf(personId) === index)
+    .slice(0, 2);
   const personB = state.contracts.find((contract) => contract.promotionId === promotions[1]!.id)?.personId;
-  if (!personA || !personB) throw new Error("planner fixture promotions need contracted talent");
+  if (personAIds.length < 2 || !personB) throw new Error("planner fixture promotions need contracted talent");
 
   const draftA: DetailedShowDraft = {
     draftId: "planner-a-week-3",
@@ -70,8 +74,16 @@ function twoPlayerFixture(seed: number): {
     marketId: marketA.id,
     venueId: venueA.id,
     ticketStrategy: "STANDARD",
-    participantIds: [personA],
-    matches: [],
+    participantIds: personAIds,
+    matches: [{
+      draftMatchId: "planner-a-match-1",
+      type: "SINGLES",
+      sideAIds: [personAIds[0]!],
+      sideBIds: [personAIds[1]!],
+      intendedWinnerSide: "A",
+      intent: "COMPETITIVE",
+      plannedLengthMinutes: 17,
+    }],
     championshipAssignments: [],
   };
   const draftB: DetailedShowDraft = {
@@ -110,8 +122,12 @@ test("six-week planner returns the complete current plus five future week horizo
   ok(view.promotion?.weeks[5]?.offset === 5, "planner did not expose the fifth future week");
   const planned = view.promotion?.weeks[2]?.shows[0];
   ok(planned?.draftId === "planner-a-week-3", "player draft did not appear in its future week");
-  ok(planned?.participants.length === 1, "planner did not expose selected wrestler names");
+  ok(planned?.participants.length === 2, "planner did not expose selected wrestler names");
   ok(planned?.marketName !== null && planned?.venueName !== null, "planner did not expose selected logistics");
+  ok(planned?.matches.length === 1, "planner did not expose the saved running order");
+  ok(planned?.matches[0]?.order === 1 && planned.matches[0].isMainEvent, "planner did not identify the final match as the main event");
+  ok(planned?.matches[0]?.sideANames.length === 1 && planned.matches[0].sideBNames.length === 1, "planner running order lost participant names");
+  ok(planned?.plannedMatchMinutes === 17, "planner did not total booked match minutes");
 });
 
 test("six-week planner remains scoped to each player's controlled promotion", () => {
