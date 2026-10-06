@@ -1,6 +1,14 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
-import type { Match, MatchIntent, MatchParticipant, Person, WorldState, WrestlingEvent } from "../../domain/src/types.js";
+import type { Match, MatchIntent, MatchParticipant, WorldState, WrestlingEvent } from "../../domain/src/types.js";
 import { wrestlerAlignment } from "./alignment.js";
+import {
+  eventsForWeek,
+  matchesForEvent,
+  participantsForMatch,
+  personById,
+  programmeActivitiesForMatch,
+  programmeById,
+} from "./indexes.js";
 
 const INTENT_INTENSITY: Record<MatchIntent, number> = {
   COMPETITIVE: 58,
@@ -66,24 +74,16 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-function sameWeek(left: { year: number; week: number }, right: { year: number; week: number }): boolean {
-  return left.year === right.year && left.week === right.week;
-}
-
-function participantsForMatch(state: WorldState, matchId: string): MatchParticipant[] {
-  return state.matchParticipants.filter((participant) => participant.matchId === matchId);
-}
 
 function sideAlignment(
   state: WorldState,
-  participants: MatchParticipant[],
+  participants: readonly MatchParticipant[],
   side: "A" | "B",
 ): SideAlignment {
-  const peopleById = new Map(state.people.map((person) => [person.id, person]));
   const alignments = participants
     .filter((participant) => participant.side === side)
-    .map((participant) => peopleById.get(participant.personId))
-    .filter((person): person is Person => Boolean(person))
+    .map((participant) => personById(state, participant.personId))
+    .filter((person): person is NonNullable<ReturnType<typeof personById>> => Boolean(person))
     .map((person) => wrestlerAlignment(person, state.world.seed));
   if (alignments.length === 0) return null;
   const unique = new Set(alignments);
@@ -109,26 +109,20 @@ function alignmentModifierForMatch(state: WorldState, match: Match): ModifierEva
 
 function programmeModifierForMatch(state: WorldState, event: WrestlingEvent, match: Match): ModifierEvaluation {
   const programmeIds = new Set(
-    (state.programmeActivities ?? [])
-      .filter((activity) => (
-        activity.kind === "MATCH"
-        && activity.matchId === match.id
-        && activity.eventId === event.id
-      ))
+    programmeActivitiesForMatch(state, match.id)
+      .filter((activity) => activity.kind === "MATCH" && activity.eventId === event.id)
       .map((activity) => activity.programmeId),
   );
   if (programmeIds.size === 0) return { modifier: 0, reason: null };
 
-  const components = (state.programmes ?? [])
-    .filter((programme) => (
-      programmeIds.has(programme.id)
-      && programme.status === "ACTIVE"
-      && programme.promotionId === event.promotionId
-    ))
-    .map((programme) => ({
+  const components = [...programmeIds].flatMap((programmeId) => {
+    const programme = programmeById(state, programmeId);
+    if (!programme || programme.status !== "ACTIVE" || programme.promotionId !== event.promotionId) return [];
+    return [{
       heatEffect: programme.heat === null ? 0 : clamp((programme.heat - 50) / 15, -2, 2.5),
       repetitionPenalty: Math.min(3.5, programme.repetition * 0.04),
-    }));
+    }];
+  });
   if (components.length === 0) return { modifier: 0, reason: null };
 
   const heatEffect = components.reduce((sum, component) => sum + component.heatEffect, 0) / components.length;
@@ -201,7 +195,7 @@ function matchWeight(index: number, total: number): number {
 export function evaluateShowFlow(
   state: WorldState,
   event: WrestlingEvent,
-  completedMatches: Match[],
+  completedMatches: readonly Match[],
 ): ShowFlowEvaluation {
   const matches = completedMatches
     .filter((match) => match.status === "COMPLETED" && match.eventId === event.id)
@@ -275,9 +269,9 @@ function matchCompletedLedgerEntry(state: WorldState, matchId: string) {
  */
 export function applyCurrentWeekShowFlow(state: WorldState): number {
   let updated = 0;
-  for (const event of state.events) {
-    if (event.status !== "COMPLETED" || !sameWeek(event.date, state.world.currentDate)) continue;
-    const matches = state.matches.filter((match) => match.eventId === event.id && match.status === "COMPLETED");
+  for (const event of eventsForWeek(state, state.world.currentDate)) {
+    if (event.status !== "COMPLETED") continue;
+    const matches = matchesForEvent(state, event.id).filter((match) => match.status === "COMPLETED");
     if (matches.length === 0) continue;
 
     const eventLedger = eventCompletedLedgerEntry(state, event.id);
