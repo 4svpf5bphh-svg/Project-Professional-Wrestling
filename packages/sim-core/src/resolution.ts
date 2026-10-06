@@ -1,5 +1,8 @@
 import type { WorldState } from "../../domain/src/types.js";
-import { decayAudienceMarketHeatForWeek } from "./audience.js";
+import {
+  applyCurrentWeekShowFlowAudienceConsequences,
+  decayAudienceMarketHeatForWeek,
+} from "./audience.js";
 import { advanceWeek } from "./clock.js";
 import { processCareerProgressionForWeek, recoverWrestlersForNewWeek } from "./career.js";
 import { maintainChampionshipsForWeek, processCompetitionForWeek } from "./competition.js";
@@ -43,6 +46,7 @@ export function resolveWorldWeek(state: WorldState, hooks: WorldResolutionHooks 
   recordCurrentWeekProgrammeMatches(state);
   hooks.afterProgrammeMatches?.(state);
   applyCurrentWeekShowFlow(state);
+  applyCurrentWeekShowFlowAudienceConsequences(state);
   updateProgrammeSignalsForCurrentWeek(state);
 
   processCompetitionForWeek(state);
