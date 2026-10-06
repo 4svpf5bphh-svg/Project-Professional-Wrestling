@@ -15,9 +15,9 @@
 
 .summary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
-  margin: 14px 0;
+  margin: 14px 0 8px;
 }
 
 .summary div {
@@ -31,7 +31,8 @@
 .summary span,
 .matchMeta,
 .sideLabel,
-.hint {
+.hint,
+.timeGuide {
   color: #7f8b9b;
   font-size: 11px;
 }
@@ -44,6 +45,14 @@
   white-space: nowrap;
 }
 
+.timeGuide {
+  margin: 0 2px 14px;
+}
+
+.timeOver {
+  color: #ffad9f;
+}
+
 .cardList {
   display: grid;
   gap: 12px;
@@ -54,6 +63,11 @@
   border: 1px solid #202938;
   border-radius: 16px;
   background: #0d1219;
+}
+
+.mainEventCard {
+  border-color: rgba(244, 206, 114, .42);
+  box-shadow: inset 0 0 0 1px rgba(244, 206, 114, .05);
 }
 
 .matchHeader {
@@ -69,10 +83,15 @@
 }
 
 .mainEvent {
+  border: 1px solid rgba(244, 206, 114, .35);
+  border-radius: 999px;
+  background: rgba(244, 206, 114, .08);
   color: #f4ce72;
+  padding: 5px 8px;
   font-size: 10px;
   font-weight: 900;
   letter-spacing: .08em;
+  white-space: nowrap;
 }
 
 .sides {
@@ -103,6 +122,17 @@
   background: #111824;
   color: #f4f7fb;
   padding: 9px 10px;
+}
+
+.recentContext {
+  margin-top: 9px;
+  padding: 8px 10px;
+  border: 1px solid #253448;
+  border-radius: 10px;
+  background: #101721;
+  color: #9fb0c5;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .controls {
@@ -150,6 +180,17 @@
   opacity: .38;
 }
 
+.assignmentWarning {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 191, 112, .28);
+  border-radius: 12px;
+  background: rgba(73, 46, 17, .18);
+  color: #ffd09b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .saveBar {
   position: sticky;
   bottom: calc(10px + env(safe-area-inset-bottom));
@@ -181,6 +222,12 @@
   background: rgba(68, 20, 24, .2);
   color: #ffb1b1;
   line-height: 1.45;
+}
+
+@media (max-width: 900px) {
+  .summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
