@@ -1,0 +1,174 @@
+.shell {
+  width: min(100% - 24px, 980px);
+  margin: 20px auto 0;
+}
+
+.panel {
+  border: 1px solid rgba(130, 155, 190, 0.22);
+  border-radius: 20px;
+  background: rgba(12, 18, 31, 0.92);
+  padding: 18px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.24);
+}
+
+.heading,
+.creatorHeading,
+.programmeTitle,
+.meta,
+.signals {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.heading,
+.creatorHeading {
+  justify-content: space-between;
+}
+
+.heading h2 {
+  margin: 4px 0 0;
+}
+
+.count {
+  border: 1px solid rgba(118, 220, 255, 0.28);
+  border-radius: 999px;
+  padding: 5px 9px;
+  font-size: 0.78rem;
+  color: #b7ecff;
+  background: rgba(75, 186, 225, 0.08);
+}
+
+.programmeList {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.programme,
+.creator,
+.empty {
+  border: 1px solid rgba(130, 155, 190, 0.16);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 14px;
+}
+
+.programmeTitle {
+  flex-wrap: wrap;
+}
+
+.programmeTitle span {
+  color: rgba(220, 230, 245, 0.55);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.meta,
+.signals {
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 0.8rem;
+  color: rgba(220, 230, 245, 0.68);
+}
+
+.meta span,
+.signals span {
+  padding-right: 10px;
+  border-right: 1px solid rgba(220, 230, 245, 0.12);
+}
+
+.meta span:last-child,
+.signals span:last-child {
+  border-right: 0;
+}
+
+.empty {
+  margin-top: 14px;
+  color: rgba(220, 230, 245, 0.62);
+}
+
+.creator {
+  margin-top: 14px;
+}
+
+.creatorHeading span {
+  color: rgba(220, 230, 245, 0.58);
+  font-size: 0.8rem;
+}
+
+.sides {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: end;
+  margin-top: 12px;
+}
+
+.side {
+  display: grid;
+  gap: 8px;
+}
+
+.side label,
+.titleField span {
+  font-size: 0.76rem;
+  color: rgba(220, 230, 245, 0.66);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.side select,
+.titleField select {
+  width: 100%;
+  min-width: 0;
+}
+
+.vs {
+  padding-bottom: 12px;
+  color: rgba(220, 230, 245, 0.42);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.titleField {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0;
+}
+
+.error {
+  margin: 12px 0;
+  border: 1px solid rgba(255, 110, 110, 0.35);
+  background: rgba(255, 90, 90, 0.08);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: #ffd0d0;
+}
+
+@media (max-width: 640px) {
+  .shell {
+    width: min(100% - 16px, 980px);
+    margin-top: 12px;
+  }
+
+  .panel {
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  .sides {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .vs {
+    padding: 0;
+    text-align: center;
+  }
+
+  .heading {
+    align-items: flex-start;
+  }
+}
