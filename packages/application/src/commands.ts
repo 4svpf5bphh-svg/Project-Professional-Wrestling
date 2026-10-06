@@ -1,9 +1,11 @@
 import type { ContractOffer, Id, PpwDate, Promotion, WorldState } from "../../domain/src/types.js";
+import type { Programme, ProgrammeParticipantRef } from "../../domain/src/programmes.js";
 import {
   submitHumanContractOffer,
   type HumanContractOfferPlan,
 } from "../../sim-core/src/human-contracts.js";
 import type { HumanPromotionClaimOptions } from "../../sim-core/src/human-control.js";
+import { createProgramme } from "../../sim-core/src/programmes.js";
 import {
   activeWorldMembership,
   claimIndependentPromotionForPlayer,
@@ -23,7 +25,8 @@ export type ApplicationCommandType =
   | "UPSERT_DETAILED_SHOW_DRAFT"
   | "REMOVE_DETAILED_SHOW_DRAFT"
   | "RESERVE_DETAILED_SHOW_DRAFT"
-  | "RELEASE_DETAILED_SHOW_RESERVATION";
+  | "RELEASE_DETAILED_SHOW_RESERVATION"
+  | "START_PROGRAMME";
 
 export interface ApplicationCommandEnvelope<TPayload> {
   requestId: string;
@@ -52,6 +55,13 @@ export interface WorldCommandState {
 export interface ClaimIndependentPromotionPayload {
   promotionId: Id;
   options?: HumanPromotionClaimOptions;
+}
+
+export interface StartProgrammePayload {
+  promotionId: Id;
+  sideA: ProgrammeParticipantRef[];
+  sideB: ProgrammeParticipantRef[];
+  championshipId?: Id | null;
 }
 
 function cloneDate(date: PpwDate): PpwDate {
@@ -199,5 +209,35 @@ export function submitContractOfferCommand(
       throw new Error(`${envelope.playerId} does not control ${envelope.payload.promotionId}`);
     }
     return submitHumanContractOffer(state, envelope.payload);
+  });
+}
+
+export function startProgrammeCommand(
+  state: WorldState,
+  ownership: WorldOwnershipState,
+  commandState: WorldCommandState,
+  runtime: WorldRuntimeState,
+  envelope: ApplicationCommandEnvelope<StartProgrammePayload>,
+): Programme {
+  if (envelope.commandType !== "START_PROGRAMME") {
+    throw new Error(`expected START_PROGRAMME command, received ${envelope.commandType}`);
+  }
+  if (envelope.worldId !== state.world.id || ownership.worldId !== state.world.id) {
+    throw new Error("Programme command ownership/World mismatch");
+  }
+
+  return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
+    if (!activeWorldMembership(ownership, envelope.playerId)) {
+      throw new Error(`${envelope.playerId} is not an active member of ${state.world.id}`);
+    }
+    if (!playerControlsPromotion(ownership, envelope.playerId, envelope.payload.promotionId)) {
+      throw new Error(`${envelope.playerId} does not control ${envelope.payload.promotionId}`);
+    }
+    return createProgramme(state, {
+      promotionId: envelope.payload.promotionId,
+      sideA: structuredClone(envelope.payload.sideA),
+      sideB: structuredClone(envelope.payload.sideB),
+      championshipId: envelope.payload.championshipId ?? null,
+    });
   });
 }
