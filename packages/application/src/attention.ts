@@ -4,7 +4,6 @@ import {
   currentRosterPersonIds,
 } from "../../sim-core/src/contracts.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
-import { humanWeekReadiness } from "../../sim-core/src/human-routine.js";
 import { minimumViableRoster } from "../../sim-core/src/lifecycle.js";
 import {
   activityForPlayer,
@@ -13,7 +12,7 @@ import {
   type OpportunityCategory,
 } from "./engagement.js";
 import { activePromotionControlForPlayer } from "./ownership.js";
-import { playerShowPlanningStatus } from "./planning-status.js";
+import { playerCurrentWeekPreparation, playerShowPlanningStatus } from "./planning-status.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export type AttentionCategory = "ACTION_REQUIRED" | "IMPORTANT" | "OPPORTUNITY" | "WATCHING" | "WORLD_NEWS";
@@ -87,7 +86,12 @@ export function buildPlayerAttention(
   const activity = aggregate.engagement ? activityForPlayer(aggregate.engagement, playerId) : null;
 
   if (promotion) {
-    const readiness = humanWeekReadiness(aggregate.state, promotion.id);
+    const readiness = playerCurrentWeekPreparation(
+      aggregate.state,
+      aggregate.planning,
+      aggregate.runtime,
+      promotion.id,
+    );
     if (readiness.status === "SHOW_REQUIRED") {
       items.push({
         attentionId: `required-show:${promotion.id}:Y${currentDate.year}:W${currentDate.week}`,
