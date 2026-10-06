@@ -44,6 +44,8 @@ jobs:
         run: npm install
       - name: Run full test suite
         run: npm test
+      - name: Run alignment foundation coverage
+        run: node dist/tests/run-alignment-tests.js
       - name: Run Programme web service coverage
         run: node dist/tests/run-web-programme-service-tests.js
       - name: Run Programme match integration coverage

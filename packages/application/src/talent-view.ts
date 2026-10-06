@@ -9,6 +9,7 @@ import type {
   PpwDate,
   RoleExpectation,
 } from "../../domain/src/types.js";
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import {
   activeContractsForPerson,
   activeContractsForPromotion,
@@ -16,6 +17,7 @@ import {
   contractIsActive,
   marketWeeklyValue,
   ppwDateToWeekIndex,
+  wrestlerAlignment,
 } from "../../sim-core/src/index.js";
 import {
   activePromotionControlForPlayer,
@@ -40,6 +42,7 @@ export interface PlayerRosterContractView {
   contractId: Id;
   personId: Id;
   name: string;
+  alignment: WrestlerAlignment;
   careerStage: CareerStage;
   status: PersonStatus;
   biologicalAge: number;
@@ -72,6 +75,7 @@ export interface PlayerRosterContractView {
 export interface PlayerTalentMarketView {
   personId: Id;
   name: string;
+  alignment: WrestlerAlignment;
   careerStage: CareerStage;
   status: PersonStatus;
   biologicalAge: number;
@@ -214,10 +218,12 @@ export function buildPlayerTalentManagementView(
       const person = peopleById.get(contract.personId);
       if (!person) return null;
       const remaining = weeksToExpiry(aggregate, contract.endDate);
+      const alignment = wrestlerAlignment(person, aggregate.state.world.seed);
       return {
         contractId: contract.id,
         personId: person.id,
-        name: person.name,
+        name: `${person.name} · ${alignment}`,
+        alignment,
         careerStage: person.careerStage,
         status: person.status,
         biologicalAge: person.biologicalAge,
@@ -262,9 +268,11 @@ export function buildPlayerTalentManagementView(
       if (signed.some((contract) => contract.exclusivity === "EXCLUSIVE")) return null;
       const activeOutside = activeContractsForPerson(aggregate.state, person.id)
         .filter((contract) => contract.promotionId !== promotion.id && contractIsActive(aggregate.state, contract));
+      const alignment = wrestlerAlignment(person, aggregate.state.world.seed);
       return {
         personId: person.id,
-        name: person.name,
+        name: `${person.name} · ${alignment}`,
+        alignment,
         careerStage: person.careerStage,
         status: person.status,
         biologicalAge: person.biologicalAge,

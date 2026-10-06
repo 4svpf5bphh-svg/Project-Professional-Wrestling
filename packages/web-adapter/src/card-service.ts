@@ -18,6 +18,7 @@ import {
   type DetailedMatchDraft,
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
+import { wrestlerAlignment } from "../../sim-core/src/alignment.js";
 import {
   defaultPlannedFinishForIntent,
   isBookableMatchFinish,
@@ -390,9 +391,10 @@ export async function loadAlphaShowCard(
   const participants = draft.participantIds.map((personId) => {
     const person = peopleById.get(personId);
     if (!person) throw new Error(`reserved wrestler ${personId} was not found`);
+    const alignment = wrestlerAlignment(person, aggregate.state.world.seed);
     return {
       personId,
-      name: person.name,
+      name: `${person.name} · ${alignment}`,
       popularity: person.popularity,
       momentum: person.momentum,
       morale: person.morale,
