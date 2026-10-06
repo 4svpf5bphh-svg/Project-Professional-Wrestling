@@ -46,6 +46,8 @@ jobs:
         run: npm test
       - name: Run Programme web service coverage
         run: node dist/tests/run-web-programme-service-tests.js
+      - name: Run Programme match integration coverage
+        run: node dist/tests/run-programme-match-integration-tests.js
       - name: Build Alpha web app
         run: npm run web:build
       - name: Run Alpha HTTP integration
