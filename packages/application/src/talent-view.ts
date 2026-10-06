@@ -222,7 +222,7 @@ export function buildPlayerTalentManagementView(
       return {
         contractId: contract.id,
         personId: person.id,
-        name: `${person.name} · ${alignment}`,
+        name: person.name,
         alignment,
         careerStage: person.careerStage,
         status: person.status,
@@ -271,7 +271,7 @@ export function buildPlayerTalentManagementView(
       const alignment = wrestlerAlignment(person, aggregate.state.world.seed);
       return {
         personId: person.id,
-        name: `${person.name} · ${alignment}`,
+        name: person.name,
         alignment,
         careerStage: person.careerStage,
         status: person.status,

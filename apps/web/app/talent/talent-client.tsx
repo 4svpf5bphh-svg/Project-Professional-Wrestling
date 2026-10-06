@@ -160,6 +160,7 @@ function RosterCard({
         <div>
           <div className={styles.nameLine}>
             <strong>{wrestler.name}</strong>
+            <span className={styles.availability}>{label(wrestler.alignment)}</span>
             <InjuryBadge injury={wrestler.injury} />
             <span className={styles.availability}>{contract.exclusivity === "EXCLUSIVE" ? "Exclusive" : "Non-exclusive"}</span>
           </div>
@@ -214,6 +215,7 @@ function MarketCard({
         <div>
           <div className={styles.nameLine}>
             <strong>{wrestler.name}</strong>
+            <span className={styles.availability}>{label(wrestler.alignment)}</span>
             <InjuryBadge injury={wrestler.injury} />
           </div>
           <span>{label(wrestler.careerStage)} · age {wrestler.biologicalAge.toFixed(1)}</span>
