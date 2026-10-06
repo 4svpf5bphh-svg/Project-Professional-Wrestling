@@ -99,8 +99,17 @@
 }
 
 .error {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  left: 50%;
+  z-index: 80;
+  width: min(860px, calc(100vw - 32px));
+  box-sizing: border-box;
+  margin: 0;
+  transform: translateX(-50%);
   border: 1px solid rgba(255, 112, 112, .4);
-  background: rgba(84, 24, 24, .42);
+  background: rgba(84, 24, 24, .96);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, .38);
 }
 
 .notice {
@@ -115,11 +124,23 @@
 }
 
 .editor {
-  margin-bottom: 16px;
+  position: fixed;
+  left: 50%;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 60;
+  width: min(900px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px - env(safe-area-inset-top));
+  box-sizing: border-box;
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  transform: translateX(-50%);
   border: 1px solid rgba(93, 233, 206, .3);
   border-radius: 18px;
-  background: rgba(8, 20, 24, .98);
-  box-shadow: 0 16px 44px rgba(0, 0, 0, .32);
+  background: rgba(8, 20, 24, .99);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .58), 0 16px 44px rgba(0, 0, 0, .46);
+  clip-path: inset(-100vmax);
   padding: 16px;
 }
 
@@ -493,6 +514,13 @@
   .primaryButton,
   .actionButton {
     width: 100%;
+  }
+
+  .editor {
+    bottom: max(8px, env(safe-area-inset-bottom));
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px - env(safe-area-inset-top));
+    border-radius: 16px;
   }
 }
 
