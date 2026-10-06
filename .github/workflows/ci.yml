@@ -46,6 +46,8 @@ jobs:
         run: npm test
       - name: Run alignment foundation coverage
         run: node dist/tests/run-alignment-tests.js
+      - name: Run show-flow coverage
+        run: node dist/tests/run-show-flow-tests.js
       - name: Run Programme web service coverage
         run: node dist/tests/run-web-programme-service-tests.js
       - name: Run Programme match integration coverage

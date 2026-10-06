@@ -14,6 +14,7 @@ import { recordCurrentWeekProgrammeMatches } from "./programme-match-integration
 import { updateProgrammeSignalsForCurrentWeek } from "./programme-signals.js";
 import { processPromotionStandingForWeek } from "./reputation.js";
 import { applyRenewalRelationshipResistance } from "./renewal-resistance.js";
+import { applyCurrentWeekShowFlow } from "./show-flow.js";
 import { processTalentTrustForWeek } from "./talent-trust.js";
 
 export interface WorldResolutionHooks {
@@ -41,6 +42,7 @@ export function resolveWorldWeek(state: WorldState, hooks: WorldResolutionHooks 
   resolveWorldEvents(state, { staffMayBookCardFor: staffControlsCard });
   recordCurrentWeekProgrammeMatches(state);
   hooks.afterProgrammeMatches?.(state);
+  applyCurrentWeekShowFlow(state);
   updateProgrammeSignalsForCurrentWeek(state);
 
   processCompetitionForWeek(state);
