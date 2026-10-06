@@ -1,6 +1,9 @@
 import type { Id, PpwDate, WorldState } from "../../domain/src/types.js";
+import {
+  humanWeekReadiness,
+  type HumanWeekReadinessStatus,
+} from "../../sim-core/src/human-routine.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
-import { humanWeekReadiness } from "../../sim-core/src/human-routine.js";
 import {
   reservationAssessmentForDraft,
   type ReservationAssessment,
@@ -11,6 +14,7 @@ import {
 } from "./planning-reservations.js";
 import type {
   DetailedShowDraft,
+  DetailedShowReservation,
   PromotionPlanningWorkspace,
   WorldPlanningState,
 } from "./planning.js";
@@ -56,6 +60,12 @@ export interface PlayerShowPlanningStatus {
   workspaceChangedSinceReservation: boolean;
   worldPhase: WorldRuntimeState["phase"];
   availableActions: PlayerShowPlanningAction[];
+}
+
+export interface PlayerCurrentWeekPreparation {
+  status: HumanWeekReadinessStatus;
+  readyForLock: boolean;
+  eventId: Id | null;
 }
 
 function samePpwWeek(a: PpwDate, b: PpwDate): boolean {
@@ -121,6 +131,33 @@ function currentWeekReadiness(state: WorldState, promotionId: Id): PlayerShowRea
   return "NOT_REQUIRED";
 }
 
+function reservedCardIsComplete(
+  draft: DetailedShowDraft,
+  reservation: DetailedShowReservation,
+): boolean {
+  if (draft.matches.length === 0) return false;
+  const draftIds = [...draft.participantIds].sort();
+  const reservedIds = reservation.participants.map((participant) => participant.personId).sort();
+  if (draftIds.length !== reservedIds.length || !draftIds.every((personId, index) => personId === reservedIds[index])) {
+    return false;
+  }
+
+  const reserved = new Set(reservedIds);
+  const used = new Set<Id>();
+  for (const match of draft.matches) {
+    if (match.intendedWinnerSide === null || match.intent === null || match.plannedLengthMinutes === null) return false;
+    const expectedSideSize = match.type === "SINGLES" ? 1 : 2;
+    if (match.sideAIds.length !== expectedSideSize || match.sideBIds.length !== expectedSideSize) return false;
+    const ids = [...match.sideAIds, ...match.sideBIds];
+    if (new Set(ids).size !== ids.length) return false;
+    for (const personId of ids) {
+      if (!reserved.has(personId) || used.has(personId)) return false;
+      used.add(personId);
+    }
+  }
+  return used.size === reserved.size && [...reserved].every((personId) => used.has(personId));
+}
+
 function lockedTargetMatches(runtime: WorldRuntimeState, targetDate: PpwDate): boolean {
   return runtime.phase !== "OPEN"
     && runtime.lockedPpwDate !== null
@@ -152,7 +189,9 @@ export function playerShowPlanningStatus(
     planningState = assessment?.status === "AT_RISK" ? "AT_RISK" : "RESERVED";
     if (relation === "FUTURE") readiness = "FUTURE";
     else if (relation === "PAST") readiness = "PAST";
-    else readiness = assessment?.status === "AT_RISK" ? "SHOW_REQUIRED" : "RESERVATION_DUE";
+    else if (assessment?.status === "AT_RISK") readiness = "SHOW_REQUIRED";
+    else if (workspace.version !== reservation.reservedPlanVersion) readiness = "RESERVATION_DUE";
+    else readiness = reservedCardIsComplete(draft, reservation) ? "READY_TO_LOCK" : "CARD_REQUIRED";
   } else if (eventId) {
     const weekReadiness = relation === "CURRENT" ? currentWeekReadiness(state, promotionId) : null;
     if (weekReadiness === "READY_TO_LOCK") {
@@ -191,6 +230,37 @@ export function playerShowPlanningStatus(
     worldPhase: runtime.phase,
     availableActions: planningActions(runtime.phase, planningState, relation),
   };
+}
+
+export function playerCurrentWeekPreparation(
+  state: WorldState,
+  planning: WorldPlanningState,
+  runtime: WorldRuntimeState,
+  promotionId: Id,
+): PlayerCurrentWeekPreparation {
+  const simulation = humanWeekReadiness(state, promotionId);
+  if (simulation.status !== "SHOW_REQUIRED") {
+    return {
+      status: simulation.status,
+      readyForLock: simulation.readyToAdvance,
+      eventId: simulation.eventId,
+    };
+  }
+
+  const workspace = planning.workspaces.find((candidate) => candidate.promotionId === promotionId);
+  const currentDrafts = (workspace?.detailedShowDrafts ?? [])
+    .filter((draft) => samePpwWeek(draft.targetDate, state.world.currentDate));
+  const statuses = currentDrafts.map((draft) => (
+    playerShowPlanningStatus(state, planning, runtime, promotionId, draft.draftId)
+  ));
+
+  if (statuses.some((status) => status.reservationId !== null && status.readiness === "READY_TO_LOCK")) {
+    return { status: "READY", readyForLock: true, eventId: null };
+  }
+  if (statuses.some((status) => status.reservationId !== null && status.readiness === "CARD_REQUIRED")) {
+    return { status: "CARD_REQUIRED", readyForLock: false, eventId: null };
+  }
+  return { status: "SHOW_REQUIRED", readyForLock: false, eventId: null };
 }
 
 export function assertPlayerShowPlanningActionAllowed(
