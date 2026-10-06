@@ -51,6 +51,15 @@ export interface AlphaChampionshipAssignmentView {
   championshipId: Id;
 }
 
+export interface AlphaRecentMeetingView {
+  personAId: Id;
+  personBId: Id;
+  year: number;
+  week: number;
+  weeksAgo: number;
+  winnerPersonIds: Id[];
+}
+
 export interface AlphaCurrentWeekCardView {
   world: {
     worldId: Id;
@@ -73,6 +82,7 @@ export interface AlphaCurrentWeekCardView {
   venueName: string;
   participants: AlphaCardParticipantView[];
   matches: AlphaCardMatchView[];
+  recentMeetings: AlphaRecentMeetingView[];
   championships: AlphaCardChampionshipView[];
   championshipAssignments: AlphaChampionshipAssignmentView[];
 }
@@ -264,6 +274,80 @@ function resolveDraftId(
     : requiredText(requestedDraftId, "draftId", 128);
 }
 
+function weekIndex(date: PpwDate, weeksPerYear: number): number {
+  return ((date.year - 1) * weeksPerYear) + (date.week - 1);
+}
+
+function pairKey(left: Id, right: Id): string {
+  return left < right ? `${left}\u0000${right}` : `${right}\u0000${left}`;
+}
+
+function recentMeetingsForParticipants(
+  state: WorldState,
+  promotionId: Id,
+  participantIds: Id[],
+  currentDate: PpwDate,
+): AlphaRecentMeetingView[] {
+  const selected = new Set(participantIds);
+  if (selected.size < 2) return [];
+
+  const completedEvents = new Map(
+    state.events
+      .filter((event) => event.promotionId === promotionId && event.status === "COMPLETED")
+      .map((event) => [event.id, event]),
+  );
+  const participantsByMatch = new Map<Id, WorldState["matchParticipants"]>();
+  for (const participant of state.matchParticipants) {
+    if (!selected.has(participant.personId)) continue;
+    const list = participantsByMatch.get(participant.matchId) ?? [];
+    list.push(participant);
+    participantsByMatch.set(participant.matchId, list);
+  }
+
+  const matches = state.matches
+    .filter((match) => match.promotionId === promotionId && match.status === "COMPLETED" && completedEvents.has(match.eventId))
+    .sort((left, right) => {
+      const leftEvent = completedEvents.get(left.eventId)!;
+      const rightEvent = completedEvents.get(right.eventId)!;
+      return weekIndex(rightEvent.date, state.ruleset.weeksPerYear) - weekIndex(leftEvent.date, state.ruleset.weeksPerYear)
+        || rightEvent.date.day - leftEvent.date.day
+        || right.order - left.order
+        || right.id.localeCompare(left.id);
+    });
+
+  const currentWeek = weekIndex(currentDate, state.ruleset.weeksPerYear);
+  const latestByPair = new Map<string, AlphaRecentMeetingView>();
+  for (const match of matches) {
+    const event = completedEvents.get(match.eventId)!;
+    const participants = participantsByMatch.get(match.id) ?? [];
+    const sideA = participants.filter((participant) => participant.side === "A");
+    const sideB = participants.filter((participant) => participant.side === "B");
+    if (sideA.length === 0 || sideB.length === 0) continue;
+    const winnerPersonIds = participants.filter((participant) => participant.won).map((participant) => participant.personId);
+    for (const left of sideA) {
+      for (const right of sideB) {
+        const key = pairKey(left.personId, right.personId);
+        if (latestByPair.has(key)) continue;
+        latestByPair.set(key, {
+          personAId: left.personId,
+          personBId: right.personId,
+          year: event.date.year,
+          week: event.date.week,
+          weeksAgo: Math.max(0, currentWeek - weekIndex(event.date, state.ruleset.weeksPerYear)),
+          winnerPersonIds: [...winnerPersonIds],
+        });
+      }
+    }
+  }
+
+  return [...latestByPair.values()].sort((left, right) => (
+    left.weeksAgo - right.weeksAgo
+    || left.year - right.year
+    || left.week - right.week
+    || pairKey(left.personAId, left.personBId).localeCompare(pairKey(right.personAId, right.personBId))
+  ));
+}
+
 export async function loadAlphaShowCard(
   repository: ApplicationWorldRepository,
   worldId: string,
@@ -357,6 +441,12 @@ export async function loadAlphaShowCard(
         } satisfies AlphaCardMatchView]
         : []
     )),
+    recentMeetings: recentMeetingsForParticipants(
+      aggregate.state,
+      promotion.id,
+      draft.participantIds,
+      currentDate,
+    ),
     championships,
     championshipAssignments: draft.championshipAssignments.map((assignment) => ({ ...assignment })),
   };
