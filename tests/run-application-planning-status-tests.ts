@@ -166,6 +166,7 @@ test("reserved status permits edits but requires explicit refresh for changed in
   reserveDraft(f, draft.draftId);
   const reserved = playerShowPlanningStatus(f.state, f.planning, f.runtime, f.promotionId, draft.draftId);
   ok(reserved.state === "RESERVED", "reservation did not expose RESERVED status");
+  ok(reserved.readiness === "CARD_REQUIRED", "healthy current-week reservation did not recognise that only its card remains");
   ok(reserved.availableActions.includes("REFRESH_RESERVATION"), "reserved plan cannot refresh its commitment");
   ok(!reserved.availableActions.includes("DELETE_DRAFT"), "reserved plan incorrectly permits direct deletion");
 
@@ -173,6 +174,20 @@ test("reserved status permits edits but requires explicit refresh for changed in
   const edited = playerShowPlanningStatus(f.state, f.planning, f.runtime, f.promotionId, draft.draftId);
   ok(edited.workspaceChangedSinceReservation, "editing reserved intent did not expose refresh requirement");
   ok(edited.state === "RESERVED", "editing intent silently changed reservation state");
+  ok(edited.readiness === "RESERVATION_DUE", "changed reserved intent did not require reservation refresh");
+});
+
+test("complete reserved card is ready for lock before materialization but remains editable", () => {
+  const f = fixture(17108);
+  const draft = completeSinglesCard(baseDraft(f));
+  saveDraft(f, draft);
+  reserveDraft(f, draft.draftId);
+  const status = playerShowPlanningStatus(f.state, f.planning, f.runtime, f.promotionId, draft.draftId);
+  ok(status.state === "RESERVED", "prepared show was presented as materialized before lock");
+  ok(status.readiness === "READY_TO_LOCK", "complete healthy reservation was not presented as ready for lock");
+  ok(status.availableActions.includes("EDIT_DRAFT"), "prepared reserved show could no longer be edited before lock");
+  ok(status.availableActions.includes("REFRESH_RESERVATION"), "prepared reserved show lost its refresh action before lock");
+  ok(f.state.events.length === 0, "readiness projection created a simulation event before materialization");
 });
 
 test("reserved draft cannot be deleted before its scarce-resource commitment is released", () => {
