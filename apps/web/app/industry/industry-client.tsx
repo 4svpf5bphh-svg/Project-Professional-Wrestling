@@ -30,6 +30,10 @@ function decimal(value: number): string {
   return new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(value);
 }
 
+function profileHref(personId: string): string {
+  return `/talent/profile?personId=${encodeURIComponent(personId)}&from=industry`;
+}
+
 function standingAverage(promotion: PlayerIndustryPromotionView): number | null {
   if (!promotion.standing) return null;
   return (
@@ -161,7 +165,7 @@ export default function IndustryClient(): React.JSX.Element {
                   <div className={styles.sectionTitle}><span>FEATURED TALENT</span><b>public roster view</b></div>
                   <div className={styles.talentGrid}>
                     {promotion.featuredTalent.map((person) => (
-                      <a href={`/talent/profile?personId=${encodeURIComponent(person.personId)}`} className={styles.talent} key={person.personId}>
+                      <a href={profileHref(person.personId)} className={styles.talent} key={person.personId}>
                         <strong>{person.name}</strong>
                         <span>{label(person.careerStage)} · POP {Math.round(person.popularity)} · REC {Math.round(person.recognition)}</span>
                       </a>
