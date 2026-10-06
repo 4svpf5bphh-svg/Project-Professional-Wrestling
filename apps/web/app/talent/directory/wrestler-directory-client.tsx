@@ -24,6 +24,10 @@ function label(value: string): string {
   return value.replaceAll("_", " ");
 }
 
+function profileHref(personId: string): string {
+  return `/talent/profile?personId=${encodeURIComponent(personId)}&from=directory`;
+}
+
 export default function WrestlerDirectoryClient(): React.JSX.Element {
   const [view, setView] = useState<PlayerTalentManagementView | null>(null);
   const [query, setQuery] = useState("");
@@ -99,7 +103,7 @@ export default function WrestlerDirectoryClient(): React.JSX.Element {
           </label>
           <section className={styles.list}>
             {visible.map((entry) => (
-              <a className={styles.card} href={`/talent/profile?personId=${encodeURIComponent(entry.personId)}`} key={entry.personId}>
+              <a className={styles.card} href={profileHref(entry.personId)} key={entry.personId}>
                 <div>
                   <strong>{entry.name}</strong>
                   <span>{label(entry.careerStage)} · {label(entry.status)}</span>
