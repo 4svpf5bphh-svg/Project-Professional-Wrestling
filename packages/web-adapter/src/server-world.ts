@@ -16,6 +16,9 @@ export interface AlphaServerContextOptions {
   trackPlayerActivity?: boolean;
 }
 
+const schemaBootstraps = new Map<string, Promise<void>>();
+const worldBootstraps = new Map<string, Promise<string>>();
+
 function integerEnvironment(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -26,6 +29,38 @@ function integerEnvironment(name: string, fallback: number): number {
 
 function currentUtcCycleKey(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+function ensureSchemaReady(
+  connectionString: string,
+  repository: ReturnType<typeof createPostgresApplicationWorldRepository>["repository"],
+): Promise<void> {
+  const existing = schemaBootstraps.get(connectionString);
+  if (existing) return existing;
+
+  const bootstrap = repository.migrate().catch((error) => {
+    schemaBootstraps.delete(connectionString);
+    throw error;
+  });
+  schemaBootstraps.set(connectionString, bootstrap);
+  return bootstrap;
+}
+
+function ensureWorldReady(
+  connectionString: string,
+  repository: ApplicationWorldRepository,
+  options: { seed: number; playerId: string; worldName: string },
+): Promise<string> {
+  const key = `${connectionString}\u0000${options.seed}\u0000${options.worldName}`;
+  const existing = worldBootstraps.get(key);
+  if (existing) return existing;
+
+  const bootstrap = ensureAlphaWorld(repository, options).catch((error) => {
+    worldBootstraps.delete(key);
+    throw error;
+  });
+  worldBootstraps.set(key, bootstrap);
+  return bootstrap;
 }
 
 export async function withAlphaServerContext<TResult>(
@@ -42,8 +77,8 @@ export async function withAlphaServerContext<TResult>(
 
   const { repository, close } = createPostgresApplicationWorldRepository(connectionString);
   try {
-    await repository.migrate();
-    const worldId = await ensureAlphaWorld(repository, { seed, playerId, worldName });
+    await ensureSchemaReady(connectionString, repository);
+    const worldId = await ensureWorldReady(connectionString, repository, { seed, playerId, worldName });
 
     if (options.trackPlayerActivity !== false) {
       await repository.transact(worldId, null, (aggregate) => {
