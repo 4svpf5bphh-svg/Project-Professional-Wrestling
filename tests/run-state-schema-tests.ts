@@ -87,6 +87,7 @@ test("persisted World state has an explicit schema version and materializes lazy
   ok(state.promotionStandings === undefined, "fixture unexpectedly initialized promotion standings");
   ok(state.teams === undefined, "fixture unexpectedly initialized teams");
   ok(state.championshipMatchBookings === undefined, "fixture unexpectedly initialized championship booking state");
+  ok(state.programmes === undefined, "fixture unexpectedly initialized Programme state");
 
   const snapshot = createPersistedWorldState(state);
 
@@ -101,9 +102,12 @@ test("persisted World state has an explicit schema version and materializes lazy
   ok(Array.isArray(snapshot.championshipReigns), "championship reigns were not materialized");
   ok(Array.isArray(snapshot.championshipContests), "championship contests were not materialized");
   ok(Array.isArray(snapshot.championshipMatchBookings), "championship match bookings were not materialized");
+  ok(Array.isArray(snapshot.programmes), "Programmes were not materialized");
+  ok(Array.isArray(snapshot.programmeActivities), "Programme activities were not materialized");
   ok(state.promotionStandings === undefined, "serializing mutated the live promotion standings collection");
   ok(state.teams === undefined, "serializing mutated the live teams collection");
   ok(state.championshipMatchBookings === undefined, "serializing mutated live championship booking state");
+  ok(state.programmes === undefined, "serializing mutated live Programme state");
 });
 
 test("JSON persistence round-trip preserves the deterministic World and future resolution", () => {
@@ -138,7 +142,9 @@ test("schema v1 migrates unresolved Ledger title intent through the current live
   const {
     championshipMatchBookings: _discardV2LiveState,
     entityIdCounters: _discardV3Counters,
-    stateSchemaVersion: _discardV3Version,
+    stateSchemaVersion: _discardV4Version,
+    programmes: _discardV4Programmes,
+    programmeActivities: _discardV4Activities,
     ...legacyBody
   } = current;
   const legacyV1 = { ...legacyBody, stateSchemaVersion: 1 };
@@ -149,10 +155,23 @@ test("schema v1 migrates unresolved Ledger title intent through the current live
   );
   ok(Boolean(booking), "v1 migration did not reconstruct unresolved title intent from historical Ledger data");
   ok(booking!.matchId === match.id, "v1 migration reconstructed the wrong title match");
-  ok(
-    deterministicWorldHash(restored) === deterministicWorldHash(state),
-    "v1 migration changed deterministic current World state",
-  );
+  ok(restored.programmes?.length === 0 && restored.programmeActivities?.length === 0, "v1 migration did not initialize empty Programme state");
+  ok(deterministicWorldHash(restored) === deterministicWorldHash(state), "v1 migration changed deterministic current World state");
+});
+
+test("schema v3 upgrades legacy entity counters and initializes Programme collections", () => {
+  const snapshot = createPersistedWorldState(createWorld(22009, DEFAULT_RULESET));
+  const legacyV3: any = structuredClone(snapshot);
+  legacyV3.stateSchemaVersion = 3;
+  delete legacyV3.programmes;
+  delete legacyV3.programmeActivities;
+  delete legacyV3.entityIdCounters.programme;
+  delete legacyV3.entityIdCounters.programmeActivity;
+
+  const restored = restorePersistedWorldState(legacyV3);
+  const current = createPersistedWorldState(restored);
+  ok(restored.programmes?.length === 0 && restored.programmeActivities?.length === 0, "v3 migration did not initialize Programme collections");
+  ok(current.entityIdCounters.programme === 0 && current.entityIdCounters.programmeActivity === 0, "v3 migration did not initialize Programme counters");
 });
 
 test("current schema persists live title intent independently of Ledger interpretation", () => {
@@ -180,6 +199,12 @@ test("missing or corrupt mandatory persisted booking state is rejected", () => {
 
   const missingBookings = { ...snapshot, championshipMatchBookings: undefined };
   expectReject(() => restorePersistedWorldState(missingBookings), "field championshipMatchBookings must be an array");
+
+  const missingProgrammes = { ...snapshot, programmes: undefined };
+  expectReject(() => restorePersistedWorldState(missingProgrammes), "field programmes must be an array");
+
+  const missingActivities = { ...snapshot, programmeActivities: undefined };
+  expectReject(() => restorePersistedWorldState(missingActivities), "field programmeActivities must be an array");
 
   const missingCounters = { ...snapshot, entityIdCounters: undefined };
   expectReject(() => restorePersistedWorldState(missingCounters), "persisted entity ID counters must be an object");
