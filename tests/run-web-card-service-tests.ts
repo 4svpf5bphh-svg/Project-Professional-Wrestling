@@ -102,6 +102,7 @@ await test("Alpha browser card booking persists a complete card, title assignmen
   const fixture = await reservedShowFixture(61011);
   const beforeCard = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
   ok(beforeCard.matches.length === 0, "fresh reserved show unexpectedly has a manual card");
+  ok(beforeCard.recentMeetings.length === 0, "fresh Alpha World unexpectedly exposed prior opponent history");
   ok(beforeCard.canEdit, "reserved show card is not editable");
   ok(beforeCard.participants.length === fixture.participantIds.length, "card planner lost reserved participants");
   ok(beforeCard.targetDate.week === beforeCard.world.week, "current-week card target does not match current week");
@@ -170,6 +171,50 @@ await test("Alpha browser card booking persists a complete card, title assignmen
     )),
     "reserved show did not report the manual card and title assignment as materialized",
   );
+
+  const nextPromotion = afterWeek.promotion;
+  if (!nextPromotion) throw new Error("resolved World lost the controlled promotion");
+  const available = new Set(
+    nextPromotion.roster
+      .filter((person) => person.status === "ACTIVE" && person.datesRemaining > 0)
+      .map((person) => person.personId),
+  );
+  const repeatMatch = card.find((match) => available.has(match.sideAIds[0]!) && available.has(match.sideBIds[0]!));
+  if (!repeatMatch) throw new Error("recent-opponent fixture has no repeatable completed pairing");
+  const nextTargetCount = Math.min(
+    nextPromotion.showPlanning.maxParticipants,
+    Math.max(nextPromotion.showPlanning.minParticipants, 4),
+  );
+  const nextParticipantIds = [repeatMatch.sideAIds[0]!, repeatMatch.sideBIds[0]!];
+  for (const person of nextPromotion.roster) {
+    if (nextParticipantIds.length >= nextTargetCount) break;
+    if (person.status !== "ACTIVE" || person.datesRemaining <= 0 || nextParticipantIds.includes(person.personId)) continue;
+    nextParticipantIds.push(person.personId);
+  }
+  if (nextParticipantIds.length % 2 !== 0) nextParticipantIds.pop();
+  if (nextParticipantIds.length < nextPromotion.showPlanning.minParticipants) {
+    throw new Error("recent-opponent fixture cannot reserve enough talent next week");
+  }
+  const nextMarket = nextPromotion.showPlanning.markets[0];
+  const nextVenue = nextMarket?.venues[0];
+  if (!nextMarket || !nextVenue) throw new Error("recent-opponent fixture lost market/venue options");
+  await saveAlphaCurrentWeekShowPlan(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "recent-opponent-next-show",
+    expectedRevision: afterWeek.world.revision,
+    expectedPlanVersion: nextPromotion.showPlanning.workspaceVersion,
+    day: 6,
+    marketId: nextMarket.marketId,
+    venueId: nextVenue.venueId,
+    ticketStrategy: "STANDARD",
+    participantIds: nextParticipantIds,
+  });
+  const nextCard = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const recent = nextCard.recentMeetings.find((meeting) => (
+    (meeting.personAId === repeatMatch.sideAIds[0] && meeting.personBId === repeatMatch.sideBIds[0])
+    || (meeting.personAId === repeatMatch.sideBIds[0] && meeting.personBId === repeatMatch.sideAIds[0])
+  ));
+  ok(recent?.weeksAgo === 1, "card did not expose the previous week's opponent context");
+  ok((recent?.winnerPersonIds.length ?? 0) > 0, "recent opponent context did not expose the prior winning side");
 });
 
 await test("Alpha browser card booking rejects incomplete cards without damaging the reservation", async () => {
