@@ -49,7 +49,44 @@ await test("lightweight player activity persistence updates engagement without a
     );
     ok(after.runtime.revision === before.runtime.revision, "activity write advanced the World revision");
     ok(after.state.world.currentDate.week === before.state.world.currentDate.week, "activity write advanced PPW time");
-    ok(after.commands.receipts.length === before.commands.receipts.length, "activity write changed command receipts");
+    ok(after.commands.receipts.length === 0, "server read path unexpectedly loaded command receipts");
+  } finally {
+    await access.close();
+  }
+});
+
+await test("server reads omit command history while transactions retain idempotency receipts", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62022, playerId: "receipt-player" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+
+    await access.repository.transact(worldId, null, (working) => {
+      working.commands.receipts.push({
+        worldId,
+        requestId: "receipt-performance-check",
+        playerId: "receipt-player",
+        commandType: "CLAIM_INDEPENDENT_PROMOTION",
+        canonicalPayload: "{}",
+        resultJson: "{}",
+        committedDate: { ...working.state.world.currentDate },
+        committedRevision: working.runtime.revision,
+      });
+    });
+
+    const readOnly = await access.repository.load(worldId);
+    ok(readOnly.commands.receipts.length === 0, "ordinary server read loaded historical command receipts");
+
+    let receiptsVisibleInsideTransaction = 0;
+    await access.repository.transact(worldId, null, (working) => {
+      receiptsVisibleInsideTransaction = working.commands.receipts.length;
+    });
+    ok(
+      receiptsVisibleInsideTransaction === 1,
+      "transaction path did not retain command receipts required for idempotency",
+    );
   } finally {
     await access.close();
   }
