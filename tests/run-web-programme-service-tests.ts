@@ -8,6 +8,7 @@ import {
 } from "../packages/web-adapter/src/alpha-service.js";
 import {
   loadAlphaProgrammeContext,
+  setAlphaProgrammeSegment,
   startAlphaProgramme,
 } from "../packages/web-adapter/src/programme-service.js";
 
@@ -154,6 +155,56 @@ await test("Alpha Programme context only surfaces active stories involving this 
     context.programmes[0]?.championshipName === (before.championships[0]?.name ?? null),
     "Programme context lost its championship story",
   );
+});
+
+await test("Alpha Programme segments are planned idempotently without becoming history before resolution", async () => {
+  const fixture = await reservedShowFixture(62014);
+  const before = await loadAlphaProgrammeContext(fixture.repository, fixture.worldId, "alpha-player");
+  const started = await startAlphaProgramme(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "programme-segment-story",
+    expectedRevision: before.world.revision,
+    draftId: before.draftId,
+    sideAIds: [fixture.participantIds[0]!],
+    sideBIds: [fixture.participantIds[1]!],
+    championshipId: null,
+  });
+  const programme = started.programmes[0];
+  if (!programme) throw new Error("segment fixture did not start its Programme");
+
+  const request = {
+    requestId: "programme-segment-enable",
+    expectedRevision: started.world.revision,
+    expectedPlanVersion: started.workspaceVersion,
+    draftId: started.draftId,
+    programmeId: programme.programmeId,
+    enabled: true,
+  };
+  const enabled = await setAlphaProgrammeSegment(fixture.repository, fixture.worldId, "alpha-player", request);
+  ok(enabled.programmeSegments.length === 1, "enabled Programme segment was not exposed in booking context");
+  ok(
+    enabled.programmeSegments[0]?.participantIds.includes(fixture.participantIds[0]!)
+      && enabled.programmeSegments[0]?.participantIds.includes(fixture.participantIds[1]!),
+    "Programme segment did not retain reserved story participants",
+  );
+
+  const persisted = await fixture.repository.load(fixture.worldId);
+  ok((persisted.state.programmeActivities ?? []).length === 0, "planned Programme segment leaked into factual history before show resolution");
+  const draft = persisted.planning.workspaces[0]?.detailedShowDrafts.find((candidate) => candidate.draftId === started.draftId);
+  ok(draft?.programmeSegments?.length === 1, "Programme segment was not persisted with the show draft");
+
+  const retried = await setAlphaProgrammeSegment(fixture.repository, fixture.worldId, "alpha-player", request);
+  ok(retried.workspaceVersion === enabled.workspaceVersion, "idempotent segment retry advanced the show plan version again");
+  ok(retried.programmeSegments.length === 1, "idempotent segment retry duplicated the planned segment");
+
+  const disabled = await setAlphaProgrammeSegment(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "programme-segment-disable",
+    expectedRevision: retried.world.revision,
+    expectedPlanVersion: retried.workspaceVersion,
+    draftId: retried.draftId,
+    programmeId: programme.programmeId,
+    enabled: false,
+  });
+  ok(disabled.programmeSegments.length === 0, "removing a Programme segment left stale show-plan activity behind");
 });
 
 console.log(`\nWeb Programme service tests: ${passed} passed, ${failed} failed`);

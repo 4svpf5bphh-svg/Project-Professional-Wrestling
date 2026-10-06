@@ -4,7 +4,9 @@ import {
   activePromotionControlForPlayer,
   alphaCurrentWeekShowDraftId,
   reservationForDraft,
+  reserveDetailedShowDraftCommand,
   startProgrammeCommand,
+  upsertDetailedShowDraftCommand,
   type ApplicationWorldRepository,
 } from "../../application/src/index.js";
 
@@ -24,6 +26,7 @@ export interface AlphaProgrammeView {
   repetition: number;
   activityCount: number;
   matchCount: number;
+  segmentCount: number;
 }
 
 export interface AlphaProgrammeParticipantView {
@@ -35,6 +38,12 @@ export interface AlphaProgrammeChampionshipView {
   championshipId: Id;
   name: string;
   division: "SINGLES" | "TAG";
+}
+
+export interface AlphaProgrammeSegmentView {
+  draftSegmentId: string;
+  programmeId: Id;
+  participantIds: Id[];
 }
 
 export interface AlphaProgrammeContextView {
@@ -50,10 +59,12 @@ export interface AlphaProgrammeContextView {
     name: string;
   };
   draftId: string;
+  workspaceVersion: number;
   canEdit: boolean;
   participants: AlphaProgrammeParticipantView[];
   championships: AlphaProgrammeChampionshipView[];
   programmes: AlphaProgrammeView[];
+  programmeSegments: AlphaProgrammeSegmentView[];
 }
 
 export interface AlphaStartProgrammeRequest {
@@ -65,11 +76,25 @@ export interface AlphaStartProgrammeRequest {
   championshipId?: Id | null;
 }
 
+export interface AlphaSetProgrammeSegmentRequest {
+  requestId: string;
+  expectedRevision: number;
+  expectedPlanVersion: number;
+  draftId?: string;
+  programmeId: Id;
+  enabled: boolean;
+}
+
 function requiredText(value: string, label: string, maxLength = 220): string {
   const normalized = value.trim();
   if (!normalized) throw new Error(`${label} must not be empty`);
   if (normalized.length > maxLength) throw new Error(`${label} is too long`);
   return normalized;
+}
+
+function requireNonNegativeInteger(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${label} must be a non-negative integer`);
+  return value;
 }
 
 function resolveDraftId(promotionId: Id, year: number, week: number, day: number, requested?: string): string {
@@ -142,7 +167,7 @@ export async function loadAlphaProgrammeContext(
   const workspace = aggregate.planning.workspaces.find((candidate) => candidate.promotionId === promotion.id);
   const draft = workspace?.detailedShowDrafts.find((candidate) => candidate.draftId === draftId);
   const reservation = reservationForDraft(aggregate.planning, promotion.id, draftId);
-  if (!draft || !reservation) throw new Error("Reserve this show before managing Programmes from its card");
+  if (!workspace || !draft || !reservation) throw new Error("Reserve this show before managing Programmes from its card");
 
   const peopleById = new Map(aggregate.state.people.map((person) => [person.id, person]));
   const participants = draft.participantIds.map((personId) => ({
@@ -170,6 +195,7 @@ export async function loadAlphaProgrammeContext(
         repetition: programme.repetition,
         activityCount: programme.activityCount,
         matchCount: programme.matchCount,
+        segmentCount: programme.segmentCount,
       } satisfies AlphaProgrammeView;
     })
     .filter((programme) => (
@@ -186,6 +212,12 @@ export async function loadAlphaProgrammeContext(
     } satisfies AlphaProgrammeChampionshipView))
     .sort((left, right) => left.division.localeCompare(right.division) || left.name.localeCompare(right.name));
 
+  const programmeSegments = (draft.programmeSegments ?? []).map((segment) => ({
+    draftSegmentId: segment.draftSegmentId,
+    programmeId: segment.programmeId,
+    participantIds: [...segment.participantIds],
+  } satisfies AlphaProgrammeSegmentView));
+
   return {
     world: {
       worldId,
@@ -196,10 +228,12 @@ export async function loadAlphaProgrammeContext(
     },
     promotion: { promotionId: promotion.id, name: promotion.name },
     draftId,
+    workspaceVersion: workspace.version,
     canEdit: aggregate.runtime.phase === "OPEN",
     participants,
     championships,
     programmes,
+    programmeSegments,
   };
 }
 
@@ -210,9 +244,7 @@ export async function startAlphaProgramme(
   request: AlphaStartProgrammeRequest,
 ): Promise<AlphaProgrammeContextView> {
   const requestId = requiredText(request.requestId, "requestId");
-  if (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < 0) {
-    throw new Error("expectedRevision must be a non-negative integer");
-  }
+  requireNonNegativeInteger(request.expectedRevision, "expectedRevision");
   const requestedDraftId = request.draftId === undefined
     ? undefined
     : requiredText(request.draftId, "draftId", 128);
@@ -255,6 +287,118 @@ export async function startAlphaProgramme(
           sideA: request.sideAIds.map((entityId) => ({ kind: "PERSON", entityId })),
           sideB: request.sideBIds.map((entityId) => ({ kind: "PERSON", entityId })),
           championshipId,
+        },
+      },
+    );
+  });
+
+  return loadAlphaProgrammeContext(repository, worldId, playerId, requestedDraftId);
+}
+
+export async function setAlphaProgrammeSegment(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  request: AlphaSetProgrammeSegmentRequest,
+): Promise<AlphaProgrammeContextView> {
+  const requestId = requiredText(request.requestId, "requestId");
+  requireNonNegativeInteger(request.expectedRevision, "expectedRevision");
+  requireNonNegativeInteger(request.expectedPlanVersion, "expectedPlanVersion");
+  const programmeId = requiredText(request.programmeId, "programmeId", 128);
+  const requestedDraftId = request.draftId === undefined
+    ? undefined
+    : requiredText(request.draftId, "draftId", 128);
+  const segmentRequestId = `${requestId}:segment`;
+  const reservationRequestId = `${requestId}:reserve`;
+
+  await repository.transact(worldId, null, (aggregate) => {
+    const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
+    if (!control) throw new Error("Take control of a promotion before managing Programmes");
+    const segmentReceipt = aggregate.commands.receipts.find((receipt) => receipt.requestId === segmentRequestId);
+    const reservationReceipt = aggregate.commands.receipts.find((receipt) => receipt.requestId === reservationRequestId);
+    const completeRetry = Boolean(segmentReceipt && reservationReceipt);
+    if (!completeRetry && aggregate.runtime.revision !== request.expectedRevision) {
+      throw new Error(`stale World revision for ${worldId}: expected ${request.expectedRevision}, current ${aggregate.runtime.revision}`);
+    }
+
+    const currentDate = aggregate.state.world.currentDate;
+    const draftId = resolveDraftId(
+      control.promotionId,
+      currentDate.year,
+      currentDate.week,
+      currentDate.day,
+      requestedDraftId,
+    );
+    const workspace = aggregate.planning.workspaces.find((candidate) => candidate.promotionId === control.promotionId);
+    const draft = workspace?.detailedShowDrafts.find((candidate) => candidate.draftId === draftId);
+    const reservation = reservationForDraft(aggregate.planning, control.promotionId, draftId);
+    if (!workspace || !draft || !reservation) throw new Error("Reserve this show before managing Programmes from its card");
+
+    const programme = (aggregate.state.programmes ?? []).find((candidate) => (
+      candidate.id === programmeId
+      && candidate.promotionId === control.promotionId
+      && candidate.status === "ACTIVE"
+    ));
+    if (!programme) throw new Error(`active Programme ${programmeId} was not found`);
+
+    const reservedIds = new Set(draft.participantIds);
+    const sideA = participantSide(aggregate.state, programme.sideA);
+    const sideB = participantSide(aggregate.state, programme.sideB);
+    const participantIds = [...new Set([...sideA.personIds, ...sideB.personIds])]
+      .filter((personId) => reservedIds.has(personId));
+    if (request.enabled && participantIds.length === 0) {
+      throw new Error("Programme has no participants reserved for this show");
+    }
+
+    const programmeSegments = (draft.programmeSegments ?? [])
+      .filter((segment) => segment.programmeId !== programmeId)
+      .map((segment) => structuredClone(segment));
+    if (request.enabled) {
+      programmeSegments.push({
+        draftSegmentId: `segment:${programme.id}`,
+        programmeId: programme.id,
+        participantIds,
+      });
+    }
+    programmeSegments.sort((left, right) => left.programmeId.localeCompare(right.programmeId));
+
+    const nextWorkspace = upsertDetailedShowDraftCommand(
+      aggregate.state,
+      aggregate.ownership,
+      aggregate.planning,
+      aggregate.commands,
+      aggregate.runtime,
+      {
+        requestId: segmentRequestId,
+        worldId,
+        playerId,
+        commandType: "UPSERT_DETAILED_SHOW_DRAFT",
+        payload: {
+          promotionId: control.promotionId,
+          expectedPlanVersion: request.expectedPlanVersion,
+          draft: {
+            ...structuredClone(draft),
+            programmeSegments,
+          },
+        },
+      },
+    );
+
+    reserveDetailedShowDraftCommand(
+      aggregate.state,
+      aggregate.ownership,
+      aggregate.planning,
+      aggregate.commands,
+      aggregate.runtime,
+      {
+        requestId: reservationRequestId,
+        worldId,
+        playerId,
+        commandType: "RESERVE_DETAILED_SHOW_DRAFT",
+        payload: {
+          promotionId: control.promotionId,
+          expectedPlanVersion: nextWorkspace.version,
+          draftId,
         },
       },
     );

@@ -9,6 +9,12 @@ import styles from "./programme-panel.module.css";
 
 type ErrorPayload = { error?: string };
 
+type SegmentRequest = {
+  programmeId: string;
+  enabled: boolean;
+  requestId: string;
+};
+
 function isErrorPayload(payload: AlphaProgrammeContextView | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
 }
@@ -35,7 +41,9 @@ export default function ProgrammePanel(): React.JSX.Element | null {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [segmentSaving, setSegmentSaving] = useState<string | null>(null);
   const requestId = useRef<string | null>(null);
+  const segmentRequest = useRef<SegmentRequest | null>(null);
 
   async function load(): Promise<void> {
     setLoading(true);
@@ -52,6 +60,7 @@ export default function ProgrammePanel(): React.JSX.Element | null {
       setSideA1((current) => current || payload.participants[0]?.personId || "");
       setSideB1((current) => current || payload.participants[1]?.personId || "");
       requestId.current = null;
+      segmentRequest.current = null;
     } catch (reason) {
       setView(null);
       setError(reason instanceof Error ? reason.message : "Unable to load Programmes");
@@ -68,6 +77,10 @@ export default function ProgrammePanel(): React.JSX.Element | null {
   const sideAIds = [sideA1, sideA2].filter(Boolean);
   const sideBIds = [sideB1, sideB2].filter(Boolean);
   const canStart = Boolean(view?.canEdit && sideAIds.length > 0 && sideBIds.length > 0 && chosen.size === sideAIds.length + sideBIds.length);
+  const participantNames = useMemo(
+    () => new Map((view?.participants ?? []).map((participant) => [participant.personId, participant.name])),
+    [view],
+  );
 
   function optionUnavailable(personId: string, current: string): boolean {
     return personId !== current && chosen.has(personId);
@@ -110,6 +123,46 @@ export default function ProgrammePanel(): React.JSX.Element | null {
     }
   }
 
+  async function setProgrammeSegment(programmeId: string, enabled: boolean): Promise<void> {
+    if (!view || !view.canEdit || segmentSaving) return;
+    setSegmentSaving(programmeId);
+    setError(null);
+    const pending = segmentRequest.current;
+    if (!pending || pending.programmeId !== programmeId || pending.enabled !== enabled) {
+      segmentRequest.current = { programmeId, enabled, requestId: crypto.randomUUID() };
+    }
+    try {
+      const response = await fetch("/api/programmes", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: segmentRequest.current?.requestId,
+          expectedRevision: view.world.revision,
+          expectedPlanVersion: view.workspaceVersion,
+          draftId: view.draftId,
+          programmeId,
+          enabled,
+        }),
+      });
+      const payload = await response.json() as AlphaProgrammeContextView | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        const message = isErrorPayload(payload) && payload.error ? payload.error : "Unable to update Programme segment";
+        if (message.includes("stale World revision") || message.includes("stale plan version")) {
+          segmentRequest.current = null;
+          await load();
+          throw new Error(`${message}. Latest show plan loaded.`);
+        }
+        throw new Error(message);
+      }
+      setView(payload);
+      segmentRequest.current = null;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to update Programme segment");
+    } finally {
+      setSegmentSaving(null);
+    }
+  }
+
   if (loading) {
     return (
       <section className={styles.shell} aria-label="Programmes">
@@ -146,29 +199,50 @@ export default function ProgrammePanel(): React.JSX.Element | null {
           </div>
           <span className={styles.count}>{view.programmes.length} active</span>
         </div>
-        <p className="muted body-copy">A Programme is PPW&apos;s ongoing story between wrestlers. Start one from talent reserved for this show; the World will remember it beyond a single match.</p>
+        <p className="muted body-copy">A Programme is PPW&apos;s ongoing story between wrestlers. Matches and booked promo segments become story beats only when the show actually happens.</p>
 
         {view.programmes.length > 0 ? (
           <div className={styles.programmeList}>
-            {view.programmes.map((programme) => (
-              <article className={styles.programme} key={programme.programmeId}>
-                <div className={styles.programmeTitle}>
-                  <strong>{programme.sideA.label}</strong>
-                  <span>vs</span>
-                  <strong>{programme.sideB.label}</strong>
-                </div>
-                <div className={styles.meta}>
-                  <span>{programmeAge(programme, view.world.year, view.world.week)}</span>
-                  {programme.championshipName ? <span>{programme.championshipName}</span> : null}
-                  <span>{programme.activityCount} beat{programme.activityCount === 1 ? "" : "s"}</span>
-                  <span>{programme.matchCount} match{programme.matchCount === 1 ? "" : "es"}</span>
-                </div>
-                <div className={styles.signals}>
-                  <span>Heat: {programme.heat === null ? "not established" : Math.round(programme.heat)}</span>
-                  <span>Repetition: {Math.round(programme.repetition)}</span>
-                </div>
-              </article>
-            ))}
+            {view.programmes.map((programme) => {
+              const plannedSegment = view.programmeSegments.find((segment) => segment.programmeId === programme.programmeId) ?? null;
+              const segmentNames = plannedSegment?.participantIds
+                .map((personId) => participantNames.get(personId) ?? personId)
+                .join(", ") ?? "";
+              const busy = segmentSaving === programme.programmeId;
+              return (
+                <article className={styles.programme} key={programme.programmeId}>
+                  <div className={styles.programmeTitle}>
+                    <strong>{programme.sideA.label}</strong>
+                    <span>vs</span>
+                    <strong>{programme.sideB.label}</strong>
+                  </div>
+                  <div className={styles.meta}>
+                    <span>{programmeAge(programme, view.world.year, view.world.week)}</span>
+                    {programme.championshipName ? <span>{programme.championshipName}</span> : null}
+                    <span>{programme.activityCount} beat{programme.activityCount === 1 ? "" : "s"}</span>
+                    <span>{programme.matchCount} match{programme.matchCount === 1 ? "" : "es"}</span>
+                    <span>{programme.segmentCount} segment{programme.segmentCount === 1 ? "" : "s"}</span>
+                  </div>
+                  <div className={styles.signals}>
+                    <span>Heat: {programme.heat === null ? "not established" : Math.round(programme.heat)}</span>
+                    <span>Repetition: {Math.round(programme.repetition)}</span>
+                  </div>
+                  <div className={plannedSegment ? styles.segmentBooked : styles.segmentAction}>
+                    <div>
+                      <strong>{plannedSegment ? "Promo segment booked" : "No promo segment on this show"}</strong>
+                      <p>{plannedSegment ? `Featuring ${segmentNames}. It becomes a Programme beat after the show resolves.` : "Add one non-match story beat without replacing anybody's match booking."}</p>
+                    </div>
+                    <button
+                      className={styles.segmentButton}
+                      disabled={!view.canEdit || Boolean(segmentSaving)}
+                      onClick={() => setProgrammeSegment(programme.programmeId, !plannedSegment)}
+                    >
+                      {busy ? "Saving…" : plannedSegment ? "Remove segment" : "Book promo segment"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         ) : (
           <div className={styles.empty}>No active Programme currently involves talent reserved for this show.</div>

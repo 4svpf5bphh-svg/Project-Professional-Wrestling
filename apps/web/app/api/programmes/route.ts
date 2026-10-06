@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   loadAlphaProgrammeContext,
+  setAlphaProgrammeSegment,
   startAlphaProgramme,
 } from "../../../../../dist/packages/web-adapter/src/programme-service.js";
 import { withAlphaServerContext } from "../../../../../dist/packages/web-adapter/src/server-world.js";
@@ -11,10 +12,13 @@ export const dynamic = "force-dynamic";
 type ProgrammeBody = {
   requestId?: unknown;
   expectedRevision?: unknown;
+  expectedPlanVersion?: unknown;
   draftId?: unknown;
   sideAIds?: unknown;
   sideBIds?: unknown;
   championshipId?: unknown;
+  programmeId?: unknown;
+  enabled?: unknown;
 };
 
 function requiredText(value: unknown, label: string, maxLength: number): string {
@@ -44,6 +48,11 @@ function nonNegativeInteger(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${label} must be a non-negative integer`);
   }
+  return value;
+}
+
+function booleanValue(value: unknown, label: string): boolean {
+  if (typeof value !== "boolean") throw new Error(`${label} must be a boolean`);
   return value;
 }
 
@@ -81,5 +90,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json(view, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return errorResponse(error, "Unable to start Programme");
+  }
+}
+
+export async function PUT(request: NextRequest): Promise<NextResponse> {
+  try {
+    const body = await request.json() as ProgrammeBody;
+    const view = await withAlphaServerContext(({ repository, worldId, playerId }) => (
+      setAlphaProgrammeSegment(repository, worldId, playerId, {
+        requestId: requiredText(body.requestId, "requestId", 220),
+        expectedRevision: nonNegativeInteger(body.expectedRevision, "expectedRevision"),
+        expectedPlanVersion: nonNegativeInteger(body.expectedPlanVersion, "expectedPlanVersion"),
+        draftId: optionalText(body.draftId, "draftId", 128),
+        programmeId: requiredText(body.programmeId, "programmeId", 128),
+        enabled: booleanValue(body.enabled, "enabled"),
+      })
+    ));
+    return NextResponse.json(view, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return errorResponse(error, "Unable to update Programme segment");
   }
 }
