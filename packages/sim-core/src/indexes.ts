@@ -1,3 +1,4 @@
+import type { Programme, ProgrammeActivity } from "../../domain/src/programmes.js";
 import type {
   ChampionshipContest,
   ChemistryContext,
@@ -5,8 +6,10 @@ import type {
   Id,
   Match,
   MatchParticipant,
+  PpwDate,
   WorkingChemistry,
   WorldState,
+  WrestlingEvent,
 } from "../../domain/src/types.js";
 import { ppwDateToWeekIndex } from "./clock.js";
 
@@ -24,10 +27,19 @@ interface PersonIndex {
 }
 
 interface MatchHistoryIndex {
+  syncedEvents: number;
   syncedMatches: number;
   syncedParticipants: number;
+  eventsByWeek: Map<number, WrestlingEvent[]>;
   matchesByEvent: Map<Id, Match[]>;
   participantsByMatch: Map<Id, MatchParticipant[]>;
+}
+
+interface ProgrammeHistoryIndex {
+  syncedProgrammes: number;
+  syncedActivities: number;
+  programmesById: Map<Id, Programme>;
+  activitiesByMatch: Map<Id, ProgrammeActivity[]>;
 }
 
 interface BookingHistoryIndex {
@@ -40,6 +52,7 @@ interface BookingHistoryIndex {
 const contractIndexes = new WeakMap<WorldState, ContractIndex>();
 const personIndexes = new WeakMap<WorldState, PersonIndex>();
 const matchHistoryIndexes = new WeakMap<WorldState, MatchHistoryIndex>();
+const programmeHistoryIndexes = new WeakMap<WorldState, ProgrammeHistoryIndex>();
 const bookingHistoryIndexes = new WeakMap<WorldState, BookingHistoryIndex>();
 
 function ensureContractIndex(state: WorldState): ContractIndex {
@@ -102,17 +115,29 @@ function ensureMatchHistoryIndex(state: WorldState): MatchHistoryIndex {
   let index = matchHistoryIndexes.get(state);
   if (
     !index
+    || index.syncedEvents > state.events.length
     || index.syncedMatches > state.matches.length
     || index.syncedParticipants > state.matchParticipants.length
   ) {
     index = {
+      syncedEvents: 0,
       syncedMatches: 0,
       syncedParticipants: 0,
+      eventsByWeek: new Map(),
       matchesByEvent: new Map(),
       participantsByMatch: new Map(),
     };
     matchHistoryIndexes.set(state, index);
   }
+
+  for (let i = index.syncedEvents; i < state.events.length; i += 1) {
+    const event = state.events[i]!;
+    const weekIndex = ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear);
+    const events = index.eventsByWeek.get(weekIndex) ?? [];
+    events.push(event);
+    index.eventsByWeek.set(weekIndex, events);
+  }
+  index.syncedEvents = state.events.length;
 
   for (let i = index.syncedMatches; i < state.matches.length; i += 1) {
     const match = state.matches[i]!;
@@ -132,12 +157,61 @@ function ensureMatchHistoryIndex(state: WorldState): MatchHistoryIndex {
   return index;
 }
 
+export function eventsForWeek(state: WorldState, date: PpwDate): readonly WrestlingEvent[] {
+  const weekIndex = ppwDateToWeekIndex(date, state.ruleset.weeksPerYear);
+  return ensureMatchHistoryIndex(state).eventsByWeek.get(weekIndex) ?? [];
+}
+
 export function matchesForEvent(state: WorldState, eventId: Id): readonly Match[] {
   return ensureMatchHistoryIndex(state).matchesByEvent.get(eventId) ?? [];
 }
 
 export function participantsForMatch(state: WorldState, matchId: Id): readonly MatchParticipant[] {
   return ensureMatchHistoryIndex(state).participantsByMatch.get(matchId) ?? [];
+}
+
+function ensureProgrammeHistoryIndex(state: WorldState): ProgrammeHistoryIndex {
+  const programmes = state.programmes ?? [];
+  const activities = state.programmeActivities ?? [];
+  let index = programmeHistoryIndexes.get(state);
+  if (
+    !index
+    || index.syncedProgrammes > programmes.length
+    || index.syncedActivities > activities.length
+  ) {
+    index = {
+      syncedProgrammes: 0,
+      syncedActivities: 0,
+      programmesById: new Map(),
+      activitiesByMatch: new Map(),
+    };
+    programmeHistoryIndexes.set(state, index);
+  }
+
+  for (let i = index.syncedProgrammes; i < programmes.length; i += 1) {
+    const programme = programmes[i]!;
+    index.programmesById.set(programme.id, programme);
+  }
+  index.syncedProgrammes = programmes.length;
+
+  for (let i = index.syncedActivities; i < activities.length; i += 1) {
+    const activity = activities[i]!;
+    if (activity.matchId) {
+      const matchActivities = index.activitiesByMatch.get(activity.matchId) ?? [];
+      matchActivities.push(activity);
+      index.activitiesByMatch.set(activity.matchId, matchActivities);
+    }
+  }
+  index.syncedActivities = activities.length;
+  return index;
+}
+
+export function programmeById(state: WorldState, programmeId: Id): Programme | undefined {
+  return ensureProgrammeHistoryIndex(state).programmesById.get(programmeId);
+}
+
+export function programmeActivitiesForMatch(state: WorldState, matchId: Id): readonly ProgrammeActivity[] {
+  return ensureProgrammeHistoryIndex(state).activitiesByMatch.get(matchId) ?? [];
 }
 
 function chemistryKey(personAId: Id, personBId: Id, context: ChemistryContext): string {
