@@ -1,3 +1,5 @@
+import type { Programme, ProgrammeActivity } from "./programmes.js";
+
 export type Id = string;
 
 export type PromotionTier = "GLOBAL" | "NATIONAL" | "RISING" | "INDEPENDENT" | "LOCAL";
@@ -450,6 +452,8 @@ export interface WorldState {
   championshipReigns?: ChampionshipReign[];
   championshipContests?: ChampionshipContest[];
   championshipMatchBookings?: ChampionshipMatchBooking[];
+  programmes?: Programme[];
+  programmeActivities?: ProgrammeActivity[];
   financialTransactions: FinancialTransaction[];
   ledger: LedgerEvent[];
 }
