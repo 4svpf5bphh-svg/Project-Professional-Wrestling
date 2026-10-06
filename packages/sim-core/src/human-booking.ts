@@ -8,6 +8,12 @@ import type {
 } from "../../domain/src/types.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
+import {
+  defaultPlannedFinishForIntent,
+  isBookableMatchFinish,
+  setPlannedMatchFinish,
+  type MatchFinish,
+} from "./match-finishes.js";
 
 export interface HumanMatchPlan {
   type: MatchType;
@@ -16,6 +22,7 @@ export interface HumanMatchPlan {
   intendedWinnerSide: MatchSide;
   intent: MatchIntent;
   plannedLengthMinutes: number;
+  plannedFinish?: MatchFinish;
 }
 
 function validateSideSize(type: MatchType, sideAIds: string[], sideBIds: string[]): void {
@@ -58,6 +65,9 @@ export function prepareHumanMatchCard(
     if (!Number.isInteger(plan.plannedLengthMinutes) || plan.plannedLengthMinutes < 3 || plan.plannedLengthMinutes > 60) {
       throw new Error("planned match length must be an integer from 3 to 60 minutes");
     }
+    if (plan.plannedFinish !== undefined && !isBookableMatchFinish(plan.plannedFinish)) {
+      throw new Error("planned match finish must be clean, submission, flash or protected");
+    }
     const ids = [...plan.sideAIds, ...plan.sideBIds];
     for (const personId of ids) {
       if (!committedIds.has(personId)) throw new Error(`wrestler ${personId} is not committed to this event`);
@@ -93,6 +103,7 @@ export function prepareHumanMatchCard(
       criticalRatingStars: 0,
       crowdResponse: 0,
     };
+    setPlannedMatchFinish(match, plan.plannedFinish ?? defaultPlannedFinishForIntent(plan.intent));
     state.matches.push(match);
     matches.push(match);
 

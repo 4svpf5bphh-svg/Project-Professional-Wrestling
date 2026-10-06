@@ -16,6 +16,7 @@ export * from "./id-allocator.js";
 export * from "./invariants.js";
 export * from "./ledger.js";
 export * from "./lifecycle.js";
+export * from "./match-finishes.js";
 export * from "./matches.js";
 export * from "./morale.js";
 export * from "./programme-signals.js";
