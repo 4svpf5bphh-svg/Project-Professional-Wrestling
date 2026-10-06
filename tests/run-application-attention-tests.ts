@@ -11,7 +11,10 @@ import {
   createWorldRuntimeState,
   joinPlayerToWorld,
   recordPlayerActivity,
+  reserveDetailedShowDraftCommand,
+  upsertDetailedShowDraftCommand,
   type ApplicationWorldAggregate,
+  type DetailedShowDraft,
   type StewardshipExitRequest,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
@@ -81,6 +84,100 @@ function fixture(seed: number): {
     contractId: contract.id,
     personId: contract.personId,
   };
+}
+
+function currentWeekDraft(
+  f: ReturnType<typeof fixture>,
+  completeCard: boolean,
+): DetailedShowDraft {
+  const promotion = f.aggregate.state.promotions.find((candidate) => candidate.id === f.promotionId)!;
+  promotion.eventCadenceWeeks = 1;
+  const market = f.aggregate.state.markets.find((candidate) => candidate.id === promotion.homeMarketId)
+    ?? f.aggregate.state.markets[0]!;
+  const venue = f.aggregate.state.venues.find((candidate) => candidate.marketId === market.id)
+    ?? f.aggregate.state.venues[0]!;
+  const required = f.aggregate.state.ruleset.minEventParticipants % 2 === 0
+    ? f.aggregate.state.ruleset.minEventParticipants
+    : f.aggregate.state.ruleset.minEventParticipants + 1;
+  const participantIds: string[] = [];
+  for (const contract of activeContractsForPromotion(f.aggregate.state, f.promotionId)) {
+    if (contract.datesUsed >= contract.dateEntitlement || participantIds.includes(contract.personId)) continue;
+    const person = f.aggregate.state.people.find((candidate) => candidate.id === contract.personId);
+    if (!person || person.status !== "ACTIVE") continue;
+    participantIds.push(person.id);
+    if (participantIds.length >= required) break;
+  }
+  if (participantIds.length < required) throw new Error("attention fixture lacks enough reservable wrestlers");
+
+  const draftId = `alpha-show:${f.promotionId}:Y${f.aggregate.state.world.currentDate.year}:W${f.aggregate.state.world.currentDate.week}`;
+  return {
+    draftId,
+    promotionId: f.promotionId,
+    targetDate: { ...f.aggregate.state.world.currentDate, day: 6 },
+    marketId: market.id,
+    venueId: venue.id,
+    ticketStrategy: "STANDARD",
+    participantIds,
+    matches: completeCard
+      ? Array.from({ length: participantIds.length / 2 }, (_, matchIndex) => {
+        const index = matchIndex * 2;
+        return {
+          draftMatchId: `${draftId}:match:${matchIndex + 1}`,
+          type: "SINGLES" as const,
+          sideAIds: [participantIds[index]!],
+          sideBIds: [participantIds[index + 1]!],
+          intendedWinnerSide: "A" as const,
+          intent: "COMPETITIVE" as const,
+          plannedLengthMinutes: 12,
+        };
+      })
+      : [],
+    championshipAssignments: [],
+  };
+}
+
+function saveAndReserveCurrentWeekDraft(
+  f: ReturnType<typeof fixture>,
+  draft: DetailedShowDraft,
+  expectedPlanVersion: number,
+  suffix: string,
+): void {
+  const workspace = upsertDetailedShowDraftCommand(
+    f.aggregate.state,
+    f.aggregate.ownership,
+    f.aggregate.planning,
+    f.aggregate.commands,
+    f.aggregate.runtime,
+    {
+      requestId: `${suffix}:draft`,
+      worldId: f.aggregate.state.world.id,
+      playerId: f.playerId,
+      commandType: "UPSERT_DETAILED_SHOW_DRAFT",
+      payload: {
+        promotionId: f.promotionId,
+        expectedPlanVersion,
+        draft,
+      },
+    },
+  );
+  reserveDetailedShowDraftCommand(
+    f.aggregate.state,
+    f.aggregate.ownership,
+    f.aggregate.planning,
+    f.aggregate.commands,
+    f.aggregate.runtime,
+    {
+      requestId: `${suffix}:reserve`,
+      worldId: f.aggregate.state.world.id,
+      playerId: f.playerId,
+      commandType: "RESERVE_DETAILED_SHOW_DRAFT",
+      payload: {
+        promotionId: f.promotionId,
+        expectedPlanVersion: workspace.version,
+        draftId: draft.draftId,
+      },
+    },
+  );
 }
 
 await test("Attention surfaces OPEN Stewardship release requests and agreed releases awaiting execution", () => {
@@ -201,6 +298,30 @@ await test("Alpha player home view carries the same player-scoped Attention with
   ok(renewal?.deepLink === "/talent", "renewal Attention did not link to Talent");
   const show = view.attention.find((item) => item.attentionId.startsWith("required-show:"));
   ok(show?.deepLink === "/planner", "required-show Attention did not link to the six-week Planner");
+});
+
+await test("reserved current-week preparation replaces false missing-show Attention and becomes READY when the card is complete", () => {
+  const f = fixture(18506);
+  const incompleteDraft = currentWeekDraft(f, false);
+  saveAndReserveCurrentWeekDraft(f, incompleteDraft, 0, "attention-readiness-incomplete");
+
+  const incompleteView = buildAlphaPlayerWorldView(f.aggregate, f.playerId);
+  ok(incompleteView.promotion?.weekReadiness.status === "CARD_REQUIRED", "reserved show still looked like no show was committed");
+  ok(incompleteView.promotion?.weekReadiness.readyToFinish === false, "incomplete card was incorrectly ready for lock");
+  ok(!incompleteView.attention.some((item) => item.attentionId.startsWith("required-show:")), "false missing-show Attention remained after reservation");
+  ok(incompleteView.attention.some((item) => item.attentionId.startsWith("required-card:")), "reserved show did not surface the remaining card work");
+
+  const completeDraft = currentWeekDraft(f, true);
+  saveAndReserveCurrentWeekDraft(f, completeDraft, 1, "attention-readiness-complete");
+  const readyView = buildAlphaPlayerWorldView(f.aggregate, f.playerId);
+  ok(readyView.promotion?.weekReadiness.status === "READY", "complete reserved show was not presented as ready for scheduled lock");
+  ok(readyView.promotion?.weekReadiness.readyToFinish === true, "complete reserved show still requested staff help");
+  ok(readyView.promotion?.showPlanning.currentPlan?.state === "RESERVED", "player-facing readiness materialized the show early");
+  ok(f.aggregate.state.events.length === 0, "readiness projection created an event before the server lock");
+  ok(
+    !readyView.attention.some((item) => item.attentionId.startsWith("required-show:") || item.attentionId.startsWith("required-card:")),
+    "completed preparation still produced show/card Action Required Attention",
+  );
 });
 
 console.log(`\nAttention projection tests: ${passed} passed, ${failed} failed`);
