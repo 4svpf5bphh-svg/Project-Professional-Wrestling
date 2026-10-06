@@ -16,7 +16,11 @@ import { processPromotionStandingForWeek } from "./reputation.js";
 import { applyRenewalRelationshipResistance } from "./renewal-resistance.js";
 import { processTalentTrustForWeek } from "./talent-trust.js";
 
-export function resolveWorldWeek(state: WorldState): void {
+export interface WorldResolutionHooks {
+  afterProgrammeMatches?: (state: WorldState) => void;
+}
+
+export function resolveWorldWeek(state: WorldState, hooks: WorldResolutionHooks = {}): void {
   const routineTakeovers = prepareRoutineContinuityForWeek(state);
   const staffPlansShow = new Set(
     [...routineTakeovers.entries()]
@@ -36,6 +40,7 @@ export function resolveWorldWeek(state: WorldState): void {
   planWorldEvents(state, { staffMayPlanShowFor: staffPlansShow });
   resolveWorldEvents(state, { staffMayBookCardFor: staffControlsCard });
   recordCurrentWeekProgrammeMatches(state);
+  hooks.afterProgrammeMatches?.(state);
   updateProgrammeSignalsForCurrentWeek(state);
 
   processCompetitionForWeek(state);

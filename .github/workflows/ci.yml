@@ -50,6 +50,8 @@ jobs:
         run: node dist/tests/run-programme-match-integration-tests.js
       - name: Run Programme signal coverage
         run: node dist/tests/run-programme-signal-tests.js
+      - name: Run Programme segment coverage
+        run: node dist/tests/run-programme-segment-tests.js
       - name: Build Alpha web app
         run: npm run web:build
       - name: Run Alpha HTTP integration

@@ -5,6 +5,7 @@ import {
   materializeCurrentWeekReservations,
   type ReservationMaterializationPass,
 } from "./planning-materialization.js";
+import { recordResolvedProgrammeSegments } from "./programme-segments.js";
 import type { ApplicationWorldRepository } from "./world-aggregate.js";
 import {
   assertWorldOpenForPlayerMutation,
@@ -58,7 +59,11 @@ export async function resolvePersistedWorldWeek(
 ): Promise<number> {
   const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
     beginWorldResolution(aggregate.runtime, aggregate.state);
-    resolveLockedWorldWeek(aggregate.runtime, aggregate.state);
+    resolveLockedWorldWeek(aggregate.runtime, aggregate.state, {
+      afterProgrammeMatches: (state) => {
+        recordResolvedProgrammeSegments(state, aggregate.planning);
+      },
+    });
     materializeCurrentWeekReservations(aggregate.state, aggregate.planning);
     generateWorldOpportunities(aggregate);
   });

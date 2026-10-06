@@ -1,5 +1,5 @@
 import type { Id, PpwDate, WorldState } from "../../domain/src/types.js";
-import { resolveWorldWeek } from "../../sim-core/src/resolution.js";
+import { resolveWorldWeek, type WorldResolutionHooks } from "../../sim-core/src/resolution.js";
 
 export type WorldRuntimePhase = "OPEN" | "LOCKING" | "RESOLVING";
 
@@ -91,6 +91,7 @@ export function beginWorldResolution(
 export function resolveLockedWorldWeek(
   runtime: WorldRuntimeState,
   state: WorldState,
+  hooks: WorldResolutionHooks = {},
 ): void {
   requireWorld(runtime, state);
   if (runtime.phase !== "RESOLVING") {
@@ -100,7 +101,7 @@ export function resolveLockedWorldWeek(
 
   const resolvedDate = cloneDate(runtime.lockedPpwDate);
   const resolvedRealCycleKey = runtime.lockedRealCycleKey ?? null;
-  resolveWorldWeek(state);
+  resolveWorldWeek(state, hooks);
 
   runtime.lastResolvedPpwDate = resolvedDate;
   if (resolvedRealCycleKey !== null) runtime.lastResolvedRealCycleKey = resolvedRealCycleKey;
