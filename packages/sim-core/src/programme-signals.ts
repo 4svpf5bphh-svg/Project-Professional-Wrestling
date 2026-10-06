@@ -83,7 +83,7 @@ export function evaluateProgrammeSignals(state: WorldState, programme: Programme
 
   const repetitionCandidates = withAge
     .filter(({ ageWeeks }) => ageWeeks < REPETITION_WINDOW_WEEKS)
-    .sort((left, right) => left.ageWeeks - right.ageWeeks);
+    .sort((left, right) => right.ageWeeks - left.ageWeeks);
   const seenBySignature = new Map<string, number>();
   let repeatPressure = 0;
   for (const { activity, ageWeeks } of repetitionCandidates) {
