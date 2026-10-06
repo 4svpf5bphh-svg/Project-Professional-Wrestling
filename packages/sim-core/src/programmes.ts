@@ -7,6 +7,7 @@ import type {
   ProgrammeSide,
 } from "../../domain/src/programmes.js";
 import { comparePpwDates } from "./clock.js";
+import { currentRosterPersonIds } from "./contracts.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 
@@ -62,18 +63,40 @@ function participantExists(state: WorldState, ref: ProgrammeParticipantRef): boo
   return Boolean(team && team.status === "ACTIVE");
 }
 
-function validateSides(state: WorldState, sideA: ProgrammeParticipantRef[], sideB: ProgrammeParticipantRef[]): void {
+function participantBelongsToPromotion(
+  state: WorldState,
+  promotionId: string,
+  ref: ProgrammeParticipantRef,
+  rosterPersonIds: Set<string>,
+): boolean {
+  if (ref.kind === "PERSON") return rosterPersonIds.has(ref.entityId);
+  const activeMembers = (state.teamMemberships ?? [])
+    .filter((membership) => membership.teamId === ref.entityId && membership.active)
+    .map((membership) => membership.personId);
+  return activeMembers.length >= 2 && activeMembers.every((personId) => rosterPersonIds.has(personId));
+}
+
+function validateSides(
+  state: WorldState,
+  promotionId: string,
+  sideA: ProgrammeParticipantRef[],
+  sideB: ProgrammeParticipantRef[],
+): void {
   if (sideA.length < 1 || sideB.length < 1) throw new Error("Programme requires at least one participant on each side");
   if (sideA.length > 2 || sideB.length > 2 || sideA.length + sideB.length > 4) {
     throw new Error("Programme supports two to four wrestlers or teams across two sides");
   }
 
   const seen = new Set<string>();
+  const rosterPersonIds = new Set(currentRosterPersonIds(state, promotionId));
   for (const ref of [...sideA, ...sideB]) {
     const key = `${ref.kind}:${ref.entityId}`;
     if (seen.has(key)) throw new Error("Programme cannot include the same wrestler or team twice");
     seen.add(key);
     if (!participantExists(state, ref)) throw new Error(`Programme participant ${ref.entityId} is not available in this World`);
+    if (!participantBelongsToPromotion(state, promotionId, ref, rosterPersonIds)) {
+      throw new Error(`Programme participant ${ref.entityId} is not on this promotion's current roster`);
+    }
   }
 }
 
@@ -101,7 +124,7 @@ export function createProgramme(state: WorldState, input: CreateProgrammeInput):
     throw new Error("inactive promotion cannot start a Programme");
   }
 
-  validateSides(state, input.sideA, input.sideB);
+  validateSides(state, promotion.id, input.sideA, input.sideB);
   const championshipId = input.championshipId ?? null;
   validateChampionship(state, promotion.id, championshipId);
 
