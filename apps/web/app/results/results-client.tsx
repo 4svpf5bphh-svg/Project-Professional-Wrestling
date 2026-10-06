@@ -6,6 +6,10 @@ import type { PlayerWorldResultsView } from "../../../../dist/packages/applicati
 import styles from "./results.module.css";
 
 type ErrorPayload = { error?: string };
+type ResultsOverviewPayload = {
+  promotion: PlayerShowHistoryView;
+  world: PlayerWorldResultsView;
+};
 type ResultsTab = "PROMOTION" | "WORLD";
 
 const DAY_NAMES = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -42,32 +46,23 @@ export default function ResultsClient(): React.JSX.Element {
   const [tab, setTab] = useState<ResultsTab>("PROMOTION");
   const [worldPromotionId, setWorldPromotionId] = useState("ALL");
 
-  async function refreshPromotion(): Promise<void> {
+  async function refreshResults(): Promise<void> {
     setPromotionError(null);
-    const response = await fetch("/api/results", { cache: "no-store" });
-    const payload = await response.json() as PlayerShowHistoryView | ErrorPayload;
-    if (!response.ok || isErrorPayload(payload)) {
-      throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to load show history");
-    }
-    setPromotionView(payload);
-  }
-
-  async function refreshWorld(): Promise<void> {
     setWorldError(null);
-    const response = await fetch("/api/world-results", { cache: "no-store" });
-    const payload = await response.json() as PlayerWorldResultsView | ErrorPayload;
+    const response = await fetch("/api/results-overview", { cache: "no-store" });
+    const payload = await response.json() as ResultsOverviewPayload | ErrorPayload;
     if (!response.ok || isErrorPayload(payload)) {
-      throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to load World results");
+      throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to load Results & history");
     }
-    setWorldView(payload);
+    setPromotionView(payload.promotion);
+    setWorldView(payload.world);
   }
 
   useEffect(() => {
-    refreshPromotion().catch((reason: unknown) => {
-      setPromotionError(reason instanceof Error ? reason.message : "Unable to load show history");
-    });
-    refreshWorld().catch((reason: unknown) => {
-      setWorldError(reason instanceof Error ? reason.message : "Unable to load World results");
+    refreshResults().catch((reason: unknown) => {
+      const message = reason instanceof Error ? reason.message : "Unable to load Results & history";
+      setPromotionError(message);
+      setWorldError(message);
     });
   }, []);
 
@@ -92,7 +87,7 @@ export default function ResultsClient(): React.JSX.Element {
         <a className={styles.backLink} href="/">← Promotion</a>
         <section className={styles.panel}>
           <p>{promotionError}</p>
-          <button className={styles.button} onClick={() => refreshPromotion().catch(() => undefined)}>Retry</button>
+          <button className={styles.button} onClick={() => refreshResults().catch(() => undefined)}>Retry</button>
         </section>
       </main>
     );
@@ -119,8 +114,7 @@ export default function ResultsClient(): React.JSX.Element {
         <button
           className={styles.button}
           onClick={() => {
-            const action = tab === "PROMOTION" ? refreshPromotion() : refreshWorld();
-            action.catch((reason: unknown) => {
+            refreshResults().catch((reason: unknown) => {
               const message = reason instanceof Error ? reason.message : "Unable to refresh";
               if (tab === "PROMOTION") setPromotionError(message);
               else setWorldError(message);
@@ -234,7 +228,7 @@ export default function ResultsClient(): React.JSX.Element {
           {!worldView ? (
             <section className={styles.panel}>
               <p>{worldError ?? "Loading the World results timeline…"}</p>
-              {worldError ? <button className={styles.button} onClick={() => refreshWorld().catch(() => undefined)}>Retry</button> : null}
+              {worldError ? <button className={styles.button} onClick={() => refreshResults().catch(() => undefined)}>Retry</button> : null}
             </section>
           ) : (
             <>
