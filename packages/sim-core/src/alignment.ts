@@ -1,4 +1,4 @@
-import type { Person, WorldState } from "../../domain/src/types.js";
+import type { Person, PpwDate, WorldState } from "../../domain/src/types.js";
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { PromotionWrestlerPresentation } from "../../domain/src/promotion-presentation.js";
 import { ppwDateToWeekIndex } from "./clock.js";
@@ -99,7 +99,7 @@ export function setPromotionWrestlerAlignment(
   return structuredClone(created);
 }
 
-function sameWeek(state: WorldState, left: { year: number; week: number }, right: { year: number; week: number }): boolean {
+function sameWeek(state: WorldState, left: PpwDate, right: PpwDate): boolean {
   return ppwDateToWeekIndex(left, state.ruleset.weeksPerYear) === ppwDateToWeekIndex(right, state.ruleset.weeksPerYear);
 }
 
