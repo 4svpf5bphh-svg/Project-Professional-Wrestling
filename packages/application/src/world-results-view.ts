@@ -11,6 +11,8 @@ import {
   activePromotionControlForPlayer,
   activeWorldMembership,
 } from "./ownership.js";
+import { resolvedShowSegmentsForEvent } from "./programme-segments.js";
+import type { DetailedShowSegmentType } from "./planning.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const WORLD_RESULTS_HISTORY_LIMIT = 30;
@@ -52,6 +54,17 @@ export interface PlayerWorldResultMatchView {
   injuries: PlayerWorldResultInjuryView[];
 }
 
+export interface PlayerWorldResultSegmentView {
+  segmentId: Id;
+  order: number;
+  type: DetailedShowSegmentType;
+  participants: Array<{ personId: Id; name: string }>;
+}
+
+export type PlayerWorldResultRunningOrderView =
+  | { kind: "MATCH"; order: number; match: PlayerWorldResultMatchView }
+  | { kind: "SEGMENT"; order: number; segment: PlayerWorldResultSegmentView };
+
 export interface PlayerWorldResultShowView {
   eventId: Id;
   date: PpwDate;
@@ -68,9 +81,12 @@ export interface PlayerWorldResultShowView {
   bestMatchRating: number;
   crowdResponse: number;
   matchCount: number;
+  segmentCount: number;
   titleChangeCount: number;
   injuryCount: number;
   matches: PlayerWorldResultMatchView[];
+  segments: PlayerWorldResultSegmentView[];
+  runningOrder: PlayerWorldResultRunningOrderView[];
 }
 
 export interface PlayerWorldResultsView {
@@ -107,6 +123,40 @@ function validatedLimit(limit: number): number {
 
 function percentage(value: number): number {
   return Math.max(0, Math.round(value * 10) / 10);
+}
+
+function mergedRunningOrder(
+  matches: PlayerWorldResultMatchView[],
+  segments: PlayerWorldResultSegmentView[],
+): PlayerWorldResultRunningOrderView[] {
+  if (segments.length === 0) {
+    return matches.map((match, index) => ({ kind: "MATCH", order: index + 1, match }));
+  }
+  const segmentsByOrder = new Map(segments.map((segment) => [segment.order, segment]));
+  const totalSlots = matches.length + segments.length;
+  const result: PlayerWorldResultRunningOrderView[] = [];
+  let matchIndex = 0;
+  for (let slotOrder = 1; slotOrder <= totalSlots; slotOrder += 1) {
+    const segment = segmentsByOrder.get(slotOrder);
+    if (segment) {
+      result.push({ kind: "SEGMENT", order: slotOrder, segment });
+      continue;
+    }
+    const match = matches[matchIndex];
+    if (match) {
+      result.push({ kind: "MATCH", order: slotOrder, match });
+      matchIndex += 1;
+    }
+  }
+  for (; matchIndex < matches.length; matchIndex += 1) {
+    result.push({ kind: "MATCH", order: result.length + 1, match: matches[matchIndex]! });
+  }
+  for (const segment of segments) {
+    if (!result.some((slot) => slot.kind === "SEGMENT" && slot.segment.segmentId === segment.segmentId)) {
+      result.push({ kind: "SEGMENT", order: result.length + 1, segment });
+    }
+  }
+  return result;
 }
 
 /**
@@ -215,6 +265,16 @@ export function buildPlayerWorldResultsView(
         };
       });
 
+      const segments = resolvedShowSegmentsForEvent(aggregate.state, event.id).map((segment): PlayerWorldResultSegmentView => ({
+        segmentId: segment.ledgerId,
+        order: segment.slotOrder,
+        type: segment.type,
+        participants: segment.participantIds.map((personId) => ({
+          personId,
+          name: peopleById.get(personId)?.name ?? "Unknown wrestler",
+        })),
+      }));
+      const runningOrder = mergedRunningOrder(matches, segments);
       const titleChangeCount = matches.reduce(
         (total, match) => total + match.titleOutcomes.filter((outcome) => outcome.titleChanged).length,
         0,
@@ -237,9 +297,12 @@ export function buildPlayerWorldResultsView(
         bestMatchRating: event.bestMatchRating,
         crowdResponse: event.crowdResponse,
         matchCount: matches.length,
+        segmentCount: segments.length,
         titleChangeCount,
         injuryCount,
         matches,
+        segments,
+        runningOrder,
       };
     });
 

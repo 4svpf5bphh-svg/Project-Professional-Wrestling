@@ -356,6 +356,30 @@
   padding: 13px;
 }
 
+.segmentResultCard {
+  border-color: rgba(117, 177, 255, .28);
+  background: rgba(24, 38, 57, .42);
+}
+
+.segmentParticipants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 12px 0 8px;
+}
+
+.segmentParticipants span,
+.segmentParticipants a {
+  border: 1px solid rgba(117, 177, 255, .2);
+  border-radius: 999px;
+  background: rgba(117, 177, 255, .07);
+  color: #c7dcfa;
+  padding: 6px 9px;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+
 .matchTop,
 .matchMeta {
   display: flex;

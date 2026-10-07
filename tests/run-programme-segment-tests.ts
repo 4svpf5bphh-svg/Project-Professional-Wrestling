@@ -1,7 +1,11 @@
 declare const process: { exitCode?: number };
 
 import { createWorldPlanningState, upsertDetailedShowDraft } from "../packages/application/src/planning.js";
-import { recordResolvedProgrammeSegments } from "../packages/application/src/programme-segments.js";
+import {
+  recordResolvedProgrammeSegments,
+  recordResolvedShowSegments,
+  resolvedShowSegmentsForEvent,
+} from "../packages/application/src/programme-segments.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import type { WrestlingEvent } from "../packages/domain/src/types.js";
 import {
@@ -145,7 +149,39 @@ test("typed show segments can attach an active Programme and preserve running or
   setup.state.events.push(completedEvent(setup));
   const recorded = recordResolvedProgrammeSegments(setup.state, setup.planning);
   ok(recorded === 1, `typed Programme segment recorded ${recorded} factual beats`);
+  const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id);
+  ok(frozen.length === 1 && frozen[0]?.type === "CONFRONTATION", "typed segment was not frozen into show history");
+  ok(frozen[0]?.slotOrder === 1 && frozen[0]?.plannedLengthMinutes === 7, "typed segment lost its booked slot or duration");
   ok(programmeActivities(setup.state, setup.programme.id)[0]?.kind === "SEGMENT", "typed segment did not feed Programme history");
+});
+
+test("standalone segments become factual show history without inventing Programme activity", () => {
+  const setup = fixture(9151);
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    draftId: "standalone-segment-show",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null,
+    venueId: null,
+    ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [],
+    championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "standalone-segment-1",
+      type: "INTERVIEW",
+      participantIds: [setup.rosterIds[2]!],
+      programmeId: null,
+      plannedLengthMinutes: 5,
+    }],
+    runningOrder: [{ kind: "SEGMENT", refId: "standalone-segment-1" }],
+  });
+  setup.state.events.push(completedEvent(setup));
+  const recorded = recordResolvedShowSegments(setup.state, setup.planning);
+  const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id);
+  ok(recorded === 1 && frozen.length === 1, "standalone segment was not frozen as completed show history");
+  ok(frozen[0]?.participantIds[0] === setup.rosterIds[2], "standalone segment lost its wrestler");
+  ok(programmeActivities(setup.state, setup.programme.id).length === 0, "standalone segment invented Programme activity");
 });
 
 test("Programme segments remain planned until their show has completed", () => {

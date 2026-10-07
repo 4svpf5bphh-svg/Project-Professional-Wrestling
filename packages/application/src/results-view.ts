@@ -11,6 +11,8 @@ import {
   activePromotionControlForPlayer,
   activeWorldMembership,
 } from "./ownership.js";
+import { resolvedShowSegmentsForEvent } from "./programme-segments.js";
+import type { DetailedShowSegmentType } from "./planning.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const PLAYER_SHOW_HISTORY_LIMIT = 12;
@@ -94,6 +96,25 @@ export interface PlayerShowMatchView {
   crowdFlowFactors: PlayerShowCrowdFactorView[];
 }
 
+export interface PlayerShowSegmentParticipantView {
+  personId: Id;
+  name: string;
+}
+
+export interface PlayerShowSegmentView {
+  segmentId: Id;
+  draftSegmentId: string;
+  order: number;
+  type: DetailedShowSegmentType;
+  plannedLengthMinutes: number;
+  participants: PlayerShowSegmentParticipantView[];
+  programmeId: Id | null;
+}
+
+export type PlayerShowRunningOrderView =
+  | { kind: "MATCH"; order: number; match: PlayerShowMatchView }
+  | { kind: "SEGMENT"; order: number; segment: PlayerShowSegmentView };
+
 export interface PlayerShowResultView {
   eventId: Id;
   date: PpwDate;
@@ -110,10 +131,13 @@ export interface PlayerShowResultView {
   bestMatchRating: number;
   crowdResponse: number;
   matchCount: number;
+  segmentCount: number;
   titleChangeCount: number;
   injuryCount: number;
   crowdStory: PlayerShowCrowdStoryView | null;
   matches: PlayerShowMatchView[];
+  segments: PlayerShowSegmentView[];
+  runningOrder: PlayerShowRunningOrderView[];
 }
 
 export interface PlayerShowHistoryView {
@@ -212,6 +236,40 @@ function frozenCrowdFactors(
     crowdFactor(entry, "PACING", matchId, matchOrder, "showFlowPacingModifier", "showFlowPacingReason"),
   ];
   return factors.filter((factor): factor is PlayerShowCrowdFactorView => factor !== null);
+}
+
+function mergedRunningOrder(
+  matches: PlayerShowMatchView[],
+  segments: PlayerShowSegmentView[],
+): PlayerShowRunningOrderView[] {
+  if (segments.length === 0) {
+    return matches.map((match, index) => ({ kind: "MATCH", order: index + 1, match }));
+  }
+  const segmentsByOrder = new Map(segments.map((segment) => [segment.order, segment]));
+  const totalSlots = matches.length + segments.length;
+  const order: PlayerShowRunningOrderView[] = [];
+  let matchIndex = 0;
+  for (let slotOrder = 1; slotOrder <= totalSlots; slotOrder += 1) {
+    const segment = segmentsByOrder.get(slotOrder);
+    if (segment) {
+      order.push({ kind: "SEGMENT", order: slotOrder, segment });
+      continue;
+    }
+    const match = matches[matchIndex];
+    if (match) {
+      order.push({ kind: "MATCH", order: slotOrder, match });
+      matchIndex += 1;
+    }
+  }
+  for (; matchIndex < matches.length; matchIndex += 1) {
+    order.push({ kind: "MATCH", order: order.length + 1, match: matches[matchIndex]! });
+  }
+  for (const segment of segments) {
+    if (!order.some((slot) => slot.kind === "SEGMENT" && slot.segment.segmentId === segment.segmentId)) {
+      order.push({ kind: "SEGMENT", order: order.length + 1, segment });
+    }
+  }
+  return order;
 }
 
 function frozenCrowdStory(
@@ -375,6 +433,19 @@ export function buildPlayerShowHistory(
         };
       });
 
+      const segments = resolvedShowSegmentsForEvent(aggregate.state, event.id).map((segment): PlayerShowSegmentView => ({
+        segmentId: segment.ledgerId,
+        draftSegmentId: segment.draftSegmentId,
+        order: segment.slotOrder,
+        type: segment.type,
+        plannedLengthMinutes: segment.plannedLengthMinutes,
+        participants: segment.participantIds.map((personId) => ({
+          personId,
+          name: peopleById.get(personId)?.name ?? "Unknown wrestler",
+        })),
+        programmeId: segment.programmeId,
+      }));
+      const runningOrder = mergedRunningOrder(matches, segments);
       const titleChangeCount = matches.reduce(
         (sum, match) => sum + match.titleOutcomes.filter((outcome) => outcome.titleChanged).length,
         0,
@@ -398,10 +469,13 @@ export function buildPlayerShowHistory(
         bestMatchRating: event.bestMatchRating,
         crowdResponse: event.crowdResponse,
         matchCount: matches.length,
+        segmentCount: segments.length,
         titleChangeCount,
         injuryCount,
         crowdStory: frozenCrowdStory(eventLedgerByEvent.get(event.id), matches),
         matches,
+        segments,
+        runningOrder,
       };
     });
 

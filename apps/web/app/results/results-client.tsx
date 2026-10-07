@@ -187,6 +187,7 @@ export default function ResultsClient(): React.JSX.Element {
                       <div><span>Average</span><strong>★ {decimal(show.averageMatchRating)}</strong></div>
                       <div><span>Best match</span><strong>★ {decimal(show.bestMatchRating)}</strong></div>
                       <div><span>Crowd</span><strong>{decimal(show.crowdResponse)}</strong></div>
+                      <div><span>Segments</span><strong>{show.segmentCount}</strong></div>
                       <div><span>Consequences</span><strong>{show.titleChangeCount} title · {show.injuryCount} inj.</strong></div>
                     </div>
 
@@ -237,13 +238,33 @@ export default function ResultsClient(): React.JSX.Element {
                     ) : null}
 
                     <div className={styles.matches}>
-                      {show.matches.map((match) => {
+                      {show.runningOrder.map((slot) => {
+                        if (slot.kind === "SEGMENT") {
+                          return (
+                            <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
+                              <div className={styles.matchTop}>
+                                <span>SLOT {slot.order} · SEGMENT · {label(slot.segment.type)}</span>
+                                <strong>{slot.segment.plannedLengthMinutes} min</strong>
+                              </div>
+                              <div className={styles.segmentParticipants}>
+                                {slot.segment.participants.map((participant) => (
+                                  <span key={participant.personId}>{participant.name}</span>
+                                ))}
+                              </div>
+                              <div className={styles.matchMeta}>
+                                <span>{slot.segment.programmeId ? "Programme attached" : "Standalone segment"}</span>
+                                <span>Resolved show history</span>
+                              </div>
+                            </article>
+                          );
+                        }
+                        const match = slot.match;
                         const sideA = match.participants.filter((participant) => participant.side === "A");
                         const sideB = match.participants.filter((participant) => participant.side === "B");
                         return (
                           <article className={styles.matchCard} key={match.matchId}>
                             <div className={styles.matchTop}>
-                              <span>{match.isMainEvent ? "MAIN EVENT" : `MATCH ${match.order}`} · {label(match.type)}</span>
+                              <span>SLOT {slot.order} · {match.isMainEvent ? "MAIN EVENT" : "MATCH"} · {label(match.type)}</span>
                               <strong>★ {decimal(match.criticalRatingStars)}</strong>
                             </div>
                             <div className={styles.versus}>
@@ -350,17 +371,36 @@ export default function ResultsClient(): React.JSX.Element {
                           <div><span>Crowd</span><strong>{decimal(show.crowdResponse)}</strong></div>
                           <div><span>Capacity</span><strong>{decimal(show.attendancePercentOfCapacity)}%</strong></div>
                           <div><span>Matches</span><strong>{show.matchCount}</strong></div>
+                          <div><span>Segments</span><strong>{show.segmentCount}</strong></div>
                           <div><span>Consequences</span><strong>{show.titleChangeCount} title · {show.injuryCount} inj.</strong></div>
                         </div>
 
                         <div className={styles.matches}>
-                          {show.matches.map((match) => {
+                          {show.runningOrder.map((slot) => {
+                            if (slot.kind === "SEGMENT") {
+                              return (
+                                <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
+                                  <div className={styles.matchTop}>
+                                    <span>SLOT {slot.order} · SEGMENT · {label(slot.segment.type)}</span>
+                                    <strong>SEGMENT</strong>
+                                  </div>
+                                  <div className={styles.segmentParticipants}>
+                                    {slot.segment.participants.map((participant) => (
+                                      <a className={styles.participantLink} href={`/talent/profile?personId=${encodeURIComponent(participant.personId)}`} key={participant.personId}>
+                                        {participant.name}
+                                      </a>
+                                    ))}
+                                  </div>
+                                </article>
+                              );
+                            }
+                            const match = slot.match;
                             const sideA = match.participants.filter((participant) => participant.side === "A");
                             const sideB = match.participants.filter((participant) => participant.side === "B");
                             return (
                               <article className={styles.matchCard} key={match.matchId}>
                                 <div className={styles.matchTop}>
-                                  <span>{match.isMainEvent ? "MAIN EVENT" : `MATCH ${match.order}`} · {label(match.type)}</span>
+                                  <span>SLOT {slot.order} · {match.isMainEvent ? "MAIN EVENT" : "MATCH"} · {label(match.type)}</span>
                                   <strong>★ {decimal(match.criticalRatingStars)}</strong>
                                 </div>
                                 <div className={styles.versus}>

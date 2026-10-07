@@ -213,6 +213,42 @@ test("show history exposes match-level consequences for the controlled promotion
   ok(show.matches[0]!.crowdFlowFactors.length === 0, "legacy match without frozen flow evidence invented crowd factors");
 });
 
+test("show history merges frozen segments with matches in the original slot order", () => {
+  const { aggregate } = twoPlayerFixture(72005);
+  const event = aggregate.state.events.find((candidate) => candidate.id === "results-event-a")!;
+  const people = aggregate.state.matchParticipants
+    .filter((participant) => participant.eventId === event.id)
+    .map((participant) => participant.personId);
+  aggregate.state.ledger.push({
+    id: "results-segment-ledger",
+    worldId: aggregate.state.world.id,
+    date: { ...event.date },
+    order: 900,
+    type: "SHOW_SEGMENT_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: [event.id, event.promotionId, people[0]!],
+    payload: {
+      eventId: event.id,
+      promotionId: event.promotionId,
+      sourceDraftId: "results-draft",
+      draftSegmentId: "results-segment",
+      slotOrder: 1,
+      segmentType: "INTERVIEW",
+      participantIds: people[0]!,
+      programmeId: null,
+      plannedLengthMinutes: 5,
+    },
+  });
+
+  const show = buildPlayerShowHistory(aggregate, "player-a").shows[0]!;
+  ok(show.segmentCount === 1 && show.segments.length === 1, "resolved segment was not projected");
+  ok(show.runningOrder.length === 2, "complete show order did not contain match and segment");
+  ok(show.runningOrder[0]?.kind === "SEGMENT" && show.runningOrder[1]?.kind === "MATCH", "segment slot order was not preserved");
+  ok(show.segments[0]?.participants[0]?.personId === people[0], "segment participant was not projected");
+  ok(show.segments[0]?.plannedLengthMinutes === 5, "private Results lost segment duration");
+});
+
 test("show history remains scoped to each player's controlled promotion", () => {
   const { aggregate, promotionAId, promotionBId } = twoPlayerFixture(72002);
   const playerA = buildPlayerShowHistory(aggregate, "player-a");

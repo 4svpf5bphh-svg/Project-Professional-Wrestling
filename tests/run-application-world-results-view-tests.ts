@@ -191,6 +191,28 @@ test("world results combine public completed shows from player and rival promoti
     status: "ACTIVE",
   });
 
+  aggregate.state.ledger.push({
+    id: "world-results-segment",
+    worldId: aggregate.state.world.id,
+    date: { year: 1, week: 1, day: 2 },
+    order: 901,
+    type: "SHOW_SEGMENT_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: ["player-show", playerPromotionId, people[0]!.id],
+    payload: {
+      eventId: "player-show",
+      promotionId: playerPromotionId,
+      sourceDraftId: "private-draft-id",
+      draftSegmentId: "private-segment-id",
+      slotOrder: 1,
+      segmentType: "CONFRONTATION",
+      participantIds: people[0]!.id,
+      programmeId: "private-programme-id",
+      plannedLengthMinutes: 7,
+    },
+  });
+
   const view = buildPlayerWorldResultsView(aggregate, "player-a", 10);
   ok(view.shows.length === 2, "world results did not combine both promotions");
   ok(view.shows[0]?.eventId === "rival-show", "newest World show was not first");
@@ -202,6 +224,13 @@ test("world results combine public completed shows from player and rival promoti
   ok(rivalShow.matches[0]?.titleOutcomes[0]?.titleChanged === true, "title change was not preserved");
   ok(rivalShow.injuryCount === 1, "show injury count was wrong");
   ok(rivalShow.matches[0]?.injuries[0]?.personName === people[3]!.name, "public injury was not resolved");
+  const playerShow = view.shows.find((show) => show.eventId === "player-show")!;
+  ok(playerShow.segmentCount === 1 && playerShow.runningOrder[0]?.kind === "SEGMENT", "public show history omitted its resolved segment");
+  ok(playerShow.segments[0]?.participants[0]?.personId === people[0]!.id, "public segment lost its participant");
+  const serializedPlayerShow = JSON.stringify(playerShow);
+  ok(!serializedPlayerShow.includes("private-draft-id"), "public segment leaked source draft identity");
+  ok(!serializedPlayerShow.includes("private-programme-id"), "public segment leaked Programme identity");
+  ok(!serializedPlayerShow.includes("plannedLengthMinutes"), "public segment leaked planned duration");
 });
 
 test("world results hide rival economics, contracts and private booking details", () => {
