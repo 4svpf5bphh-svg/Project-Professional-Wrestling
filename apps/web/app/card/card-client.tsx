@@ -12,6 +12,11 @@ import type {
   AlphaShowCardRequest,
 } from "../../../../dist/packages/web-adapter/src/card-service.js";
 import type { MatchFinish } from "../../../../dist/packages/sim-core/src/match-finishes.js";
+import {
+  assessMatchStyleReadiness,
+  defaultMatchStyleForIntent,
+  evaluateMatchStyleLoad,
+} from "../../../../dist/packages/sim-core/src/match-style.js";
 import styles from "./card.module.css";
 
 type ErrorPayload = { error?: string };
@@ -26,6 +31,15 @@ const SEGMENT_TYPES: AlphaCardSegmentView["type"][] = [
   "PROMO", "INTERVIEW", "CONFRONTATION", "CHALLENGE", "ATTACK", "CELEBRATION", "TURN",
 ];
 const SHOW_TIME_GUIDE_MINUTES = 120;
+const STYLE_DIMENSIONS = [
+  ["competitiveness", "Competitive"],
+  ["technical", "Technical"],
+  ["story", "Story"],
+  ["intensity", "Intensity"],
+  ["risk", "Risk"],
+  ["epic", "Epic"],
+] as const;
+type StyleDimension = typeof STYLE_DIMENSIONS[number][0];
 
 function isErrorPayload(payload: AlphaCurrentWeekCardView | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
@@ -57,11 +71,19 @@ function finishLabel(value: BookableFinish): string {
   return "Protected / controversial";
 }
 
+function sameStyle(
+  left: NonNullable<AlphaCardMatchView["style"]>,
+  right: NonNullable<AlphaCardMatchView["style"]>,
+): boolean {
+  return STYLE_DIMENSIONS.every(([dimension]) => left[dimension] === right[dimension]);
+}
+
 function cloneMatches(matches: AlphaCardMatchView[]): AlphaCardMatchView[] {
   return matches.map((match) => ({
     ...match,
     sideAIds: [...match.sideAIds],
     sideBIds: [...match.sideBIds],
+    style: { ...(match.style ?? defaultMatchStyleForIntent(match.intent)) },
     plannedFinish: match.plannedFinish ?? defaultFinishForIntent(match.intent),
   }));
 }
@@ -205,12 +227,17 @@ export default function CardClient(): React.JSX.Element {
       && segment.turnTargetAlignment !== personAlignment(segment.turnPersonId ?? "")
     ))
   ));
+  const hasCurrentStyleRefusal = matches.some((match) => {
+    const readiness = liveMatchReadiness(match);
+    return readiness?.status === "REFUSES" && !readiness.provisional;
+  });
   const canSave = Boolean(
     view?.canEdit
     && matches.length > 0
     && completeMatches
     && completeSegments
     && !duplicateMatchBooking
+    && !hasCurrentStyleRefusal
     && uniqueBookedCount >= (view?.minParticipants ?? 0)
     && uniqueBookedCount <= (view?.maxParticipants ?? Number.MAX_SAFE_INTEGER)
     && !saving
@@ -231,6 +258,7 @@ export default function CardClient(): React.JSX.Element {
       sideBIds: Array.from({ length: size }, () => ""),
       intendedWinnerSide: "A",
       intent: "COMPETITIVE",
+      style: { ...defaultMatchStyleForIntent("COMPETITIVE") },
       plannedLengthMinutes: type === "TAG" ? 15 : 12,
       plannedFinish: "CLEAN_PIN",
     }]);
@@ -258,6 +286,79 @@ export default function CardClient(): React.JSX.Element {
   function updateMatch(matchId: string, patch: Partial<AlphaCardMatchView>): void {
     setMatches((current) => current.map((match) => match.draftMatchId === matchId ? { ...match, ...patch } : match));
     markDirty();
+  }
+
+  function setMatchPreset(matchId: string, intent: AlphaCardMatchView["intent"]): void {
+    updateMatch(matchId, {
+      intent,
+      style: { ...defaultMatchStyleForIntent(intent) },
+      plannedFinish: defaultFinishForIntent(intent),
+    });
+  }
+
+  function setStyleDimension(matchId: string, dimension: StyleDimension, value: number): void {
+    const match = matches.find((candidate) => candidate.draftMatchId === matchId);
+    if (!match) return;
+    const style = { ...(match.style ?? defaultMatchStyleForIntent(match.intent)) };
+    style[dimension] = Math.max(0, Math.min(100, Math.round(value)));
+    updateMatch(matchId, { style });
+  }
+
+  function participantView(personId: string): AlphaCardParticipantView | null {
+    if (!view || !personId) return null;
+    return view.availableParticipants.find((person) => person.personId === personId)
+      ?? view.participants.find((person) => person.personId === personId)
+      ?? null;
+  }
+
+  function liveMatchReadiness(match: AlphaCardMatchView): AlphaCardMatchView["readiness"] {
+    if (!view || !match.style) return undefined;
+    const ids = [...match.sideAIds, ...match.sideBIds].filter(Boolean);
+    if (ids.length === 0) return undefined;
+    const provisional = view.targetDate.year > view.world.year
+      || (view.targetDate.year === view.world.year && view.targetDate.week > view.world.week);
+    const participants = ids.flatMap((personId) => {
+      const person = participantView(personId);
+      if (!person) return [];
+      const assessment = assessMatchStyleReadiness(
+        match.style!,
+        person.skills,
+        match.plannedLengthMinutes,
+        person.fatigue,
+        person.wear,
+      );
+      return [{
+        personId,
+        name: person.name,
+        status: assessment.status,
+        reasons: [...assessment.reasons],
+        capability: assessment.capability,
+        shortfall: assessment.shortfall,
+        physicalLoad: assessment.physicalLoad,
+      }];
+    });
+    const rank = { COMFORTABLE: 0, CONCERNED: 1, REFUSES: 2 } as const;
+    const status = participants.reduce<"COMFORTABLE" | "CONCERNED" | "REFUSES">(
+      (worst, participant) => rank[participant.status] > rank[worst] ? participant.status : worst,
+      "COMFORTABLE",
+    );
+    return { status, provisional, participants };
+  }
+
+  function stylePresetLabel(match: AlphaCardMatchView): string {
+    if (!match.style) return pretty(match.intent);
+    const preset = defaultMatchStyleForIntent(match.intent);
+    return sameStyle(match.style, preset) ? pretty(match.intent) : `${pretty(match.intent)} · Custom`;
+  }
+
+  function readinessReasonLabel(reason: string): string {
+    if (reason === "FATIGUE") return "fatigue";
+    if (reason === "WEAR") return "physical wear";
+    if (reason === "STYLE_STRETCH") return "style stretch";
+    if (reason === "RISK_SAFETY") return "risk vs safety";
+    if (reason === "ENDURANCE") return "length vs stamina";
+    if (reason === "PHYSICAL_LOAD") return "physical demand";
+    return pretty(reason);
   }
 
   function setMatchType(matchId: string, type: AlphaCardMatchView["type"]): void {
@@ -429,7 +530,8 @@ export default function CardClient(): React.JSX.Element {
   function matchSummary(match: AlphaCardMatchView): string {
     const sideA = match.sideAIds.map(personName).join(" & ");
     const sideB = match.sideBIds.map(personName).join(" & ");
-    return `${sideA} vs ${sideB} · ${match.plannedLengthMinutes} min`;
+    const winner = match.intendedWinnerSide === "A" ? sideA : sideB;
+    return `${sideA} vs ${sideB} · ${match.plannedLengthMinutes} min · ${stylePresetLabel(match)} · Winner: ${winner || "TBD"}`;
   }
 
   function segmentSummary(segment: AlphaCardSegmentView): string {
@@ -576,6 +678,10 @@ export default function CardClient(): React.JSX.Element {
               if (!match) return null;
               const assignment = assignmentForMatch(match.draftMatchId);
               const finish = (match.plannedFinish ?? defaultFinishForIntent(match.intent)) as BookableFinish;
+              const style = match.style ?? defaultMatchStyleForIntent(match.intent);
+              const styleLoad = evaluateMatchStyleLoad(style, match.plannedLengthMinutes);
+              const readiness = liveMatchReadiness({ ...match, style });
+              const concernPeople = readiness?.participants.filter((person) => person.status !== "COMFORTABLE") ?? [];
               const slotKey = `MATCH:${slot.refId}`;
               const expanded = expandedSlotKey === slotKey;
               const participantOptions = (currentId: string) => view.availableParticipants.map((person) => (
@@ -633,7 +739,7 @@ export default function CardClient(): React.JSX.Element {
 
                   <div className={styles.controls}>
                     <div className={styles.control}><label>Winner</label><select value={match.intendedWinnerSide} disabled={!view.canEdit} onChange={(event) => updateMatch(match.draftMatchId, { intendedWinnerSide: event.target.value as "A" | "B" })}><option value="A">Side A</option><option value="B">Side B</option></select></div>
-                    <div className={styles.control}><label>Intent</label><select value={match.intent} disabled={!view.canEdit} onChange={(event) => { const intent=event.target.value as AlphaCardMatchView["intent"]; updateMatch(match.draftMatchId, { intent, plannedFinish: defaultFinishForIntent(intent) }); }}>{MATCH_INTENTS.map((intent) => <option key={intent} value={intent}>{pretty(intent)}</option>)}</select></div>
+                    <div className={styles.control}><label>Preset</label><select value={match.intent} disabled={!view.canEdit} onChange={(event) => setMatchPreset(match.draftMatchId, event.target.value as AlphaCardMatchView["intent"])}>{MATCH_INTENTS.map((intent) => <option key={intent} value={intent}>{pretty(intent)}</option>)}</select></div>
                     <div className={styles.control}><label>Finish</label><select value={finish} disabled={!view.canEdit} onChange={(event) => updateMatch(match.draftMatchId, { plannedFinish: event.target.value as BookableFinish })}>{MATCH_FINISHES.map((item) => <option key={item} value={item}>{finishLabel(item)}</option>)}</select></div>
                     <div className={styles.control}><label>Minutes</label><MinuteField value={match.plannedLengthMinutes} min={3} max={60} disabled={!view.canEdit} onCommit={(plannedLengthMinutes) => updateMatch(match.draftMatchId, { plannedLengthMinutes })} /></div>
                     <div className={styles.control}>
@@ -648,6 +754,52 @@ export default function CardClient(): React.JSX.Element {
                       </select>
                     </div>
                   </div>
+
+                  <details className={styles.stylePanel}>
+                    <summary>
+                      <span>
+                        <b>Tune Style</b>
+                        <small>{stylePresetLabel(match)} · {pretty(styleLoad.band)} load</small>
+                      </span>
+                      <span className={
+                        readiness?.status === "REFUSES"
+                          ? styles.readinessRefuses
+                          : readiness?.status === "CONCERNED"
+                            ? styles.readinessConcerned
+                            : styles.readinessComfortable
+                      }>
+                        {readiness ? pretty(readiness.status) : "Choose wrestlers"}
+                        {readiness?.provisional ? " · provisional" : ""}
+                      </span>
+                    </summary>
+                    <div className={styles.styleGrid}>
+                      {STYLE_DIMENSIONS.map(([dimension, label]) => (
+                        <label className={styles.styleSlider} key={dimension}>
+                          <span><b>{label}</b><strong>{style[dimension]}</strong></span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={100}
+                            step={5}
+                            value={style[dimension]}
+                            disabled={!view.canEdit}
+                            onChange={(event) => setStyleDimension(match.draftMatchId, dimension, Number(event.target.value))}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <div className={styles.styleReadout}>
+                      <span>Physical {Math.round(styleLoad.physical)} · Creative {Math.round(styleLoad.creative)} · Total {Math.round(styleLoad.total)}</span>
+                      {concernPeople.length > 0 ? (
+                        <span>
+                          {concernPeople.map((person) => (
+                            `${person.name}: ${pretty(person.status)} (${person.reasons.map(readinessReasonLabel).join(", ")})`
+                          )).join(" · ")}
+                        </span>
+                      ) : <span>Wrestlers are comfortable with this demand.</span>}
+                      {readiness?.provisional ? <em>Future-card assessment will be checked again when the show materialises.</em> : null}
+                    </div>
+                  </details>
 
                   <div className={styles.actions}>
                     <button className={styles.secondaryButton} type="button" disabled={!view.canEdit || slotIndex === 0} onClick={() => moveSlot(slotIndex, -1)}>↑ Earlier</button>
@@ -816,6 +968,7 @@ export default function CardClient(): React.JSX.Element {
         {!completeMatches && matches.length > 0 ? <div className={styles.assignmentWarning}>Choose every wrestler in each match before saving.</div> : null}
         {!completeSegments && segments.length > 0 ? <div className={styles.assignmentWarning}>Complete every segment and choose the required wrestlers before saving.</div> : null}
         {duplicateMatchBooking ? <div className={styles.assignmentWarning}>A wrestler can only be booked in one match, but may also appear in segments.</div> : null}
+        {hasCurrentStyleRefusal ? <div className={styles.refusalWarning}>A wrestler refuses the current match style. Lower the demand or change the booking before saving.</div> : null}
         {uniqueBookedCount > 0 && uniqueBookedCount < view.minParticipants ? <div className={styles.assignmentWarning}>Use at least {view.minParticipants} unique wrestlers across matches and segments before saving.</div> : null}
 
         <div className={styles.saveBar}>

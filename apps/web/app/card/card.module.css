@@ -494,3 +494,142 @@
   .slotHeading strong { white-space: normal; line-height: 1.35; }
   .slotHeaderBadges { align-items: flex-end; flex-direction: column-reverse; }
 }
+
+
+.stylePanel {
+  margin-top: 12px;
+  border: 1px solid #243145;
+  border-radius: 12px;
+  background: rgba(13, 20, 29, .78);
+  overflow: hidden;
+}
+
+.stylePanel summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 11px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.stylePanel summary::-webkit-details-marker {
+  display: none;
+}
+
+.stylePanel summary > span:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.stylePanel summary b {
+  color: #e3ebf5;
+  font-size: 11px;
+}
+
+.stylePanel summary small {
+  color: #7f8fa2;
+  font-size: 10px;
+}
+
+.styleGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px 11px;
+  border-top: 1px solid #202938;
+}
+
+.styleSlider {
+  display: grid;
+  gap: 6px;
+}
+
+.styleSlider > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #8d9caf;
+  font-size: 10px;
+}
+
+.styleSlider > span strong {
+  color: #dce7f3;
+  font-size: 11px;
+}
+
+.matchCard .styleSlider input[type="range"] {
+  min-height: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.styleReadout {
+  display: grid;
+  gap: 4px;
+  padding: 0 11px 11px;
+  color: #8291a4;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.styleReadout em {
+  color: #9aa9ba;
+  font-style: normal;
+}
+
+.readinessComfortable,
+.readinessConcerned,
+.readinessRefuses {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  padding: 5px 7px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.readinessComfortable {
+  border: 1px solid rgba(101, 230, 173, .32);
+  background: rgba(101, 230, 173, .08);
+  color: #78edb8;
+}
+
+.readinessConcerned {
+  border: 1px solid rgba(255, 191, 112, .32);
+  background: rgba(255, 191, 112, .08);
+  color: #ffd09b;
+}
+
+.readinessRefuses {
+  border: 1px solid rgba(255, 103, 103, .36);
+  background: rgba(255, 103, 103, .1);
+  color: #ffaaaa;
+}
+
+.refusalWarning {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 103, 103, .34);
+  border-radius: 12px;
+  background: rgba(85, 25, 28, .22);
+  color: #ffb2b2;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+@media (max-width: 560px) {
+  .styleGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .stylePanel summary {
+    align-items: flex-start;
+  }
+}

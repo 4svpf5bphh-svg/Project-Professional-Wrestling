@@ -54,6 +54,15 @@ export interface AlphaCardParticipantView {
   popularity: number;
   momentum: number;
   morale: number;
+  fatigue: number;
+  wear: number;
+  skills: {
+    inRingQuality: number;
+    matchCraft: number;
+    safety: number;
+    stamina: number;
+    presentation: number;
+  };
   datesRemaining: number;
 }
 
@@ -672,6 +681,15 @@ function availableCardParticipants(
       popularity: person.popularity,
       momentum: person.momentum,
       morale: person.morale,
+      fatigue: person.fatigue,
+      wear: person.wear,
+      skills: {
+        inRingQuality: person.skills.inRingQuality,
+        matchCraft: person.skills.matchCraft,
+        safety: person.skills.safety,
+        stamina: person.skills.stamina,
+        presentation: person.skills.presentation,
+      },
       datesRemaining,
     });
   }
@@ -803,6 +821,15 @@ export async function loadAlphaShowCard(
       popularity: person.popularity,
       momentum: person.momentum,
       morale: person.morale,
+      fatigue: person.fatigue,
+      wear: person.wear,
+      skills: {
+        inRingQuality: person.skills.inRingQuality,
+        matchCraft: person.skills.matchCraft,
+        safety: person.skills.safety,
+        stamina: person.skills.stamina,
+        presentation: person.skills.presentation,
+      },
       datesRemaining: 0,
     } satisfies AlphaCardParticipantView;
   });

@@ -109,6 +109,8 @@ await test("Alpha browser card booking persists a complete card, title assignmen
   ok(beforeCard.recentMeetings.length === 0, "fresh Alpha World unexpectedly exposed prior opponent history");
   ok(beforeCard.canEdit, "reserved show card is not editable");
   ok(beforeCard.participants.length === fixture.participantIds.length, "card planner lost reserved participants");
+  ok(beforeCard.participants.every((person) => Number.isFinite(person.fatigue) && Number.isFinite(person.wear)), "card planner omitted wrestler physical condition");
+  ok(beforeCard.participants.every((person) => Number.isFinite(person.skills.stamina) && Number.isFinite(person.skills.safety)), "card planner omitted wrestler readiness skills");
   ok(beforeCard.targetDate.week === beforeCard.world.week, "current-week card target does not match current week");
   const singlesTitle = beforeCard.championships.find((championship) => championship.division === "SINGLES");
   ok(singlesTitle, "Alpha card did not expose the promotion singles championship");
