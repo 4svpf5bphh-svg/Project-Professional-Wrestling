@@ -225,6 +225,16 @@ test("unexplained or repeated alignment changes reduce future crowd confidence",
 
   ok(stable.matches[0]?.alignmentReason === "FACE_HEEL_CLARITY", "stable fixture did not begin with clear alignment");
   ok(confused.matches[0]?.alignmentReason === "ALIGNMENT_VOLATILITY", "unexplained switch did not surface crowd confusion");
+  ok((confused.matches[0]?.alignmentBaseModifier ?? 0) > 0, "clear alignment base was lost when volatility existed");
+  ok((confused.matches[0]?.alignmentVolatilityModifier ?? 0) < 0, "alignment volatility was not preserved as a negative component");
+  ok(
+    Math.abs(
+      (confused.matches[0]?.alignmentBaseModifier ?? 0)
+      + (confused.matches[0]?.alignmentVolatilityModifier ?? 0)
+      - (confused.matches[0]?.alignmentModifier ?? 0)
+    ) < 0.01,
+    "split alignment components no longer equal the net modifier",
+  );
   ok(confused.crowdResponse < stable.crowdResponse - 0.5, "alignment volatility did not reduce crowd response");
 });
 

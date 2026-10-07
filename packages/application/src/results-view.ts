@@ -235,8 +235,20 @@ function frozenCrowdFactors(
   matchId: Id,
   matchOrder: number,
 ): PlayerShowCrowdFactorView[] {
+  const hasSplitAlignment = Boolean(
+    entry
+    && (
+      typeof entry.payload.showFlowAlignmentBaseModifier === "number"
+      || typeof entry.payload.showFlowAlignmentVolatilityModifier === "number"
+    )
+  );
   const factors = [
-    crowdFactor(entry, "ALIGNMENT", matchId, matchOrder, "showFlowAlignmentModifier", "showFlowAlignmentReason"),
+    ...(hasSplitAlignment ? [
+      crowdFactor(entry, "ALIGNMENT", matchId, matchOrder, "showFlowAlignmentBaseModifier", "showFlowAlignmentBaseReason"),
+      crowdFactor(entry, "ALIGNMENT", matchId, matchOrder, "showFlowAlignmentVolatilityModifier", "showFlowAlignmentVolatilityReason"),
+    ] : [
+      crowdFactor(entry, "ALIGNMENT", matchId, matchOrder, "showFlowAlignmentModifier", "showFlowAlignmentReason"),
+    ]),
     crowdFactor(entry, "PROGRAMME", matchId, matchOrder, "showFlowProgrammeModifier", "showFlowProgrammeReason"),
     crowdFactor(entry, "PACING", matchId, matchOrder, "showFlowPacingModifier", "showFlowPacingReason"),
   ];

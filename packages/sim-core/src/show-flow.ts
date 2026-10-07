@@ -54,6 +54,9 @@ export interface ShowFlowMatchEvaluation {
   baseCrowdResponse: number;
   alignmentModifier: number;
   alignmentReason: ShowFlowReasonCode | null;
+  alignmentBaseModifier: number;
+  alignmentBaseReason: ShowFlowReasonCode | null;
+  alignmentVolatilityModifier: number;
   programmeModifier: number;
   programmeReason: ShowFlowReasonCode | null;
   pacingModifier: number;
@@ -234,12 +237,37 @@ export function evaluateShowFlow(
       0,
       100,
     ));
+    const participants = participantsForMatch(state, match.id);
+    const volatility = recentAlignmentVolatilityPenalty(
+      state,
+      match.promotionId,
+      participants.map((participant) => participant.personId),
+    );
+    const alignmentBaseModifier = round1(alignment.modifier - volatility);
+    const alignmentVolatilityModifier = round1(volatility);
     return {
       matchId: match.id,
       order: match.order,
       baseCrowdResponse: match.crowdResponse,
       alignmentModifier: round1(alignment.modifier),
       alignmentReason: alignment.reason,
+      alignmentBaseModifier,
+      alignmentBaseReason: Math.abs(alignmentBaseModifier) >= 0.05
+        ? (
+          alignmentBaseModifier > 0
+            ? (
+              (() => {
+                const a = sideAlignment(state, match.promotionId, participants, "A");
+                const b = sideAlignment(state, match.promotionId, participants, "B");
+                if ((a === "FACE" && b === "HEEL") || (a === "HEEL" && b === "FACE")) return "FACE_HEEL_CLARITY";
+                if (a === "TWEENER" || b === "TWEENER") return "TWEENER_TENSION";
+                return alignment.reason === "ALIGNMENT_VOLATILITY" ? null : alignment.reason;
+              })()
+            )
+            : "SAME_ALIGNMENT"
+        )
+        : null,
+      alignmentVolatilityModifier,
       programmeModifier: round1(programme.modifier),
       programmeReason: programme.reason,
       pacingModifier: round1(pacing.modifier),
@@ -312,6 +340,12 @@ export function applyCurrentWeekShowFlow(state: WorldState): number {
       if (!matchLedger) continue;
       matchLedger.payload.showFlowAlignmentModifier = matchEvaluation.alignmentModifier;
       matchLedger.payload.showFlowAlignmentReason = matchEvaluation.alignmentReason;
+      matchLedger.payload.showFlowAlignmentBaseModifier = matchEvaluation.alignmentBaseModifier;
+      matchLedger.payload.showFlowAlignmentBaseReason = matchEvaluation.alignmentBaseReason;
+      matchLedger.payload.showFlowAlignmentVolatilityModifier = matchEvaluation.alignmentVolatilityModifier;
+      matchLedger.payload.showFlowAlignmentVolatilityReason = matchEvaluation.alignmentVolatilityModifier < -0.05
+        ? "ALIGNMENT_VOLATILITY"
+        : null;
       matchLedger.payload.showFlowProgrammeModifier = matchEvaluation.programmeModifier;
       matchLedger.payload.showFlowProgrammeReason = matchEvaluation.programmeReason;
       matchLedger.payload.showFlowPacingModifier = matchEvaluation.pacingModifier;
