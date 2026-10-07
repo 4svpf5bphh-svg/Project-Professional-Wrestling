@@ -236,6 +236,27 @@ await test("Talent service opens renegotiation when purchased dates are exhauste
     "exhausted-date renewal did not start immediately",
   );
   ok(offer.sourceContractId === source.id, "exhausted-date renewal lost source contract identity");
+  const revisionAfterFirst = persisted.runtime.revision;
+
+  const retry = await submitAlphaTalentOffer(repository, worldId, "player-a", {
+    requestId: "talent-exhausted-renewal-001",
+    personId: source.personId,
+    sourceContractId: source.id,
+    family: "LIMITED_NON_EXCLUSIVE",
+    roleExpectation: source.roleExpectation,
+    termWeeks: 13,
+    dateEntitlement: 5,
+    weeklyGuarantee: Math.max(source.weeklyGuarantee, 50_000),
+    appearanceFee: Math.max(source.appearanceFee, 50_000),
+    signingBonus: Math.max(source.signingBonus, 100_000),
+  });
+  ok(retry.offerId === result.offerId, "idempotent exhausted-date renewal returned a different offer");
+  const afterRetry = await repository.load(worldId);
+  ok(afterRetry.runtime.revision === revisionAfterFirst, "idempotent exhausted-date renewal advanced World revision twice");
+  ok(
+    afterRetry.state.contractOffers.filter((candidate) => candidate.id === result.offerId).length === 1,
+    "idempotent exhausted-date renewal duplicated the offer",
+  );
 });
 
 await test("Talent service rejects a renewal against another promotion's private contract", async () => {

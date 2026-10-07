@@ -106,6 +106,7 @@ function replayPlanFromOffer(offer: ContractOffer) {
   return {
     promotionId: offer.promotionId,
     personId: offer.personId,
+    sourceContractId: offer.sourceContractId ?? null,
     family: offer.family,
     exclusivity: offer.exclusivity,
     roleExpectation: offer.roleExpectation,
@@ -125,6 +126,7 @@ function requestMatchesOffer(
 ): boolean {
   const termWeeks = weeksBetween(offer.startDate, offer.endDate, aggregate.state.ruleset.weeksPerYear) + 1;
   return offer.personId === request.personId
+    && (offer.sourceContractId ?? null) === (request.sourceContractId ?? null)
     && offer.family === request.family
     && offer.roleExpectation === request.roleExpectation
     && termWeeks === request.termWeeks
