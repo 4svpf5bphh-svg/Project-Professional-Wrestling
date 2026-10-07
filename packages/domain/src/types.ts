@@ -54,6 +54,12 @@ export type InjurySeverity = "MINOR" | "MODERATE" | "MAJOR" | "SEVERE";
 export type InjuryStatus = "ACTIVE" | "RECOVERED";
 export type ChemistryContext = "SINGLES" | "TAG";
 export type TeamStatus = "ACTIVE" | "DISBANDED";
+export type WrestlerRelationshipTag =
+  | "FAMILY"
+  | "TAG_PARTNERS"
+  | "FORMER_PARTNERS"
+  | "ALLY"
+  | "MENTOR";
 export type ChampionshipDivision = "SINGLES" | "TAG";
 export type ChampionshipStatus = "ACTIVE" | "INACTIVE";
 export type ChampionshipHolderType = "PERSON" | "TEAM";
@@ -372,6 +378,18 @@ export interface WorkingChemistry {
   matchesTogether: number;
 }
 
+export interface WrestlerRelationship {
+  id: Id;
+  worldId: Id;
+  personAId: Id;
+  personBId: Id;
+  affinity: number;
+  professionalTrust: number;
+  rivalryHeat: number;
+  familiarity: number;
+  tags: WrestlerRelationshipTag[];
+}
+
 export interface Team {
   id: Id;
   worldId: Id;
@@ -478,6 +496,7 @@ export interface WorldState {
   matchParticipants: MatchParticipant[];
   injuries: Injury[];
   workingChemistry: WorkingChemistry[];
+  wrestlerRelationships?: WrestlerRelationship[];
   teams?: Team[];
   teamMemberships?: TeamMembership[];
   championships?: Championship[];

@@ -25,6 +25,8 @@ import {
   generatedFictionalPromotionSource,
   generatedFictionalRosterSource,
   type WorldPromotionSource,
+  upsertWrestlerRelationship,
+  wrestlerRelationshipBetween,
   recoverWrestlersForNewWeek,
   resolveWorldWeek,
   resolveWorldWeeks,
@@ -134,6 +136,63 @@ test("real promotion catalog preserves parent links and keeps real companies tak
   equal(nxt.identity?.parentPromotionId, wwe.id);
   equal(roh.identity?.parentPromotionId, aew.id);
   ok(wwe.contractPolicy!.exclusiveContractChance > aew.contractPolicy!.exclusiveContractChance, "WWE and AEW contract cultures were not differentiated");
+});
+
+test("wrestler relationships are canonical, multi-axis and distinct from match chemistry", () => {
+  const state = createWorld(107, DEFAULT_RULESET);
+  const [left, right] = state.people.slice(0, 2);
+  const chemistryBefore = state.workingChemistry.length;
+
+  const created = upsertWrestlerRelationship(state, {
+    personAId: right!.id,
+    personBId: left!.id,
+    affinity: 72,
+    professionalTrust: 88,
+    rivalryHeat: 35,
+    familiarity: 91,
+    tags: ["TAG_PARTNERS", "ALLY", "TAG_PARTNERS"],
+  });
+
+  ok(created.personAId < created.personBId, "relationship pair was not canonicalized");
+  equal(created.tags.join(","), "ALLY,TAG_PARTNERS");
+  equal(state.workingChemistry.length, chemistryBefore);
+
+  const updated = upsertWrestlerRelationship(state, {
+    personAId: left!.id,
+    personBId: right!.id,
+    affinity: 45,
+    rivalryHeat: 80,
+  });
+  equal(updated.id, created.id);
+  equal(updated.affinity, 45);
+  equal(updated.professionalTrust, 88);
+  equal(updated.rivalryHeat, 80);
+  equal(state.wrestlerRelationships?.length, 1);
+  equal(wrestlerRelationshipBetween(state, right!.id, left!.id)?.id, created.id);
+});
+
+test("wrestler relationship foundation rejects self-links and impossible values", () => {
+  const state = createWorld(108, DEFAULT_RULESET);
+  const [left, right] = state.people.slice(0, 2);
+  let selfRejected = false;
+  try {
+    upsertWrestlerRelationship(state, { personAId: left!.id, personBId: left!.id });
+  } catch {
+    selfRejected = true;
+  }
+  ok(selfRejected, "self relationship was accepted");
+
+  let rangeRejected = false;
+  try {
+    upsertWrestlerRelationship(state, {
+      personAId: left!.id,
+      personBId: right!.id,
+      rivalryHeat: 101,
+    });
+  } catch {
+    rangeRejected = true;
+  }
+  ok(rangeRejected, "out-of-range rivalry heat was accepted");
 });
 
 test("Genesis creates formal contracts while preserving free-agent supply", () => {
