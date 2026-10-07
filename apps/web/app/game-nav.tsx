@@ -41,7 +41,7 @@ const NAV_ITEMS: NavItem[] = [
     shortLabel: "T",
     matches: (pathname) => pathname.startsWith("/talent") || pathname.startsWith("/teams"),
     destinations: [
-      { href: "/talent", label: "Roster & market", description: "Contracts, roster and available talent." },
+      { href: "/talent", label: "Singles & contracts", description: "Roster, alignment, contracts, market and offers." },
       { href: "/talent/teams", label: "Tag teams", description: "Active teams fully on your roster." },
       { href: "/talent/directory", label: "Wrestler directory", description: "Browse wrestler profiles." },
     ],
