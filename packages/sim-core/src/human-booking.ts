@@ -10,6 +10,7 @@ import type {
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { normalizeMatchStyle } from "./match-style.js";
+import { requireSameWrestlerDivision } from "./wrestler-division.js";
 import {
   defaultPlannedFinishForIntent,
   isBookableMatchFinish,
@@ -102,6 +103,12 @@ export function prepareHumanMatchCard(
     }
     if (plan.style !== undefined) normalizeMatchStyle(plan.style);
     const ids = [...plan.sideAIds, ...plan.sideBIds];
+    const people = ids.map((personId) => state.people.find((candidate) => candidate.id === personId));
+    if (people.some((person) => !person)) throw new Error("match references a missing wrestler");
+    requireSameWrestlerDivision(
+      people as NonNullable<(typeof people)[number]>[],
+      "manual matches cannot mix men's and women's divisions",
+    );
     for (const personId of ids) {
       if (!committedIds.has(personId)) throw new Error(`wrestler ${personId} is not committed to this event`);
       if (used.has(personId)) throw new Error(`wrestler ${personId} is booked more than once on the card`);

@@ -164,6 +164,37 @@ test("match-style validation rejects impossible slider values", () => {
   ok(rejected, "out-of-range match style was accepted");
 });
 
+test("AI booking never creates mixed-division matches when a roster contains men and women", () => {
+  const state = createWorld(8999, DEFAULT_RULESET);
+  const promotion = state.promotions.find((candidate) => candidate.tier === "GLOBAL")!;
+  const contracted = state.contracts
+    .filter((contract) => contract.promotionId === promotion.id && contract.status === "SIGNED")
+    .map((contract) => state.people.find((person) => person.id === contract.personId)!)
+    .filter(Boolean);
+  ok(contracted.length >= 8, "mixed-division fixture lacks enough contracted wrestlers");
+  contracted.forEach((person, index) => {
+    person.division = index % 2 === 0 ? "MEN" : "WOMEN";
+  });
+
+  resolveWorldWeeks(state, 2);
+
+  const eventIds = new Set(
+    state.events
+      .filter((event) => event.promotionId === promotion.id && event.status === "COMPLETED")
+      .map((event) => event.id),
+  );
+  const matches = state.matches.filter((match) => eventIds.has(match.eventId) && match.status === "COMPLETED");
+  ok(matches.length > 0, "mixed-division AI fixture produced no completed matches");
+  for (const match of matches) {
+    const divisions = new Set(
+      state.matchParticipants
+        .filter((participant) => participant.matchId === match.id)
+        .map((participant) => state.people.find((person) => person.id === participant.personId)?.division ?? "MEN"),
+    );
+    ok(divisions.size === 1, `${match.id} mixed men's and women's divisions`);
+  }
+});
+
 test("tag booking reuses pairings instead of constantly reshuffling partners", () => {
   const state = createWorld(9001, DEFAULT_RULESET);
   resolveWorldWeeks(state, 520);

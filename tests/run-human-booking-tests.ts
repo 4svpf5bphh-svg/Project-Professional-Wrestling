@@ -128,6 +128,23 @@ test("human promoter controls match order, participants, intent, length, finish 
   ok(state.ledger[state.ledger.length - 1]!.type === "HUMAN_MATCH_CARD_PREPARED", "manual card was not recorded in World history");
 });
 
+test("manual human booking rejects mixed-division matches without partial mutation", () => {
+  const { state, eventId, participantIds } = fixture(11109);
+  state.people.find((person) => person.id === participantIds[1])!.division = "WOMEN";
+  const plans = standardCard(participantIds);
+  const matchesBefore = state.matches.length;
+  const participantsBefore = state.matchParticipants.length;
+  let rejected = false;
+  try {
+    prepareHumanMatchCard(state, eventId, plans);
+  } catch (error) {
+    rejected = String(error).includes("cannot mix");
+  }
+  ok(rejected, "mixed-division manual match was accepted");
+  ok(state.matches.length === matchesBefore, "rejected mixed-division card partially created matches");
+  ok(state.matchParticipants.length === participantsBefore, "rejected mixed-division card partially created participants");
+});
+
 test("manual human card resolves the booked finish unless an injury forces a stoppage", () => {
   const { state, eventId, participantIds } = fixture(11102);
   const plans = standardCard(participantIds);
