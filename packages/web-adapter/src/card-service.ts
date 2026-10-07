@@ -26,7 +26,12 @@ import {
 } from "../../application/src/index.js";
 import { wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
-import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
+import {
+  assessMatchStyleReadiness,
+  normalizeMatchStyle,
+  type MatchStyleReadinessReason,
+  type MatchStyleReadinessStatus,
+} from "../../sim-core/src/match-style.js";
 import {
   bookHumanChampionshipMatch,
   unbookHumanChampionshipMatch,
@@ -52,6 +57,22 @@ export interface AlphaCardParticipantView {
   datesRemaining: number;
 }
 
+export interface AlphaCardMatchReadinessParticipantView {
+  personId: Id;
+  name: string;
+  status: MatchStyleReadinessStatus;
+  reasons: MatchStyleReadinessReason[];
+  capability: number;
+  shortfall: number;
+  physicalLoad: number;
+}
+
+export interface AlphaCardMatchReadinessView {
+  status: MatchStyleReadinessStatus;
+  provisional: boolean;
+  participants: AlphaCardMatchReadinessParticipantView[];
+}
+
 export interface AlphaCardMatchView {
   draftMatchId: string;
   type: MatchType;
@@ -60,6 +81,7 @@ export interface AlphaCardMatchView {
   intendedWinnerSide: MatchSide;
   intent: MatchIntent;
   style?: MatchStyleProfile;
+  readiness?: AlphaCardMatchReadinessView;
   plannedLengthMinutes: number;
   plannedFinish?: MatchFinish;
 }
@@ -246,6 +268,57 @@ function normalizeCompleteCard(
   return { matches: normalized, participantIds: orderedParticipants };
 }
 
+
+function readinessRank(status: MatchStyleReadinessStatus): number {
+  if (status === "REFUSES") return 2;
+  if (status === "CONCERNED") return 1;
+  return 0;
+}
+
+function matchStyleReadiness(
+  state: WorldState,
+  match: Pick<DetailedMatchDraft, "sideAIds" | "sideBIds" | "style" | "plannedLengthMinutes">,
+  targetDate: PpwDate,
+): AlphaCardMatchReadinessView | undefined {
+  if (match.style === undefined || match.plannedLengthMinutes === null) return undefined;
+  const currentWeek = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
+  const targetWeek = ppwDateToWeekIndex(targetDate, state.ruleset.weeksPerYear);
+  const provisional = targetWeek > currentWeek;
+  const participants = [...match.sideAIds, ...match.sideBIds].map((personId) => {
+    const person = state.people.find((candidate) => candidate.id === personId);
+    if (!person) throw new Error(`match wrestler ${personId} was not found`);
+    const assessment = assessMatchStyleReadiness(
+      match.style!,
+      person.skills,
+      match.plannedLengthMinutes!,
+      person.fatigue,
+      person.wear,
+    );
+    return {
+      personId,
+      name: person.name,
+      status: assessment.status,
+      reasons: [...assessment.reasons],
+      capability: assessment.capability,
+      shortfall: assessment.shortfall,
+      physicalLoad: assessment.physicalLoad,
+    } satisfies AlphaCardMatchReadinessParticipantView;
+  });
+  const status = participants.reduce<MatchStyleReadinessStatus>(
+    (worst, participant) => (
+      readinessRank(participant.status) > readinessRank(worst) ? participant.status : worst
+    ),
+    "COMFORTABLE",
+  );
+  return { status, provisional, participants };
+}
+
+function refusalNames(readiness: AlphaCardMatchReadinessView | undefined): string[] {
+  if (!readiness || readiness.status !== "REFUSES") return [];
+  return readiness.participants
+    .filter((participant) => participant.status === "REFUSES")
+    .map((participant) => participant.name);
+}
 
 function programmeParticipantIds(state: WorldState, programmeId: Id): Id[] {
   const programme = (state.programmes ?? []).find((candidate) => candidate.id === programmeId);
@@ -821,7 +894,10 @@ export async function loadAlphaShowCard(
           sideBIds: [...match.sideBIds],
           intendedWinnerSide: match.intendedWinnerSide,
           intent: match.intent,
-          ...(match.style === undefined ? {} : { style: { ...match.style } }),
+          ...(match.style === undefined ? {} : {
+            style: { ...match.style },
+            readiness: matchStyleReadiness(aggregate.state, match, draft.targetDate),
+          }),
           plannedLengthMinutes: match.plannedLengthMinutes,
           plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
         } satisfies AlphaCardMatchView]
@@ -891,6 +967,14 @@ export async function saveAlphaShowCard(
       : null;
 
     const normalizedCard = normalizeCompleteCard(request.matches);
+    for (const match of normalizedCard.matches) {
+      const readiness = matchStyleReadiness(aggregate.state, match, draft.targetDate);
+      if (readiness?.status !== "REFUSES" || readiness.provisional) continue;
+      const names = refusalNames(readiness);
+      throw new Error(
+        `${names.join(" & ") || "A wrestler"} refuses this match style in their current condition`,
+      );
+    }
     const normalizedSegments = normalizeSegments(request.segments, aggregate.state, control.promotionId);
     const runningOrder = normalizeRunningOrder(request.runningOrder, normalizedCard.matches, normalizedSegments.segments);
     const matchOrder = new Map(

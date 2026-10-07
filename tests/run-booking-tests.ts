@@ -2,6 +2,7 @@ declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import {
+  assessMatchStyleReadiness,
   createWorld,
   defaultMatchStyleForIntent,
   evaluateMatchStyleLoad,
@@ -107,6 +108,43 @@ test("match-style load makes extreme combinations costly without forbidding them
   ok(extremeLoad.band === "EXTREME", `all-100 style should be extreme, received ${extremeLoad.band}`);
   ok(extremeLoad.total > moderateLoad.total + 35, "extreme style did not create meaningful extra load");
   ok(extremeLoad.physical > extremeLoad.creative, "extreme long match should carry especially high physical load");
+});
+
+test("match-style readiness distinguishes comfortable, concerned and refusal states", () => {
+  const style = defaultMatchStyleForIntent("COMPETITIVE");
+  const strong = {
+    inRingQuality: 78,
+    matchCraft: 80,
+    presentation: 68,
+    stamina: 82,
+    safety: 80,
+  };
+  const comfortable = assessMatchStyleReadiness(style, strong, 18, 20, 20);
+  ok(comfortable.status === "COMFORTABLE", `healthy capable wrestler was ${comfortable.status}`);
+
+  const concerned = assessMatchStyleReadiness(style, strong, 24, 70, 25);
+  ok(concerned.status === "CONCERNED", `fatigued wrestler should be concerned, received ${concerned.status}`);
+  ok(concerned.reasons.includes("FATIGUE"), "fatigue concern did not explain itself");
+
+  const unsafe = assessMatchStyleReadiness({
+    competitiveness: 90,
+    technical: 75,
+    story: 50,
+    intensity: 95,
+    risk: 100,
+    epic: 85,
+  }, {
+    inRingQuality: 52,
+    matchCraft: 50,
+    presentation: 55,
+    stamina: 42,
+    safety: 38,
+  }, 42, 68, 80);
+  ok(unsafe.status === "REFUSES", `unsafe style should be refused, received ${unsafe.status}`);
+  ok(
+    unsafe.reasons.includes("RISK_SAFETY") || unsafe.reasons.includes("ENDURANCE") || unsafe.reasons.includes("STYLE_STRETCH"),
+    "refusal did not expose a meaningful reason",
+  );
 });
 
 test("match-style validation rejects impossible slider values", () => {

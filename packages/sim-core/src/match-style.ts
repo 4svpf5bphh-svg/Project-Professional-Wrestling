@@ -30,6 +30,23 @@ export interface MatchStyleExecutionEvaluation {
   crowdAppeal: number;
 }
 
+export type MatchStyleReadinessStatus = "COMFORTABLE" | "CONCERNED" | "REFUSES";
+export type MatchStyleReadinessReason =
+  | "FATIGUE"
+  | "WEAR"
+  | "STYLE_STRETCH"
+  | "RISK_SAFETY"
+  | "ENDURANCE"
+  | "PHYSICAL_LOAD";
+
+export interface MatchStyleReadinessAssessment {
+  status: MatchStyleReadinessStatus;
+  reasons: MatchStyleReadinessReason[];
+  capability: number;
+  shortfall: number;
+  physicalLoad: number;
+}
+
 export const MATCH_STYLE_DIMENSIONS = [
   "competitiveness",
   "technical",
@@ -250,5 +267,81 @@ export function evaluateMatchStyleExecution(
     realizedUpside: rounded1(realizedUpside),
     difficultyPenalty: rounded1(difficultyPenalty),
     crowdAppeal: rounded1(crowdAppeal),
+  };
+}
+
+
+function pushUnique<T>(values: T[], value: T): void {
+  if (!values.includes(value)) values.push(value);
+}
+
+export function assessMatchStyleReadiness(
+  style: MatchStyleProfile,
+  skills: MatchStyleSkillProfile,
+  plannedLengthMinutes: number,
+  fatigue: number,
+  wear: number,
+): MatchStyleReadinessAssessment {
+  const normalizedFatigue = clamp(fatigue, 0, 100);
+  const normalizedWear = clamp(wear, 0, 100);
+  const evaluation = evaluateMatchStyleExecution(style, skills, plannedLengthMinutes);
+  const reasons: MatchStyleReadinessReason[] = [];
+  let concerned = false;
+  let refuses = false;
+
+  if (normalizedFatigue >= 85) {
+    refuses = true;
+    pushUnique(reasons, "FATIGUE");
+  } else if (normalizedFatigue >= 65) {
+    concerned = true;
+    pushUnique(reasons, "FATIGUE");
+  }
+
+  if (normalizedWear >= 92 && evaluation.load.physical >= 65) {
+    refuses = true;
+    pushUnique(reasons, "WEAR");
+  } else if (normalizedWear >= 72) {
+    concerned = true;
+    pushUnique(reasons, "WEAR");
+  }
+
+  if (evaluation.shortfall >= 26) {
+    refuses = true;
+    pushUnique(reasons, "STYLE_STRETCH");
+  } else if (evaluation.shortfall >= 12) {
+    concerned = true;
+    pushUnique(reasons, "STYLE_STRETCH");
+  }
+
+  if (style.risk >= 90 && skills.safety < 48) {
+    refuses = true;
+    pushUnique(reasons, "RISK_SAFETY");
+  } else if (style.risk >= 75 && skills.safety < 62) {
+    concerned = true;
+    pushUnique(reasons, "RISK_SAFETY");
+  }
+
+  if (plannedLengthMinutes >= 40 && skills.stamina < 48) {
+    refuses = true;
+    pushUnique(reasons, "ENDURANCE");
+  } else if (plannedLengthMinutes >= 28 && skills.stamina < 60) {
+    concerned = true;
+    pushUnique(reasons, "ENDURANCE");
+  }
+
+  if (evaluation.load.physical >= 100 && normalizedFatigue >= 60) {
+    refuses = true;
+    pushUnique(reasons, "PHYSICAL_LOAD");
+  } else if (evaluation.load.physical >= 82 && normalizedFatigue >= 50) {
+    concerned = true;
+    pushUnique(reasons, "PHYSICAL_LOAD");
+  }
+
+  return {
+    status: refuses ? "REFUSES" : concerned ? "CONCERNED" : "COMFORTABLE",
+    reasons,
+    capability: evaluation.capability,
+    shortfall: evaluation.shortfall,
+    physicalLoad: evaluation.load.physical,
   };
 }

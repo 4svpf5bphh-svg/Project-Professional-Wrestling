@@ -367,6 +367,54 @@ await test("a logistics-only show draft opens in the builder and the first valid
   ok(reservation?.participants.length === selectedIds.length, "first card reservation did not match the booked wrestlers");
 });
 
+await test("current-week unsafe style is refused before lock while future readiness stays provisional", async () => {
+  const fixture = await reservedShowFixture(61025);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const persisted = await fixture.repository.load(fixture.worldId);
+  const firstId = fixture.participantIds[0]!;
+  const firstPerson = persisted.state.people.find((person) => person.id === firstId);
+  if (!firstPerson) throw new Error("readiness fixture wrestler missing");
+  firstPerson.fatigue = 88;
+  firstPerson.wear = 82;
+  firstPerson.skills.safety = Math.min(firstPerson.skills.safety, 42);
+  firstPerson.skills.stamina = Math.min(firstPerson.skills.stamina, 44);
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const person = aggregate.state.people.find((candidate) => candidate.id === firstId)!;
+    person.fatigue = 88;
+    person.wear = 82;
+    person.skills.safety = Math.min(person.skills.safety, 42);
+    person.skills.stamina = Math.min(person.skills.stamina, 44);
+  });
+
+  const card = singlesCard(fixture.participantIds);
+  card[0] = {
+    ...card[0]!,
+    style: {
+      competitiveness: 90,
+      technical: 75,
+      story: 55,
+      intensity: 96,
+      risk: 100,
+      epic: 88,
+    },
+    plannedLengthMinutes: 42,
+  };
+
+  let refused = false;
+  try {
+    await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: "readiness-current-refusal",
+      expectedRevision: before.world.revision,
+      expectedPlanVersion: before.workspaceVersion,
+      matches: card,
+      championshipAssignments: [],
+    });
+  } catch (error) {
+    refused = error instanceof Error && error.message.includes("refuses this match style");
+  }
+  ok(refused, "unsafe current-week style was not blocked before lock");
+});
+
 await test("materialized current-week show remains editable until lock and replaces its card safely", async () => {
   const fixture = await reservedShowFixture(61023);
   const beforeMaterialization = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
