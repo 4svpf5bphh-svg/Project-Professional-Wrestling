@@ -31,6 +31,12 @@ export default function TeamRosterClient(): React.JSX.Element {
   const [talent, setTalent] = useState<PlayerTalentManagementView | null>(null);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [teamName, setTeamName] = useState("");
+  const [firstPersonId, setFirstPersonId] = useState("");
+  const [secondPersonId, setSecondPersonId] = useState("");
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh(): Promise<void> {
@@ -59,6 +65,39 @@ export default function TeamRosterClient(): React.JSX.Element {
   }
 
   useEffect(() => { void refresh(); }, []);
+
+  async function createTeam(): Promise<void> {
+    if (!teams || !teamName.trim() || !firstPersonId || !secondPersonId) return;
+    setCreating(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch("/api/teams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: crypto.randomUUID(),
+          expectedRevision: teams.world.revision,
+          name: teamName,
+          personIds: [firstPersonId, secondPersonId],
+        }),
+      });
+      const payload = await response.json() as PlayerTeamHistoryView | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to create tag team");
+      }
+      setTeams(payload);
+      setTeamName("");
+      setFirstPersonId("");
+      setSecondPersonId("");
+      setCreateOpen(false);
+      setNotice("Tag team created. Chemistry and familiarity will develop only by working together.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to create tag team");
+    } finally {
+      setCreating(false);
+    }
+  }
 
   const rosterById = useMemo(
     () => new Map((talent?.roster ?? []).map((entry) => [entry.personId, entry])),
@@ -107,10 +146,20 @@ export default function TeamRosterClient(): React.JSX.Element {
           <h1>{talent?.promotion?.name ?? "Tag-team roster"}</h1>
           <p>{teams ? `${teams.world.name} · ${ppwDate(teams.world.currentDate)}` : "Loading your World…"}</p>
         </div>
-        <button className={styles.button} disabled={loading} onClick={() => void refresh()}>{loading ? "Loading…" : "Refresh"}</button>
+        <div className={styles.cardActions}>
+          <button
+            className={styles.primaryButton}
+            disabled={loading || !teams?.canEdit || (talent?.roster.length ?? 0) < 2}
+            onClick={() => setCreateOpen(true)}
+          >
+            + Create team
+          </button>
+          <button className={styles.button} disabled={loading} onClick={() => void refresh()}>{loading ? "Loading…" : "Refresh"}</button>
+        </div>
       </header>
 
       {error ? <div className={styles.error}>{error}</div> : null}
+      {notice ? <div className={styles.notice}>{notice}</div> : null}
       {talent && !talent.promotion ? <section className={styles.panel}><p>Take control of a promotion before managing your roster.</p></section> : null}
 
       {talent?.promotion ? (
@@ -158,7 +207,11 @@ export default function TeamRosterClient(): React.JSX.Element {
                   </div>
 
                   <div className={styles.marketBottom}>
-                    <span>{titles.length > 0 ? titles.map((reign) => `${reign.championshipName} · ${reign.promotionName}`).join(" · ") : "No current tag championship"}</span>
+                    <span>
+                      {team.experience
+                        ? `${label(team.experience.band)} · ${team.experience.matchesTogether} tag match${team.experience.matchesTogether === 1 ? "" : "es"} together`
+                        : "Team experience unavailable"}
+                    </span>
                     <span>{team.totalTitleReigns} title reigns · {team.totalDefenses} defenses</span>
                   </div>
                 </article>
@@ -169,7 +222,60 @@ export default function TeamRosterClient(): React.JSX.Element {
             ) : null}
           </section>
 
-          <p className={styles.footerNote}>A team appears here only when it is active and every current member is on your roster. Team identity remains shared World history; this screen does not create, break up or modify teams.</p>
+          <p className={styles.footerNote}>Creating a team declares its World identity; it does not create chemistry or make the pairing instantly good. Familiarity develops through tag matches. Breakups and reformations remain a later layer.</p>
+
+          {createOpen ? (
+            <section className={styles.editor}>
+              <div className={styles.editorHeader}>
+                <div>
+                  <span className={styles.eyebrow}>CREATE TAG TEAM</span>
+                  <h2>Name the team</h2>
+                  <p>Choose two wrestlers from your current roster. The pair keeps its existing hidden compatibility and starts with only the familiarity it has actually earned.</p>
+                </div>
+                <button className={styles.button} disabled={creating} onClick={() => setCreateOpen(false)}>Close</button>
+              </div>
+              <div className={styles.editorBody}>
+                <div className={styles.formGrid}>
+                  <label>
+                    <span>Team name</span>
+                    <input maxLength={60} value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder="e.g. United Empire" />
+                  </label>
+                  <label>
+                    <span>Wrestler one</span>
+                    <select value={firstPersonId} onChange={(event) => setFirstPersonId(event.target.value)}>
+                      <option value="">Choose wrestler</option>
+                      {(talent?.roster ?? []).map((wrestler) => (
+                        <option key={wrestler.personId} value={wrestler.personId} disabled={wrestler.personId === secondPersonId}>
+                          {wrestler.name} · {label(wrestler.alignment)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Wrestler two</span>
+                    <select value={secondPersonId} onChange={(event) => setSecondPersonId(event.target.value)}>
+                      <option value="">Choose wrestler</option>
+                      {(talent?.roster ?? []).map((wrestler) => (
+                        <option key={wrestler.personId} value={wrestler.personId} disabled={wrestler.personId === firstPersonId}>
+                          {wrestler.name} · {label(wrestler.alignment)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+              <div className={styles.editorFooter}>
+                <span>No chemistry boost is granted. The team gets better only by working together.</span>
+                <button
+                  className={styles.primaryButton}
+                  disabled={creating || !teamName.trim() || !firstPersonId || !secondPersonId || firstPersonId === secondPersonId}
+                  onClick={() => void createTeam()}
+                >
+                  {creating ? "Creating…" : "Create tag team"}
+                </button>
+              </div>
+            </section>
+          ) : null}
         </>
       ) : null}
     </main>
