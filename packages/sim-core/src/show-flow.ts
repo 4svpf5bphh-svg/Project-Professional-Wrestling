@@ -1,6 +1,9 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { Match, MatchIntent, MatchParticipant, WorldState, WrestlingEvent } from "../../domain/src/types.js";
-import { wrestlerAlignmentForPromotion } from "./alignment.js";
+import {
+  recentAlignmentVolatilityPenalty,
+  wrestlerAlignmentForPromotion,
+} from "./alignment.js";
 import {
   eventsForWeek,
   matchesForEvent,
@@ -27,6 +30,7 @@ export type ShowFlowReasonCode =
   | "FACE_HEEL_CLARITY"
   | "SAME_ALIGNMENT"
   | "TWEENER_TENSION"
+  | "ALIGNMENT_VOLATILITY"
   | "HOT_PROGRAMME"
   | "PROGRAMME_REPETITION"
   | "COOL_PROGRAMME"
@@ -95,17 +99,29 @@ function alignmentModifierForMatch(state: WorldState, match: Match): ModifierEva
   const participants = participantsForMatch(state, match.id);
   const a = sideAlignment(state, match.promotionId, participants, "A");
   const b = sideAlignment(state, match.promotionId, participants, "B");
-  if (!a || !b || a === "MIXED" || b === "MIXED") return { modifier: 0, reason: null };
-  if ((a === "FACE" && b === "HEEL") || (a === "HEEL" && b === "FACE")) {
-    return { modifier: 2.2, reason: "FACE_HEEL_CLARITY" };
+  let base: ModifierEvaluation = { modifier: 0, reason: null };
+  if (a && b && a !== "MIXED" && b !== "MIXED") {
+    if ((a === "FACE" && b === "HEEL") || (a === "HEEL" && b === "FACE")) {
+      base = { modifier: 2.2, reason: "FACE_HEEL_CLARITY" };
+    } else if (a === b) {
+      base = { modifier: a === "TWEENER" ? -0.1 : -0.3, reason: "SAME_ALIGNMENT" };
+    } else if (a === "TWEENER" || b === "TWEENER") {
+      base = { modifier: 0.7, reason: "TWEENER_TENSION" };
+    }
   }
-  if (a === b) {
-    return { modifier: a === "TWEENER" ? -0.1 : -0.3, reason: "SAME_ALIGNMENT" };
+
+  const volatility = recentAlignmentVolatilityPenalty(
+    state,
+    match.promotionId,
+    participants.map((participant) => participant.personId),
+  );
+  if (volatility < -0.05) {
+    return {
+      modifier: clamp(base.modifier + volatility, -3.5, 2.2),
+      reason: "ALIGNMENT_VOLATILITY",
+    };
   }
-  if (a === "TWEENER" || b === "TWEENER") {
-    return { modifier: 0.7, reason: "TWEENER_TENSION" };
-  }
-  return { modifier: 0, reason: null };
+  return base;
 }
 
 function programmeModifierForMatch(state: WorldState, event: WrestlingEvent, match: Match): ModifierEvaluation {

@@ -1,11 +1,35 @@
 import type { Person, WorldState } from "../../domain/src/types.js";
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { PromotionWrestlerPresentation } from "../../domain/src/promotion-presentation.js";
+import { ppwDateToWeekIndex } from "./clock.js";
+import { contractIsActive } from "./contracts.js";
+import { LedgerWriter } from "./ledger.js";
 import { deterministicSeedFromText } from "./rng.js";
 
 type AlignmentAwarePerson = Person & { alignment?: WrestlerAlignment };
 
 export const WRESTLER_ALIGNMENTS = ["FACE", "HEEL", "TWEENER"] as const satisfies readonly WrestlerAlignment[];
+
+export type PromotionAlignmentChangeMethod =
+  | "INITIAL_PRESENTATION"
+  | "JUST_SIGNED"
+  | "RETURNING"
+  | "OFFSCREEN_SWITCH"
+  | "TURN";
+
+export interface PromotionAlignmentChangeContext {
+  method: Exclude<PromotionAlignmentChangeMethod, "TURN">;
+  naturalReset: boolean;
+}
+
+export interface PromotionAlignmentChangeResult {
+  promotionId: string;
+  personId: string;
+  previousAlignment: WrestlerAlignment;
+  alignment: WrestlerAlignment;
+  method: PromotionAlignmentChangeMethod;
+  changed: boolean;
+}
 
 export function isWrestlerAlignment(value: unknown): value is WrestlerAlignment {
   return value === "FACE" || value === "HEEL" || value === "TWEENER";
@@ -73,4 +97,101 @@ export function setPromotionWrestlerAlignment(
   };
   entries.push(created);
   return structuredClone(created);
+}
+
+function sameWeek(state: WorldState, left: { year: number; week: number }, right: { year: number; week: number }): boolean {
+  return ppwDateToWeekIndex(left, state.ruleset.weeksPerYear) === ppwDateToWeekIndex(right, state.ruleset.weeksPerYear);
+}
+
+export function promotionAlignmentChangeContext(
+  state: WorldState,
+  promotionId: string,
+  personId: string,
+): PromotionAlignmentChangeContext {
+  const existing = (state.promotionWrestlerPresentations ?? []).find((entry) => (
+    entry.promotionId === promotionId && entry.personId === personId
+  ));
+  if (!existing) return { method: "INITIAL_PRESENTATION", naturalReset: true };
+
+  const justSigned = state.contracts.some((contract) => (
+    contract.promotionId === promotionId
+    && contract.personId === personId
+    && contract.status === "SIGNED"
+    && contractIsActive(state, contract)
+    && sameWeek(state, contract.startDate, state.world.currentDate)
+  ));
+  if (justSigned) return { method: "JUST_SIGNED", naturalReset: true };
+
+  const returning = state.ledger.some((entry) => (
+    entry.type === "WRESTLER_CLEARED_TO_RETURN"
+    && entry.entityIds.includes(personId)
+    && sameWeek(state, entry.date, state.world.currentDate)
+  ));
+  if (returning) return { method: "RETURNING", naturalReset: true };
+
+  return { method: "OFFSCREEN_SWITCH", naturalReset: false };
+}
+
+export function changePromotionWrestlerAlignment(
+  state: WorldState,
+  promotionId: string,
+  personId: string,
+  alignment: WrestlerAlignment,
+  options: {
+    method?: PromotionAlignmentChangeMethod;
+    sourceEventId?: string | null;
+    sourceSegmentId?: string | null;
+  } = {},
+): PromotionAlignmentChangeResult {
+  const previousAlignment = wrestlerAlignmentForPromotion(state, promotionId, personId);
+  const method = options.method ?? promotionAlignmentChangeContext(state, promotionId, personId).method;
+  const changed = previousAlignment !== alignment;
+  if (changed) setPromotionWrestlerAlignment(state, promotionId, personId, alignment);
+
+  new LedgerWriter(state.world.id, state.ledger).append({
+    date: state.world.currentDate,
+    type: "PROMOTION_ALIGNMENT_CHANGED",
+    significance: method === "TURN" ? "NOTABLE" : "ROUTINE",
+    entityIds: [personId, promotionId, ...(options.sourceEventId ? [options.sourceEventId] : [])],
+    payload: {
+      promotionId,
+      personId,
+      previousAlignment,
+      alignment,
+      method,
+      changed,
+      sourceEventId: options.sourceEventId ?? null,
+      sourceSegmentId: options.sourceSegmentId ?? null,
+    },
+  });
+
+  return { promotionId, personId, previousAlignment, alignment, method, changed };
+}
+
+export function recentAlignmentVolatilityPenalty(
+  state: WorldState,
+  promotionId: string,
+  personIds: readonly string[],
+  lookbackWeeks = 8,
+): number {
+  const current = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
+  let worst = 0;
+
+  for (const personId of new Set(personIds)) {
+    let offscreen = 0;
+    let turns = 0;
+    for (const entry of state.ledger) {
+      if (entry.type !== "PROMOTION_ALIGNMENT_CHANGED") continue;
+      if (entry.payload.promotionId !== promotionId || entry.payload.personId !== personId || entry.payload.changed !== true) continue;
+      const age = current - ppwDateToWeekIndex(entry.date, state.ruleset.weeksPerYear);
+      if (age < 0 || age >= lookbackWeeks) continue;
+      if (entry.payload.method === "OFFSCREEN_SWITCH") offscreen += 1;
+      else if (entry.payload.method === "TURN") turns += 1;
+    }
+    const changes = offscreen + turns;
+    const confusion = offscreen * 1.1 + Math.max(0, changes - 1) * 0.65;
+    worst = Math.max(worst, confusion);
+  }
+
+  return -Math.min(3, Math.round(worst * 10) / 10);
 }

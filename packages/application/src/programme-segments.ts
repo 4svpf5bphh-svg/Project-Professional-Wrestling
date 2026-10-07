@@ -1,9 +1,14 @@
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { Id, LedgerEvent, WorldState } from "../../domain/src/types.js";
 import type { Programme } from "../../domain/src/programmes.js";
 import {
   programmeActivities,
   recordProgrammeActivity,
 } from "../../sim-core/src/programmes.js";
+import {
+  changePromotionWrestlerAlignment,
+  isWrestlerAlignment,
+} from "../../sim-core/src/alignment.js";
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
 import type {
   DetailedProgrammeSegmentDraft,
@@ -21,6 +26,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CHALLENGE",
   "ATTACK",
   "CELEBRATION",
+  "TURN",
 ]);
 
 export interface ResolvedShowSegment {
@@ -34,6 +40,8 @@ export interface ResolvedShowSegment {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  turnPersonId: Id | null;
+  turnTargetAlignment: WrestlerAlignment | null;
 }
 
 interface NormalizedDraftSegment {
@@ -42,6 +50,8 @@ interface NormalizedDraftSegment {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  turnPersonId: Id | null;
+  turnTargetAlignment: WrestlerAlignment | null;
 }
 
 function sameWeek(left: { year: number; week: number }, right: { year: number; week: number }): boolean {
@@ -84,6 +94,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     participantIds: [...segment.participantIds],
     programmeId: segment.programmeId,
     plannedLengthMinutes: segment.plannedLengthMinutes,
+    turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
+    turnTargetAlignment: segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
   }));
   const typedIds = new Set(typed.map((segment) => segment.draftSegmentId));
   const legacy = (draft.programmeSegments ?? [])
@@ -94,6 +106,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       participantIds: [...segment.participantIds],
       programmeId: segment.programmeId,
       plannedLengthMinutes: 6,
+      turnPersonId: null,
+      turnTargetAlignment: null,
     }));
   return [...typed, ...legacy];
 }
@@ -109,6 +123,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const participantIds = entry.payload.participantIds;
   const programmeId = entry.payload.programmeId;
   const plannedLengthMinutes = entry.payload.plannedLengthMinutes;
+  const turnPersonId = entry.payload.turnPersonId;
+  const turnTargetAlignment = entry.payload.turnTargetAlignment;
   if (
     typeof eventId !== "string"
     || typeof promotionId !== "string"
@@ -123,6 +139,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || (programmeId !== null && typeof programmeId !== "string")
     || typeof plannedLengthMinutes !== "number"
     || !Number.isInteger(plannedLengthMinutes)
+    || (turnPersonId !== null && typeof turnPersonId !== "string")
+    || (turnTargetAlignment !== null && !isWrestlerAlignment(turnTargetAlignment))
   ) return null;
 
   return {
@@ -136,6 +154,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     participantIds: participantIds ? participantIds.split(",").filter(Boolean) : [],
     programmeId,
     plannedLengthMinutes,
+    turnPersonId,
+    turnTargetAlignment: turnTargetAlignment as WrestlerAlignment | null,
   };
 }
 
@@ -199,6 +219,8 @@ export function recordResolvedShowSegments(
             participantIds: segment.participantIds.join(","),
             programmeId: segment.programmeId,
             plannedLengthMinutes: segment.plannedLengthMinutes,
+            turnPersonId: segment.turnPersonId,
+            turnTargetAlignment: segment.turnTargetAlignment,
           },
         });
         existing.add(segment.draftSegmentId);
@@ -236,4 +258,43 @@ export function recordResolvedProgrammeSegments(
   planning: WorldPlanningState,
 ): number {
   return recordResolvedShowSegments(state, planning);
+}
+
+
+export function applyResolvedShowTurns(state: WorldState): number {
+  const turnSegments = state.ledger
+    .filter((entry) => entry.type === RESOLVED_SEGMENT_LEDGER_TYPE && sameWeek(entry.date, state.world.currentDate))
+    .map(resolvedSegmentFromLedger)
+    .filter((segment): segment is ResolvedShowSegment => (
+      segment !== null
+      && segment.type === "TURN"
+      && segment.turnPersonId !== null
+      && segment.turnTargetAlignment !== null
+    ))
+    .sort((left, right) => left.slotOrder - right.slotOrder || left.ledgerId.localeCompare(right.ledgerId));
+
+  let applied = 0;
+  for (const segment of turnSegments) {
+    const alreadyApplied = state.ledger.some((entry) => (
+      entry.type === "PROMOTION_ALIGNMENT_CHANGED"
+      && entry.payload.method === "TURN"
+      && entry.payload.sourceEventId === segment.eventId
+      && entry.payload.sourceSegmentId === segment.draftSegmentId
+    ));
+    if (alreadyApplied) continue;
+
+    changePromotionWrestlerAlignment(
+      state,
+      segment.promotionId,
+      segment.turnPersonId!,
+      segment.turnTargetAlignment!,
+      {
+        method: "TURN",
+        sourceEventId: segment.eventId,
+        sourceSegmentId: segment.draftSegmentId,
+      },
+    );
+    applied += 1;
+  }
+  return applied;
 }

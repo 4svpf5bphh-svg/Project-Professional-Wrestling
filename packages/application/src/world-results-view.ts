@@ -1,3 +1,4 @@
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type {
   Id,
   InjurySeverity,
@@ -59,6 +60,8 @@ export interface PlayerWorldResultSegmentView {
   order: number;
   type: DetailedShowSegmentType;
   participants: Array<{ personId: Id; name: string }>;
+  turnPersonId: Id | null;
+  turnTargetAlignment: WrestlerAlignment | null;
 }
 
 export type PlayerWorldResultRunningOrderView =
@@ -273,6 +276,8 @@ export function buildPlayerWorldResultsView(
           personId,
           name: peopleById.get(personId)?.name ?? "Unknown wrestler",
         })),
+        turnPersonId: segment.turnPersonId,
+        turnTargetAlignment: segment.turnTargetAlignment,
       }));
       const runningOrder = mergedRunningOrder(matches, segments);
       const titleChangeCount = matches.reduce(

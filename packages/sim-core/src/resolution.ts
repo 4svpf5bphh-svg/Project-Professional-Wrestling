@@ -22,6 +22,7 @@ import { processTalentTrustForWeek } from "./talent-trust.js";
 
 export interface WorldResolutionHooks {
   afterProgrammeMatches?: (state: WorldState) => void;
+  afterShowFlow?: (state: WorldState) => void;
 }
 
 export function resolveWorldWeek(state: WorldState, hooks: WorldResolutionHooks = {}): void {
@@ -47,6 +48,7 @@ export function resolveWorldWeek(state: WorldState, hooks: WorldResolutionHooks 
   hooks.afterProgrammeMatches?.(state);
   applyCurrentWeekShowFlow(state);
   applyCurrentWeekShowFlowAudienceConsequences(state);
+  hooks.afterShowFlow?.(state);
   updateProgrammeSignalsForCurrentWeek(state);
 
   processCompetitionForWeek(state);

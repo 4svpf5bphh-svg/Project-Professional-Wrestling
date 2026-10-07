@@ -1,3 +1,4 @@
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type {
   Id,
   MatchIntent,
@@ -7,6 +8,7 @@ import type {
   TicketStrategy,
   WorldState,
 } from "../../domain/src/types.js";
+import { isWrestlerAlignment, wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
 
 export const DETAILED_PLANNING_HORIZON_WEEKS = 6 as const;
@@ -39,7 +41,8 @@ export type DetailedShowSegmentType =
   | "CONFRONTATION"
   | "CHALLENGE"
   | "ATTACK"
-  | "CELEBRATION";
+  | "CELEBRATION"
+  | "TURN";
 
 export interface DetailedShowSegmentDraft {
   draftSegmentId: string;
@@ -47,6 +50,8 @@ export interface DetailedShowSegmentDraft {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  turnPersonId?: Id | null;
+  turnTargetAlignment?: WrestlerAlignment | null;
 }
 
 export interface DetailedShowSlotRef {
@@ -126,6 +131,7 @@ const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CHALLENGE",
   "ATTACK",
   "CELEBRATION",
+  "TURN",
 ]);
 
 function normalizedId(value: string, label: string, maxLength = 128): string {
@@ -264,6 +270,24 @@ function validateShowSegmentDraft(
   }
 
   const programmeId = draft.programmeId === null ? null : normalizedId(draft.programmeId, "programmeId");
+  const turnPersonId = draft.type === "TURN"
+    ? (draft.turnPersonId === null || draft.turnPersonId === undefined
+      ? null
+      : normalizedId(draft.turnPersonId, "turnPersonId"))
+    : null;
+  const turnTargetAlignment = draft.type === "TURN" ? (draft.turnTargetAlignment ?? null) : null;
+  if (draft.type === "TURN") {
+    if (!turnPersonId || !draft.participantIds.includes(turnPersonId)) {
+      throw new Error("TURN segment must identify one participating wrestler who turns");
+    }
+    if (!turnTargetAlignment || !isWrestlerAlignment(turnTargetAlignment)) {
+      throw new Error("TURN segment must choose face, heel or tweener as its target alignment");
+    }
+    if (wrestlerAlignmentForPromotion(state, promotionId, turnPersonId) === turnTargetAlignment) {
+      throw new Error("TURN segment target alignment must differ from the wrestler's current presentation");
+    }
+  }
+
   if (programmeId !== null) {
     const programme = (state.programmes ?? []).find((candidate) => candidate.id === programmeId);
     if (!programme || programme.status !== "ACTIVE") throw new Error(`active Programme ${programmeId} was not found`);
@@ -280,6 +304,7 @@ function validateShowSegmentDraft(
     participantIds: [...draft.participantIds],
     programmeId,
     plannedLengthMinutes: draft.plannedLengthMinutes,
+    ...(draft.type === "TURN" ? { turnPersonId, turnTargetAlignment } : {}),
   };
 }
 

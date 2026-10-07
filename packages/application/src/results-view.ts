@@ -1,3 +1,4 @@
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type {
   Id,
   InjurySeverity,
@@ -23,6 +24,7 @@ export type PlayerShowCrowdReasonCode =
   | "FACE_HEEL_CLARITY"
   | "SAME_ALIGNMENT"
   | "TWEENER_TENSION"
+  | "ALIGNMENT_VOLATILITY"
   | "HOT_PROGRAMME"
   | "PROGRAMME_REPETITION"
   | "COOL_PROGRAMME"
@@ -109,6 +111,8 @@ export interface PlayerShowSegmentView {
   plannedLengthMinutes: number;
   participants: PlayerShowSegmentParticipantView[];
   programmeId: Id | null;
+  turnPersonId: Id | null;
+  turnTargetAlignment: WrestlerAlignment | null;
 }
 
 export type PlayerShowRunningOrderView =
@@ -163,6 +167,7 @@ const CROWD_REASON_LABELS: Record<PlayerShowCrowdReasonCode, string> = {
   FACE_HEEL_CLARITY: "Clear face-versus-heel dynamic",
   SAME_ALIGNMENT: "Less obvious emotional side",
   TWEENER_TENSION: "Uncertain allegiance added intrigue",
+  ALIGNMENT_VOLATILITY: "Recent alignment changes confused the crowd",
   HOT_PROGRAMME: "Hot Programme investment",
   PROGRAMME_REPETITION: "Programme felt overexposed",
   COOL_PROGRAMME: "Programme lacked heat",
@@ -444,6 +449,8 @@ export function buildPlayerShowHistory(
           name: peopleById.get(personId)?.name ?? "Unknown wrestler",
         })),
         programmeId: segment.programmeId,
+        turnPersonId: segment.turnPersonId,
+        turnTargetAlignment: segment.turnTargetAlignment,
       }));
       const runningOrder = mergedRunningOrder(matches, segments);
       const titleChangeCount = matches.reduce(

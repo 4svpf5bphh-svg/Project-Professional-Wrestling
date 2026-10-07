@@ -5,7 +5,10 @@ import {
   materializeCurrentWeekReservations,
   type ReservationMaterializationPass,
 } from "./planning-materialization.js";
-import { recordResolvedShowSegments } from "./programme-segments.js";
+import {
+  applyResolvedShowTurns,
+  recordResolvedShowSegments,
+} from "./programme-segments.js";
 import type { ApplicationWorldRepository } from "./world-aggregate.js";
 import {
   assertWorldOpenForPlayerMutation,
@@ -62,6 +65,9 @@ export async function resolvePersistedWorldWeek(
     resolveLockedWorldWeek(aggregate.runtime, aggregate.state, {
       afterProgrammeMatches: (state) => {
         recordResolvedShowSegments(state, aggregate.planning);
+      },
+      afterShowFlow: (state) => {
+        applyResolvedShowTurns(state);
       },
     });
     materializeCurrentWeekReservations(aggregate.state, aggregate.planning);
