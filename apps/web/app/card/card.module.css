@@ -335,3 +335,114 @@
   .addSlotBar { align-items: stretch; flex-direction: column; }
   .addSlotBar > div { display: grid; grid-template-columns: 1fr 1fr; }
 }
+
+.segmentCard {
+  border-color: rgba(117, 177, 255, .26);
+  background: linear-gradient(180deg, rgba(27, 42, 63, .34), rgba(11, 17, 24, .96));
+}
+
+.segmentBadge {
+  border: 1px solid rgba(117, 177, 255, .32);
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: rgba(117, 177, 255, .1);
+  color: #a8cdfd;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.segmentPeople {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 11px;
+  border: 1px solid #202938;
+  border-radius: 12px;
+  background: rgba(6, 10, 15, .5);
+}
+
+.segmentPeopleHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.segmentPeopleHeader span {
+  color: #dce5ef;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.segmentPeopleHeader small {
+  color: #728194;
+  font-size: 9px;
+}
+
+.segmentPersonRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: 7px;
+}
+
+.segmentPersonRow select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #2a3545;
+  border-radius: 10px;
+  background: #0b1118;
+  color: #eef4fb;
+  padding: 8px 9px;
+}
+
+.smallRemove {
+  border: 1px solid rgba(255, 103, 103, .26);
+  border-radius: 10px;
+  background: rgba(85, 25, 28, .18);
+  color: #ffaaa8;
+  font-size: 18px;
+}
+
+.smallRemove:disabled {
+  opacity: .3;
+}
+
+.programmeLink {
+  justify-self: start;
+  color: #74e9d4;
+  font-size: 10px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.emptyActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.emptyActions button {
+  min-height: 38px;
+  border: 1px solid #2a3545;
+  border-radius: 10px;
+  background: #101720;
+  color: #dce5ef;
+  padding: 0 12px;
+  font-weight: 850;
+}
+
+@media (max-width: 560px) {
+  .segmentPeopleHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .emptyActions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+}
