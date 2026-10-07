@@ -37,18 +37,43 @@ export interface PlayerPlannerTalentOptionView {
   datesRemaining: number;
 }
 
+export type PlayerPlannerMarketPresence = "STRONG" | "ESTABLISHED" | "DEVELOPING" | "LIGHT";
+
+export interface PlayerPlannerMarketRivalView {
+  promotionId: Id;
+  name: string;
+  tier: PromotionTier;
+  isHomePromotion: boolean;
+  presence: PlayerPlannerMarketPresence;
+}
+
 export interface PlayerPlannerVenueOptionView {
   venueId: Id;
   name: string;
   capacity: number;
   weeklyHireCost: number;
   prestige: number;
+  productionSuitability: number;
 }
 
 export interface PlayerPlannerMarketOptionView {
   marketId: Id;
   name: string;
   isHomeMarket: boolean;
+  audiencePotential: number;
+  wrestlingInterest: number;
+  spendingIndex: number;
+  maturity: number;
+  yourAwareness: number;
+  yourLiveStrength: number;
+  yourLoyalty: number;
+  yourPresence: PlayerPlannerMarketPresence;
+  homePromotions: Array<{
+    promotionId: Id;
+    name: string;
+    tier: PromotionTier;
+  }>;
+  strongestRivals: PlayerPlannerMarketRivalView[];
   venues: PlayerPlannerVenueOptionView[];
 }
 
@@ -125,6 +150,17 @@ function showRequiredInWeek(
   if (!promotion || promotion.lifecycle === "DORMANT" || promotion.lifecycle === "CLOSED") return false;
   const weekIndex = ppwDateToWeekIndex(targetDate, aggregate.state.ruleset.weeksPerYear);
   return weekIndex % Math.max(1, promotion.eventCadenceWeeks) === 0;
+}
+
+function marketPresenceScore(awareness: number, liveStrength: number, loyalty: number): number {
+  return liveStrength * 0.5 + awareness * 0.3 + loyalty * 0.2;
+}
+
+function marketPresenceBand(score: number): PlayerPlannerMarketPresence {
+  if (score >= 70) return "STRONG";
+  if (score >= 45) return "ESTABLISHED";
+  if (score >= 25) return "DEVELOPING";
+  return "LIGHT";
 }
 
 function maxShowParticipants(
@@ -281,22 +317,82 @@ export function buildPlayerSixWeekPlannerView(
   const promotion = aggregate.state.promotions.find((candidate) => candidate.id === control.promotionId);
   if (!promotion) throw new Error(`controlled promotion ${control.promotionId} was not found`);
   const workspace = aggregate.planning.workspaces.find((candidate) => candidate.promotionId === promotion.id) ?? null;
+  const marketStateByKey = new Map(
+    aggregate.state.promotionMarketStates.map((entry) => [`${entry.promotionId}:${entry.marketId}`, entry]),
+  );
   const markets = aggregate.state.markets
-    .map((market) => ({
-      marketId: market.id,
-      name: market.name,
-      isHomeMarket: market.id === promotion.homeMarketId,
-      venues: aggregate.state.venues
-        .filter((venue) => venue.marketId === market.id)
-        .map((venue) => ({
-          venueId: venue.id,
-          name: venue.name,
-          capacity: venue.capacity,
-          weeklyHireCost: venue.weeklyHireCost,
-          prestige: venue.prestige,
-        }))
-        .sort((left, right) => left.weeklyHireCost - right.weeklyHireCost || left.name.localeCompare(right.name)),
-    }))
+    .map((market): PlayerPlannerMarketOptionView => {
+      const ownState = marketStateByKey.get(`${promotion.id}:${market.id}`);
+      const yourAwareness = ownState?.awareness ?? 0;
+      const yourLiveStrength = ownState?.liveStrength ?? 0;
+      const yourLoyalty = ownState?.loyalty ?? 0;
+      const activeRivals = aggregate.state.promotions
+        .filter((candidate) => (
+          candidate.id !== promotion.id
+          && candidate.lifecycle !== "DORMANT"
+          && candidate.lifecycle !== "CLOSED"
+        ))
+        .map((candidate) => {
+          const local = marketStateByKey.get(`${candidate.id}:${market.id}`);
+          const score = marketPresenceScore(
+            local?.awareness ?? 0,
+            local?.liveStrength ?? 0,
+            local?.loyalty ?? 0,
+          );
+          return {
+            promotionId: candidate.id,
+            name: candidate.name,
+            tier: candidate.tier,
+            isHomePromotion: candidate.homeMarketId === market.id,
+            presence: marketPresenceBand(score),
+            score,
+          };
+        })
+        .sort((left, right) => (
+          right.score - left.score
+          || Number(right.isHomePromotion) - Number(left.isHomePromotion)
+          || left.name.localeCompare(right.name)
+        ));
+
+      return {
+        marketId: market.id,
+        name: market.name,
+        isHomeMarket: market.id === promotion.homeMarketId,
+        audiencePotential: market.audiencePotential,
+        wrestlingInterest: market.wrestlingInterest,
+        spendingIndex: market.spendingIndex,
+        maturity: market.maturity,
+        yourAwareness,
+        yourLiveStrength,
+        yourLoyalty,
+        yourPresence: marketPresenceBand(marketPresenceScore(yourAwareness, yourLiveStrength, yourLoyalty)),
+        homePromotions: aggregate.state.promotions
+          .filter((candidate) => (
+            candidate.id !== promotion.id
+            && candidate.homeMarketId === market.id
+            && candidate.lifecycle !== "DORMANT"
+            && candidate.lifecycle !== "CLOSED"
+          ))
+          .map((candidate) => ({
+            promotionId: candidate.id,
+            name: candidate.name,
+            tier: candidate.tier,
+          }))
+          .sort((left, right) => left.name.localeCompare(right.name)),
+        strongestRivals: activeRivals.slice(0, 3).map(({ score: _score, ...rival }) => rival),
+        venues: aggregate.state.venues
+          .filter((venue) => venue.marketId === market.id)
+          .map((venue) => ({
+            venueId: venue.id,
+            name: venue.name,
+            capacity: venue.capacity,
+            weeklyHireCost: venue.weeklyHireCost,
+            prestige: venue.prestige,
+            productionSuitability: venue.productionSuitability,
+          }))
+          .sort((left, right) => left.weeklyHireCost - right.weeklyHireCost || left.name.localeCompare(right.name)),
+      };
+    })
     .sort((left, right) => Number(right.isHomeMarket) - Number(left.isHomeMarket) || left.name.localeCompare(right.name));
 
   const weeks: PlayerPlannerWeekView[] = Array.from(
