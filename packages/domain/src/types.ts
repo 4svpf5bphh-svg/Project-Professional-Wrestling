@@ -8,6 +8,7 @@ export type ControllerType = "AI" | "HUMAN";
 export type PromotionIdentityOrigin = "REAL_WORLD" | "FICTIONAL";
 export type OutsideBookingPolicy = "PROHIBITED" | "APPROVAL_REQUIRED" | "PERMITTED";
 export type PromotionPlayerTakeoverEligibility = "LOCKED" | "STANDARD";
+export type PromotionRosterMode = "CONTRACT_DERIVED" | "EXPLICIT";
 export type WrestlerDivision = "MEN" | "WOMEN";
 export type CareerStage = "PROSPECT" | "PRIME" | "VETERAN" | "SPECIAL_ATTRACTION";
 export type PersonStatus = "ACTIVE" | "INJURED" | "RETIRED";
@@ -164,6 +165,7 @@ export interface Promotion {
   identity?: PromotionIdentity;
   contractPolicy?: PromotionContractPolicy;
   playerTakeoverEligibility?: PromotionPlayerTakeoverEligibility;
+  rosterMode?: PromotionRosterMode;
   lifecycle: PromotionLifecycle;
   controllerType: ControllerType;
   homeMarketId: Id;
@@ -243,6 +245,7 @@ export interface Person {
   debutDate: PpwDate;
   generatedTalent: boolean;
   division?: WrestlerDivision;
+  rosterPromotionId?: Id;
   fatigue: number;
   wear: number;
   morale: number;

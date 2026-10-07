@@ -197,6 +197,7 @@ export function createWorld(
     const person = people.find((candidate) => candidate.id === assignment.personId)!;
     const promotion = promotions.find((candidate) => candidate.id === assignment.promotionId)!;
     seededPersonIds.add(person.id);
+    if (assignment.rosterPromotionId !== undefined) person.rosterPromotionId = assignment.rosterPromotionId;
     assigned.set(promotion.id, (assigned.get(promotion.id) ?? 0) + 1);
     const terms = buildContractTerms(
       state,

@@ -300,13 +300,45 @@ test("initial roster assignment source pins wrestlers to promotions without chan
   equal(contracts[0]!.exclusivity, "EXCLUSIVE");
 });
 
+test("explicit child roster can use a parent-company exclusive contract without merging parent and child rosters", () => {
+  const source: InitialRosterAssignmentSource = ({ people, promotions }) => {
+    const parent = promotions[0]!;
+    const child = promotions[4]!;
+    child.identity = { origin: "FICTIONAL", canonicalName: child.name, parentPromotionId: parent.id };
+    child.rosterMode = "EXPLICIT";
+    parent.rosterMode = "EXPLICIT";
+    return [
+      { personId: people[0]!.id, promotionId: parent.id, rosterPromotionId: parent.id, family: "EXCLUSIVE" },
+      { personId: people[1]!.id, promotionId: parent.id, rosterPromotionId: child.id, family: "EXCLUSIVE" },
+    ];
+  };
+
+  const state = createWorld(
+    113,
+    DEFAULT_RULESET,
+    "Parent Child Roster",
+    generatedFictionalRosterSource,
+    generatedFictionalPromotionSource,
+    source,
+  );
+  const parent = state.promotions[0]!;
+  const child = state.promotions[4]!;
+  const parentRoster = currentRosterPersonIds(state, parent.id);
+  const childRoster = currentRosterPersonIds(state, child.id);
+
+  equal(parentRoster.includes(state.people[0]!.id), true);
+  equal(parentRoster.includes(state.people[1]!.id), false);
+  equal(childRoster.includes(state.people[1]!.id), true);
+  equal(activeContractsForPerson(state, state.people[1]!.id)[0]!.promotionId, parent.id);
+});
+
 test("initial roster assignments support deliberate non-exclusive dual employment but reject exclusive overlap", () => {
   const dualSource: InitialRosterAssignmentSource = ({ people, promotions }) => [
     { personId: people[0]!.id, promotionId: promotions[1]!.id, family: "LIMITED_NON_EXCLUSIVE" },
     { personId: people[0]!.id, promotionId: promotions[2]!.id, family: "LIMITED_NON_EXCLUSIVE" },
   ];
   const dual = createWorld(
-    113,
+    115,
     DEFAULT_RULESET,
     "Dual Genesis",
     generatedFictionalRosterSource,
@@ -322,7 +354,7 @@ test("initial roster assignments support deliberate non-exclusive dual employmen
   let rejected = false;
   try {
     createWorld(
-      114,
+      116,
       DEFAULT_RULESET,
       "Broken Genesis",
       generatedFictionalRosterSource,

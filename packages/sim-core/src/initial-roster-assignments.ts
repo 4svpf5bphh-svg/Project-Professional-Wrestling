@@ -11,6 +11,7 @@ import type {
 export interface InitialRosterAssignment {
   personId: Id;
   promotionId: Id;
+  rosterPromotionId?: Id;
   family: Extract<ContractFamily, "EXCLUSIVE" | "LIMITED_NON_EXCLUSIVE">;
 }
 
@@ -35,6 +36,7 @@ export function validateInitialRosterAssignments(
   const promotions = new Set(state.promotions.map((promotion) => promotion.id));
   const exactKeys = new Set<string>();
   const byPerson = new Map<Id, InitialRosterAssignment[]>();
+  const rosterPromotionByPerson = new Map<Id, Id>();
 
   for (const assignment of assignments) {
     if (!people.has(assignment.personId)) {
@@ -43,8 +45,18 @@ export function validateInitialRosterAssignments(
     if (!promotions.has(assignment.promotionId)) {
       throw new Error(`initial roster assignment references missing promotion ${assignment.promotionId}`);
     }
+    if (assignment.rosterPromotionId !== undefined && !promotions.has(assignment.rosterPromotionId)) {
+      throw new Error(`initial roster assignment references missing roster promotion ${assignment.rosterPromotionId}`);
+    }
     if (assignment.family !== "EXCLUSIVE" && assignment.family !== "LIMITED_NON_EXCLUSIVE") {
       throw new Error("initial roster assignment uses unsupported contract family");
+    }
+    if (assignment.rosterPromotionId !== undefined) {
+      const existingRosterPromotionId = rosterPromotionByPerson.get(assignment.personId);
+      if (existingRosterPromotionId !== undefined && existingRosterPromotionId !== assignment.rosterPromotionId) {
+        throw new Error(`initial roster assignment gives ${assignment.personId} multiple primary rosters`);
+      }
+      rosterPromotionByPerson.set(assignment.personId, assignment.rosterPromotionId);
     }
     const key = `${assignment.personId}:${assignment.promotionId}`;
     if (exactKeys.has(key)) throw new Error(`duplicate initial roster assignment ${key}`);

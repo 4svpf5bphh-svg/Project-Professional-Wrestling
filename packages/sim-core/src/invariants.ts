@@ -30,6 +30,9 @@ export function validateWorldInvariants(state: WorldState): string[] {
     personIds.add(person.id);
     if (person.worldId !== state.world.id) errors.push(`person ${person.id} crosses world boundary`);
     if (!marketIds.has(person.homeMarketId)) errors.push(`person ${person.id} has invalid home market`);
+    if (person.rosterPromotionId !== undefined && !promotionIds.has(person.rosterPromotionId)) {
+      errors.push(`person ${person.id} has invalid roster promotion`);
+    }
     if (person.biologicalAge < 15 || person.biologicalAge > 90) errors.push(`person ${person.id} biological age outside plausible bounds`);
     if (person.careerExperience < 0 || person.careerExperience > 100) errors.push(`person ${person.id} career experience outside 0-100`);
     if (person.developmentAptitude < 0 || person.developmentAptitude > 100) errors.push(`person ${person.id} development aptitude outside 0-100`);

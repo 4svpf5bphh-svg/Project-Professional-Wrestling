@@ -74,7 +74,26 @@ export function activeContractsForPromotion(state: WorldState, promotionId: Id):
   return contractsForPromotion(state, promotionId).filter((contract) => contractIsActive(state, contract));
 }
 
+export function contractGrantsBookingRightsToPromotion(
+  state: WorldState,
+  contract: Contract,
+  promotionId: Id,
+): boolean {
+  if (!contractIsActive(state, contract)) return false;
+  if (contract.promotionId === promotionId) return true;
+  const promotion = state.promotions.find((candidate) => candidate.id === promotionId);
+  return promotion?.identity?.parentPromotionId === contract.promotionId;
+}
+
 export function currentRosterPersonIds(state: WorldState, promotionId: Id): Id[] {
+  const promotion = state.promotions.find((candidate) => candidate.id === promotionId);
+  if (promotion?.rosterMode === "EXPLICIT") {
+    return state.people
+      .filter((person) => person.rosterPromotionId === promotionId && person.status !== "RETIRED")
+      .filter((person) => activeContractsForPerson(state, person.id)
+        .some((contract) => contractGrantsBookingRightsToPromotion(state, contract, promotionId)))
+      .map((person) => person.id);
+  }
   return [...new Set(activeContractsForPromotion(state, promotionId).map((contract) => contract.personId))];
 }
 
