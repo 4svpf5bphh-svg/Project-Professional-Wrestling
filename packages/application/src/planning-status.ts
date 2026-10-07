@@ -143,7 +143,8 @@ function reservedCardIsComplete(
   }
 
   const reserved = new Set(reservedIds);
-  const used = new Set<Id>();
+  const usedInMatches = new Set<Id>();
+  const usedAnywhere = new Set<Id>();
   for (const match of draft.matches) {
     if (match.intendedWinnerSide === null || match.intent === null || match.plannedLengthMinutes === null) return false;
     const expectedSideSize = match.type === "SINGLES" ? 1 : 2;
@@ -151,11 +152,24 @@ function reservedCardIsComplete(
     const ids = [...match.sideAIds, ...match.sideBIds];
     if (new Set(ids).size !== ids.length) return false;
     for (const personId of ids) {
-      if (!reserved.has(personId) || used.has(personId)) return false;
-      used.add(personId);
+      if (!reserved.has(personId) || usedInMatches.has(personId)) return false;
+      usedInMatches.add(personId);
+      usedAnywhere.add(personId);
     }
   }
-  return used.size === reserved.size && [...reserved].every((personId) => used.has(personId));
+  for (const segment of draft.segments ?? []) {
+    for (const personId of segment.participantIds) {
+      if (!reserved.has(personId)) return false;
+      usedAnywhere.add(personId);
+    }
+  }
+  for (const segment of draft.programmeSegments ?? []) {
+    for (const personId of segment.participantIds) {
+      if (!reserved.has(personId)) return false;
+      usedAnywhere.add(personId);
+    }
+  }
+  return usedAnywhere.size === reserved.size && [...reserved].every((personId) => usedAnywhere.has(personId));
 }
 
 function lockedTargetMatches(runtime: WorldRuntimeState, targetDate: PpwDate): boolean {
