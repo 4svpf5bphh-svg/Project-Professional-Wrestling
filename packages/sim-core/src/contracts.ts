@@ -6,6 +6,7 @@ import type {
   Id,
   Person,
   Promotion,
+  PromotionContractPolicy,
   PromotionTier,
   RoleExpectation,
   WorldState,
@@ -33,6 +34,25 @@ const TIER_PRESTIGE: Record<PromotionTier, number> = {
   NATIONAL: 75,
   GLOBAL: 92,
 };
+
+export function defaultPromotionContractPolicy(tier: PromotionTier): PromotionContractPolicy {
+  switch (tier) {
+    case "GLOBAL":
+      return { exclusiveContractChance: 72, starExclusiveBonus: 8, outsideBookingPolicy: "PROHIBITED" };
+    case "NATIONAL":
+      return { exclusiveContractChance: 52, starExclusiveBonus: 8, outsideBookingPolicy: "APPROVAL_REQUIRED" };
+    case "RISING":
+      return { exclusiveContractChance: 27, starExclusiveBonus: 8, outsideBookingPolicy: "PERMITTED" };
+    case "INDEPENDENT":
+      return { exclusiveContractChance: 8, starExclusiveBonus: 8, outsideBookingPolicy: "PERMITTED" };
+    case "LOCAL":
+      return { exclusiveContractChance: 3, starExclusiveBonus: 8, outsideBookingPolicy: "PERMITTED" };
+  }
+}
+
+export function promotionContractPolicy(promotion: Promotion): PromotionContractPolicy {
+  return promotion.contractPolicy ?? defaultPromotionContractPolicy(promotion.tier);
+}
 
 export function contractIsActive(state: WorldState, contract: Contract): boolean {
   if (contract.status !== "SIGNED") return false;
@@ -123,12 +143,12 @@ function roleForPerson(person: Person): RoleExpectation {
 
 function familyForPromotion(promotion: Promotion, person: Person, rng: DeterministicRng): ContractFamily {
   const starScore = (person.recognition + person.popularity + person.skills.presentation) / 3;
-  const exclusiveChance = promotion.tier === "GLOBAL" ? 0.72
-    : promotion.tier === "NATIONAL" ? 0.52
-      : promotion.tier === "RISING" ? 0.27
-        : promotion.tier === "INDEPENDENT" ? 0.08
-          : 0.03;
-  const adjusted = Math.min(0.9, exclusiveChance + (starScore >= 72 ? 0.08 : 0));
+  const policy = promotionContractPolicy(promotion);
+  const exclusiveChance = Math.max(0, Math.min(100, policy.exclusiveContractChance)) / 100;
+  const starBonus = starScore >= 72
+    ? Math.max(0, Math.min(100, policy.starExclusiveBonus)) / 100
+    : 0;
+  const adjusted = Math.min(1, exclusiveChance + starBonus);
   return rng.chance(adjusted) ? "EXCLUSIVE" : "LIMITED_NON_EXCLUSIVE";
 }
 

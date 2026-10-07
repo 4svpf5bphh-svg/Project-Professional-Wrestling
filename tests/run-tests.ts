@@ -13,9 +13,11 @@ import {
   createSignedContract,
   createWorld,
   currentRosterPersonIds,
+  defaultPromotionContractPolicy,
   deterministicWorldHash,
   determineFinancialDistress,
   DeterministicRng,
+  buildContractTerms,
   recoverWrestlersForNewWeek,
   resolveWorldWeek,
   resolveWorldWeeks,
@@ -86,6 +88,42 @@ test("Genesis roster distribution respects tier-scale targets instead of hoardin
 test("one Global promotion exists in default Genesis", () => {
   const state = createWorld(101, DEFAULT_RULESET);
   equal(state.promotions.filter((p) => p.tier === "GLOBAL").length, 1);
+});
+
+test("Genesis promotions carry persistent identity and contract culture", () => {
+  const state = createWorld(102, DEFAULT_RULESET);
+  for (const promotion of state.promotions) {
+    equal(promotion.identity?.origin, "FICTIONAL");
+    equal(promotion.identity?.canonicalName, promotion.name);
+    equal(promotion.identity?.parentPromotionId, null);
+    const policy = promotion.contractPolicy;
+    ok(policy, `${promotion.id} is missing contract policy`);
+    ok(policy!.exclusiveContractChance >= 0 && policy!.exclusiveContractChance <= 100, `${promotion.id} has invalid exclusive chance`);
+  }
+  equal(defaultPromotionContractPolicy("GLOBAL").exclusiveContractChance, 72);
+  equal(defaultPromotionContractPolicy("INDEPENDENT").outsideBookingPolicy, "PERMITTED");
+});
+
+test("promotion contract culture overrides tier when generating terms", () => {
+  const state = createWorld(103, DEFAULT_RULESET);
+  const promotion = state.promotions.find((candidate) => candidate.tier === "GLOBAL")!;
+  const person = state.people.find((candidate) => activeContractsForPerson(state, candidate.id).length === 0)!;
+
+  promotion.contractPolicy = {
+    exclusiveContractChance: 0,
+    starExclusiveBonus: 0,
+    outsideBookingPolicy: "PERMITTED",
+  };
+  const flexible = buildContractTerms(state, promotion, person, new DeterministicRng(1));
+  equal(flexible.family, "LIMITED_NON_EXCLUSIVE");
+
+  promotion.contractPolicy = {
+    exclusiveContractChance: 100,
+    starExclusiveBonus: 0,
+    outsideBookingPolicy: "PROHIBITED",
+  };
+  const lockdown = buildContractTerms(state, promotion, person, new DeterministicRng(1));
+  equal(lockdown.family, "EXCLUSIVE");
 });
 
 test("World advances across 52-week PPW Years", () => {
