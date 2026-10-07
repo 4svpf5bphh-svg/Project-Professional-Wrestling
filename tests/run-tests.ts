@@ -11,6 +11,7 @@ import { calibratedRealActiveMensRosterSource } from "../packages/content/src/re
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
+import { REAL_WORLD_ALPHA_RULESET } from "../packages/config/src/real-world-ruleset.js";
 import {
   activeContractsForPerson,
   activeContractsForPromotion,
@@ -126,21 +127,30 @@ test("promotion source validation rejects malformed ecosystems", () => {
 test("real promotion catalog preserves parent links and keeps real companies takeover-locked", () => {
   const state = createWorld(
     106,
-    DEFAULT_RULESET,
+    REAL_WORLD_ALPHA_RULESET,
     "Real Promotion Catalog",
     generatedFictionalRosterSource,
     realPromotionEcosystemSource,
   );
-  equal(state.promotions.length, REAL_PROMOTION_TEMPLATES.length);
-  ok(state.promotions.every((promotion) => promotion.identity?.origin === "REAL_WORLD"), "real promotion source left fictional identities");
-  ok(state.promotions.every((promotion) => promotion.playerTakeoverEligibility === "LOCKED"), "real promotion source exposed a standard player takeover");
+  equal(state.promotions.length, REAL_WORLD_ALPHA_RULESET.promotions);
+
+  const realPromotions = state.promotions.filter((promotion) => promotion.identity?.origin === "REAL_WORLD");
+  const takeoverPromotions = state.promotions.filter((promotion) => promotion.playerTakeoverEligibility === "STANDARD");
+  equal(realPromotions.length, REAL_PROMOTION_TEMPLATES.length);
+  equal(takeoverPromotions.length, 3);
+  ok(realPromotions.every((promotion) => promotion.playerTakeoverEligibility === "LOCKED"), "real promotion source exposed a standard player takeover");
+  ok(takeoverPromotions.every((promotion) => promotion.identity?.origin === "FICTIONAL"), "real promotion became a takeover slot");
+  ok(takeoverPromotions.every((promotion) => promotion.tier === "INDEPENDENT"), "player takeover slot is not Independent");
 
   const wwe = state.promotions.find((promotion) => promotion.name === "WWE")!;
   const nxt = state.promotions.find((promotion) => promotion.name === "NXT")!;
   const aew = state.promotions.find((promotion) => promotion.name === "AEW")!;
   const roh = state.promotions.find((promotion) => promotion.name === "ROH")!;
+  const stardom = state.promotions.find((promotion) => promotion.name === "STARDOM")!;
   equal(nxt.identity?.parentPromotionId, wwe.id);
   equal(roh.identity?.parentPromotionId, aew.id);
+  ok(stardom.identity?.origin === "REAL_WORLD", "STARDOM was not created as a real promotion");
+  ok(stardom.playerTakeoverEligibility === "LOCKED", "STARDOM was exposed as a player takeover");
   ok(wwe.contractPolicy!.exclusiveContractChance > aew.contractPolicy!.exclusiveContractChance, "WWE and AEW contract cultures were not differentiated");
 });
 

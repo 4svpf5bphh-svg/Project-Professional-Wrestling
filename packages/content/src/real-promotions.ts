@@ -16,7 +16,8 @@ export type RealPromotionKey =
   | "CMLL"
   | "AAA"
   | "ROH"
-  | "NOAH";
+  | "NOAH"
+  | "STARDOM";
 
 export interface RealPromotionTemplate {
   key: RealPromotionKey;
@@ -33,6 +34,7 @@ export interface RealPromotionTemplate {
  *
  * Template order intentionally matches Genesis tier slots:
  * 1 Global, 2 National, 2 Rising, then Independent companies.
+ * Any remaining source slots stay fictional and may be used for player takeover.
  */
 export const REAL_PROMOTION_TEMPLATES: readonly RealPromotionTemplate[] = [
   {
@@ -130,6 +132,17 @@ export const REAL_PROMOTION_TEMPLATES: readonly RealPromotionTemplate[] = [
     parentKey: null,
     contractPolicy: {
       exclusiveContractChance: 38,
+      starExclusiveBonus: 8,
+      outsideBookingPolicy: "APPROVAL_REQUIRED",
+    },
+  },
+  {
+    key: "STARDOM",
+    name: "STARDOM",
+    tier: "INDEPENDENT",
+    parentKey: null,
+    contractPolicy: {
+      exclusiveContractChance: 42,
       starExclusiveBonus: 8,
       outsideBookingPolicy: "APPROVAL_REQUIRED",
     },
