@@ -321,7 +321,7 @@ function materializeCardIfComplete(
 
   let matches: Match[];
   try {
-    matches = prepareHumanMatchCard(state, event.id, complete.plans);
+    matches = prepareHumanMatchCard(state, event.id, complete.plans, { allowSegmentOnlyCommitted: true });
   } catch {
     return { matches: [], championshipAssignmentsApplied: 0, championshipWarnings: [] };
   }
