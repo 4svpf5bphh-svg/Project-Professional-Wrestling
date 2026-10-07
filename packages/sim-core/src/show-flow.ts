@@ -48,6 +48,12 @@ interface ModifierEvaluation {
   reason: ShowFlowReasonCode | null;
 }
 
+interface AlignmentModifierEvaluation extends ModifierEvaluation {
+  baseModifier: number;
+  baseReason: ShowFlowReasonCode | null;
+  volatilityModifier: number;
+}
+
 export interface ShowFlowMatchEvaluation {
   matchId: string;
   order: number;
@@ -98,7 +104,7 @@ function sideAlignment(
   return unique.size === 1 ? alignments[0]! : "MIXED";
 }
 
-function alignmentModifierForMatch(state: WorldState, match: Match): ModifierEvaluation {
+function alignmentModifierForMatch(state: WorldState, match: Match): AlignmentModifierEvaluation {
   const participants = participantsForMatch(state, match.id);
   const a = sideAlignment(state, match.promotionId, participants, "A");
   const b = sideAlignment(state, match.promotionId, participants, "B");
@@ -118,13 +124,13 @@ function alignmentModifierForMatch(state: WorldState, match: Match): ModifierEva
     match.promotionId,
     participants.map((participant) => participant.personId),
   );
-  if (volatility < -0.05) {
-    return {
-      modifier: clamp(base.modifier + volatility, -3.5, 2.2),
-      reason: "ALIGNMENT_VOLATILITY",
-    };
-  }
-  return base;
+  return {
+    modifier: volatility < -0.05 ? clamp(base.modifier + volatility, -3.5, 2.2) : base.modifier,
+    reason: volatility < -0.05 ? "ALIGNMENT_VOLATILITY" : base.reason,
+    baseModifier: base.modifier,
+    baseReason: base.reason,
+    volatilityModifier: volatility,
+  };
 }
 
 function programmeModifierForMatch(state: WorldState, event: WrestlingEvent, match: Match): ModifierEvaluation {
@@ -247,37 +253,15 @@ export function evaluateShowFlow(
       0,
       100,
     ));
-    const participants = participantsForMatch(state, match.id);
-    const volatility = recentAlignmentVolatilityPenalty(
-      state,
-      match.promotionId,
-      participants.map((participant) => participant.personId),
-    );
-    const alignmentBaseModifier = round1(alignment.modifier - volatility);
-    const alignmentVolatilityModifier = round1(volatility);
     return {
       matchId: match.id,
       order: match.order,
       baseCrowdResponse: match.crowdResponse,
       alignmentModifier: round1(alignment.modifier),
       alignmentReason: alignment.reason,
-      alignmentBaseModifier,
-      alignmentBaseReason: Math.abs(alignmentBaseModifier) >= 0.05
-        ? (
-          alignmentBaseModifier > 0
-            ? (
-              (() => {
-                const a = sideAlignment(state, match.promotionId, participants, "A");
-                const b = sideAlignment(state, match.promotionId, participants, "B");
-                if ((a === "FACE" && b === "HEEL") || (a === "HEEL" && b === "FACE")) return "FACE_HEEL_CLARITY";
-                if (a === "TWEENER" || b === "TWEENER") return "TWEENER_TENSION";
-                return alignment.reason === "ALIGNMENT_VOLATILITY" ? null : alignment.reason;
-              })()
-            )
-            : "SAME_ALIGNMENT"
-        )
-        : null,
-      alignmentVolatilityModifier,
+      alignmentBaseModifier: round1(alignment.baseModifier),
+      alignmentBaseReason: alignment.baseReason,
+      alignmentVolatilityModifier: round1(alignment.volatilityModifier),
       programmeModifier: round1(programme.modifier),
       programmeReason: programme.reason,
       pacingModifier: round1(pacing.modifier),
