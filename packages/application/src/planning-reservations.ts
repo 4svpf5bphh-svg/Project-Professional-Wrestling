@@ -228,8 +228,8 @@ export function reserveDetailedShowDraft(
   if (draft.marketId === null || draft.venueId === null || draft.ticketStrategy === null) {
     throw new Error("show draft needs market, venue and ticket strategy before reservation");
   }
-  if (draft.participantIds.length < state.ruleset.minEventParticipants || draft.participantIds.length % 2 !== 0) {
-    throw new Error(`reserved show roster must contain an even number of at least ${state.ruleset.minEventParticipants} wrestlers`);
+  if (draft.participantIds.length < state.ruleset.minEventParticipants) {
+    throw new Error(`reserved show roster must contain at least ${state.ruleset.minEventParticipants} wrestlers`);
   }
   const rosterTarget = eventRosterTarget(promotion, targetEventType(state, draft.targetDate));
   if (draft.participantIds.length > rosterTarget) {
