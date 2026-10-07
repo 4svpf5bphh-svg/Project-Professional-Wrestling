@@ -225,7 +225,7 @@ function migrateV3ToV4(snapshot: PersistedWorldStateV3): PersistedWorldStateV4 {
   const state = { ...rest, programmes: [], programmeActivities: [] } as unknown as WorldState;
   return {
     ...rest,
-    stateSchemaVersion: CURRENT_WORLD_STATE_SCHEMA_VERSION,
+    stateSchemaVersion: 4,
     programmes: [],
     programmeActivities: [],
     entityIdCounters: upgradeV3Counters(snapshot, state),
