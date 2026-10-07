@@ -1,3 +1,4 @@
+import type { ProgrammeParticipantRef } from "../../domain/src/programmes.js";
 import type {
   Id,
   MatchIntent,
@@ -244,7 +245,7 @@ function programmeParticipantIds(state: WorldState, programmeId: Id): Id[] {
   return [...result];
 }
 
-function programmeSideLabel(state: WorldState, refs: WorldState["programmes"][number]["sideA"]): string {
+function programmeSideLabel(state: WorldState, refs: ProgrammeParticipantRef[]): string {
   return refs.map((ref) => {
     if (ref.kind === "PERSON") {
       return state.people.find((person) => person.id === ref.entityId)?.name ?? ref.entityId;
