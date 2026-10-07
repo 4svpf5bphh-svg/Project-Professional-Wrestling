@@ -200,7 +200,15 @@ function RosterCard({
         <div className={styles.presentationBox}>
           <div>
             <span>Promotion alignment</span>
-            <small>How this wrestler is presented in your promotion. This does not rewrite their identity elsewhere in the World.</small>
+            <small>
+              {wrestler.alignmentNaturalReset
+                ? wrestler.alignmentChangeMode === "INITIAL_PRESENTATION"
+                  ? "Establish their initial presentation in your promotion. No turn is needed yet."
+                  : wrestler.alignmentChangeMode === "JUST_SIGNED"
+                    ? "New signing window: you can establish a fresh presentation cleanly."
+                    : "Return window: a fresh presentation can make sense after the layoff."
+                : "Changing this here is an unexplained off-screen switch. It is allowed, but the crowd may lose confidence. For a proper change, book a Turn segment."}
+            </small>
           </div>
           <div className={styles.alignmentChoices} role="group" aria-label={`Alignment for ${wrestler.name}`}>
             {(["FACE", "HEEL", "TWEENER"] as const).map((alignment) => (
@@ -478,7 +486,11 @@ export default function TalentClient(): React.JSX.Element {
         throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to update wrestler alignment");
       }
       setView(payload.view);
-      setNotice(`${wrestler.name} is now presented as ${label(payload.alignment).toLowerCase()} in your promotion.`);
+      setNotice(
+        payload.naturalReset
+          ? `${wrestler.name} is now presented as ${label(payload.alignment).toLowerCase()} in your promotion.`
+          : `${wrestler.name} was switched to ${label(payload.alignment).toLowerCase()} off-screen. The crowd may question the unexplained change.`,
+      );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to update wrestler alignment");
     } finally {

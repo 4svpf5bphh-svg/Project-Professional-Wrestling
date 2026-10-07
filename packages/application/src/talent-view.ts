@@ -17,6 +17,7 @@ import {
   contractIsActive,
   marketWeeklyValue,
   ppwDateToWeekIndex,
+  promotionAlignmentChangeContext,
   wrestlerAlignment,
   wrestlerAlignmentForPromotion,
 } from "../../sim-core/src/index.js";
@@ -44,6 +45,8 @@ export interface PlayerRosterContractView {
   personId: Id;
   name: string;
   alignment: WrestlerAlignment;
+  alignmentChangeMode: "INITIAL_PRESENTATION" | "JUST_SIGNED" | "RETURNING" | "OFFSCREEN_SWITCH";
+  alignmentNaturalReset: boolean;
   careerStage: CareerStage;
   status: PersonStatus;
   biologicalAge: number;
@@ -220,11 +223,14 @@ export function buildPlayerTalentManagementView(
       if (!person) return null;
       const remaining = weeksToExpiry(aggregate, contract.endDate);
       const alignment = wrestlerAlignmentForPromotion(aggregate.state, promotion.id, person.id);
+      const alignmentContext = promotionAlignmentChangeContext(aggregate.state, promotion.id, person.id);
       return {
         contractId: contract.id,
         personId: person.id,
         name: person.name,
         alignment,
+        alignmentChangeMode: alignmentContext.method,
+        alignmentNaturalReset: alignmentContext.naturalReset,
         careerStage: person.careerStage,
         status: person.status,
         biologicalAge: person.biologicalAge,

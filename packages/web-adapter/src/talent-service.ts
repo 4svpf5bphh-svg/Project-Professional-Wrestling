@@ -58,6 +58,8 @@ export interface AlphaRosterAlignmentRequest {
 export interface AlphaRosterAlignmentResult {
   personId: string;
   alignment: WrestlerAlignment;
+  changeMode: "INITIAL_PRESENTATION" | "JUST_SIGNED" | "RETURNING" | "OFFSCREEN_SWITCH";
+  naturalReset: boolean;
   view: PlayerTalentManagementView;
 }
 
@@ -271,7 +273,7 @@ export async function setAlphaRosterAlignment(
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("player must control a promotion before changing roster alignment");
 
-    const alignment = setWrestlerAlignmentCommand(
+    const change = setWrestlerAlignmentCommand(
       aggregate.state,
       aggregate.ownership,
       aggregate.commands,
@@ -291,7 +293,9 @@ export async function setAlphaRosterAlignment(
 
     return {
       personId: request.personId,
-      alignment,
+      alignment: change.alignment,
+      changeMode: change.method as AlphaRosterAlignmentResult["changeMode"],
+      naturalReset: change.method !== "OFFSCREEN_SWITCH",
       view: buildPlayerTalentManagementView(aggregate, playerId),
     } satisfies AlphaRosterAlignmentResult;
   });

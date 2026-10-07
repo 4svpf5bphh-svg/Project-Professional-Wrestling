@@ -8,7 +8,10 @@ import {
 import type { HumanPromotionClaimOptions } from "../../sim-core/src/human-control.js";
 import { createProgramme } from "../../sim-core/src/programmes.js";
 import { currentRosterPersonIds } from "../../sim-core/src/contracts.js";
-import { setPromotionWrestlerAlignment } from "../../sim-core/src/alignment.js";
+import {
+  changePromotionWrestlerAlignment,
+  type PromotionAlignmentChangeResult,
+} from "../../sim-core/src/alignment.js";
 import {
   activeWorldMembership,
   claimIndependentPromotionForPlayer,
@@ -258,7 +261,7 @@ export function setWrestlerAlignmentCommand(
   commandState: WorldCommandState,
   runtime: WorldRuntimeState,
   envelope: ApplicationCommandEnvelope<SetWrestlerAlignmentPayload>,
-): WrestlerAlignment {
+): PromotionAlignmentChangeResult {
   if (envelope.commandType !== "SET_WRESTLER_ALIGNMENT") {
     throw new Error(`expected SET_WRESTLER_ALIGNMENT command, received ${envelope.commandType}`);
   }
@@ -276,11 +279,11 @@ export function setWrestlerAlignmentCommand(
     if (!currentRosterPersonIds(state, envelope.payload.promotionId).includes(envelope.payload.personId)) {
       throw new Error("only a wrestler on your current roster can have a promotion alignment");
     }
-    return setPromotionWrestlerAlignment(
+    return changePromotionWrestlerAlignment(
       state,
       envelope.payload.promotionId,
       envelope.payload.personId,
       envelope.payload.alignment,
-    ).alignment;
+    );
   });
 }

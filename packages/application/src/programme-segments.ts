@@ -123,8 +123,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const participantIds = entry.payload.participantIds;
   const programmeId = entry.payload.programmeId;
   const plannedLengthMinutes = entry.payload.plannedLengthMinutes;
-  const turnPersonId = entry.payload.turnPersonId;
-  const turnTargetAlignment = entry.payload.turnTargetAlignment;
+  const turnPersonId = entry.payload.turnPersonId === undefined ? null : entry.payload.turnPersonId;
+  const turnTargetAlignment = entry.payload.turnTargetAlignment === undefined ? null : entry.payload.turnTargetAlignment;
   if (
     typeof eventId !== "string"
     || typeof promotionId !== "string"
