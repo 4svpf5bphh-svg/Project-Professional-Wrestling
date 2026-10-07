@@ -6,6 +6,7 @@ import {
   applyCurrentWeekShowFlow,
   createWorld,
   evaluateShowFlow,
+  setPromotionWrestlerAlignment,
   setWrestlerAlignment,
 } from "../packages/sim-core/src/index.js";
 
@@ -182,6 +183,25 @@ test("face versus heel clarity adds a modest emotional hook without becoming mat
   ok(clear.matches[0]?.alignmentReason === "FACE_HEEL_CLARITY", "alignment edge did not retain its reason");
   ok(sameSide.matches[0]?.alignmentReason === "SAME_ALIGNMENT", "same-side matchup did not retain its reason");
   ok(match.crowdResponse === 68, "show-flow evaluation rewrote the underlying match crowd response");
+});
+
+test("promotion-specific alignment drives crowd-flow interpretation", () => {
+  const { state, event, promotionId, personIds } = fixture(84105);
+  const match = completedMatch(state, event, "promotion-alignment-hook", 1, "COMPETITIVE", 68);
+  attachSinglesParticipants(state, event, match, personIds[0]!, personIds[1]!);
+  const a = state.people.find((person) => person.id === personIds[0])!;
+  const b = state.people.find((person) => person.id === personIds[1])!;
+  setWrestlerAlignment(a, "HEEL");
+  setWrestlerAlignment(b, "HEEL");
+
+  const baseline = evaluateShowFlow(state, event, [match]);
+  ok(baseline.matches[0]?.alignmentReason === "SAME_ALIGNMENT", "baseline alignment setup was not same-side");
+
+  setPromotionWrestlerAlignment(state, promotionId, a.id, "FACE");
+  const promoted = evaluateShowFlow(state, event, [match]);
+  ok(promoted.matches[0]?.alignmentReason === "FACE_HEEL_CLARITY", "promotion alignment override did not reach show flow");
+  ok(promoted.crowdResponse > baseline.crowdResponse + 1.5, "promotion alignment override did not change crowd interpretation");
+  ok(a.alignment === "HEEL" && b.alignment === "HEEL", "promotion alignment override rewrote global wrestler alignment");
 });
 
 test("hot fresh Programmes help while repetition can exhaust the same story", () => {
