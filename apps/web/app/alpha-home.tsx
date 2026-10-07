@@ -87,11 +87,39 @@ function attentionDeadline(item: AttentionItem): string | null {
   return `Year ${item.deadline.year} · Week ${item.deadline.week} · ${day}`;
 }
 
+function nextAutomaticWorldLock(nowMs: number): Date {
+  const now = new Date(nowMs);
+  const next = new Date(nowMs);
+  next.setUTCHours(8, 0, 0, 0);
+  if (next.getTime() <= now.getTime()) next.setUTCDate(next.getUTCDate() + 1);
+  return next;
+}
+
+function countdownCopy(nowMs: number, target: Date): string {
+  const totalSeconds = Math.max(0, Math.floor((target.getTime() - nowMs) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function localLockTime(target: Date): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(target);
+}
+
 export default function AlphaHome(): React.JSX.Element {
   const [view, setView] = useState<AlphaPlayerWorldView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyPromotionId, setBusyPromotionId] = useState<string | null>(null);
   const [busyAttentionId, setBusyAttentionId] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const requestIds = useRef(new Map<string, string>());
 
   async function refresh(): Promise<void> {
@@ -108,6 +136,11 @@ export default function AlphaHome(): React.JSX.Element {
     refresh().catch((reason: unknown) => {
       setError(reason instanceof Error ? reason.message : "Unable to load PPW Alpha");
     });
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   async function claim(promotionId: string): Promise<void> {
@@ -178,6 +211,12 @@ export default function AlphaHome(): React.JSX.Element {
   const currentVenue = currentPlan?.venueId && currentMarket
     ? currentMarket.venues.find((venue) => venue.venueId === currentPlan.venueId) ?? null
     : null;
+  const nextWorldLock = nextAutomaticWorldLock(nowMs);
+  const worldLockCountdown = countdownCopy(nowMs, nextWorldLock);
+  const logisticsLocked = Boolean(
+    currentPlan && (currentPlan.state === "MATERIALIZED" || currentPlan.state === "READY_TO_LOCK"),
+  );
+  const worldIsOpen = view.world.phase === "OPEN";
 
   let weekActionHref = "/planner";
   let weekActionLabel = "Open six-week planner";
@@ -295,6 +334,42 @@ export default function AlphaHome(): React.JSX.Element {
             <article className="metric-card"><span>Last week</span><strong className={promotion.lastWeeklyNet >= 0 ? "positive" : "negative"}>{promotion.lastWeeklyNet >= 0 ? "+" : ""}{money(promotion.lastWeeklyNet)}</strong></article>
             <article className="metric-card"><span>Roster</span><strong>{promotion.roster.length}</strong></article>
             <article className="metric-card"><span>Runway</span><strong>{promotion.runwayWeeks === null ? "—" : `${promotion.runwayWeeks.toFixed(1)}w`}</strong></article>
+          </section>
+
+          <section className="panel">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">WORLD CLOCK</span>
+                <h2>{worldIsOpen ? `Next lock in ${worldLockCountdown}` : `World is ${view.world.phase.toLowerCase()}`}</h2>
+              </div>
+              <span className={worldIsOpen ? "plan-pill plan-reserved" : "readiness-pill readiness-attention"}>
+                {worldIsOpen ? "08:00 UTC DAILY" : view.world.phase}
+              </span>
+            </div>
+            <p className="muted body-copy">
+              Next automatic World cycle: {localLockTime(nextWorldLock)} local time · 08:00 UTC. One automatic cycle advances one PPW week.
+            </p>
+            <div className="result-grid">
+              <div>
+                <span>Venue</span>
+                <strong>{currentPlan ? (logisticsLocked ? "Locked" : `Locks in ${worldLockCountdown}`) : "No current show"}</strong>
+              </div>
+              <div>
+                <span>Committed talent</span>
+                <strong>{currentPlan ? (logisticsLocked ? "Locked" : `Locks in ${worldLockCountdown}`) : "No current show"}</strong>
+              </div>
+              <div>
+                <span>Card submission</span>
+                <strong>{promotion.weekReadiness.status === "NOT_REQUIRED" ? "No card due" : worldIsOpen ? `Closes in ${worldLockCountdown}` : "Closed"}</strong>
+              </div>
+              <div>
+                <span>World resolution</span>
+                <strong>{worldIsOpen ? `In ${worldLockCountdown}` : view.world.phase}</strong>
+              </div>
+            </div>
+            <p className="micro-copy">
+              Future reservations stay editable until they materialise into their show week. Once materialised, venue and committed talent are fixed; match/segment order and card details remain editable until World lock.
+            </p>
           </section>
 
           <section className="panel week-panel">
