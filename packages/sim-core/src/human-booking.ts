@@ -36,6 +36,7 @@ export function prepareHumanMatchCard(
   state: WorldState,
   eventId: string,
   plans: HumanMatchPlan[],
+  options: { allowSegmentOnlyCommitted?: boolean } = {},
 ): Match[] {
   const event = state.events.find((candidate) => candidate.id === eventId);
   if (!event) throw new Error(`unknown event ${eventId}`);
@@ -78,7 +79,10 @@ export function prepareHumanMatchCard(
     }
   }
 
-  if (used.size !== committedIds.size || [...committedIds].some((personId) => !used.has(personId))) {
+  if (
+    !options.allowSegmentOnlyCommitted
+    && (used.size !== committedIds.size || [...committedIds].some((personId) => !used.has(personId)))
+  ) {
     throw new Error("manual card must use every wrestler committed to the show exactly once");
   }
 
