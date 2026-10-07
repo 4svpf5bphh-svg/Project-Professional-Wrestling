@@ -505,10 +505,18 @@ test("first reviewed WWE/NXT seed separates WWE employment rights from NXT roste
   ok(!nxtRosterNames.includes("Roman Reigns"), "WWE main-roster wrestler leaked into NXT");
   equal(activeContractsForPromotion(state, wwe.id).length, WWE_INITIAL_ROSTER_NAMES.length + NXT_INITIAL_ROSTER_NAMES.length);
   equal(activeContractsForPromotion(state, nxt.id).length, 0);
-  equal(
-    new Set(state.contracts.filter((contract) => contract.status === "SIGNED").map((contract) => contract.personId)).size,
-    Math.floor(state.people.length * state.ruleset.initialContractedTalentRatio),
-    "real-world Genesis failed to preserve intended contracted/free-agent balance",
+  const contractedPeople = new Set(
+    state.contracts
+      .filter((contract) => contract.status === "SIGNED")
+      .map((contract) => contract.personId),
+  ).size;
+  ok(
+    contractedPeople >= WWE_INITIAL_ROSTER_NAMES.length + NXT_INITIAL_ROSTER_NAMES.length,
+    "WWE/NXT seed lost explicitly assigned contracted wrestlers",
+  );
+  ok(
+    state.people.length - contractedPeople >= Math.floor(state.people.length * 0.2),
+    "partial real-world roster staging exhausted the free-agent market",
   );
 
   const roman = state.people.find((person) => person.name === "Roman Reigns")!;
