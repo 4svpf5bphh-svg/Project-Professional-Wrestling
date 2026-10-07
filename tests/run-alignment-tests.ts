@@ -5,7 +5,9 @@ import {
   WRESTLER_ALIGNMENTS,
   createWorld,
   defaultWrestlerAlignment,
+  advanceWeek,
   changePromotionWrestlerAlignment,
+  claimIndependentPromotionForHuman,
   deterministicWorldHash,
   promotionAlignmentChangeContext,
   recentAlignmentVolatilityPenalty,
@@ -66,7 +68,9 @@ test("explicit alignment override is stable state for future turn mechanics", ()
 
 test("promotion presentation gets one clean establishment before repeated switches become volatile", () => {
   const state = createWorld(73003, DEFAULT_RULESET);
-  const promotion = state.promotions[0]!;
+  const promotion = state.promotions.find((candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE");
+  if (!promotion) throw new Error("alignment continuity fixture lacks an Independent promotion");
+  claimIndependentPromotionForHuman(state, promotion.id);
   const person = state.people[0]!;
   const baseline = wrestlerAlignment(person, state.world.seed);
   const firstTarget = baseline === "FACE" ? "HEEL" : "FACE";
@@ -85,6 +89,18 @@ test("promotion presentation gets one clean establishment before repeated switch
   const second = changePromotionWrestlerAlignment(state, promotion.id, person.id, secondTarget);
   ok(second.method === "OFFSCREEN_SWITCH", "repeated roster switch was not recorded off-screen");
   ok(recentAlignmentVolatilityPenalty(state, promotion.id, [person.id]) < -0.5, "off-screen switch did not create continuity pressure");
+});
+
+test("unused initial-presentation freedom expires after the promotion claim week", () => {
+  const state = createWorld(73004, DEFAULT_RULESET);
+  const promotion = state.promotions.find((candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE");
+  if (!promotion) throw new Error("alignment expiry fixture lacks an Independent promotion");
+  claimIndependentPromotionForHuman(state, promotion.id);
+  const person = state.people[0]!;
+  advanceWeek(state.world, state.ruleset.weeksPerYear);
+
+  const context = promotionAlignmentChangeContext(state, promotion.id, person.id);
+  ok(context.method === "OFFSCREEN_SWITCH" && !context.naturalReset, "initial-presentation freedom remained available after the claim week");
 });
 
 console.log(`\nAlignment tests: ${passed} passed, ${failed} failed`);

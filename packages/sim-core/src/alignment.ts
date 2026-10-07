@@ -111,7 +111,6 @@ export function promotionAlignmentChangeContext(
   const existing = (state.promotionWrestlerPresentations ?? []).find((entry) => (
     entry.promotionId === promotionId && entry.personId === personId
   ));
-  if (!existing) return { method: "INITIAL_PRESENTATION", naturalReset: true };
 
   const changedThisWeek = state.ledger.some((entry) => (
     entry.type === "PROMOTION_ALIGNMENT_CHANGED"
@@ -122,6 +121,11 @@ export function promotionAlignmentChangeContext(
   ));
   if (changedThisWeek) return { method: "OFFSCREEN_SWITCH", naturalReset: false };
 
+  const justClaimed = state.ledger.some((entry) => (
+    entry.type === "HUMAN_PROMOTION_CLAIMED"
+    && entry.entityIds.includes(promotionId)
+    && sameWeek(state, entry.date, state.world.currentDate)
+  ));
   const justSigned = state.contracts.some((contract) => (
     contract.promotionId === promotionId
     && contract.personId === personId
@@ -129,6 +133,7 @@ export function promotionAlignmentChangeContext(
     && contractIsActive(state, contract)
     && sameWeek(state, contract.startDate, state.world.currentDate)
   ));
+  if (!existing && justClaimed) return { method: "INITIAL_PRESENTATION", naturalReset: true };
   if (justSigned) return { method: "JUST_SIGNED", naturalReset: true };
 
   const returning = state.ledger.some((entry) => (
@@ -155,10 +160,20 @@ export function changePromotionWrestlerAlignment(
   const previousAlignment = wrestlerAlignmentForPromotion(state, promotionId, personId);
   const method = options.method ?? promotionAlignmentChangeContext(state, promotionId, personId).method;
   const changed = previousAlignment !== alignment;
-  if (changed) setPromotionWrestlerAlignment(state, promotionId, personId, alignment);
+  const sourceEventDate = options.sourceEventId
+    ? state.events.find((event) => event.id === options.sourceEventId)?.date ?? null
+    : null;
+  const changeDate = sourceEventDate ? { ...sourceEventDate } : { ...state.world.currentDate };
+  if (changed) {
+    setPromotionWrestlerAlignment(state, promotionId, personId, alignment);
+    const presentation = (state.promotionWrestlerPresentations ?? []).find((entry) => (
+      entry.promotionId === promotionId && entry.personId === personId
+    ));
+    if (presentation) presentation.changedDate = { ...changeDate };
+  }
 
   new LedgerWriter(state.world.id, state.ledger).append({
-    date: state.world.currentDate,
+    date: changeDate,
     type: "PROMOTION_ALIGNMENT_CHANGED",
     significance: method === "TURN" ? "NOTABLE" : "ROUTINE",
     entityIds: [personId, promotionId, ...(options.sourceEventId ? [options.sourceEventId] : [])],

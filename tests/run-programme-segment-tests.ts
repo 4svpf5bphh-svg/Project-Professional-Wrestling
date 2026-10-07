@@ -222,11 +222,13 @@ test("TURN segment freezes its intent and changes promotion alignment only after
   ok(applyResolvedShowTurns(setup.state) === 1, "resolved turn was not applied");
   ok(wrestlerAlignmentForPromotion(setup.state, setup.promotion.id, personId) === "FACE", "resolved turn did not change promotion alignment");
   ok(applyResolvedShowTurns(setup.state) === 0, "turn retry applied twice");
-  ok(setup.state.ledger.some((entry) => (
+  const changeEntry = setup.state.ledger.find((entry) => (
     entry.type === "PROMOTION_ALIGNMENT_CHANGED"
     && entry.payload.method === "TURN"
     && entry.payload.sourceSegmentId === "turn-segment-1"
-  )), "turn did not retain historical alignment-change evidence");
+  ));
+  ok(changeEntry, "turn did not retain historical alignment-change evidence");
+  ok(changeEntry?.date.day === setup.targetDate.day, "turn alignment history was not dated to the show itself");
 });
 
 test("Programme segments remain planned until their show has completed", () => {

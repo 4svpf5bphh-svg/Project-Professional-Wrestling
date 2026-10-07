@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AlphaCardChampionshipView,
   AlphaCardMatchView,
+  AlphaCardParticipantView,
   AlphaCardSegmentView,
   AlphaCardSlotView,
   AlphaChampionshipAssignmentView,
@@ -89,12 +90,18 @@ function MinuteField(props: {
   onCommit: (value: number) => void;
 }): React.JSX.Element {
   const [draft, setDraft] = useState(String(props.value));
+  const cancelBlur = useRef(false);
 
   useEffect(() => {
     setDraft(String(props.value));
   }, [props.value]);
 
   function commit(): void {
+    if (cancelBlur.current) {
+      cancelBlur.current = false;
+      setDraft(String(props.value));
+      return;
+    }
     const parsed = Number(draft);
     if (!draft.trim() || !Number.isFinite(parsed)) {
       setDraft(String(props.value));
@@ -118,6 +125,7 @@ function MinuteField(props: {
       onKeyDown={(event) => {
         if (event.key === "Enter") event.currentTarget.blur();
         if (event.key === "Escape") {
+          cancelBlur.current = true;
           setDraft(String(props.value));
           event.currentTarget.blur();
         }
@@ -194,6 +202,7 @@ export default function CardClient(): React.JSX.Element {
       Boolean(segment.turnPersonId)
       && segment.participantIds.includes(segment.turnPersonId ?? "")
       && Boolean(segment.turnTargetAlignment)
+      && segment.turnTargetAlignment !== personAlignment(segment.turnPersonId ?? "")
     ))
   ));
   const canSave = Boolean(
@@ -381,6 +390,13 @@ export default function CardClient(): React.JSX.Element {
   function personBookedInOtherMatch(personId: string, matchId: string, currentId: string): boolean {
     if (!personId || personId === currentId) return false;
     return matches.some((match) => match.draftMatchId !== matchId && [...match.sideAIds, ...match.sideBIds].includes(personId));
+  }
+
+  function personAlignment(personId: string): AlphaCardParticipantView["alignment"] | null {
+    if (!view || !personId) return null;
+    return view.availableParticipants.find((person) => person.personId === personId)?.alignment
+      ?? view.participants.find((person) => person.personId === personId)?.alignment
+      ?? null;
   }
 
   function personName(personId: string): string {
