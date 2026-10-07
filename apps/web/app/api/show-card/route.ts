@@ -8,6 +8,8 @@ import {
   loadAlphaShowCard,
   saveAlphaShowCard,
   type AlphaCardMatchView,
+  type AlphaCardSegmentView,
+  type AlphaCardSlotView,
   type AlphaChampionshipAssignmentView,
 } from "../../../../../dist/packages/web-adapter/src/card-service.js";
 import { withAlphaServerContext } from "../../../../../dist/packages/web-adapter/src/server-world.js";
@@ -21,6 +23,8 @@ type ShowCardBody = {
   expectedPlanVersion?: unknown;
   draftId?: unknown;
   matches?: unknown;
+  segments?: unknown;
+  runningOrder?: unknown;
   championshipAssignments?: unknown;
 };
 
@@ -111,6 +115,49 @@ function matches(value: unknown): AlphaCardMatchView[] {
   });
 }
 
+function segmentLength(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 2 || value > 20) {
+    throw new Error(`${label} must be an integer from 2 to 20`);
+  }
+  return value;
+}
+
+function segments(value: unknown): AlphaCardSegmentView[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error("segments must be an array");
+  const supported = new Set(["PROMO", "INTERVIEW", "CONFRONTATION", "CHALLENGE", "ATTACK", "CELEBRATION"]);
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object") throw new Error(`segments[${index}] must be an object`);
+    const candidate = entry as Record<string, unknown>;
+    const type = requiredText(candidate.type, `segments[${index}].type`, 32);
+    if (!supported.has(type)) throw new Error(`unsupported segment type ${type}`);
+    return {
+      draftSegmentId: requiredText(candidate.draftSegmentId, `segments[${index}].draftSegmentId`, 128),
+      type: type as AlphaCardSegmentView["type"],
+      participantIds: personIds(candidate.participantIds, `segments[${index}].participantIds`),
+      programmeId: candidate.programmeId === null || candidate.programmeId === undefined || candidate.programmeId === ""
+        ? null
+        : requiredText(candidate.programmeId, `segments[${index}].programmeId`, 128),
+      plannedLengthMinutes: segmentLength(candidate.plannedLengthMinutes, `segments[${index}].plannedLengthMinutes`),
+    };
+  });
+}
+
+function runningOrder(value: unknown): AlphaCardSlotView[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error("runningOrder must be an array");
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object") throw new Error(`runningOrder[${index}] must be an object`);
+    const candidate = entry as Record<string, unknown>;
+    const kind = requiredText(candidate.kind, `runningOrder[${index}].kind`, 16);
+    if (kind !== "MATCH" && kind !== "SEGMENT") throw new Error(`runningOrder[${index}] has an invalid kind`);
+    return {
+      kind,
+      refId: requiredText(candidate.refId, `runningOrder[${index}].refId`, 128),
+    } as AlphaCardSlotView;
+  });
+}
+
 function championshipAssignments(value: unknown): AlphaChampionshipAssignmentView[] {
   if (!Array.isArray(value)) throw new Error("championshipAssignments must be an array");
   return value.map((entry, index) => {
@@ -161,6 +208,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         expectedPlanVersion: nonNegativeInteger(body.expectedPlanVersion, "expectedPlanVersion"),
         draftId: optionalText(body.draftId, "draftId", 128),
         matches: matches(body.matches),
+        segments: segments(body.segments),
+        runningOrder: runningOrder(body.runningOrder),
         championshipAssignments: championshipAssignments(body.championshipAssignments ?? []),
       })
     ));
