@@ -12,6 +12,24 @@ export interface MatchStyleLoad {
   band: MatchStyleLoadBand;
 }
 
+export interface MatchStyleSkillProfile {
+  inRingQuality: number;
+  matchCraft: number;
+  presentation: number;
+  stamina: number;
+  safety: number;
+}
+
+export interface MatchStyleExecutionEvaluation {
+  load: MatchStyleLoad;
+  demand: number;
+  capability: number;
+  shortfall: number;
+  realizedUpside: number;
+  difficultyPenalty: number;
+  crowdAppeal: number;
+}
+
 export const MATCH_STYLE_DIMENSIONS = [
   "competitiveness",
   "technical",
@@ -149,5 +167,88 @@ export function evaluateMatchStyleLoad(
     creative: rounded1(creative),
     total: rounded1(total),
     band,
+  };
+}
+
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+export function evaluateMatchStyleExecution(
+  style: MatchStyleProfile,
+  skills: MatchStyleSkillProfile,
+  plannedLengthMinutes: number,
+): MatchStyleExecutionEvaluation {
+  const normalized = normalizeMatchStyle(style);
+  const load = evaluateMatchStyleLoad(normalized, plannedLengthMinutes);
+  const capabilities: Record<MatchStyleDimension, number> = {
+    competitiveness:
+      skills.inRingQuality * 0.4
+      + skills.matchCraft * 0.35
+      + skills.stamina * 0.15
+      + skills.presentation * 0.1,
+    technical:
+      skills.inRingQuality * 0.4
+      + skills.matchCraft * 0.38
+      + skills.safety * 0.12
+      + skills.stamina * 0.1,
+    story:
+      skills.matchCraft * 0.38
+      + skills.presentation * 0.38
+      + skills.inRingQuality * 0.14
+      + skills.stamina * 0.1,
+    intensity:
+      skills.stamina * 0.38
+      + skills.inRingQuality * 0.25
+      + skills.safety * 0.22
+      + skills.matchCraft * 0.15,
+    risk:
+      skills.safety * 0.4
+      + skills.stamina * 0.25
+      + skills.inRingQuality * 0.2
+      + skills.matchCraft * 0.15,
+    epic:
+      skills.matchCraft * 0.3
+      + skills.presentation * 0.25
+      + skills.stamina * 0.25
+      + skills.inRingQuality * 0.2,
+  };
+  const weights = MATCH_STYLE_DIMENSIONS.map((dimension) => Math.max(5, normalized[dimension]));
+  const weightTotal = weights.reduce((sum, value) => sum + value, 0);
+  const capability = MATCH_STYLE_DIMENSIONS.reduce(
+    (sum, dimension, index) => sum + capabilities[dimension] * weights[index]!,
+    0,
+  ) / weightTotal;
+  const shortfall = MATCH_STYLE_DIMENSIONS.reduce(
+    (sum, dimension, index) => (
+      sum + Math.max(0, normalized[dimension] - capabilities[dimension]) * weights[index]!
+    ),
+    0,
+  ) / weightTotal;
+  const demand = MATCH_STYLE_DIMENSIONS.reduce((sum, dimension) => sum + normalized[dimension], 0)
+    / MATCH_STYLE_DIMENSIONS.length;
+  const mastery = clamp((capability - 45) / 55, 0, 1);
+  const realizedUpside = Math.max(0, demand - 35) * mastery * 0.16;
+  const difficultyPenalty =
+    shortfall * 0.34
+    + Math.max(0, load.creative - capability) * 0.12
+    + Math.max(0, load.total - 90) * 0.08;
+  const crowdAppeal =
+    normalized.epic * 0.3
+    + normalized.intensity * 0.22
+    + normalized.story * 0.2
+    + normalized.competitiveness * 0.12
+    + normalized.risk * 0.08
+    + normalized.technical * 0.08;
+
+  return {
+    load,
+    demand: rounded1(demand),
+    capability: rounded1(capability),
+    shortfall: rounded1(shortfall),
+    realizedUpside: rounded1(realizedUpside),
+    difficultyPenalty: rounded1(difficultyPenalty),
+    crowdAppeal: rounded1(crowdAppeal),
   };
 }

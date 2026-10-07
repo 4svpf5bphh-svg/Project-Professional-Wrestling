@@ -22,6 +22,11 @@ import {
   setPlannedMatchFinish,
   type MatchFinish,
 } from "./match-finishes.js";
+import {
+  evaluateMatchStyleExecution,
+  evaluateMatchStyleLoad,
+  type MatchStyleExecutionEvaluation,
+} from "./match-style.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 
 function clamp(value: number, min: number, max: number): number {
@@ -270,6 +275,75 @@ function injuryProbability(state: WorldState, match: Match, person: Person, allP
   return clamp((0.0007 + intentRisk + fatigueRisk + wearRisk + safetyRisk + lengthRisk) * state.ruleset.injuryRateMultiplier, 0.0002, 0.035);
 }
 
+function styledInjuryProbability(
+  state: WorldState,
+  match: Match,
+  person: Person,
+  allPeople: Person[],
+  styleEvaluation: MatchStyleExecutionEvaluation,
+): number {
+  const style = match.style!;
+  const avgSafety = allPeople.reduce((sum, candidate) => sum + candidate.skills.safety, 0) / allPeople.length;
+  const styleRisk =
+    0.0005
+    + Math.pow(style.risk / 100, 2) * 0.005
+    + Math.pow(style.intensity / 100, 2) * 0.0014
+    + Math.max(0, styleEvaluation.load.physical - 70) / 12000;
+  const fatigueRisk = person.fatigue / 18000;
+  const wearRisk = person.wear / 22000;
+  const safetyRisk = Math.max(0, 70 - avgSafety) / 9000;
+  const lengthRisk = Math.max(0, match.plannedLengthMinutes - 15) / 12000;
+  return clamp(
+    (styleRisk + fatigueRisk + wearRisk + safetyRisk + lengthRisk) * state.ruleset.injuryRateMultiplier,
+    0.0002,
+    0.035,
+  );
+}
+
+function styledFinishExecutionModifier(match: Match, finish: MatchFinish): number {
+  const style = match.style!;
+  if (finish === "CLEAN_PIN") {
+    return clamp(((style.competitiveness + style.intensity) / 2 - 50) * 0.018, -2.5, 2.5);
+  }
+  if (finish === "SUBMISSION") {
+    return clamp((style.technical - 50) * 0.035 + (style.competitiveness - 50) * 0.008, -2.5, 3);
+  }
+  if (finish === "FLASH_PIN") {
+    return clamp((style.story - 50) * 0.03 - Math.max(0, style.epic - 70) * 0.015, -2.5, 2.5);
+  }
+  if (finish === "PROTECTED_FINISH") {
+    return clamp(
+      (style.story - 50) * 0.035
+      - Math.max(0, style.competitiveness - 60) * 0.018
+      - Math.max(0, style.technical - 70) * 0.012,
+      -3,
+      2.5,
+    );
+  }
+  return -4;
+}
+
+function styledFinishCrowdModifier(match: Match, finish: MatchFinish): number {
+  const style = match.style!;
+  if (finish === "CLEAN_PIN") {
+    return clamp(((style.competitiveness + style.intensity + style.epic) / 3 - 45) * 0.018, -2, 2.5);
+  }
+  if (finish === "SUBMISSION") {
+    return clamp((style.technical - 45) * 0.028 + (style.competitiveness - 50) * 0.006, -2, 2.8);
+  }
+  if (finish === "FLASH_PIN") {
+    return clamp((style.story - 45) * 0.028 - Math.max(0, style.epic - 75) * 0.012, -2, 2.5);
+  }
+  if (finish === "PROTECTED_FINISH") {
+    return clamp(
+      (style.story - 45) * 0.032 - Math.max(0, style.competitiveness - 65) * 0.018,
+      -3,
+      2.8,
+    );
+  }
+  return -4;
+}
+
 function injurySeverity(rng: DeterministicRng): { severity: InjurySeverity; weeksOut: number } {
   const roll = rng.next();
   if (roll < 0.56) return { severity: "MINOR", weeksOut: rng.int(1, 2) };
@@ -296,37 +370,78 @@ function resolveMatch(state: WorldState, planned: PlannedMatch, event: Wrestling
   const averageCraft = sideAverage(allPeople, (person) => person.skills.matchCraft);
   const averagePresentation = sideAverage(allPeople, (person) => person.skills.presentation);
   const averageStamina = sideAverage(allPeople, (person) => person.skills.stamina);
+  const averageSafety = sideAverage(allPeople, (person) => person.skills.safety);
   const averageFatigue = sideAverage(allPeople, (person) => person.fatigue);
   const averageStar = sideAverage(allPeople, (person) => (person.popularity + person.recognition + person.momentum) / 3);
   const chemistry = chemistryModifier(state, match, sideA, sideB);
+  const styleEvaluation = match.style === undefined
+    ? null
+    : evaluateMatchStyleExecution(
+      match.style,
+      {
+        inRingQuality: averageRing,
+        matchCraft: averageCraft,
+        presentation: averagePresentation,
+        stamina: averageStamina,
+        safety: averageSafety,
+      },
+      match.plannedLengthMinutes,
+    );
   const intentBonus = match.intent === "EPIC" ? 6 : match.intent === "TECHNICAL" ? 4 : match.intent === "HIGH_RISK" ? 3 : match.intent === "SHOWCASE" ? 2 : 0;
   const bookedFinish = plannedMatchFinish(match);
-  const finishExecution = finishExecutionModifier(match.intent, bookedFinish);
+  const finishExecution = styleEvaluation === null
+    ? finishExecutionModifier(match.intent, bookedFinish)
+    : styledFinishExecutionModifier(match, bookedFinish);
   const fatiguePenalty = averageFatigue * 0.17;
   const staminaFit = Math.min(6, (averageStamina - 50) * 0.1) - Math.max(0, match.plannedLengthMinutes - 18) * Math.max(0, 62 - averageStamina) / 160;
-  const execution = clamp(
-    averageRing * 0.43
-      + averageCraft * 0.37
-      + averagePresentation * 0.08
-      + 8
-      + chemistry
-      + intentBonus
-      + finishExecution
-      + staminaFit
-      - fatiguePenalty
-      + rng.float(-7, 7),
-    5,
-    100,
-  );
+  const execution = styleEvaluation === null
+    ? clamp(
+      averageRing * 0.43
+        + averageCraft * 0.37
+        + averagePresentation * 0.08
+        + 8
+        + chemistry
+        + intentBonus
+        + finishExecution
+        + staminaFit
+        - fatiguePenalty
+        + rng.float(-7, 7),
+      5,
+      100,
+    )
+    : clamp(
+      averageRing * 0.4
+        + averageCraft * 0.35
+        + averagePresentation * 0.08
+        + averageSafety * 0.03
+        + 7
+        + chemistry
+        + styleEvaluation.realizedUpside
+        - styleEvaluation.difficultyPenalty
+        + finishExecution
+        + staminaFit
+        - fatiguePenalty
+        + rng.float(-7, 7),
+      5,
+      100,
+    );
   match.executionQuality = Math.round(execution * 10) / 10;
   const rawStars = 0.5 + execution / 25.5 + Math.max(0, execution - 82) / 36;
   match.criticalRatingStars = Math.round(clamp(rawStars, 0.5, 5) * 4) / 4;
+  const styledCrowdDelivery = styleEvaluation === null
+    ? 0
+    : (styleEvaluation.crowdAppeal - 45)
+      * clamp(execution / 75, 0.35, 1.15)
+      * 0.11;
   match.crowdResponse = Math.round(clamp(
     averageStar * 0.53
       + execution * 0.34
       + event.eventImportance * 0.13
       + (match.order >= 4 ? 2 : 0)
-      + finishCrowdModifier(match.intent, bookedFinish)
+      + (styleEvaluation === null
+        ? finishCrowdModifier(match.intent, bookedFinish)
+        : styledFinishCrowdModifier(match, bookedFinish))
+      + styledCrowdDelivery
       + rng.float(-6, 6),
     0,
     100,
@@ -335,7 +450,10 @@ function resolveMatch(state: WorldState, planned: PlannedMatch, event: Wrestling
 
   const injuriesThisMatch: { person: Person; severity: InjurySeverity }[] = [];
   for (const person of allPeople) {
-    if (!rng.chance(injuryProbability(state, match, person, allPeople))) continue;
+    const probability = styleEvaluation === null
+      ? injuryProbability(state, match, person, allPeople)
+      : styledInjuryProbability(state, match, person, allPeople, styleEvaluation);
+    if (!rng.chance(probability)) continue;
     const injury = injurySeverity(rng);
     createInjury(state, person, match, injury.severity, injury.weeksOut);
     injuriesThisMatch.push({ person, severity: injury.severity });
@@ -359,12 +477,27 @@ function resolveMatch(state: WorldState, planned: PlannedMatch, event: Wrestling
   match.status = "COMPLETED";
   for (const participant of participants) participant.won = participant.side === actualWinnerSide;
 
-  const loadBase = match.actualLengthMinutes * (match.intent === "HIGH_RISK" ? 0.72 : match.intent === "EPIC" ? 0.62 : 0.48);
+  const loadBase = match.actualLengthMinutes * (
+    styleEvaluation === null
+      ? (match.intent === "HIGH_RISK" ? 0.72 : match.intent === "EPIC" ? 0.62 : 0.48)
+      : clamp(0.32 + styleEvaluation.load.physical / 220, 0.28, 0.82)
+  );
+  const styledWearRate = styleEvaluation === null
+    ? null
+    : clamp(
+      0.005
+        + styleEvaluation.load.physical / 100 * 0.006
+        + match.style!.risk / 100 * 0.006,
+      0.004,
+      0.022,
+    );
   const promotion = state.promotions.find((candidate) => candidate.id === event.promotionId)!;
   for (const person of allPeople) {
     const fatigue = loadBase * (1.15 - person.skills.stamina / 220);
     const wear = match.actualLengthMinutes
-      * (match.intent === "HIGH_RISK" ? 0.018 : match.intent === "EPIC" ? 0.012 : 0.008)
+      * (styleEvaluation === null
+        ? (match.intent === "HIGH_RISK" ? 0.018 : match.intent === "EPIC" ? 0.012 : 0.008)
+        : styledWearRate!)
       * (1.15 - person.skills.safety / 260);
     applyMatchLoad(person, fatigue, wear);
 
@@ -402,6 +535,25 @@ function resolveMatch(state: WorldState, planned: PlannedMatch, event: Wrestling
       crowd: match.crowdResponse,
       winnerSide: actualWinnerSide,
       finishChangedDueToInjury: match.finishChangedDueToInjury,
+      ...(styleEvaluation === null ? {} : {
+        styleResolver: "DIMENSIONAL",
+        styleCompetitiveness: match.style!.competitiveness,
+        styleTechnical: match.style!.technical,
+        styleStory: match.style!.story,
+        styleIntensity: match.style!.intensity,
+        styleRisk: match.style!.risk,
+        styleEpic: match.style!.epic,
+        stylePhysicalLoad: styleEvaluation.load.physical,
+        styleCreativeLoad: styleEvaluation.load.creative,
+        styleTotalLoad: styleEvaluation.load.total,
+        styleLoadBand: styleEvaluation.load.band,
+        styleDemand: styleEvaluation.demand,
+        styleCapability: styleEvaluation.capability,
+        styleShortfall: styleEvaluation.shortfall,
+        styleRealizedUpside: styleEvaluation.realizedUpside,
+        styleDifficultyPenalty: styleEvaluation.difficultyPenalty,
+        styleCrowdAppeal: styleEvaluation.crowdAppeal,
+      }),
     },
   });
 }
