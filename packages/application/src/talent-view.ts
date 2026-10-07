@@ -18,6 +18,7 @@ import {
   marketWeeklyValue,
   ppwDateToWeekIndex,
   wrestlerAlignment,
+  wrestlerAlignmentForPromotion,
 } from "../../sim-core/src/index.js";
 import {
   activePromotionControlForPlayer,
@@ -218,7 +219,7 @@ export function buildPlayerTalentManagementView(
       const person = peopleById.get(contract.personId);
       if (!person) return null;
       const remaining = weeksToExpiry(aggregate, contract.endDate);
-      const alignment = wrestlerAlignment(person, aggregate.state.world.seed);
+      const alignment = wrestlerAlignmentForPromotion(aggregate.state, promotion.id, person.id);
       return {
         contractId: contract.id,
         personId: person.id,
