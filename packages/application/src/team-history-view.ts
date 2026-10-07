@@ -34,6 +34,14 @@ export interface PlayerTeamChampionshipReignView {
   isCurrent: boolean;
 }
 
+export type PlayerTeamExperienceBand = "UNTESTED" | "NEW" | "DEVELOPING" | "ESTABLISHED" | "VETERAN";
+
+export interface PlayerTeamExperienceView {
+  band: PlayerTeamExperienceBand;
+  matchesTogether: number;
+  familiarity: number;
+}
+
 export interface PlayerTeamHistoryEntryView {
   teamId: Id;
   name: string;
@@ -45,6 +53,7 @@ export interface PlayerTeamHistoryEntryView {
   championshipReigns: PlayerTeamChampionshipReignView[];
   totalTitleReigns: number;
   totalDefenses: number;
+  experience: PlayerTeamExperienceView | null;
 }
 
 export interface PlayerTeamHistoryView {
@@ -58,6 +67,7 @@ export interface PlayerTeamHistoryView {
     playerId: string;
     promotionId: Id | null;
   };
+  canEdit: boolean;
   teams: PlayerTeamHistoryEntryView[];
 }
 
@@ -66,6 +76,14 @@ export interface PlayerTeamHistoryView {
  * championship lineage are shared World history. It deliberately excludes
  * contracts, money, Morale, fatigue, Wear, offers and future planning.
  */
+function experienceBand(matchesTogether: number): PlayerTeamExperienceBand {
+  if (matchesTogether <= 0) return "UNTESTED";
+  if (matchesTogether < 3) return "NEW";
+  if (matchesTogether < 8) return "DEVELOPING";
+  if (matchesTogether < 16) return "ESTABLISHED";
+  return "VETERAN";
+}
+
 export function buildPlayerTeamHistoryView(
   aggregate: ApplicationWorldAggregate,
   playerId: string,
@@ -125,6 +143,22 @@ export function buildPlayerTeamHistoryView(
         ) || right.reignId.localeCompare(left.reignId)
       ));
 
+    const currentMemberIds = memberHistory.filter((entry) => entry.active).map((entry) => entry.personId).sort();
+    const chemistry = currentMemberIds.length === 2
+      ? aggregate.state.workingChemistry.find((record) => (
+        record.context === "TAG"
+        && record.personAId === currentMemberIds[0]
+        && record.personBId === currentMemberIds[1]
+      ))
+      : null;
+    const experience = currentMemberIds.length === 2
+      ? {
+        band: experienceBand(chemistry?.matchesTogether ?? 0),
+        matchesTogether: chemistry?.matchesTogether ?? 0,
+        familiarity: Math.round((chemistry?.familiarity ?? 0) * 10) / 10,
+      } satisfies PlayerTeamExperienceView
+      : null;
+
     return {
       teamId: team.id,
       name: team.name,
@@ -136,6 +170,7 @@ export function buildPlayerTeamHistoryView(
       championshipReigns,
       totalTitleReigns: championshipReigns.length,
       totalDefenses: championshipReigns.reduce((total, reign) => total + reign.defenses, 0),
+      experience,
     };
   }).sort((left, right) => {
     if (left.status !== right.status) return left.status === "ACTIVE" ? -1 : 1;
@@ -155,6 +190,7 @@ export function buildPlayerTeamHistoryView(
       playerId: membership.playerId,
       promotionId: control?.promotionId ?? null,
     },
+    canEdit: aggregate.runtime.phase === "OPEN" && control !== null,
     teams,
   };
 }
