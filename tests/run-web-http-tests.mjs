@@ -226,6 +226,18 @@ try {
   ok(cardView.reservationId, "HTTP card editor did not load a real reservation");
   ok(cardView.participants.length === plan.participantIds.length, "HTTP card editor lost reserved wrestlers");
   const matches = completeSinglesCard(cardView);
+  const turnPerson = cardView.participants[0];
+  ok(turnPerson, "HTTP card view exposed no wrestler for Turn regression");
+  const turnTargetAlignment = turnPerson.alignment === "HEEL" ? "FACE" : "HEEL";
+  const turnSegment = {
+    draftSegmentId: `${cardView.draftId}:ci-turn`,
+    type: "TURN",
+    participantIds: [turnPerson.personId],
+    programmeId: null,
+    plannedLengthMinutes: 5,
+    turnPersonId: turnPerson.personId,
+    turnTargetAlignment,
+  };
   const savedCard = await json(await fetch(`${baseUrl}/api/show-card`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -235,11 +247,19 @@ try {
       expectedPlanVersion: cardView.workspaceVersion,
       draftId,
       matches,
+      segments: [turnSegment],
+      runningOrder: [
+        ...matches.map((match) => ({ kind: "MATCH", refId: match.draftMatchId })),
+        { kind: "SEGMENT", refId: turnSegment.draftSegmentId },
+      ],
       championshipAssignments: [],
     }),
   }));
   ok(savedCard.matches.length === matches.length, "HTTP match card did not persist every booked match");
   ok(savedCard.matches.every((match) => match.type === "SINGLES"), "HTTP match card changed booked match types");
+  ok(savedCard.segments?.length === 1 && savedCard.segments[0]?.type === "TURN", "HTTP show-card route rejected or dropped TURN");
+  ok(savedCard.segments[0]?.turnPersonId === turnPerson.personId, "HTTP show-card route dropped the turning wrestler");
+  ok(savedCard.segments[0]?.turnTargetAlignment === turnTargetAlignment, "HTTP show-card route dropped the target alignment");
 
   const ready = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
   ok(ready.promotion?.showPlanning?.currentPlan?.state === "RESERVED", "HTTP booked show lost its reserved planning state before lock");
@@ -268,6 +288,7 @@ try {
   ok(playerShow, "HTTP player results did not include the newly resolved show");
   ok(playerShow.matches.length === matches.length, "HTTP player results did not preserve the booked card");
   ok(playerShow.matches.every((match) => match.winnerNames.length > 0), "HTTP player results omitted match winners");
+  ok(playerShow.segments?.some((segment) => segment.type === "TURN"), "HTTP player results omitted the resolved Turn segment");
 
   const worldResults = await json(await fetch(`${baseUrl}/api/world-results`, { cache: "no-store" }));
   const worldShow = worldResults.shows?.find((show) => show.eventId === resolvedEventId);

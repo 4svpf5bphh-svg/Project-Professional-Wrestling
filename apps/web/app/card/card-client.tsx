@@ -327,9 +327,29 @@ export default function CardClient(): React.JSX.Element {
     participantIds[index] = personId;
     updateSegment(segmentId, {
       participantIds,
-      turnPersonId: segment.turnPersonId && participantIds.includes(segment.turnPersonId)
-        ? segment.turnPersonId
-        : segment.type === "TURN" ? (participantIds.find(Boolean) ?? null) : null,
+      turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
+    });
+  }
+
+  function setTurnPerson(segmentId: string, personId: string): void {
+    const segment = segments.find((candidate) => candidate.draftSegmentId === segmentId);
+    if (!segment || segment.type !== "TURN") return;
+    const previousTurner = segment.turnPersonId ?? null;
+    const otherParticipants = segment.participantIds.filter((candidate) => (
+      Boolean(candidate)
+      && candidate !== previousTurner
+      && candidate !== personId
+    ));
+    const participantIds = personId
+      ? [personId, ...otherParticipants]
+      : otherParticipants.length > 0 ? otherParticipants : [""];
+    const targetMatchesNewCurrent = personId
+      && segment.turnTargetAlignment
+      && segment.turnTargetAlignment === personAlignment(personId);
+    updateSegment(segmentId, {
+      participantIds,
+      turnPersonId: personId || null,
+      turnTargetAlignment: targetMatchesNewCurrent ? null : (segment.turnTargetAlignment ?? null),
     });
   }
 
@@ -428,23 +448,25 @@ export default function CardClient(): React.JSX.Element {
     return championship.holderPersonIds.every((personId) => ids.includes(personId));
   }
 
-  function segmentPersonOptions(segment: AlphaCardSegmentView, currentId: string): React.JSX.Element[] {
+  function segmentEligiblePeople(segment: AlphaCardSegmentView): AlphaCardParticipantView[] {
     if (!view) return [];
     const programme = segment.programmeId
       ? view.programmes.find((candidate) => candidate.programmeId === segment.programmeId)
       : null;
     const allowed = programme ? new Set(programme.participantIds) : null;
-    return view.availableParticipants
-      .filter((person) => !allowed || allowed.has(person.personId))
-      .map((person) => (
-        <option
-          key={person.personId}
-          value={person.personId}
-          disabled={segment.participantIds.some((personId) => personId === person.personId && personId !== currentId)}
-        >
-          {person.name} · {person.alignment} · POP {Math.round(person.popularity)}
-        </option>
-      ));
+    return view.availableParticipants.filter((person) => !allowed || allowed.has(person.personId));
+  }
+
+  function segmentPersonOptions(segment: AlphaCardSegmentView, currentId: string): React.JSX.Element[] {
+    return segmentEligiblePeople(segment).map((person) => (
+      <option
+        key={person.personId}
+        value={person.personId}
+        disabled={segment.participantIds.some((personId) => personId === person.personId && personId !== currentId)}
+      >
+        {person.name} · {person.alignment} · POP {Math.round(person.popularity)}
+      </option>
+    ));
   }
 
   async function save(): Promise<void> {
@@ -696,11 +718,13 @@ export default function CardClient(): React.JSX.Element {
                       <select
                         value={segment.turnPersonId ?? ""}
                         disabled={!view.canEdit}
-                        onChange={(event) => updateSegment(segment.draftSegmentId, { turnPersonId: event.target.value || null })}
+                        onChange={(event) => setTurnPerson(segment.draftSegmentId, event.target.value)}
                       >
                         <option value="">Choose wrestler</option>
-                        {segment.participantIds.filter(Boolean).map((personId) => (
-                          <option key={personId} value={personId}>{personName(personId)}</option>
+                        {segmentEligiblePeople(segment).map((person) => (
+                          <option key={person.personId} value={person.personId}>
+                            {person.name} · {person.alignment} · POP {Math.round(person.popularity)}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -724,22 +748,51 @@ export default function CardClient(): React.JSX.Element {
                   </div>
                 ) : null}
 
-                <div className={styles.segmentPeople}>
-                  <div className={styles.segmentPeopleHeader}>
-                    <span>Who is involved?</span>
-                    {segment.programmeId ? <small>Limited to this Programme</small> : <small>Any contracted wrestler</small>}
-                  </div>
-                  {segment.participantIds.map((personId, personIndex) => (
-                    <div className={styles.segmentPersonRow} key={personIndex}>
-                      <select value={personId} disabled={!view.canEdit} onChange={(event) => setSegmentParticipant(segment.draftSegmentId, personIndex, event.target.value)}>
-                        <option value="">Choose wrestler</option>{segmentPersonOptions(segment, personId)}
-                      </select>
-                      <button type="button" className={styles.smallRemove} disabled={!view.canEdit || segment.participantIds.length <= segmentMinimum(segment.type)} onClick={() => removeSegmentParticipant(segment.draftSegmentId, personIndex)}>×</button>
+                {segment.type === "TURN" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Others involved (optional)</span>
+                      <small>{segment.programmeId ? "Limited to this Programme" : "Add anyone else involved in the turn"}</small>
                     </div>
-                  ))}
-                  <button type="button" className={styles.secondaryButton} disabled={!view.canEdit || segment.participantIds.length >= 4} onClick={() => addSegmentParticipant(segment.draftSegmentId)}>+ Add wrestler</button>
-                  {view.programmes.length > 0 ? <a className={styles.programmeLink} href="/programmes">Manage Programmes →</a> : <a className={styles.programmeLink} href="/programmes">Start a Programme →</a>}
-                </div>
+                    {segment.participantIds.map((personId, personIndex) => {
+                      if (personId === segment.turnPersonId) return null;
+                      return (
+                        <div className={styles.segmentPersonRow} key={personIndex}>
+                          <select value={personId} disabled={!view.canEdit} onChange={(event) => setSegmentParticipant(segment.draftSegmentId, personIndex, event.target.value)}>
+                            <option value="">Choose wrestler</option>{segmentPersonOptions(segment, personId)}
+                          </select>
+                          <button type="button" className={styles.smallRemove} disabled={!view.canEdit || segment.participantIds.length <= 1} onClick={() => removeSegmentParticipant(segment.draftSegmentId, personIndex)}>×</button>
+                        </div>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      disabled={!view.canEdit || !segment.turnPersonId || segment.participantIds.length >= 4}
+                      onClick={() => addSegmentParticipant(segment.draftSegmentId)}
+                    >
+                      + Add another wrestler
+                    </button>
+                    {view.programmes.length > 0 ? <a className={styles.programmeLink} href="/programmes">Manage Programmes →</a> : <a className={styles.programmeLink} href="/programmes">Start a Programme →</a>}
+                  </div>
+                ) : (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Who is involved?</span>
+                      {segment.programmeId ? <small>Limited to this Programme</small> : <small>Any contracted wrestler</small>}
+                    </div>
+                    {segment.participantIds.map((personId, personIndex) => (
+                      <div className={styles.segmentPersonRow} key={personIndex}>
+                        <select value={personId} disabled={!view.canEdit} onChange={(event) => setSegmentParticipant(segment.draftSegmentId, personIndex, event.target.value)}>
+                          <option value="">Choose wrestler</option>{segmentPersonOptions(segment, personId)}
+                        </select>
+                        <button type="button" className={styles.smallRemove} disabled={!view.canEdit || segment.participantIds.length <= segmentMinimum(segment.type)} onClick={() => removeSegmentParticipant(segment.draftSegmentId, personIndex)}>×</button>
+                      </div>
+                    ))}
+                    <button type="button" className={styles.secondaryButton} disabled={!view.canEdit || segment.participantIds.length >= 4} onClick={() => addSegmentParticipant(segment.draftSegmentId)}>+ Add wrestler</button>
+                    {view.programmes.length > 0 ? <a className={styles.programmeLink} href="/programmes">Manage Programmes →</a> : <a className={styles.programmeLink} href="/programmes">Start a Programme →</a>}
+                  </div>
+                )}
 
                 <div className={styles.actions}>
                   <button className={styles.secondaryButton} type="button" disabled={!view.canEdit || slotIndex === 0} onClick={() => moveSlot(slotIndex, -1)}>↑ Earlier</button>

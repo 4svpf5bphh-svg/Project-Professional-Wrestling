@@ -125,12 +125,23 @@ function segmentLength(value: unknown, label: string): number {
 function segments(value: unknown): AlphaCardSegmentView[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) throw new Error("segments must be an array");
-  const supported = new Set(["PROMO", "INTERVIEW", "CONFRONTATION", "CHALLENGE", "ATTACK", "CELEBRATION"]);
+  const supported = new Set(["PROMO", "INTERVIEW", "CONFRONTATION", "CHALLENGE", "ATTACK", "CELEBRATION", "TURN"]);
   return value.map((entry, index) => {
     if (!entry || typeof entry !== "object") throw new Error(`segments[${index}] must be an object`);
     const candidate = entry as Record<string, unknown>;
     const type = requiredText(candidate.type, `segments[${index}].type`, 32);
     if (!supported.has(type)) throw new Error(`unsupported segment type ${type}`);
+    const turnPersonId = candidate.turnPersonId === null || candidate.turnPersonId === undefined || candidate.turnPersonId === ""
+      ? null
+      : requiredText(candidate.turnPersonId, `segments[${index}].turnPersonId`, 128);
+    const turnTargetAlignment = candidate.turnTargetAlignment === null
+      || candidate.turnTargetAlignment === undefined
+      || candidate.turnTargetAlignment === ""
+      ? null
+      : requiredText(candidate.turnTargetAlignment, `segments[${index}].turnTargetAlignment`, 16);
+    if (turnTargetAlignment !== null && !["FACE", "HEEL", "TWEENER"].includes(turnTargetAlignment)) {
+      throw new Error(`segments[${index}].turnTargetAlignment must be FACE, HEEL or TWEENER`);
+    }
     return {
       draftSegmentId: requiredText(candidate.draftSegmentId, `segments[${index}].draftSegmentId`, 128),
       type: type as AlphaCardSegmentView["type"],
@@ -139,6 +150,10 @@ function segments(value: unknown): AlphaCardSegmentView[] {
         ? null
         : requiredText(candidate.programmeId, `segments[${index}].programmeId`, 128),
       plannedLengthMinutes: segmentLength(candidate.plannedLengthMinutes, `segments[${index}].plannedLengthMinutes`),
+      turnPersonId: type === "TURN" ? turnPersonId : null,
+      turnTargetAlignment: type === "TURN"
+        ? turnTargetAlignment as AlphaCardSegmentView["turnTargetAlignment"]
+        : null,
     };
   });
 }
