@@ -222,6 +222,15 @@ export function createWorld(
   for (const promotion of promotions) {
     quotas.set(promotion.id, Math.max(quotas.get(promotion.id) ?? 0, assigned.get(promotion.id) ?? 0));
   }
+  const requiredContractSlots = targetContracted + Math.max(0, seededAssignments.length - seededPersonIds.size);
+  let quotaShortfall = requiredContractSlots - [...quotas.values()].reduce((sum, value) => sum + value, 0);
+  let quotaCursor = 0;
+  while (quotaShortfall > 0) {
+    const promotion = promotions[quotaCursor % promotions.length]!;
+    quotas.set(promotion.id, (quotas.get(promotion.id) ?? 0) + 1);
+    quotaCursor += 1;
+    quotaShortfall -= 1;
+  }
 
   const remainingTarget = Math.max(0, targetContracted - seededPersonIds.size);
   for (let i = 0; i < remainingTarget; i += 1) {
