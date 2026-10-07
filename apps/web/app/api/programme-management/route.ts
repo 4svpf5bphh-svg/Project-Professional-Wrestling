@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   loadAlphaProgrammeManagement,
   startAlphaManagedProgramme,
-} from "../../../../../../dist/packages/web-adapter/src/programme-management-service.js";
-import { withAlphaServerContext } from "../../../../../../dist/packages/web-adapter/src/server-world.js";
+} from "../../../../../dist/packages/web-adapter/src/programme-management-service.js";
+import { withAlphaServerContext } from "../../../../../dist/packages/web-adapter/src/server-world.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
