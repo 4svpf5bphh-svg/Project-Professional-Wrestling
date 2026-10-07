@@ -190,6 +190,7 @@ export const realPromotionEcosystemSource: WorldPromotionSource = (context) => {
       },
       contractPolicy: { ...template.contractPolicy },
       playerTakeoverEligibility: "LOCKED",
+      rosterMode: template.key === "WWE" || template.key === "NXT" ? "EXPLICIT" : "CONTRACT_DERIVED",
     };
   });
 };

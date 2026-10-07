@@ -8,6 +8,13 @@ import {
   seedRealActiveTagTeams,
 } from "../packages/content/src/real-active-tag-teams.js";
 import { calibratedRealActiveMensRosterSource } from "../packages/content/src/real-active-mens-calibration.js";
+import { calibratedRealActiveMixedRosterSource } from "../packages/content/src/real-active-mixed-roster.js";
+import {
+  NXT_INITIAL_ROSTER_NAMES,
+  WWE_INITIAL_ROSTER_NAMES,
+  WWE_NXT_ROSTER_SEED_REVIEWED_ON,
+  wweNxtInitialRosterAssignmentSource,
+} from "../packages/content/src/real-wwe-nxt-rosters.js";
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
@@ -365,6 +372,48 @@ test("initial roster assignments support deliberate non-exclusive dual employmen
     rejected = String(error).includes("overlapping exclusive employment");
   }
   ok(rejected, "exclusive initial employment overlapped another promotion");
+});
+
+test("first reviewed WWE/NXT seed separates WWE employment rights from NXT roster affiliation", () => {
+  const state = createWorld(
+    117,
+    REAL_WORLD_ALPHA_RULESET,
+    "WWE NXT Seed",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    wweNxtInitialRosterAssignmentSource,
+  );
+  equal(WWE_NXT_ROSTER_SEED_REVIEWED_ON, "2026-10-07");
+
+  const wwe = state.promotions.find((promotion) => promotion.name === "WWE")!;
+  const nxt = state.promotions.find((promotion) => promotion.name === "NXT")!;
+  equal(wwe.rosterMode, "EXPLICIT");
+  equal(nxt.rosterMode, "EXPLICIT");
+  equal(nxt.identity?.parentPromotionId, wwe.id);
+
+  const wweRosterNames = currentRosterPersonIds(state, wwe.id)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  const nxtRosterNames = currentRosterPersonIds(state, nxt.id)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+
+  for (const name of WWE_INITIAL_ROSTER_NAMES) ok(wweRosterNames.includes(name), `WWE seed missing ${name}`);
+  for (const name of NXT_INITIAL_ROSTER_NAMES) ok(nxtRosterNames.includes(name), `NXT seed missing ${name}`);
+  ok(!wweRosterNames.includes("Myles Borne"), "NXT wrestler leaked into WWE main roster");
+  ok(!nxtRosterNames.includes("Roman Reigns"), "WWE main-roster wrestler leaked into NXT");
+
+  const roman = state.people.find((person) => person.name === "Roman Reigns")!;
+  const myles = state.people.find((person) => person.name === "Myles Borne")!;
+  const romanContracts = activeContractsForPerson(state, roman.id);
+  const mylesContracts = activeContractsForPerson(state, myles.id);
+  equal(romanContracts.length, 1);
+  equal(mylesContracts.length, 1);
+  equal(romanContracts[0]!.promotionId, wwe.id);
+  equal(mylesContracts[0]!.promotionId, wwe.id);
+  equal(romanContracts[0]!.exclusivity, "EXCLUSIVE");
+  equal(mylesContracts[0]!.exclusivity, "EXCLUSIVE");
+  equal(roman.rosterPromotionId, wwe.id);
+  equal(myles.rosterPromotionId, nxt.id);
+  ok(!state.contracts.some((contract) => contract.personId === myles.id && contract.promotionId === nxt.id), "Myles Borne received a fake standalone NXT employment contract");
 });
 
 test("Genesis creates formal contracts while preserving free-agent supply", () => {
