@@ -158,10 +158,7 @@ export async function saveAlphaPlannerShowPlan(
       },
     );
 
-    if (
-      participantIds.length >= aggregate.state.ruleset.minEventParticipants
-      && participantIds.length % 2 === 0
-    ) {
+    if (participantIds.length >= aggregate.state.ruleset.minEventParticipants) {
       reserveDetailedShowDraftCommand(
         aggregate.state,
         aggregate.ownership,
