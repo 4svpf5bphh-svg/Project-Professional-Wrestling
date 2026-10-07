@@ -646,6 +646,33 @@ export async function loadAlphaShowCard(
 
   const market = draft.marketId ? aggregate.state.markets.find((candidate) => candidate.id === draft.marketId) : null;
   const venue = draft.venueId ? aggregate.state.venues.find((candidate) => candidate.id === draft.venueId) : null;
+  const programmes = cardProgrammes(aggregate.state, promotion.id);
+  const segments: AlphaCardSegmentView[] = [
+    ...(draft.segments ?? []).map((segment) => ({
+      draftSegmentId: segment.draftSegmentId,
+      type: segment.type,
+      participantIds: [...segment.participantIds],
+      programmeId: segment.programmeId,
+      plannedLengthMinutes: segment.plannedLengthMinutes,
+    })),
+    ...(draft.programmeSegments ?? []).map((segment) => ({
+      draftSegmentId: segment.draftSegmentId,
+      type: "PROMO" as const,
+      participantIds: [...segment.participantIds],
+      programmeId: segment.programmeId,
+      plannedLengthMinutes: 6,
+    })),
+  ];
+  const segmentIds = new Set(segments.map((segment) => segment.draftSegmentId));
+  const runningOrder: AlphaCardSlotView[] = draft.runningOrder
+    ? draft.runningOrder
+        .filter((slot) => slot.kind === "MATCH" || segmentIds.has(slot.refId))
+        .map((slot) => ({ kind: slot.kind, refId: slot.refId }))
+    : [
+        ...draft.matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+        ...segments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
+      ];
+
   const championships = (aggregate.state.championships ?? [])
     .filter((championship) => championship.promotionId === promotion.id && championship.status === "ACTIVE")
     .sort((a, b) => a.division.localeCompare(b.division) || a.name.localeCompare(b.name))
@@ -704,6 +731,9 @@ export async function loadAlphaShowCard(
         } satisfies AlphaCardMatchView]
         : []
     )),
+    segments,
+    runningOrder,
+    programmes,
     recentMeetings: recentMeetingsForParticipants(
       aggregate.state,
       promotion.id,
@@ -755,9 +785,21 @@ export async function saveAlphaShowCard(
     }
 
     const normalizedCard = normalizeCompleteCard(request.matches);
-    const matches = normalizedCard.matches;
-    const legacySegmentParticipants = (draft.programmeSegments ?? []).flatMap((segment) => segment.participantIds);
-    const participantIds = [...new Set([...normalizedCard.participantIds, ...legacySegmentParticipants])];
+    const normalizedSegments = normalizeSegments(request.segments, aggregate.state, control.promotionId);
+    const runningOrder = normalizeRunningOrder(request.runningOrder, normalizedCard.matches, normalizedSegments.segments);
+    const matchOrder = new Map(
+      runningOrder
+        .filter((slot) => slot.kind === "MATCH")
+        .map((slot, index) => [slot.refId, index]),
+    );
+    const matches = [...normalizedCard.matches].sort((left, right) => (
+      (matchOrder.get(left.draftMatchId) ?? Number.MAX_SAFE_INTEGER)
+      - (matchOrder.get(right.draftMatchId) ?? Number.MAX_SAFE_INTEGER)
+    ));
+    const participantIds = [...new Set([
+      ...normalizedCard.participantIds,
+      ...normalizedSegments.participantIds,
+    ])];
     if (participantIds.length < aggregate.state.ruleset.minEventParticipants) {
       throw new Error(`show booking requires at least ${aggregate.state.ruleset.minEventParticipants} wrestlers across the card`);
     }
@@ -786,6 +828,9 @@ export async function saveAlphaShowCard(
             participantIds,
             matches,
             championshipAssignments,
+            programmeSegments: undefined,
+            segments: normalizedSegments.segments,
+            runningOrder,
           },
         },
       },
