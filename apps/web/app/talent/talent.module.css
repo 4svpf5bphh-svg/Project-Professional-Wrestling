@@ -126,15 +126,16 @@
 .editor {
   position: fixed;
   left: 50%;
-  bottom: max(12px, env(safe-area-inset-bottom));
-  z-index: 60;
+  top: max(8px, env(safe-area-inset-top));
+  bottom: max(8px, env(safe-area-inset-bottom));
+  z-index: 200;
   width: min(900px, calc(100vw - 24px));
-  max-height: calc(100dvh - 24px - env(safe-area-inset-top));
   box-sizing: border-box;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   margin: 0;
-  overflow-y: auto;
+  overflow: hidden;
   overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
   transform: translateX(-50%);
   border: 1px solid rgba(93, 233, 206, .3);
   border-radius: 18px;
@@ -142,6 +143,14 @@
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .58), 0 16px 44px rgba(0, 0, 0, .46);
   clip-path: inset(-100vmax);
   padding: 16px;
+}
+
+.editorBody {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 2px;
 }
 
 .editorHeader,
@@ -517,10 +526,11 @@
   }
 
   .editor {
-    bottom: max(8px, env(safe-area-inset-bottom));
-    width: calc(100vw - 16px);
-    max-height: calc(100dvh - 16px - env(safe-area-inset-top));
+    top: max(6px, env(safe-area-inset-top));
+    bottom: max(6px, env(safe-area-inset-bottom));
+    width: calc(100vw - 12px);
     border-radius: 16px;
+    padding: 14px;
   }
 }
 

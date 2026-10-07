@@ -292,7 +292,8 @@ function OfferEditor({
         <button className={styles.button} type="button" onClick={onCancel} disabled={submitting}>Cancel</button>
       </div>
 
-      <div className={styles.formGrid}>
+      <div className={styles.editorBody}>
+        <div className={styles.formGrid}>
         <label>
           <span>Contract</span>
           <select value={draft.family} onChange={(event) => onChange(draftForFamily(event.target.value as OfferFamily, target.referenceValue, draft))}>
@@ -329,6 +330,7 @@ function OfferEditor({
           <span>Signing bonus</span>
           <input type="number" min={0} inputMode="numeric" value={draft.signingBonus} onChange={(event) => onChange({ ...draft, signingBonus: Number(event.target.value) })} />
         </label>
+        </div>
       </div>
 
       <div className={styles.editorFooter}>
@@ -353,6 +355,30 @@ export default function TalentClient(): React.JSX.Element {
   const [submitting, setSubmitting] = useState(false);
   const [target, setTarget] = useState<OfferTarget | null>(null);
   const [draft, setDraft] = useState<OfferDraft | null>(null);
+  const offerOpen = Boolean(target && draft);
+
+  useEffect(() => {
+    if (!offerOpen || typeof window === "undefined") return;
+    const body = document.body;
+    const scrollY = window.scrollY;
+    const previous = {
+      position: body.style.position,
+      top: body.style.top,
+      width: body.style.width,
+      overflow: body.style.overflow,
+    };
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+    return () => {
+      body.style.position = previous.position;
+      body.style.top = previous.top;
+      body.style.width = previous.width;
+      body.style.overflow = previous.overflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, [offerOpen]);
 
   async function refresh(): Promise<void> {
     setLoading(true);
