@@ -152,8 +152,15 @@ function familyForPromotion(promotion: Promotion, person: Person, rng: Determini
   return rng.chance(adjusted) ? "EXCLUSIVE" : "LIMITED_NON_EXCLUSIVE";
 }
 
-export function buildContractTerms(state: WorldState, promotion: Promotion, person: Person, rng: DeterministicRng, startDate = state.world.currentDate): ContractTerms {
-  const family = familyForPromotion(promotion, person, rng);
+export function buildContractTerms(
+  state: WorldState,
+  promotion: Promotion,
+  person: Person,
+  rng: DeterministicRng,
+  startDate = state.world.currentDate,
+  forcedFamily?: ContractFamily,
+): ContractTerms {
+  const family = forcedFamily ?? familyForPromotion(promotion, person, rng);
   const market = marketWeeklyValue(person);
   const generosity = 0.88 + (100 - promotion.aiProfile.financialCaution) / 300 + promotion.aiProfile.riskTolerance / 600;
   const roleExpectation = roleForPerson(person);

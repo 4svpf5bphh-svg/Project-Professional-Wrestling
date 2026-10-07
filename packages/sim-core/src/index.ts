@@ -13,6 +13,7 @@ export * from "./human-championships.js";
 export * from "./human-contracts.js";
 export * from "./human-control.js";
 export * from "./human-routine.js";
+export * from "./initial-roster-assignments.js";
 export * from "./id-allocator.js";
 export * from "./invariants.js";
 export * from "./ledger.js";

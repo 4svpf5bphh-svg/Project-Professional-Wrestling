@@ -31,6 +31,7 @@ import {
   buildContractTerms,
   generatedFictionalPromotionSource,
   generatedFictionalRosterSource,
+  type InitialRosterAssignmentSource,
   type WorldPromotionSource,
   upsertWrestlerRelationship,
   wrestlerRelationshipBetween,
@@ -262,6 +263,76 @@ test("real tag-team seeding is idempotent and does not duplicate teams or genesi
   seedRealActiveTagTeams(state);
   equal(state.teams?.length ?? 0, teamCount);
   equal(state.ledger.filter((entry) => entry.type === "TAG_TEAM_PRESENT_AT_GENESIS").length, ledgerCount);
+});
+
+test("initial roster assignment source pins wrestlers to promotions without changing default Genesis", () => {
+  const baseline = createWorld(111, DEFAULT_RULESET);
+  const explicitEmpty = createWorld(
+    111,
+    DEFAULT_RULESET,
+    "PPW Test World",
+    generatedFictionalRosterSource,
+    generatedFictionalPromotionSource,
+    () => [],
+  );
+  equal(deterministicWorldHash(explicitEmpty), deterministicWorldHash(baseline));
+
+  const source: InitialRosterAssignmentSource = ({ people, promotions }) => [
+    {
+      personId: people[0]!.id,
+      promotionId: promotions[0]!.id,
+      family: "EXCLUSIVE",
+    },
+  ];
+  const pinned = createWorld(
+    112,
+    DEFAULT_RULESET,
+    "Pinned Genesis",
+    generatedFictionalRosterSource,
+    generatedFictionalPromotionSource,
+    source,
+  );
+  const person = pinned.people[0]!;
+  const contracts = activeContractsForPerson(pinned, person.id);
+  equal(contracts.length, 1);
+  equal(contracts[0]!.promotionId, pinned.promotions[0]!.id);
+  equal(contracts[0]!.family, "EXCLUSIVE");
+  equal(contracts[0]!.exclusivity, "EXCLUSIVE");
+});
+
+test("initial roster assignments support deliberate non-exclusive dual employment but reject exclusive overlap", () => {
+  const dualSource: InitialRosterAssignmentSource = ({ people, promotions }) => [
+    { personId: people[0]!.id, promotionId: promotions[1]!.id, family: "LIMITED_NON_EXCLUSIVE" },
+    { personId: people[0]!.id, promotionId: promotions[2]!.id, family: "LIMITED_NON_EXCLUSIVE" },
+  ];
+  const dual = createWorld(
+    113,
+    DEFAULT_RULESET,
+    "Dual Genesis",
+    generatedFictionalRosterSource,
+    generatedFictionalPromotionSource,
+    dualSource,
+  );
+  equal(activeContractsForPerson(dual, dual.people[0]!.id).length, 2);
+
+  const brokenSource: InitialRosterAssignmentSource = ({ people, promotions }) => [
+    { personId: people[0]!.id, promotionId: promotions[0]!.id, family: "EXCLUSIVE" },
+    { personId: people[0]!.id, promotionId: promotions[1]!.id, family: "LIMITED_NON_EXCLUSIVE" },
+  ];
+  let rejected = false;
+  try {
+    createWorld(
+      114,
+      DEFAULT_RULESET,
+      "Broken Genesis",
+      generatedFictionalRosterSource,
+      generatedFictionalPromotionSource,
+      brokenSource,
+    );
+  } catch (error) {
+    rejected = String(error).includes("overlapping exclusive employment");
+  }
+  ok(rejected, "exclusive initial employment overlapped another promotion");
 });
 
 test("Genesis creates formal contracts while preserving free-agent supply", () => {

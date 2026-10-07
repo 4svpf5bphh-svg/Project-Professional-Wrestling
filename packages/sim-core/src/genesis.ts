@@ -14,7 +14,7 @@ import type {
   WrestlerSkills,
 } from "../../domain/src/types.js";
 import { buildContractTerms, createSignedContract, defaultPromotionContractPolicy, targetRosterSize } from "./contracts.js";
-import { DeterministicRng } from "./rng.js";
+import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 import { registerEntityIdCounters } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import {
@@ -27,6 +27,11 @@ import {
   type WorldPromotionSource,
   type WorldPromotionSourceContext,
 } from "./promotion-source.js";
+import {
+  emptyInitialRosterAssignmentSource,
+  validateInitialRosterAssignments,
+  type InitialRosterAssignmentSource,
+} from "./initial-roster-assignments.js";
 
 const MARKET_PREFIXES = [
   "North", "South", "East", "West", "Central", "Upper", "Lower", "Grand", "River", "Crown",
@@ -106,6 +111,7 @@ export function createWorld(
   name = "PPW Test World",
   rosterSource: WorldRosterSource = generatedFictionalRosterSource,
   promotionSource: WorldPromotionSource = generatedFictionalPromotionSource,
+  initialRosterAssignmentSource: InitialRosterAssignmentSource = emptyInitialRosterAssignmentSource,
 ): WorldState {
   const rng = new DeterministicRng(seed);
   const worldId = `world-${seed >>> 0}`;
@@ -176,14 +182,49 @@ export function createWorld(
     });
   }
   const targetContracted = Math.floor(people.length * ruleset.initialContractedTalentRatio);
-  const sortedByValue = [...people].sort((a, b) => (
-    b.skills.inRingQuality + b.skills.matchCraft + b.skills.presentation + b.recognition + b.popularity
-  ) - (
-    a.skills.inRingQuality + a.skills.matchCraft + a.skills.presentation + a.recognition + a.popularity
-  ) || a.id.localeCompare(b.id));
-  const quotas = rosterQuotas(promotions, targetContracted);
+  const seededAssignments = validateInitialRosterAssignments(
+    state,
+    initialRosterAssignmentSource({
+      world,
+      ruleset,
+      people,
+      promotions,
+    }),
+  );
   const assigned = new Map(promotions.map((promotion) => [promotion.id, 0]));
-  for (let i = 0; i < targetContracted; i += 1) {
+  const seededPersonIds = new Set<string>();
+  for (const assignment of seededAssignments) {
+    const person = people.find((candidate) => candidate.id === assignment.personId)!;
+    const promotion = promotions.find((candidate) => candidate.id === assignment.promotionId)!;
+    seededPersonIds.add(person.id);
+    assigned.set(promotion.id, (assigned.get(promotion.id) ?? 0) + 1);
+    const terms = buildContractTerms(
+      state,
+      promotion,
+      person,
+      new DeterministicRng(
+        deterministicSeedFromText(`${world.seed}:genesis-contract:${promotion.id}:${person.id}`),
+      ),
+      state.world.currentDate,
+      assignment.family,
+    );
+    createSignedContract(state, person, promotion, { ...terms, signingBonus: 0 }, null, true);
+  }
+
+  const sortedByValue = people
+    .filter((person) => !seededPersonIds.has(person.id))
+    .sort((a, b) => (
+      b.skills.inRingQuality + b.skills.matchCraft + b.skills.presentation + b.recognition + b.popularity
+    ) - (
+      a.skills.inRingQuality + a.skills.matchCraft + a.skills.presentation + a.recognition + a.popularity
+    ) || a.id.localeCompare(b.id));
+  const quotas = rosterQuotas(promotions, targetContracted);
+  for (const promotion of promotions) {
+    quotas.set(promotion.id, Math.max(quotas.get(promotion.id) ?? 0, assigned.get(promotion.id) ?? 0));
+  }
+
+  const remainingTarget = Math.max(0, targetContracted - seededPersonIds.size);
+  for (let i = 0; i < remainingTarget; i += 1) {
     const person = sortedByValue[i]!;
     const eligible = promotions.filter(
       (promotion) => (assigned.get(promotion.id) ?? 0) < (quotas.get(promotion.id) ?? 0),
