@@ -118,6 +118,8 @@ export function deterministicWorldHash(state: WorldState): string {
   }
   if (state.programmes?.length) collections.push(["programmes", state.programmes]);
   if (state.programmeActivities?.length) collections.push(["programmeActivities", state.programmeActivities]);
+  if (state.wrestlerRelationships?.length) collections.push(["wrestlerRelationships", state.wrestlerRelationships]);
+  if (state.wrestlerPromotionAffiliations?.length) collections.push(["wrestlerPromotionAffiliations", state.wrestlerPromotionAffiliations]);
 
   for (const [name, collection] of collections) {
     hash = fnv1a32Update(hash, `|${name}:${collection.length}:[`);

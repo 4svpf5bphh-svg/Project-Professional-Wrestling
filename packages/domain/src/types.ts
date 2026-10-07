@@ -9,6 +9,8 @@ export type PromotionIdentityOrigin = "REAL_WORLD" | "FICTIONAL";
 export type OutsideBookingPolicy = "PROHIBITED" | "APPROVAL_REQUIRED" | "PERMITTED";
 export type PromotionPlayerTakeoverEligibility = "LOCKED" | "STANDARD";
 export type PromotionRosterMode = "CONTRACT_DERIVED" | "EXPLICIT";
+export type WrestlerPromotionAffiliationRole = "PRIMARY" | "SECONDARY";
+export type WrestlerPromotionAffiliationBasis = "CONTRACT" | "PARENT_COMPANY";
 export type WrestlerDivision = "MEN" | "WOMEN";
 export type CareerStage = "PROSPECT" | "PRIME" | "VETERAN" | "SPECIAL_ATTRACTION";
 export type PersonStatus = "ACTIVE" | "INJURED" | "RETIRED";
@@ -213,6 +215,14 @@ export interface PromotionMarketState {
   awareness: number;
   liveStrength: number;
   loyalty: number;
+}
+
+export interface WrestlerPromotionAffiliation {
+  worldId: Id;
+  personId: Id;
+  promotionId: Id;
+  role: WrestlerPromotionAffiliationRole;
+  basis: WrestlerPromotionAffiliationBasis;
 }
 
 export interface WrestlerSkills {
@@ -500,6 +510,7 @@ export interface WorldState {
   injuries: Injury[];
   workingChemistry: WorkingChemistry[];
   wrestlerRelationships?: WrestlerRelationship[];
+  wrestlerPromotionAffiliations?: WrestlerPromotionAffiliation[];
   teams?: Team[];
   teamMemberships?: TeamMembership[];
   championships?: Championship[];

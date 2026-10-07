@@ -160,6 +160,7 @@ export function createWorld(
     matchParticipants: [],
     injuries: [],
     workingChemistry: [],
+    wrestlerPromotionAffiliations: [],
     financialTransactions: [],
     ledger: [],
   };
@@ -197,7 +198,22 @@ export function createWorld(
     const person = people.find((candidate) => candidate.id === assignment.personId)!;
     const promotion = promotions.find((candidate) => candidate.id === assignment.promotionId)!;
     seededPersonIds.add(person.id);
-    if (assignment.rosterPromotionId !== undefined) person.rosterPromotionId = assignment.rosterPromotionId;
+    const affiliations = assignment.rosterAffiliations
+      ?? (assignment.rosterPromotionId === undefined ? [] : [{
+        promotionId: assignment.rosterPromotionId,
+        role: "PRIMARY" as const,
+        basis: assignment.rosterPromotionId === assignment.promotionId ? "CONTRACT" as const : "PARENT_COMPANY" as const,
+      }]);
+    for (const affiliation of affiliations) {
+      state.wrestlerPromotionAffiliations!.push({
+        worldId,
+        personId: person.id,
+        promotionId: affiliation.promotionId,
+        role: affiliation.role,
+        basis: affiliation.basis,
+      });
+      if (affiliation.role === "PRIMARY") person.rosterPromotionId = affiliation.promotionId;
+    }
     assigned.set(promotion.id, (assigned.get(promotion.id) ?? 0) + 1);
     const terms = buildContractTerms(
       state,

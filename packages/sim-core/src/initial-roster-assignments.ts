@@ -6,12 +6,21 @@ import type {
   Ruleset,
   World,
   WorldState,
+  WrestlerPromotionAffiliationBasis,
+  WrestlerPromotionAffiliationRole,
 } from "../../domain/src/types.js";
+
+export interface InitialRosterAffiliation {
+  promotionId: Id;
+  role: WrestlerPromotionAffiliationRole;
+  basis: WrestlerPromotionAffiliationBasis;
+}
 
 export interface InitialRosterAssignment {
   personId: Id;
   promotionId: Id;
   rosterPromotionId?: Id;
+  rosterAffiliations?: InitialRosterAffiliation[];
   family: Extract<ContractFamily, "EXCLUSIVE" | "LIMITED_NON_EXCLUSIVE">;
 }
 
@@ -36,7 +45,8 @@ export function validateInitialRosterAssignments(
   const promotions = new Set(state.promotions.map((promotion) => promotion.id));
   const exactKeys = new Set<string>();
   const byPerson = new Map<Id, InitialRosterAssignment[]>();
-  const rosterPromotionByPerson = new Map<Id, Id>();
+  const affiliationKeys = new Set<string>();
+  const primaryPromotionByPerson = new Map<Id, Id>();
 
   for (const assignment of assignments) {
     if (!people.has(assignment.personId)) {
@@ -51,12 +61,35 @@ export function validateInitialRosterAssignments(
     if (assignment.family !== "EXCLUSIVE" && assignment.family !== "LIMITED_NON_EXCLUSIVE") {
       throw new Error("initial roster assignment uses unsupported contract family");
     }
-    if (assignment.rosterPromotionId !== undefined) {
-      const existingRosterPromotionId = rosterPromotionByPerson.get(assignment.personId);
-      if (existingRosterPromotionId !== undefined && existingRosterPromotionId !== assignment.rosterPromotionId) {
-        throw new Error(`initial roster assignment gives ${assignment.personId} multiple primary rosters`);
+    const affiliations: InitialRosterAffiliation[] = assignment.rosterAffiliations
+      ?? (assignment.rosterPromotionId === undefined ? [] : [{
+        promotionId: assignment.rosterPromotionId,
+        role: "PRIMARY",
+        basis: assignment.rosterPromotionId === assignment.promotionId ? "CONTRACT" : "PARENT_COMPANY",
+      }]);
+    for (const affiliation of affiliations) {
+      if (!promotions.has(affiliation.promotionId)) {
+        throw new Error(`initial roster assignment references missing roster promotion ${affiliation.promotionId}`);
       }
-      rosterPromotionByPerson.set(assignment.personId, assignment.rosterPromotionId);
+      const affiliationKey = `${assignment.personId}:${affiliation.promotionId}`;
+      if (affiliationKeys.has(affiliationKey)) throw new Error(`duplicate initial roster affiliation ${affiliationKey}`);
+      affiliationKeys.add(affiliationKey);
+      if (affiliation.role === "PRIMARY") {
+        const existingPrimary = primaryPromotionByPerson.get(assignment.personId);
+        if (existingPrimary !== undefined && existingPrimary !== affiliation.promotionId) {
+          throw new Error(`initial roster assignment gives ${assignment.personId} multiple primary rosters`);
+        }
+        primaryPromotionByPerson.set(assignment.personId, affiliation.promotionId);
+      }
+      if (affiliation.basis === "CONTRACT" && affiliation.promotionId !== assignment.promotionId) {
+        throw new Error("contract-backed roster affiliation must match its employment contract");
+      }
+      if (affiliation.basis === "PARENT_COMPANY") {
+        const rosterPromotion = state.promotions.find((promotion) => promotion.id === affiliation.promotionId)!;
+        if (rosterPromotion.identity?.parentPromotionId !== assignment.promotionId) {
+          throw new Error("parent-company roster affiliation must belong to a child promotion");
+        }
+      }
     }
     const key = `${assignment.personId}:${assignment.promotionId}`;
     if (exactKeys.has(key)) throw new Error(`duplicate initial roster assignment ${key}`);

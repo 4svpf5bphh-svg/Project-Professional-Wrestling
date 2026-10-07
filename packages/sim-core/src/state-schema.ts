@@ -12,8 +12,8 @@ import {
 } from "./id-allocator.js";
 import { validateProgrammeState } from "./programmes.js";
 
-export const CURRENT_WORLD_STATE_SCHEMA_VERSION = 5 as const;
-export type WorldStateSchemaVersion = 1 | 2 | 3 | 4 | typeof CURRENT_WORLD_STATE_SCHEMA_VERSION;
+export const CURRENT_WORLD_STATE_SCHEMA_VERSION = 6 as const;
+export type WorldStateSchemaVersion = 1 | 2 | 3 | 4 | 5 | typeof CURRENT_WORLD_STATE_SCHEMA_VERSION;
 
 /**
  * Schema v1 was the first explicit persistence contract. Human championship
@@ -82,7 +82,14 @@ export interface PersistedWorldStateV5 extends Omit<PersistedWorldStateV4, "stat
   promotionWrestlerPresentations: PromotionWrestlerPresentation[];
 }
 
-export type PersistedWorldState = PersistedWorldStateV5;
+/** Schema v6 persists wrestler relationships and multi-promotion roster affiliations. */
+export interface PersistedWorldStateV6 extends Omit<PersistedWorldStateV5, "stateSchemaVersion"> {
+  stateSchemaVersion: 6;
+  wrestlerRelationships: NonNullable<WorldState["wrestlerRelationships"]>;
+  wrestlerPromotionAffiliations: NonNullable<WorldState["wrestlerPromotionAffiliations"]>;
+}
+
+export type PersistedWorldState = PersistedWorldStateV6;
 
 const REQUIRED_ARRAY_FIELDS_V1 = [
   "markets",
@@ -125,6 +132,12 @@ const REQUIRED_ARRAY_FIELDS_V5 = [
   ...REQUIRED_ARRAY_FIELDS_V4,
   "promotionWrestlerPresentations",
 ] as const satisfies readonly (keyof PersistedWorldStateV5)[];
+
+const REQUIRED_ARRAY_FIELDS_V6 = [
+  ...REQUIRED_ARRAY_FIELDS_V5,
+  "wrestlerRelationships",
+  "wrestlerPromotionAffiliations",
+] as const satisfies readonly (keyof PersistedWorldStateV6)[];
 
 function clone<T>(value: T): T {
   return structuredClone(value);
@@ -236,12 +249,22 @@ function migrateV4ToV5(snapshot: PersistedWorldStateV4): PersistedWorldStateV5 {
   const { stateSchemaVersion: _oldVersion, ...rest } = clone(snapshot);
   return {
     ...rest,
-    stateSchemaVersion: CURRENT_WORLD_STATE_SCHEMA_VERSION,
+    stateSchemaVersion: 5,
     promotionWrestlerPresentations: [],
   };
 }
 
-function validateChampionshipMatchBookings(snapshot: PersistedWorldStateV2 | PersistedWorldStateV3 | PersistedWorldStateV4 | PersistedWorldStateV5): void {
+function migrateV5ToV6(snapshot: PersistedWorldStateV5): PersistedWorldStateV6 {
+  const { stateSchemaVersion: _oldVersion, ...rest } = clone(snapshot);
+  return {
+    ...rest,
+    stateSchemaVersion: CURRENT_WORLD_STATE_SCHEMA_VERSION,
+    wrestlerRelationships: [],
+    wrestlerPromotionAffiliations: [],
+  };
+}
+
+function validateChampionshipMatchBookings(snapshot: PersistedWorldStateV2 | PersistedWorldStateV3 | PersistedWorldStateV4 | PersistedWorldStateV5 | PersistedWorldStateV6): void {
   const promotionIds = new Set(snapshot.promotions.map((promotion) => promotion.id));
   const eventById = new Map(snapshot.events.map((event) => [event.id, event]));
   const matchById = new Map(snapshot.matches.map((match) => [match.id, match]));
@@ -270,7 +293,7 @@ function validateChampionshipMatchBookings(snapshot: PersistedWorldStateV2 | Per
 }
 
 /** Convert live simulation state into the current persistence schema. */
-export function createPersistedWorldState(state: WorldState): PersistedWorldStateV5 {
+export function createPersistedWorldState(state: WorldState): PersistedWorldStateV6 {
   return clone({
     stateSchemaVersion: CURRENT_WORLD_STATE_SCHEMA_VERSION,
     world: state.world,
@@ -300,22 +323,32 @@ export function createPersistedWorldState(state: WorldState): PersistedWorldStat
     programmes: state.programmes ?? [],
     programmeActivities: state.programmeActivities ?? [],
     promotionWrestlerPresentations: state.promotionWrestlerPresentations ?? [],
+    wrestlerRelationships: state.wrestlerRelationships ?? [],
+    wrestlerPromotionAffiliations: state.wrestlerPromotionAffiliations ?? [],
     entityIdCounters: snapshotEntityIdCounters(state),
     financialTransactions: state.financialTransactions,
     ledger: state.ledger,
   });
 }
 
-function restoreV5(snapshot: PersistedWorldStateV5): WorldState {
+function restoreV6(snapshot: PersistedWorldStateV6): WorldState {
   validateChampionshipMatchBookings(snapshot);
   const {
     stateSchemaVersion: _stateSchemaVersion,
     entityIdCounters,
     promotionTalentTrust,
     promotionWrestlerPresentations,
+    wrestlerRelationships,
+    wrestlerPromotionAffiliations,
     ...base
   } = clone(snapshot);
-  const state: WorldState = { ...base, promotionTalentTrust, promotionWrestlerPresentations };
+  const state: WorldState = {
+    ...base,
+    promotionTalentTrust,
+    promotionWrestlerPresentations,
+    wrestlerRelationships,
+    wrestlerPromotionAffiliations,
+  };
   const programmeErrors = validateProgrammeState(state);
   if (programmeErrors.length > 0) throw new Error(`persisted Programme state is invalid: ${programmeErrors[0]}`);
   const validatedCounters = validateEntityIdCounters(entityIdCounters, state);
@@ -331,23 +364,27 @@ export function restorePersistedWorldState(input: unknown): WorldState {
   if (input.stateSchemaVersion === 1) {
     validateArrayFields(input, REQUIRED_ARRAY_FIELDS_V1);
     const v2 = migrateV1ToV2(input as unknown as PersistedWorldStateV1);
-    return restoreV5(migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(v2))));
+    return restoreV6(migrateV5ToV6(migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(v2)))));
   }
   if (input.stateSchemaVersion === 2) {
     validateArrayFields(input, REQUIRED_ARRAY_FIELDS_V2);
-    return restoreV5(migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(input as unknown as PersistedWorldStateV2))));
+    return restoreV6(migrateV5ToV6(migrateV4ToV5(migrateV3ToV4(migrateV2ToV3(input as unknown as PersistedWorldStateV2)))));
   }
   if (input.stateSchemaVersion === 3) {
     validateArrayFields(input, REQUIRED_ARRAY_FIELDS_V2);
-    return restoreV5(migrateV4ToV5(migrateV3ToV4(input as unknown as PersistedWorldStateV3)));
+    return restoreV6(migrateV5ToV6(migrateV4ToV5(migrateV3ToV4(input as unknown as PersistedWorldStateV3))));
   }
   if (input.stateSchemaVersion === 4) {
     validateArrayFields(input, REQUIRED_ARRAY_FIELDS_V4);
-    return restoreV5(migrateV4ToV5(input as unknown as PersistedWorldStateV4));
+    return restoreV6(migrateV5ToV6(migrateV4ToV5(input as unknown as PersistedWorldStateV4)));
+  }
+  if (input.stateSchemaVersion === 5) {
+    validateArrayFields(input, REQUIRED_ARRAY_FIELDS_V5);
+    return restoreV6(migrateV5ToV6(input as unknown as PersistedWorldStateV5));
   }
   if (input.stateSchemaVersion === CURRENT_WORLD_STATE_SCHEMA_VERSION) {
-    validateArrayFields(input, REQUIRED_ARRAY_FIELDS_V5);
-    return restoreV5(input as unknown as PersistedWorldStateV5);
+    validateArrayFields(input, REQUIRED_ARRAY_FIELDS_V6);
+    return restoreV6(input as unknown as PersistedWorldStateV6);
   }
   throw new Error(`unsupported World state schema version: ${String(input.stateSchemaVersion)}`);
 }

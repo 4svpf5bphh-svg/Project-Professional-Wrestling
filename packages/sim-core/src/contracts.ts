@@ -85,13 +85,53 @@ export function contractGrantsBookingRightsToPromotion(
   return promotion?.identity?.parentPromotionId === contract.promotionId;
 }
 
+export function wrestlerPromotionAffiliationsForPerson(
+  state: WorldState,
+  personId: Id,
+): NonNullable<WorldState["wrestlerPromotionAffiliations"]> {
+  const explicit = state.wrestlerPromotionAffiliations ?? [];
+  if (explicit.some((affiliation) => affiliation.personId === personId)) {
+    return explicit.filter((affiliation) => affiliation.personId === personId);
+  }
+  const person = state.people.find((candidate) => candidate.id === personId);
+  if (!person?.rosterPromotionId) return [];
+  const promotion = state.promotions.find((candidate) => candidate.id === person.rosterPromotionId);
+  const activeContracts = activeContractsForPerson(state, person.id);
+  const direct = activeContracts.some((contract) => contract.promotionId === person.rosterPromotionId);
+  const parent = promotion?.identity?.parentPromotionId;
+  const parentBacked = parent !== null && parent !== undefined
+    && activeContracts.some((contract) => contract.promotionId === parent);
+  return [{
+    worldId: state.world.id,
+    personId,
+    promotionId: person.rosterPromotionId,
+    role: "PRIMARY",
+    basis: direct ? "CONTRACT" : parentBacked ? "PARENT_COMPANY" : "CONTRACT",
+  }];
+}
+
+export function wrestlerAffiliationHasBookingRights(
+  state: WorldState,
+  affiliation: NonNullable<WorldState["wrestlerPromotionAffiliations"]>[number],
+): boolean {
+  const contracts = activeContractsForPerson(state, affiliation.personId);
+  if (affiliation.basis === "CONTRACT") {
+    return contracts.some((contract) => contract.promotionId === affiliation.promotionId);
+  }
+  const promotion = state.promotions.find((candidate) => candidate.id === affiliation.promotionId);
+  const parentPromotionId = promotion?.identity?.parentPromotionId;
+  return parentPromotionId !== null && parentPromotionId !== undefined
+    && contracts.some((contract) => contract.promotionId === parentPromotionId);
+}
+
 export function currentRosterPersonIds(state: WorldState, promotionId: Id): Id[] {
   const promotion = state.promotions.find((candidate) => candidate.id === promotionId);
   if (promotion?.rosterMode === "EXPLICIT") {
     return state.people
-      .filter((person) => person.rosterPromotionId === promotionId && person.status !== "RETIRED")
-      .filter((person) => activeContractsForPerson(state, person.id)
-        .some((contract) => contractGrantsBookingRightsToPromotion(state, contract, promotionId)))
+      .filter((person) => person.status !== "RETIRED")
+      .filter((person) => wrestlerPromotionAffiliationsForPerson(state, person.id)
+        .some((affiliation) => affiliation.promotionId === promotionId
+          && wrestlerAffiliationHasBookingRights(state, affiliation)))
       .map((person) => person.id);
   }
   return [...new Set(activeContractsForPromotion(state, promotionId).map((contract) => contract.personId))];

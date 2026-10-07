@@ -161,6 +161,25 @@ export function validateWorldInvariants(state: WorldState): string[] {
     if (new Set(relationship.tags).size !== relationship.tags.length) errors.push(`wrestler relationship ${relationship.id} contains duplicate tags`);
   }
 
+  const affiliationKeys = new Set<string>();
+  const primaryAffiliations = new Set<string>();
+  for (const affiliation of state.wrestlerPromotionAffiliations ?? []) {
+    const key = `${affiliation.personId}:${affiliation.promotionId}`;
+    if (affiliationKeys.has(key)) errors.push(`duplicate wrestler promotion affiliation ${key}`);
+    affiliationKeys.add(key);
+    if (affiliation.worldId !== state.world.id) errors.push(`wrestler promotion affiliation ${key} crosses world boundary`);
+    if (!personIds.has(affiliation.personId)) errors.push(`wrestler promotion affiliation ${key} references missing person`);
+    if (!promotionIds.has(affiliation.promotionId)) errors.push(`wrestler promotion affiliation ${key} references missing promotion`);
+    if (affiliation.role === "PRIMARY") {
+      if (primaryAffiliations.has(affiliation.personId)) errors.push(`wrestler ${affiliation.personId} has multiple primary promotion affiliations`);
+      primaryAffiliations.add(affiliation.personId);
+    }
+    if (affiliation.basis === "PARENT_COMPANY") {
+      const promotion = state.promotions.find((candidate) => candidate.id === affiliation.promotionId);
+      if (!promotion?.identity?.parentPromotionId) errors.push(`wrestler promotion affiliation ${key} has parent-company basis without a parent promotion`);
+    }
+  }
+
   const transactionIds = new Set<string>();
   for (const transaction of state.financialTransactions) { if (transactionIds.has(transaction.id)) errors.push(`duplicate financial transaction id: ${transaction.id}`); transactionIds.add(transaction.id); if (transaction.worldId !== state.world.id) errors.push(`financial transaction ${transaction.id} crosses world boundary`); if (!promotionIds.has(transaction.promotionId)) errors.push(`financial transaction ${transaction.id} references missing promotion`); if (!Number.isFinite(transaction.amount)) errors.push(`financial transaction ${transaction.id} has non-finite amount`); }
   const ledgerIds = new Set<string>();

@@ -105,6 +105,8 @@ test("persisted World state has an explicit schema version and materializes lazy
   ok(Array.isArray(snapshot.programmes), "Programmes were not materialized");
   ok(Array.isArray(snapshot.programmeActivities), "Programme activities were not materialized");
   ok(Array.isArray(snapshot.promotionWrestlerPresentations), "promotion wrestler presentation was not materialized");
+  ok(Array.isArray(snapshot.wrestlerRelationships), "wrestler relationships were not materialized");
+  ok(Array.isArray(snapshot.wrestlerPromotionAffiliations), "wrestler promotion affiliations were not materialized");
   ok(state.promotionStandings === undefined, "serializing mutated the live promotion standings collection");
   ok(state.teams === undefined, "serializing mutated the live teams collection");
   ok(state.championshipMatchBookings === undefined, "serializing mutated live championship booking state");
@@ -147,6 +149,8 @@ test("schema v1 migrates unresolved Ledger title intent through the current live
     programmes: _discardV4Programmes,
     programmeActivities: _discardV4Activities,
     promotionWrestlerPresentations: _discardV5Presentation,
+    wrestlerRelationships: _discardV6Relationships,
+    wrestlerPromotionAffiliations: _discardV6Affiliations,
     ...legacyBody
   } = current;
   const legacyV1 = { ...legacyBody, stateSchemaVersion: 1 };
@@ -189,6 +193,46 @@ test("schema v4 migrates with empty promotion wrestler presentation state", () =
   ok(current.stateSchemaVersion === CURRENT_WORLD_STATE_SCHEMA_VERSION, "v4 migration did not upgrade to current schema");
 });
 
+test("schema v5 migrates with empty relationship and roster-affiliation collections", () => {
+  const snapshot = createPersistedWorldState(createWorld(22011, DEFAULT_RULESET));
+  const legacyV5: any = structuredClone(snapshot);
+  legacyV5.stateSchemaVersion = 5;
+  delete legacyV5.wrestlerRelationships;
+  delete legacyV5.wrestlerPromotionAffiliations;
+
+  const restored = restorePersistedWorldState(legacyV5);
+  ok(Array.isArray(restored.wrestlerRelationships), "v5 migration did not initialize wrestler relationships");
+  ok(Array.isArray(restored.wrestlerPromotionAffiliations), "v5 migration did not initialize roster affiliations");
+  ok(restored.wrestlerRelationships?.length === 0, "v5 migration invented wrestler relationships");
+  ok(restored.wrestlerPromotionAffiliations?.length === 0, "v5 migration invented roster affiliations");
+});
+
+test("current schema persists relationship and multi-promotion roster state", () => {
+  const state = createWorld(22012, DEFAULT_RULESET);
+  const person = state.people[0]!;
+  state.wrestlerRelationships = [{
+    id: "wrestler-relationship:p1:p2",
+    worldId: state.world.id,
+    personAId: state.people[0]!.id < state.people[1]!.id ? state.people[0]!.id : state.people[1]!.id,
+    personBId: state.people[0]!.id < state.people[1]!.id ? state.people[1]!.id : state.people[0]!.id,
+    affinity: 10,
+    professionalTrust: 20,
+    rivalryHeat: 30,
+    familiarity: 40,
+    tags: ["ALLY"],
+  }];
+  state.wrestlerPromotionAffiliations = [{
+    worldId: state.world.id,
+    personId: person.id,
+    promotionId: state.promotions[0]!.id,
+    role: "PRIMARY",
+    basis: "CONTRACT",
+  }];
+  const restored = restorePersistedWorldState(JSON.parse(JSON.stringify(createPersistedWorldState(state))));
+  ok(restored.wrestlerRelationships?.length === 1, "relationship state did not survive persistence");
+  ok(restored.wrestlerPromotionAffiliations?.length === 1, "roster-affiliation state did not survive persistence");
+});
+
 test("current schema persists live title intent independently of Ledger interpretation", () => {
   const { state, event, match, championship } = humanTitleFixture(22005);
   const snapshot = createPersistedWorldState(state);
@@ -223,6 +267,12 @@ test("missing or corrupt mandatory persisted booking state is rejected", () => {
 
   const missingPresentation = { ...snapshot, promotionWrestlerPresentations: undefined };
   expectReject(() => restorePersistedWorldState(missingPresentation), "field promotionWrestlerPresentations must be an array");
+
+  const missingRelationships = { ...snapshot, wrestlerRelationships: undefined };
+  expectReject(() => restorePersistedWorldState(missingRelationships), "field wrestlerRelationships must be an array");
+
+  const missingAffiliations = { ...snapshot, wrestlerPromotionAffiliations: undefined };
+  expectReject(() => restorePersistedWorldState(missingAffiliations), "field wrestlerPromotionAffiliations must be an array");
 
   const missingCounters = { ...snapshot, entityIdCounters: undefined };
   expectReject(() => restorePersistedWorldState(missingCounters), "persisted entity ID counters must be an object");

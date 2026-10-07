@@ -339,6 +339,77 @@ test("explicit child roster can use a parent-company exclusive contract without 
   equal(activeContractsForPerson(state, state.people[1]!.id)[0]!.promotionId, parent.id);
 });
 
+test("multi-promotion roster affiliations support primary and secondary contracted rosters", () => {
+  const source: InitialRosterAssignmentSource = ({ people, promotions }) => [
+    {
+      personId: people[0]!.id,
+      promotionId: promotions[1]!.id,
+      family: "LIMITED_NON_EXCLUSIVE",
+      rosterAffiliations: [{
+        promotionId: promotions[1]!.id,
+        role: "PRIMARY",
+        basis: "CONTRACT",
+      }],
+    },
+    {
+      personId: people[0]!.id,
+      promotionId: promotions[2]!.id,
+      family: "LIMITED_NON_EXCLUSIVE",
+      rosterAffiliations: [{
+        promotionId: promotions[2]!.id,
+        role: "SECONDARY",
+        basis: "CONTRACT",
+      }],
+    },
+  ];
+  const state = createWorld(
+    114,
+    DEFAULT_RULESET,
+    "Multi Affiliation Genesis",
+    generatedFictionalRosterSource,
+    generatedFictionalPromotionSource,
+    source,
+  );
+  state.promotions[1]!.rosterMode = "EXPLICIT";
+  state.promotions[2]!.rosterMode = "EXPLICIT";
+  const person = state.people[0]!;
+  equal(activeContractsForPerson(state, person.id).length, 2);
+  equal(state.wrestlerPromotionAffiliations?.filter((affiliation) => affiliation.personId === person.id).length, 2);
+  equal(currentRosterPersonIds(state, state.promotions[1]!.id).includes(person.id), true);
+  equal(currentRosterPersonIds(state, state.promotions[2]!.id).includes(person.id), true);
+});
+
+test("parent-company roster affiliation grants child-brand access without a second contract", () => {
+  const source: InitialRosterAssignmentSource = ({ people, promotions }) => {
+    const parent = promotions[0]!;
+    const child = promotions[4]!;
+    child.identity = { origin: "FICTIONAL", canonicalName: child.name, parentPromotionId: parent.id };
+    child.rosterMode = "EXPLICIT";
+    return [{
+      personId: people[0]!.id,
+      promotionId: parent.id,
+      family: "EXCLUSIVE",
+      rosterAffiliations: [{
+        promotionId: child.id,
+        role: "PRIMARY",
+        basis: "PARENT_COMPANY",
+      }],
+    }];
+  };
+  const state = createWorld(
+    119,
+    DEFAULT_RULESET,
+    "Parent Affiliation Genesis",
+    generatedFictionalRosterSource,
+    generatedFictionalPromotionSource,
+    source,
+  );
+  const person = state.people[0]!;
+  const child = state.promotions[4]!;
+  equal(activeContractsForPerson(state, person.id).length, 1);
+  equal(currentRosterPersonIds(state, child.id).includes(person.id), true);
+});
+
 test("initial roster assignments support deliberate non-exclusive dual employment but reject exclusive overlap", () => {
   const dualSource: InitialRosterAssignmentSource = ({ people, promotions }) => [
     { personId: people[0]!.id, promotionId: promotions[1]!.id, family: "LIMITED_NON_EXCLUSIVE" },
