@@ -23,6 +23,10 @@ import {
   WWE_NXT_ROSTER_SEED_REVIEWED_ON,
   wweNxtInitialRosterAssignmentSource,
 } from "../packages/content/src/real-wwe-nxt-rosters.js";
+import {
+  TNA_PRIMARY_ROSTER_NAMES,
+  TNA_ROSTER_SEED_REVIEWED_ON,
+} from "../packages/content/src/real-tna-roster.js";
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
@@ -638,6 +642,62 @@ test("combined real-world roster seed survives early simulation with multi-roste
   const cmll = state.promotions.find((promotion) => promotion.name === "CMLL")!;
   ok(currentRosterPersonIds(state, aew.id).includes(claudio.id), "Claudio fell off AEW roster during early sim");
   ok(currentRosterPersonIds(state, cmll.id).includes(claudio.id), "Claudio fell off CMLL roster during early sim");
+});
+
+test("reviewed TNA seed creates an explicit flexible active-core roster", () => {
+  const state = createWorld(
+    123,
+    REAL_WORLD_ALPHA_RULESET,
+    "TNA Seed",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
+  );
+  equal(TNA_ROSTER_SEED_REVIEWED_ON, "2026-10-07");
+
+  const tna = state.promotions.find((promotion) => promotion.name === "TNA Wrestling")!;
+  const nxt = state.promotions.find((promotion) => promotion.name === "NXT")!;
+  equal(tna.rosterMode, "EXPLICIT");
+
+  const tnaRosterNames = currentRosterPersonIds(state, tna.id)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  equal(tnaRosterNames.length, TNA_PRIMARY_ROSTER_NAMES.length);
+  for (const name of TNA_PRIMARY_ROSTER_NAMES) {
+    ok(tnaRosterNames.includes(name), `TNA seed missing ${name}`);
+  }
+
+  for (const name of ["Nic Nemeth", "Xia Brookside", "Tasha Steelz", "Zoey Serrano"]) {
+    const person = state.people.find((candidate) => candidate.name === name)!;
+    const contracts = activeContractsForPerson(state, person.id);
+    equal(contracts.length, 1);
+    equal(contracts[0]!.promotionId, tna.id);
+    equal(contracts[0]!.family, "LIMITED_NON_EXCLUSIVE");
+    equal(person.rosterPromotionId, tna.id);
+    ok(!currentRosterPersonIds(state, nxt.id).includes(person.id), `${name} leaked into NXT roster from crossover activity`);
+  }
+
+  const errors = validateWorldInvariants(state);
+  equal(errors.length, 0, errors.join("\n"));
+});
+
+test("combined TNA roster survives early simulation without losing explicit membership", () => {
+  const state = createWorld(
+    124,
+    REAL_WORLD_ALPHA_RULESET,
+    "TNA Early Sim",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
+  );
+  const tna = state.promotions.find((promotion) => promotion.name === "TNA Wrestling")!;
+  resolveWorldWeeks(state, 4);
+  const errors = validateWorldInvariants(state);
+  equal(errors.length, 0, errors.join("\n"));
+  const rosterNames = currentRosterPersonIds(state, tna.id)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  for (const name of ["Matt Hardy", "Jeff Hardy", "Moose", "Xia Brookside", "Jody Threat"]) {
+    ok(rosterNames.includes(name), `TNA early sim lost ${name}`);
+  }
 });
 
 test("Genesis creates formal contracts while preserving free-agent supply", () => {

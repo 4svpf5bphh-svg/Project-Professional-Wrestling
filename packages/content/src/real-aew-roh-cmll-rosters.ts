@@ -7,6 +7,9 @@ import {
 import {
   wweNxtInitialRosterAssignmentSource,
 } from "./real-wwe-nxt-rosters.js";
+import {
+  tnaInitialRosterAssignmentSource,
+} from "./real-tna-roster.js";
 import type {
   InitialRosterAssignment,
   InitialRosterAssignmentContext,
@@ -197,4 +200,5 @@ export const aewRohCmllInitialRosterAssignmentSource: InitialRosterAssignmentSou
 export const realWorldInitialRosterAssignmentSource: InitialRosterAssignmentSource = (context) => [
   ...wweNxtInitialRosterAssignmentSource(context),
   ...aewRohCmllInitialRosterAssignmentSource(context),
+  ...tnaInitialRosterAssignmentSource(context),
 ];

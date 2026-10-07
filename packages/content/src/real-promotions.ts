@@ -190,7 +190,7 @@ export const realPromotionEcosystemSource: WorldPromotionSource = (context) => {
       },
       contractPolicy: { ...template.contractPolicy },
       playerTakeoverEligibility: "LOCKED",
-      rosterMode: ["WWE", "NXT", "AEW", "ROH", "CMLL"].includes(template.key)
+      rosterMode: ["WWE", "NXT", "AEW", "ROH", "CMLL", "TNA"].includes(template.key)
         ? "EXPLICIT"
         : "CONTRACT_DERIVED",
     };
