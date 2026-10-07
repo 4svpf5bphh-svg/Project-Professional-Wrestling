@@ -24,6 +24,12 @@ export const WWE_INITIAL_ROSTER_NAMES = [
   "Raquel Rodriguez",
   "Tiffany Stratton",
   "Damian Priest",
+  "Jey Uso",
+  "Jimmy Uso",
+  "Gunther",
+  "LA Knight",
+  "Bron Breakker",
+  "Austin Theory",
 ] as const;
 
 export const NXT_INITIAL_ROSTER_NAMES = [
@@ -39,6 +45,12 @@ export const NXT_INITIAL_ROSTER_NAMES = [
   "Brutus Creed",
   "Julius Creed",
   "EK Prosper",
+  "Lexis King",
+  "Wren Sinclair",
+  "Arianna Grace",
+  "Sean Legacy",
+  "Jaida Parker",
+  "Nikkita Lyons",
 ] as const;
 
 const reviewedRosterNames = new Set([
@@ -58,7 +70,7 @@ if (new Set(allSeedNames).size !== allSeedNames.length) {
 }
 
 /**
- * First reviewed WWE/NXT assignment slice.
+ * Reviewed WWE/NXT assignment seed, expanded in deliberately small batches.
  *
  * WWE is the employment-rights owner for both groups. NXT wrestlers receive
  * an NXT roster affiliation while their exclusive contract remains with WWE.
