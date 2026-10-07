@@ -18,6 +18,9 @@ import {
   determineFinancialDistress,
   DeterministicRng,
   buildContractTerms,
+  generatedFictionalPromotionSource,
+  generatedFictionalRosterSource,
+  type WorldPromotionSource,
   recoverWrestlersForNewWeek,
   resolveWorldWeek,
   resolveWorldWeeks,
@@ -66,6 +69,46 @@ test("default Genesis creates expected entity counts", () => {
   equal(state.markets.length, 20);
   equal(state.promotions.length, 9);
   equal(state.people.length, 400);
+});
+
+test("custom promotion sources plug into Genesis without bypassing validation", () => {
+  const source: WorldPromotionSource = (context) => generatedFictionalPromotionSource(context)
+    .map((promotion, index) => ({
+      ...promotion,
+      name: `Promotion Source ${index + 1}`,
+      identity: {
+        origin: "REAL_WORLD",
+        canonicalName: `Promotion Source ${index + 1}`,
+        parentPromotionId: null,
+      },
+    }));
+  const state = createWorld(
+    104,
+    DEFAULT_RULESET,
+    "Promotion Source Test",
+    generatedFictionalRosterSource,
+    source,
+  );
+  equal(state.promotions[0]!.name, "Promotion Source 1");
+  equal(state.promotions[0]!.identity?.origin, "REAL_WORLD");
+  equal(state.promotions.length, DEFAULT_RULESET.promotions);
+});
+
+test("promotion source validation rejects malformed ecosystems", () => {
+  const tooShort: WorldPromotionSource = (context) => generatedFictionalPromotionSource(context).slice(1);
+  let rejected = false;
+  try {
+    createWorld(
+      105,
+      DEFAULT_RULESET,
+      "Broken Promotion Source",
+      generatedFictionalRosterSource,
+      tooShort,
+    );
+  } catch (error) {
+    rejected = error instanceof Error && error.message.includes("promotion source returned");
+  }
+  ok(rejected, "promotion source with the wrong company count was accepted");
 });
 
 test("Genesis creates formal contracts while preserving free-agent supply", () => {

@@ -22,6 +22,11 @@ import {
   type WorldRosterSource,
   type WorldRosterSourceContext,
 } from "./roster-source.js";
+import {
+  validateWorldPromotionSourceResult,
+  type WorldPromotionSource,
+  type WorldPromotionSourceContext,
+} from "./promotion-source.js";
 
 const MARKET_PREFIXES = [
   "North", "South", "East", "West", "Central", "Upper", "Lower", "Grand", "River", "Crown",
@@ -51,4 +56,163 @@ function rosterQuotas(promotions:Promotion[],targetContracted:number):Map<string
 
 export const generatedFictionalRosterSource: WorldRosterSource = ({ world, ruleset, markets, rng }) => Array.from({length:ruleset.wrestlers},(_,i)=>{const stage=careerStage(rng);return{id:`person-${String(i+1).padStart(4,"0")}`,worldId:world.id,name:`${rng.pick(FIRST_NAMES)} ${rng.pick(LAST_NAMES)} ${i+1}`,careerStage:stage,status:"ACTIVE",homeMarketId:rng.pick(markets).id,biologicalAge:startingBiologicalAge(rng,stage),careerExperience:startingCareerExperience(rng,stage),developmentAptitude:rng.int(stage==="PROSPECT"?45:30,95),debutDate:{...world.currentDate},generatedTalent:false,fatigue:0,wear:stage==="PROSPECT"?rng.int(0,8):stage==="PRIME"?rng.int(2,20):rng.int(12,45),morale:rng.int(55,85),momentum:rng.int(25,65),recognition:rng.int(stage==="PROSPECT"?5:15,stage==="SPECIAL_ATTRACTION"?90:75),popularity:rng.int(stage==="PROSPECT"?5:15,stage==="SPECIAL_ATTRACTION"?90:75),skills:skills(rng,stage),priorities:priorities(rng)};});
 
-export function createWorld(seed:number,ruleset:Ruleset,name="PPW Test World",rosterSource:WorldRosterSource=generatedFictionalRosterSource):WorldState{const rng=new DeterministicRng(seed),worldId=`world-${seed>>>0}`;const world:World={id:worldId,name,seed:seed>>>0,rulesetVersion:ruleset.version,currentDate:{year:1,week:1,day:1},createdAtIso:"2000-01-01T00:00:00.000Z"};const markets:Market[]=Array.from({length:ruleset.markets},(_,i)=>({id:`market-${String(i+1).padStart(3,"0")}`,worldId,name:`${MARKET_PREFIXES[i%MARKET_PREFIXES.length]} ${rng.pick(MARKET_SUFFIXES)}`,audiencePotential:rng.int(35,100),wrestlingInterest:rng.int(25,85),spendingIndex:rng.int(50,120),maturity:rng.int(20,90)}));const venues=venuesForMarkets(worldId,markets,rng),usedPromotionNames=new Set<string>();const promotions:Promotion[]=Array.from({length:ruleset.promotions},(_,i)=>{let promotionName=`${rng.pick(PROMOTION_PREFIXES)} ${rng.pick(PROMOTION_SUFFIXES)}`;while(usedPromotionNames.has(promotionName))promotionName=`${rng.pick(PROMOTION_PREFIXES)} ${rng.pick(PROMOTION_SUFFIXES)}`;usedPromotionNames.add(promotionName);const tier=tierForIndex(i,ruleset.promotions),f=recurringFinanceForTier(tier,rng);return{id:`promotion-${String(i+1).padStart(3,"0")}`,worldId,name:promotionName,tier,identity:{origin:"FICTIONAL",canonicalName:promotionName,parentPromotionId:null},contractPolicy:defaultPromotionContractPolicy(tier),lifecycle:"ACTIVE",controllerType:"AI",homeMarketId:markets[i%markets.length]!.id,cash:cashForTier(tier,rng),debt:0,mediaReach:tier==="GLOBAL"?rng.int(80,100):tier==="NATIONAL"?rng.int(55,80):tier==="RISING"?rng.int(30,60):rng.int(10,40),weeklyMediaIncome:f.media,weeklySponsorIncome:f.sponsor,weeklyFixedOverhead:f.overhead,lastWeeklyNet:0,runwayWeeks:null,financialDistress:"HEALTHY",eventCadenceWeeks:eventCadenceForTier(tier),aiProfile:profile(rng)};});const promotionMarketStates:PromotionMarketState[]=[];for(const promotion of promotions)for(const market of markets)promotionMarketStates.push(initialMarketState(promotion,market,rng));const rosterContext:WorldRosterSourceContext={world,ruleset,markets,rng};const people=validateWorldRosterSourceResult(rosterContext,rosterSource(rosterContext));const state:WorldState={world,ruleset:{...ruleset},markets,venues,promotions,promotionMarketStates,people,contracts:[],contractOffers:[],events:[],scheduledAppearances:[],matches:[],matchParticipants:[],injuries:[],workingChemistry:[],financialTransactions:[],ledger:[]};registerEntityIdCounters(state);const writer=new LedgerWriter(worldId,state.ledger);writer.append({date:world.currentDate,type:"WORLD_CREATED",significance:"HISTORIC",entityIds:[worldId],payload:{seed:world.seed,ruleset:ruleset.version}});for(const promotion of promotions)writer.append({date:world.currentDate,type:"PROMOTION_FOUNDED",significance:promotion.tier==="GLOBAL"?"MAJOR":"NOTABLE",entityIds:[promotion.id,promotion.homeMarketId],payload:{name:promotion.name,tier:promotion.tier}});const targetContracted=Math.floor(people.length*ruleset.initialContractedTalentRatio),sortedByValue=[...people].sort((a,b)=>(b.skills.inRingQuality+b.skills.matchCraft+b.skills.presentation+b.recognition+b.popularity)-(a.skills.inRingQuality+a.skills.matchCraft+a.skills.presentation+a.recognition+a.popularity)||a.id.localeCompare(b.id)),quotas=rosterQuotas(promotions,targetContracted),assigned=new Map(promotions.map(p=>[p.id,0]));for(let i=0;i<targetContracted;i++){const person=sortedByValue[i]!,eligible=promotions.filter(p=>(assigned.get(p.id)??0)<(quotas.get(p.id)??0)),promotion=rng.weightedPick(eligible.map(candidate=>({value:candidate,weight:tierAllocationWeight(candidate)})));assigned.set(promotion.id,(assigned.get(promotion.id)??0)+1);const terms=buildContractTerms(state,promotion,person,new DeterministicRng(rng.int(1,0x7fffffff)));createSignedContract(state,person,promotion,{...terms,signingBonus:0},null,true);}new LedgerWriter(worldId,state.ledger).append({date:world.currentDate,type:"WORLD_GENESIS_COMPLETED",significance:"MAJOR",entityIds:[worldId],payload:{markets:markets.length,venues:venues.length,promotions:promotions.length,wrestlers:people.length,contracted:targetContracted,freeAgents:people.length-targetContracted,contracts:state.contracts.length}});return state;}
+export const generatedFictionalPromotionSource: WorldPromotionSource = ({
+  world,
+  ruleset,
+  markets,
+  rng,
+}: WorldPromotionSourceContext): Promotion[] => {
+  const usedPromotionNames = new Set<string>();
+  return Array.from({ length: ruleset.promotions }, (_, i) => {
+    let promotionName = `${rng.pick(PROMOTION_PREFIXES)} ${rng.pick(PROMOTION_SUFFIXES)}`;
+    while (usedPromotionNames.has(promotionName)) {
+      promotionName = `${rng.pick(PROMOTION_PREFIXES)} ${rng.pick(PROMOTION_SUFFIXES)}`;
+    }
+    usedPromotionNames.add(promotionName);
+    const tier = tierForIndex(i, ruleset.promotions);
+    const f = recurringFinanceForTier(tier, rng);
+    return {
+      id: `promotion-${String(i + 1).padStart(3, "0")}`,
+      worldId: world.id,
+      name: promotionName,
+      tier,
+      identity: { origin: "FICTIONAL", canonicalName: promotionName, parentPromotionId: null },
+      contractPolicy: defaultPromotionContractPolicy(tier),
+      lifecycle: "ACTIVE",
+      controllerType: "AI",
+      homeMarketId: markets[i % markets.length]!.id,
+      cash: cashForTier(tier, rng),
+      debt: 0,
+      mediaReach: tier === "GLOBAL" ? rng.int(80, 100)
+        : tier === "NATIONAL" ? rng.int(55, 80)
+          : tier === "RISING" ? rng.int(30, 60)
+            : rng.int(10, 40),
+      weeklyMediaIncome: f.media,
+      weeklySponsorIncome: f.sponsor,
+      weeklyFixedOverhead: f.overhead,
+      lastWeeklyNet: 0,
+      runwayWeeks: null,
+      financialDistress: "HEALTHY",
+      eventCadenceWeeks: eventCadenceForTier(tier),
+      aiProfile: profile(rng),
+    };
+  });
+};
+
+export function createWorld(
+  seed: number,
+  ruleset: Ruleset,
+  name = "PPW Test World",
+  rosterSource: WorldRosterSource = generatedFictionalRosterSource,
+  promotionSource: WorldPromotionSource = generatedFictionalPromotionSource,
+): WorldState {
+  const rng = new DeterministicRng(seed);
+  const worldId = `world-${seed >>> 0}`;
+  const world: World = {
+    id: worldId,
+    name,
+    seed: seed >>> 0,
+    rulesetVersion: ruleset.version,
+    currentDate: { year: 1, week: 1, day: 1 },
+    createdAtIso: "2000-01-01T00:00:00.000Z",
+  };
+  const markets: Market[] = Array.from({ length: ruleset.markets }, (_, i) => ({
+    id: `market-${String(i + 1).padStart(3, "0")}`,
+    worldId,
+    name: `${MARKET_PREFIXES[i % MARKET_PREFIXES.length]} ${rng.pick(MARKET_SUFFIXES)}`,
+    audiencePotential: rng.int(35, 100),
+    wrestlingInterest: rng.int(25, 85),
+    spendingIndex: rng.int(50, 120),
+    maturity: rng.int(20, 90),
+  }));
+  const venues = venuesForMarkets(worldId, markets, rng);
+  const promotionContext: WorldPromotionSourceContext = { world, ruleset, markets, rng };
+  const promotions = validateWorldPromotionSourceResult(
+    promotionContext,
+    promotionSource(promotionContext),
+  );
+  const promotionMarketStates: PromotionMarketState[] = [];
+  for (const promotion of promotions) {
+    for (const market of markets) promotionMarketStates.push(initialMarketState(promotion, market, rng));
+  }
+  const rosterContext: WorldRosterSourceContext = { world, ruleset, markets, rng };
+  const people = validateWorldRosterSourceResult(rosterContext, rosterSource(rosterContext));
+  const state: WorldState = {
+    world,
+    ruleset: { ...ruleset },
+    markets,
+    venues,
+    promotions,
+    promotionMarketStates,
+    people,
+    contracts: [],
+    contractOffers: [],
+    events: [],
+    scheduledAppearances: [],
+    matches: [],
+    matchParticipants: [],
+    injuries: [],
+    workingChemistry: [],
+    financialTransactions: [],
+    ledger: [],
+  };
+  registerEntityIdCounters(state);
+  const writer = new LedgerWriter(worldId, state.ledger);
+  writer.append({
+    date: world.currentDate,
+    type: "WORLD_CREATED",
+    significance: "HISTORIC",
+    entityIds: [worldId],
+    payload: { seed: world.seed, ruleset: ruleset.version },
+  });
+  for (const promotion of promotions) {
+    writer.append({
+      date: world.currentDate,
+      type: "PROMOTION_FOUNDED",
+      significance: promotion.tier === "GLOBAL" ? "MAJOR" : "NOTABLE",
+      entityIds: [promotion.id, promotion.homeMarketId],
+      payload: { name: promotion.name, tier: promotion.tier },
+    });
+  }
+  const targetContracted = Math.floor(people.length * ruleset.initialContractedTalentRatio);
+  const sortedByValue = [...people].sort((a, b) => (
+    b.skills.inRingQuality + b.skills.matchCraft + b.skills.presentation + b.recognition + b.popularity
+  ) - (
+    a.skills.inRingQuality + a.skills.matchCraft + a.skills.presentation + a.recognition + a.popularity
+  ) || a.id.localeCompare(b.id));
+  const quotas = rosterQuotas(promotions, targetContracted);
+  const assigned = new Map(promotions.map((promotion) => [promotion.id, 0]));
+  for (let i = 0; i < targetContracted; i += 1) {
+    const person = sortedByValue[i]!;
+    const eligible = promotions.filter(
+      (promotion) => (assigned.get(promotion.id) ?? 0) < (quotas.get(promotion.id) ?? 0),
+    );
+    const promotion = rng.weightedPick(
+      eligible.map((candidate) => ({ value: candidate, weight: tierAllocationWeight(candidate) })),
+    );
+    assigned.set(promotion.id, (assigned.get(promotion.id) ?? 0) + 1);
+    const terms = buildContractTerms(
+      state,
+      promotion,
+      person,
+      new DeterministicRng(rng.int(1, 0x7fffffff)),
+    );
+    createSignedContract(state, person, promotion, { ...terms, signingBonus: 0 }, null, true);
+  }
+  new LedgerWriter(worldId, state.ledger).append({
+    date: world.currentDate,
+    type: "WORLD_GENESIS_COMPLETED",
+    significance: "MAJOR",
+    entityIds: [worldId],
+    payload: {
+      markets: markets.length,
+      venues: venues.length,
+      promotions: promotions.length,
+      wrestlers: people.length,
+      contracted: targetContracted,
+      freeAgents: people.length - targetContracted,
+      contracts: state.contracts.length,
+    },
+  });
+  return state;
+}
