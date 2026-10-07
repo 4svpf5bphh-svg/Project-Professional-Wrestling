@@ -1,3 +1,7 @@
+import {
+  REAL_PROMOTION_TEMPLATES,
+  realPromotionEcosystemSource,
+} from "../packages/content/src/real-promotions.js";
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
@@ -109,6 +113,27 @@ test("promotion source validation rejects malformed ecosystems", () => {
     rejected = error instanceof Error && error.message.includes("promotion source returned");
   }
   ok(rejected, "promotion source with the wrong company count was accepted");
+});
+
+test("real promotion catalog preserves parent links and keeps real companies takeover-locked", () => {
+  const state = createWorld(
+    106,
+    DEFAULT_RULESET,
+    "Real Promotion Catalog",
+    generatedFictionalRosterSource,
+    realPromotionEcosystemSource,
+  );
+  equal(state.promotions.length, REAL_PROMOTION_TEMPLATES.length);
+  ok(state.promotions.every((promotion) => promotion.identity?.origin === "REAL_WORLD"), "real promotion source left fictional identities");
+  ok(state.promotions.every((promotion) => promotion.playerTakeoverEligibility === "LOCKED"), "real promotion source exposed a standard player takeover");
+
+  const wwe = state.promotions.find((promotion) => promotion.name === "WWE")!;
+  const nxt = state.promotions.find((promotion) => promotion.name === "NXT")!;
+  const aew = state.promotions.find((promotion) => promotion.name === "AEW")!;
+  const roh = state.promotions.find((promotion) => promotion.name === "ROH")!;
+  equal(nxt.identity?.parentPromotionId, wwe.id);
+  equal(roh.identity?.parentPromotionId, aew.id);
+  ok(wwe.contractPolicy!.exclusiveContractChance > aew.contractPolicy!.exclusiveContractChance, "WWE and AEW contract cultures were not differentiated");
 });
 
 test("Genesis creates formal contracts while preserving free-agent supply", () => {

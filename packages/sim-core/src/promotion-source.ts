@@ -55,6 +55,14 @@ export function validateWorldPromotionSourceResult(
       }
     }
 
+    if (
+      promotion.playerTakeoverEligibility !== undefined
+      && promotion.playerTakeoverEligibility !== "LOCKED"
+      && promotion.playerTakeoverEligibility !== "STANDARD"
+    ) {
+      throw new Error(`promotion source company ${promotion.id} has invalid player takeover eligibility`);
+    }
+
     if (promotion.contractPolicy) {
       const { exclusiveContractChance, starExclusiveBonus, outsideBookingPolicy } = promotion.contractPolicy;
       if (!Number.isFinite(exclusiveContractChance) || exclusiveContractChance < 0 || exclusiveContractChance > 100) {

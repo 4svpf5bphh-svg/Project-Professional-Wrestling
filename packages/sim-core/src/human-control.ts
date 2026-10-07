@@ -29,8 +29,10 @@ export function claimIndependentPromotionForHuman(
   const promotion = state.promotions.find((candidate) => candidate.id === promotionId);
   if (!promotion) throw new Error(`unknown promotion ${promotionId}`);
   if (promotion.controllerType !== "AI") throw new Error(`${promotionId} is already human-controlled`);
-  if (promotion.tier !== "INDEPENDENT") {
-    throw new Error("human claim requires an Independent promotion");
+  const takeoverEligibility = promotion.playerTakeoverEligibility
+    ?? (promotion.tier === "INDEPENDENT" ? "STANDARD" : "LOCKED");
+  if (takeoverEligibility !== "STANDARD") {
+    throw new Error("human claim requires a promotion open to standard takeover");
   }
   if (promotion.lifecycle !== "ACTIVE") {
     throw new Error("human claim requires an active promotion");

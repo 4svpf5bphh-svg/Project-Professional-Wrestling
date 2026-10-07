@@ -78,6 +78,7 @@ export const generatedFictionalPromotionSource: WorldPromotionSource = ({
       tier,
       identity: { origin: "FICTIONAL", canonicalName: promotionName, parentPromotionId: null },
       contractPolicy: defaultPromotionContractPolicy(tier),
+      playerTakeoverEligibility: tier === "INDEPENDENT" ? "STANDARD" : "LOCKED",
       lifecycle: "ACTIVE",
       controllerType: "AI",
       homeMarketId: markets[i % markets.length]!.id,

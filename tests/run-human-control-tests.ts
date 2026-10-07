@@ -150,6 +150,30 @@ test("sim-core enforces promotion eligibility but does not own multiplayer seat 
   );
 });
 
+test("explicit takeover eligibility is independent from simulation tier", () => {
+  const lockedState = createWorld(10809, DEFAULT_RULESET);
+  const lockedIndependent = lockedState.promotions.find(
+    (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+  )!;
+  lockedIndependent.playerTakeoverEligibility = "LOCKED";
+  let lockedRejected = false;
+  try {
+    claimIndependentPromotionForHuman(lockedState, lockedIndependent.id);
+  } catch {
+    lockedRejected = true;
+  }
+  ok(lockedRejected, "locked Independent promotion was claimable");
+  ok(lockedIndependent.controllerType === "AI", "locked takeover rejection mutated control");
+
+  const openState = createWorld(10810, DEFAULT_RULESET);
+  const openRising = openState.promotions.find(
+    (candidate) => candidate.tier === "RISING" && candidate.lifecycle === "ACTIVE",
+  )!;
+  openRising.playerTakeoverEligibility = "STANDARD";
+  claimIndependentPromotionForHuman(openState, openRising.id, { takeoverMode: "CONTINUE" });
+  ok(openRising.controllerType === "HUMAN", "explicitly open non-Independent promotion could not be claimed");
+});
+
 test("AI event planning leaves human promotions unbooked", () => {
   const state = createWorld(10803, DEFAULT_RULESET);
   const promotion = state.promotions.find(

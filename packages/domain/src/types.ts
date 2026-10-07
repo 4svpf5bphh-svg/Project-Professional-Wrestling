@@ -7,6 +7,7 @@ export type PromotionLifecycle = "FOUNDING" | "ACTIVE" | "DISTRESSED" | "STEWARD
 export type ControllerType = "AI" | "HUMAN";
 export type PromotionIdentityOrigin = "REAL_WORLD" | "FICTIONAL";
 export type OutsideBookingPolicy = "PROHIBITED" | "APPROVAL_REQUIRED" | "PERMITTED";
+export type PromotionPlayerTakeoverEligibility = "LOCKED" | "STANDARD";
 export type CareerStage = "PROSPECT" | "PRIME" | "VETERAN" | "SPECIAL_ATTRACTION";
 export type PersonStatus = "ACTIVE" | "INJURED" | "RETIRED";
 export type LedgerSignificance = "ROUTINE" | "NOTABLE" | "MAJOR" | "HISTORIC";
@@ -155,6 +156,7 @@ export interface Promotion {
   tier: PromotionTier;
   identity?: PromotionIdentity;
   contractPolicy?: PromotionContractPolicy;
+  playerTakeoverEligibility?: PromotionPlayerTakeoverEligibility;
   lifecycle: PromotionLifecycle;
   controllerType: ControllerType;
   homeMarketId: Id;
