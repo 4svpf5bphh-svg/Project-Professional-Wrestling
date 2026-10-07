@@ -217,28 +217,97 @@ await test("Alpha browser card booking persists a complete card, title assignmen
   ok((recent?.winnerPersonIds.length ?? 0) > 0, "recent opponent context did not expose the prior winning side");
 });
 
-await test("Alpha browser card booking rejects incomplete cards without damaging the reservation", async () => {
+await test("Alpha browser card booking derives the reservation from the wrestlers actually booked", async () => {
   const fixture = await reservedShowFixture(61012);
   const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
-  const incomplete = singlesCard(fixture.participantIds).slice(0, -1);
-  let rejected = false;
-  try {
-    await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
-      requestId: "web-card-incomplete",
-      expectedRevision: before.world.revision,
-      expectedPlanVersion: before.workspaceVersion,
-      matches: incomplete,
-      championshipAssignments: [],
-    });
-  } catch (error) {
-    rejected = error instanceof Error && error.message.includes("every wrestler reserved");
-  }
-  ok(rejected, "incomplete card was not rejected");
+  const reduced = singlesCard(fixture.participantIds).slice(0, -1);
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "web-card-derived-roster",
+    expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion,
+    matches: reduced,
+    championshipAssignments: [],
+  });
+
+  const usedIds = new Set(reduced.flatMap((match) => [...match.sideAIds, ...match.sideBIds]));
+  ok(saved.participants.length === usedIds.size, "saved card did not derive its show roster from booked matches");
 
   const after = await fixture.repository.load(fixture.worldId);
-  ok(after.runtime.revision === before.world.revision, "rejected card mutated World revision");
-  ok(after.planning.showReservations.length === 1, "rejected card damaged the existing reservation");
-  ok(after.planning.workspaces[0]?.detailedShowDrafts[0]?.matches.length === 0, "rejected card partially mutated the show draft");
+  const reservation = after.planning.showReservations[0];
+  ok(reservation, "card save dropped the show reservation");
+  ok(reservation!.participants.length === usedIds.size, "reservation did not shrink to the booked card");
+  ok(
+    reservation!.participants.every((participant) => usedIds.has(participant.personId)),
+    "reservation retained a wrestler who was removed from the card",
+  );
+});
+
+await test("a logistics-only show draft opens in the builder and the first valid card creates its talent reservation", async () => {
+  const playerId = "slot-builder-player";
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 61022, playerId });
+  const independent = aggregate.state.promotions.find((promotion) => (
+    promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE"
+  ));
+  if (!independent) throw new Error("slot-builder fixture has no Independent promotion");
+  independent.eventCadenceWeeks = 1;
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+
+  await claimAlphaPromotion(repository, worldId, playerId, {
+    promotionId: independent.id,
+    requestId: "slot-builder-claim",
+  });
+  const plannerBefore = await loadAlphaPlayerPlanner(repository, worldId, playerId);
+  const promotion = plannerBefore.promotion;
+  if (!promotion) throw new Error("slot-builder fixture lost controlled promotion");
+  const week = promotion.weeks[0]!;
+  const market = promotion.markets[0];
+  const venue = market?.venues[0];
+  if (!market || !venue) throw new Error("slot-builder fixture has no venue");
+
+  const planned = await saveAlphaPlannerShowPlan(repository, worldId, playerId, {
+    requestId: "slot-builder-logistics",
+    expectedRevision: plannerBefore.world.revision,
+    expectedPlanVersion: promotion.workspaceVersion,
+    year: week.year,
+    week: week.week,
+    day: 6,
+    marketId: market.marketId,
+    venueId: venue.venueId,
+    ticketStrategy: "STANDARD",
+  });
+  const show = planned.promotion?.weeks[0]?.shows[0];
+  if (!show) throw new Error("logistics-only show draft was not created");
+  ok(show.reservationId === null, "logistics-only show should not reserve wrestlers before booking");
+
+  const builder = await loadAlphaShowCard(repository, worldId, playerId, show.draftId);
+  ok(builder.reservationId === null, "unbooked show builder unexpectedly had a reservation");
+  ok(builder.availableParticipants.length >= builder.minParticipants, "builder did not expose enough contracted talent");
+
+  const selectedIds = builder.availableParticipants
+    .slice(0, builder.minParticipants % 2 === 0 ? builder.minParticipants : builder.minParticipants + 1)
+    .map((person) => person.personId);
+  if (selectedIds.length % 2 !== 0 || selectedIds.length < builder.minParticipants) {
+    throw new Error("slot-builder fixture could not form a valid match card");
+  }
+  const card = singlesCard(selectedIds).map((match, index) => ({
+    ...match,
+    draftMatchId: `${show.draftId}:slot:${index + 1}`,
+  }));
+  const saved = await saveAlphaShowCard(repository, worldId, playerId, {
+    requestId: "slot-builder-first-card",
+    expectedRevision: builder.world.revision,
+    expectedPlanVersion: builder.workspaceVersion,
+    draftId: show.draftId,
+    matches: card,
+    championshipAssignments: [],
+  });
+  ok(saved.reservationId !== null, "first valid card did not create the shared-World talent reservation");
+
+  const persisted = await repository.load(worldId);
+  const reservation = persisted.planning.showReservations.find((candidate) => candidate.sourceDraftId === show.draftId);
+  ok(reservation?.participants.length === selectedIds.length, "first card reservation did not match the booked wrestlers");
 });
 
 await test("Alpha browser card booking rejects a championship on the wrong match division without mutation", async () => {
