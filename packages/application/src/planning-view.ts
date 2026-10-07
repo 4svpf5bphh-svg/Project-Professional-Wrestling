@@ -1,7 +1,11 @@
 import type { Id, MatchType, PersonStatus, PpwDate, PromotionTier, TicketStrategy } from "../../domain/src/types.js";
 import { addPpwWeeks, comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { activePromotionControlForPlayer, activeWorldMembership } from "./ownership.js";
-import { DETAILED_PLANNING_HORIZON_WEEKS, type DetailedShowDraft } from "./planning.js";
+import {
+  DETAILED_PLANNING_HORIZON_WEEKS,
+  type DetailedShowDraft,
+  type DetailedShowSegmentType,
+} from "./planning.js";
 import {
   playerShowPlanningStatus,
   type PlayerShowPlanningAction,
@@ -26,6 +30,18 @@ export interface PlayerPlannerMatchView {
   sideBNames: string[];
   plannedLengthMinutes: number | null;
 }
+
+export interface PlayerPlannerSegmentView {
+  draftSegmentId: string;
+  type: DetailedShowSegmentType;
+  participantNames: string[];
+  programmeId: Id | null;
+  plannedLengthMinutes: number;
+}
+
+export type PlayerPlannerRunningOrderView =
+  | { kind: "MATCH"; refId: string; order: number; match: PlayerPlannerMatchView }
+  | { kind: "SEGMENT"; refId: string; order: number; segment: PlayerPlannerSegmentView };
 
 export interface PlayerPlannerTalentOptionView {
   personId: Id;
@@ -89,9 +105,15 @@ export interface PlayerPlannerShowView {
   ticketStrategy: TicketStrategy | null;
   participants: PlayerPlannerParticipantView[];
   matches: PlayerPlannerMatchView[];
+  segments: PlayerPlannerSegmentView[];
+  runningOrder: PlayerPlannerRunningOrderView[];
   plannedMatchMinutes: number;
+  plannedSegmentMinutes: number;
+  plannedShowMinutes: number;
   reservedParticipantCount: number;
   matchCount: number;
+  segmentCount: number;
+  slotCount: number;
   reservationId: string | null;
   riskReasons: string[];
   workspaceChangedSinceReservation: boolean;
@@ -253,15 +275,54 @@ function showView(
   const reservation = aggregate.planning.showReservations.find((candidate) => (
     candidate.promotionId === promotionId && candidate.sourceDraftId === draft.draftId
   )) ?? null;
+  const lastMatchId = draft.runningOrder
+    ? [...draft.runningOrder].reverse().find((slot) => slot.kind === "MATCH")?.refId ?? draft.matches.at(-1)?.draftMatchId ?? null
+    : draft.matches.at(-1)?.draftMatchId ?? null;
   const matches = draft.matches.map((match, index): PlayerPlannerMatchView => ({
     draftMatchId: match.draftMatchId,
     order: index + 1,
-    isMainEvent: index === draft.matches.length - 1,
+    isMainEvent: match.draftMatchId === lastMatchId,
     type: match.type,
     sideANames: match.sideAIds.map((personId) => peopleById.get(personId)?.name ?? "Unknown wrestler"),
     sideBNames: match.sideBIds.map((personId) => peopleById.get(personId)?.name ?? "Unknown wrestler"),
     plannedLengthMinutes: match.plannedLengthMinutes,
   }));
+  const segmentDrafts = [
+    ...(draft.segments ?? []),
+    ...(draft.programmeSegments ?? [])
+      .filter((legacy) => !(draft.segments ?? []).some((segment) => segment.draftSegmentId === legacy.draftSegmentId))
+      .map((legacy) => ({
+        draftSegmentId: legacy.draftSegmentId,
+        type: "PROMO" as const,
+        participantIds: [...legacy.participantIds],
+        programmeId: legacy.programmeId,
+        plannedLengthMinutes: 6,
+      })),
+  ];
+  const segments = segmentDrafts.map((segment): PlayerPlannerSegmentView => ({
+    draftSegmentId: segment.draftSegmentId,
+    type: segment.type,
+    participantNames: segment.participantIds.map((personId) => peopleById.get(personId)?.name ?? "Unknown wrestler"),
+    programmeId: segment.programmeId,
+    plannedLengthMinutes: segment.plannedLengthMinutes,
+  }));
+  const matchesById = new Map(matches.map((match) => [match.draftMatchId, match]));
+  const segmentsById = new Map(segments.map((segment) => [segment.draftSegmentId, segment]));
+  const defaultOrder = [
+    ...matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ...segments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
+  ];
+  const sourceOrder = draft.runningOrder ?? defaultOrder;
+  const runningOrder = sourceOrder.flatMap((slot, index): PlayerPlannerRunningOrderView[] => {
+    if (slot.kind === "MATCH") {
+      const match = matchesById.get(slot.refId);
+      return match ? [{ kind: "MATCH", refId: slot.refId, order: index + 1, match }] : [];
+    }
+    const segment = segmentsById.get(slot.refId);
+    return segment ? [{ kind: "SEGMENT", refId: slot.refId, order: index + 1, segment }] : [];
+  });
+  const plannedMatchMinutes = matches.reduce((sum, match) => sum + (match.plannedLengthMinutes ?? 0), 0);
+  const plannedSegmentMinutes = segments.reduce((sum, segment) => sum + segment.plannedLengthMinutes, 0);
 
   return {
     draftId: draft.draftId,
@@ -278,9 +339,15 @@ function showView(
       name: peopleById.get(personId)?.name ?? "Unknown wrestler",
     })),
     matches,
-    plannedMatchMinutes: matches.reduce((sum, match) => sum + (match.plannedLengthMinutes ?? 0), 0),
+    segments,
+    runningOrder,
+    plannedMatchMinutes,
+    plannedSegmentMinutes,
+    plannedShowMinutes: plannedMatchMinutes + plannedSegmentMinutes,
     reservedParticipantCount: reservation?.participants.length ?? 0,
-    matchCount: draft.matches.length,
+    matchCount: matches.length,
+    segmentCount: segments.length,
+    slotCount: runningOrder.length,
     reservationId: status.reservationId,
     riskReasons: status.riskReasons.map((reason) => String(reason)),
     workspaceChangedSinceReservation: status.workspaceChangedSinceReservation,

@@ -82,6 +82,48 @@
   font-size: 15px;
 }
 
+.slotToggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.slotHeading {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.slotHeading strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e8eef7;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.slotHeaderBadges {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.chevron {
+  color: #738295;
+  font-size: 10px;
+}
+
 .mainEvent {
   border: 1px solid rgba(244, 206, 114, .35);
   border-radius: 999px;
@@ -445,4 +487,10 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
+}
+
+@media (max-width: 560px) {
+  .slotToggle { align-items: flex-start; }
+  .slotHeading strong { white-space: normal; line-height: 1.35; }
+  .slotHeaderBadges { align-items: flex-end; flex-direction: column-reverse; }
 }

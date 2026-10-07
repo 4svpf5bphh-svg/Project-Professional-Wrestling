@@ -242,7 +242,7 @@ export default function PlannerClient(): React.JSX.Element {
                       <span>{week.showRequired ? "This operating week needs a reserved show before lock." : "No operating show is scheduled for this promotion in this week."}</span>
                     </div>
                   ) : week.shows.map((show) => {
-                    const timeRemaining = SHOW_TIME_GUIDE_MINUTES - show.plannedMatchMinutes;
+                    const timeRemaining = SHOW_TIME_GUIDE_MINUTES - show.plannedShowMinutes;
                     return (
                       <section className={styles.showCard} key={show.draftId}>
                         <div className={styles.showTop}>
@@ -257,24 +257,34 @@ export default function PlannerClient(): React.JSX.Element {
                           <div><span>Talent</span><strong>{show.participants.length}</strong></div>
                           <div><span>Reserved</span><strong>{show.reservedParticipantCount}</strong></div>
                           <div><span>Matches</span><strong>{show.matchCount}</strong></div>
-                          <div><span>Match time</span><strong>{show.plannedMatchMinutes} min</strong></div>
+                          <div><span>Segments</span><strong>{show.segmentCount}</strong></div>
+                          <div><span>Show time</span><strong>{show.plannedShowMinutes} min</strong></div>
                           <div><span>Time left</span><strong className={timeRemaining < 0 ? styles.timeOver : undefined}>{timeRemaining >= 0 ? `${timeRemaining} min` : `${Math.abs(timeRemaining)} over`}</strong></div>
                           <div><span>Readiness</span><strong>{label(show.readiness)}</strong></div>
                         </div>
-                        {show.matches.length > 0 ? (
+                        {show.runningOrder.length > 0 ? (
                           <div className={styles.runningOrder}>
                             <div className={styles.runningOrderHeader}>
                               <strong>Running order</strong>
-                              <span>{show.plannedMatchMinutes} / {SHOW_TIME_GUIDE_MINUTES} min Alpha guide</span>
+                              <span>{show.plannedShowMinutes} / {SHOW_TIME_GUIDE_MINUTES} min Alpha guide</span>
                             </div>
-                            {show.matches.map((match) => (
-                              <div className={`${styles.matchRow} ${match.isMainEvent ? styles.mainEventRow : ""}`} key={match.draftMatchId}>
-                                <span className={styles.matchNumber}>Match {match.order}</span>
+                            {show.runningOrder.map((slot) => slot.kind === "MATCH" ? (
+                              <div className={`${styles.matchRow} ${slot.match.isMainEvent ? styles.mainEventRow : ""}`} key={`MATCH:${slot.refId}`}>
+                                <span className={styles.matchNumber}>Slot {slot.order}</span>
                                 <div>
-                                  <strong>{match.sideANames.join(" & ")} <span>vs</span> {match.sideBNames.join(" & ")}</strong>
-                                  <small>{match.type === "TAG" ? "Tag Team" : "Singles"}{match.plannedLengthMinutes !== null ? ` · ${match.plannedLengthMinutes} min` : ""}</small>
+                                  <strong>{slot.match.sideANames.join(" & ")} <span>vs</span> {slot.match.sideBNames.join(" & ")}</strong>
+                                  <small>{slot.match.type === "TAG" ? "Tag Team" : "Singles"}{slot.match.plannedLengthMinutes !== null ? ` · ${slot.match.plannedLengthMinutes} min` : ""}</small>
                                 </div>
-                                {match.isMainEvent ? <b>MAIN EVENT</b> : null}
+                                {slot.match.isMainEvent ? <b>MAIN EVENT</b> : null}
+                              </div>
+                            ) : (
+                              <div className={`${styles.matchRow} ${styles.segmentRow}`} key={`SEGMENT:${slot.refId}`}>
+                                <span className={styles.matchNumber}>Slot {slot.order}</span>
+                                <div>
+                                  <strong>{label(slot.segment.type)} · {slot.segment.participantNames.join(" & ")}</strong>
+                                  <small>Segment · {slot.segment.plannedLengthMinutes} min{slot.segment.programmeId ? " · Programme attached" : ""}</small>
+                                </div>
+                                <b>SEGMENT</b>
                               </div>
                             ))}
                           </div>
@@ -289,7 +299,7 @@ export default function PlannerClient(): React.JSX.Element {
                             style={{ display: "block", padding: "10px 14px", textAlign: "center", textDecoration: "none" }}
                             href={`/card?draftId=${encodeURIComponent(show.draftId)}`}
                           >
-                            {show.matchCount > 0 ? "Edit card" : "Book card"}
+                            {show.slotCount > 0 ? "Edit card" : "Book card"}
                           </a>
                         ) : null}
                       </section>

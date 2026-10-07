@@ -85,6 +85,17 @@ function twoPlayerFixture(seed: number): {
       plannedLengthMinutes: 17,
     }],
     championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "planner-a-segment-1",
+      type: "CONFRONTATION",
+      participantIds: [...personAIds],
+      programmeId: null,
+      plannedLengthMinutes: 6,
+    }],
+    runningOrder: [
+      { kind: "SEGMENT", refId: "planner-a-segment-1" },
+      { kind: "MATCH", refId: "planner-a-match-1" },
+    ],
   };
   const draftB: DetailedShowDraft = {
     draftId: "planner-b-week-4",
@@ -124,10 +135,17 @@ test("six-week planner returns the complete current plus five future week horizo
   ok(planned?.draftId === "planner-a-week-3", "player draft did not appear in its future week");
   ok(planned?.participants.length === 2, "planner did not expose selected wrestler names");
   ok(planned?.marketName !== null && planned?.venueName !== null, "planner did not expose selected logistics");
-  ok(planned?.matches.length === 1, "planner did not expose the saved running order");
+  ok(planned?.matches.length === 1, "planner did not expose the saved match");
   ok(planned?.matches[0]?.order === 1 && planned.matches[0].isMainEvent, "planner did not identify the final match as the main event");
-  ok(planned?.matches[0]?.sideANames.length === 1 && planned.matches[0].sideBNames.length === 1, "planner running order lost participant names");
+  ok(planned?.matches[0]?.sideANames.length === 1 && planned.matches[0].sideBNames.length === 1, "planner running order lost match participant names");
+  ok(planned?.segments.length === 1, "planner did not expose the saved segment");
+  ok(planned?.segments[0]?.participantNames.length === 2, "planner segment lost participant names");
+  ok(planned?.runningOrder.length === 2, "planner did not expose the complete running order");
+  ok(planned?.runningOrder[0]?.kind === "SEGMENT" && planned.runningOrder[1]?.kind === "MATCH", "planner changed the interleaved running order");
   ok(planned?.plannedMatchMinutes === 17, "planner did not total booked match minutes");
+  ok(planned?.plannedSegmentMinutes === 6, "planner did not total segment minutes");
+  ok(planned?.plannedShowMinutes === 23, "planner did not total complete show minutes");
+  ok(planned?.matchCount === 1 && planned.segmentCount === 1 && planned.slotCount === 2, "planner slot counts are incorrect");
 });
 
 test("six-week planner remains scoped to each player's controlled promotion", () => {

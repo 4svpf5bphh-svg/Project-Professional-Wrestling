@@ -190,7 +190,7 @@
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   gap: 8px;
   margin-top: 12px;
 }
@@ -302,6 +302,17 @@
 
 .mainEventRow {
   border-color: rgba(244, 206, 114, .38);
+}
+
+.segmentRow {
+  border-color: rgba(117, 177, 255, .25);
+  background: rgba(24, 38, 57, .58);
+}
+
+.segmentRow > b {
+  border-color: rgba(117, 177, 255, .28);
+  background: rgba(117, 177, 255, .08);
+  color: #a8cdfd;
 }
 
 .warning {

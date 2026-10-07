@@ -81,6 +81,51 @@ function segmentMinimum(type: AlphaCardSegmentView["type"]): number {
   return type === "CONFRONTATION" || type === "CHALLENGE" || type === "ATTACK" ? 2 : 1;
 }
 
+function MinuteField(props: {
+  value: number;
+  min: number;
+  max: number;
+  disabled: boolean;
+  onCommit: (value: number) => void;
+}): React.JSX.Element {
+  const [draft, setDraft] = useState(String(props.value));
+
+  useEffect(() => {
+    setDraft(String(props.value));
+  }, [props.value]);
+
+  function commit(): void {
+    const parsed = Number(draft);
+    if (!draft.trim() || !Number.isFinite(parsed)) {
+      setDraft(String(props.value));
+      return;
+    }
+    const next = Math.max(props.min, Math.min(props.max, Math.round(parsed)));
+    setDraft(String(next));
+    if (next !== props.value) props.onCommit(next);
+  }
+
+  return (
+    <input
+      type="number"
+      min={props.min}
+      max={props.max}
+      inputMode="numeric"
+      value={draft}
+      disabled={props.disabled}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+        if (event.key === "Escape") {
+          setDraft(String(props.value));
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
 export default function CardClient(): React.JSX.Element {
   const [view, setView] = useState<AlphaCurrentWeekCardView | null>(null);
   const [matches, setMatches] = useState<AlphaCardMatchView[]>([]);
@@ -91,6 +136,7 @@ export default function CardClient(): React.JSX.Element {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedSlotKey, setExpandedSlotKey] = useState<string | null>(null);
   const requestId = useRef<string | null>(null);
 
   async function load(): Promise<void> {
@@ -109,6 +155,7 @@ export default function CardClient(): React.JSX.Element {
       setSegments(cloneSegments(payload.segments));
       setRunningOrder(cloneOrder(payload.runningOrder));
       setTitleAssignments(cloneAssignments(payload.championshipAssignments));
+      setExpandedSlotKey(null);
       setSaved(false);
       requestId.current = null;
     } catch (reason) {
@@ -174,6 +221,7 @@ export default function CardClient(): React.JSX.Element {
       plannedFinish: "CLEAN_PIN",
     }]);
     setRunningOrder((current) => [...current, { kind: "MATCH", refId: id }]);
+    setExpandedSlotKey(`MATCH:${id}`);
     markDirty();
   }
 
@@ -187,6 +235,7 @@ export default function CardClient(): React.JSX.Element {
       plannedLengthMinutes: 6,
     }]);
     setRunningOrder((current) => [...current, { kind: "SEGMENT", refId: id }]);
+    setExpandedSlotKey(`SEGMENT:${id}`);
     markDirty();
   }
 
@@ -272,6 +321,8 @@ export default function CardClient(): React.JSX.Element {
       setSegments((current) => current.filter((segment) => segment.draftSegmentId !== slot.refId));
     }
     setRunningOrder((current) => current.filter((candidate) => !(candidate.kind === slot.kind && candidate.refId === slot.refId)));
+    const key = `${slot.kind}:${slot.refId}`;
+    setExpandedSlotKey((current) => current === key ? null : current);
     markDirty();
   }
 
@@ -301,6 +352,24 @@ export default function CardClient(): React.JSX.Element {
   function personBookedInOtherMatch(personId: string, matchId: string, currentId: string): boolean {
     if (!personId || personId === currentId) return false;
     return matches.some((match) => match.draftMatchId !== matchId && [...match.sideAIds, ...match.sideBIds].includes(personId));
+  }
+
+  function personName(personId: string): string {
+    if (!view || !personId) return "TBD";
+    return view.availableParticipants.find((person) => person.personId === personId)?.name
+      ?? view.participants.find((person) => person.personId === personId)?.name
+      ?? "Unknown wrestler";
+  }
+
+  function matchSummary(match: AlphaCardMatchView): string {
+    const sideA = match.sideAIds.map(personName).join(" & ");
+    const sideB = match.sideBIds.map(personName).join(" & ");
+    return `${sideA} vs ${sideB} · ${match.plannedLengthMinutes} min`;
+  }
+
+  function segmentSummary(segment: AlphaCardSegmentView): string {
+    const people = segment.participantIds.map(personName).join(" · ") || "No wrestlers selected";
+    return `${pretty(segment.type)} · ${people} · ${segment.plannedLengthMinutes} min`;
   }
 
   function holderEligible(championship: AlphaCardChampionshipView, match: AlphaCardMatchView): boolean {
@@ -435,6 +504,8 @@ export default function CardClient(): React.JSX.Element {
               if (!match) return null;
               const assignment = assignmentForMatch(match.draftMatchId);
               const finish = (match.plannedFinish ?? defaultFinishForIntent(match.intent)) as BookableFinish;
+              const slotKey = `MATCH:${slot.refId}`;
+              const expanded = expandedSlotKey === slotKey;
               const participantOptions = (currentId: string) => view.availableParticipants.map((person) => (
                 <option
                   key={person.personId}
@@ -445,12 +516,24 @@ export default function CardClient(): React.JSX.Element {
                 </option>
               ));
               return (
-                <article className={`${styles.matchCard} ${match.draftMatchId === lastMatchId ? styles.mainEventCard : ""}`} key={`MATCH:${slot.refId}`}>
-                  <div className={styles.matchHeader}>
-                    <div><span className={styles.slotNumber}>SLOT {slotIndex + 1}</span><strong>Match</strong></div>
-                    {match.draftMatchId === lastMatchId ? <span className={styles.mainEvent}>MAIN EVENT</span> : null}
-                  </div>
+                <article className={`${styles.matchCard} ${match.draftMatchId === lastMatchId ? styles.mainEventCard : ""}`} key={slotKey}>
+                  <button
+                    className={styles.slotToggle}
+                    type="button"
+                    aria-expanded={expanded}
+                    onClick={() => setExpandedSlotKey(expanded ? null : slotKey)}
+                  >
+                    <div className={styles.slotHeading}>
+                      <span className={styles.slotNumber}>SLOT {slotIndex + 1} · MATCH</span>
+                      <strong>{matchSummary(match)}</strong>
+                    </div>
+                    <div className={styles.slotHeaderBadges}>
+                      {match.draftMatchId === lastMatchId ? <span className={styles.mainEvent}>MAIN EVENT</span> : null}
+                      <span className={styles.chevron}>{expanded ? "▲" : "▼"}</span>
+                    </div>
+                  </button>
 
+                  {expanded ? <>
                   <div className={styles.slotTypeRow}>
                     <button className={match.type === "SINGLES" ? styles.typeActive : styles.secondaryButton} type="button" onClick={() => setMatchType(match.draftMatchId, "SINGLES")} disabled={!view.canEdit}>Singles</button>
                     <button className={match.type === "TAG" ? styles.typeActive : styles.secondaryButton} type="button" onClick={() => setMatchType(match.draftMatchId, "TAG")} disabled={!view.canEdit}>Tag Team</button>
@@ -480,7 +563,7 @@ export default function CardClient(): React.JSX.Element {
                     <div className={styles.control}><label>Winner</label><select value={match.intendedWinnerSide} disabled={!view.canEdit} onChange={(event) => updateMatch(match.draftMatchId, { intendedWinnerSide: event.target.value as "A" | "B" })}><option value="A">Side A</option><option value="B">Side B</option></select></div>
                     <div className={styles.control}><label>Intent</label><select value={match.intent} disabled={!view.canEdit} onChange={(event) => { const intent=event.target.value as AlphaCardMatchView["intent"]; updateMatch(match.draftMatchId, { intent, plannedFinish: defaultFinishForIntent(intent) }); }}>{MATCH_INTENTS.map((intent) => <option key={intent} value={intent}>{pretty(intent)}</option>)}</select></div>
                     <div className={styles.control}><label>Finish</label><select value={finish} disabled={!view.canEdit} onChange={(event) => updateMatch(match.draftMatchId, { plannedFinish: event.target.value as BookableFinish })}>{MATCH_FINISHES.map((item) => <option key={item} value={item}>{finishLabel(item)}</option>)}</select></div>
-                    <div className={styles.control}><label>Minutes</label><input type="number" min={3} max={60} inputMode="numeric" value={match.plannedLengthMinutes} disabled={!view.canEdit} onChange={(event) => updateMatch(match.draftMatchId, { plannedLengthMinutes: Math.max(3, Math.min(60, Number(event.target.value) || 3)) })} /></div>
+                    <div className={styles.control}><label>Minutes</label><MinuteField value={match.plannedLengthMinutes} min={3} max={60} disabled={!view.canEdit} onCommit={(plannedLengthMinutes) => updateMatch(match.draftMatchId, { plannedLengthMinutes })} /></div>
                     <div className={styles.control}>
                       <label>Championship</label>
                       <select value={assignment?.championshipId ?? ""} disabled={!view.canEdit} onChange={(event) => assignChampionship(match.draftMatchId, event.target.value)}>
@@ -499,24 +582,39 @@ export default function CardClient(): React.JSX.Element {
                     <button className={styles.secondaryButton} type="button" disabled={!view.canEdit || slotIndex === runningOrder.length - 1} onClick={() => moveSlot(slotIndex, 1)}>↓ Later</button>
                     <button className={styles.removeButton} type="button" disabled={!view.canEdit} onClick={() => removeSlot(slot)}>Remove</button>
                   </div>
+                  </> : null}
                 </article>
               );
             }
 
             const segment = segments.find((candidate) => candidate.draftSegmentId === slot.refId);
             if (!segment) return null;
+            const slotKey = `SEGMENT:${slot.refId}`;
+            const expanded = expandedSlotKey === slotKey;
             const usedProgrammeElsewhere = new Set(
               segments
                 .filter((candidate) => candidate.draftSegmentId !== segment.draftSegmentId && candidate.programmeId)
                 .map((candidate) => candidate.programmeId),
             );
             return (
-              <article className={`${styles.matchCard} ${styles.segmentCard}`} key={`SEGMENT:${slot.refId}`}>
-                <div className={styles.matchHeader}>
-                  <div><span className={styles.slotNumber}>SLOT {slotIndex + 1}</span><strong>Segment</strong></div>
-                  <span className={styles.segmentBadge}>{pretty(segment.type)}</span>
-                </div>
+              <article className={`${styles.matchCard} ${styles.segmentCard}`} key={slotKey}>
+                <button
+                  className={styles.slotToggle}
+                  type="button"
+                  aria-expanded={expanded}
+                  onClick={() => setExpandedSlotKey(expanded ? null : slotKey)}
+                >
+                  <div className={styles.slotHeading}>
+                    <span className={styles.slotNumber}>SLOT {slotIndex + 1} · SEGMENT</span>
+                    <strong>{segmentSummary(segment)}</strong>
+                  </div>
+                  <div className={styles.slotHeaderBadges}>
+                    <span className={styles.segmentBadge}>{pretty(segment.type)}</span>
+                    <span className={styles.chevron}>{expanded ? "▲" : "▼"}</span>
+                  </div>
+                </button>
 
+                {expanded ? <>
                 <div className={styles.controls}>
                   <div className={styles.control}>
                     <label>What happens?</label>
@@ -537,7 +635,7 @@ export default function CardClient(): React.JSX.Element {
                   </div>
                   <div className={styles.control}>
                     <label>Minutes</label>
-                    <input type="number" min={2} max={20} inputMode="numeric" value={segment.plannedLengthMinutes} disabled={!view.canEdit} onChange={(event) => updateSegment(segment.draftSegmentId, { plannedLengthMinutes: Math.max(2, Math.min(20, Number(event.target.value) || 2)) })} />
+                    <MinuteField value={segment.plannedLengthMinutes} min={2} max={20} disabled={!view.canEdit} onCommit={(plannedLengthMinutes) => updateSegment(segment.draftSegmentId, { plannedLengthMinutes })} />
                   </div>
                 </div>
 
@@ -563,6 +661,7 @@ export default function CardClient(): React.JSX.Element {
                   <button className={styles.secondaryButton} type="button" disabled={!view.canEdit || slotIndex === runningOrder.length - 1} onClick={() => moveSlot(slotIndex, 1)}>↓ Later</button>
                   <button className={styles.removeButton} type="button" disabled={!view.canEdit} onClick={() => removeSlot(slot)}>Remove</button>
                 </div>
+                </> : null}
               </article>
             );
           })}
