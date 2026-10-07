@@ -410,9 +410,17 @@ await test("materialized current-week show remains editable until lock and repla
     .map((match) => match.id);
   ok(firstActualIds.length === firstCard.length, "first materialized card did not create scheduled matches");
 
+  const revisedStyle = {
+    competitiveness: 72,
+    technical: 91,
+    story: 44,
+    intensity: 63,
+    risk: 28,
+    epic: 57,
+  };
   const revisedCard = saved.matches.map((match, index) => (
     index === 0
-      ? { ...match, intent: "TECHNICAL" as const, plannedLengthMinutes: 19 }
+      ? { ...match, intent: "TECHNICAL" as const, style: revisedStyle, plannedLengthMinutes: 19 }
       : { ...match }
   ));
   const revisedRequest = {
@@ -429,6 +437,7 @@ await test("materialized current-week show remains editable until lock and repla
     revisedRequest,
   );
   ok(revised.canEdit && revised.planningState === "READY_TO_LOCK", "revised card froze before lock");
+  ok(revised.matches[0]?.style?.technical === 91, "revised card response dropped match style");
 
   const afterRevision = await fixture.repository.load(fixture.worldId);
   const revisedMatches = afterRevision.state.matches
@@ -436,6 +445,7 @@ await test("materialized current-week show remains editable until lock and repla
     .sort((left, right) => left.order - right.order);
   ok(revisedMatches.length === revisedCard.length, "card revision duplicated or dropped scheduled matches");
   ok(revisedMatches[0]?.intent === "TECHNICAL", "card revision did not replace match intent");
+  ok(revisedMatches[0]?.style?.technical === 91 && revisedMatches[0]?.style?.risk === 28, "card revision did not replace match style");
   ok(revisedMatches[0]?.plannedLengthMinutes === 19, "card revision did not replace match length");
   ok(
     revisedMatches.every((match) => !firstActualIds.includes(match.id)),

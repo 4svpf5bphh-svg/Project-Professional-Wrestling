@@ -245,6 +245,15 @@ try {
   ok(cardView.reservationId, "HTTP card editor did not load a real reservation");
   ok(cardView.participants.length === plan.participantIds.length, "HTTP card editor lost reserved wrestlers");
   const matches = completeSinglesCard(cardView);
+  const httpStyle = {
+    competitiveness: 84,
+    technical: 73,
+    story: 52,
+    intensity: 67,
+    risk: 31,
+    epic: 60,
+  };
+  matches[0] = { ...matches[0], style: httpStyle };
   const turnPerson = cardView.participants[0];
   ok(turnPerson, "HTTP card view exposed no wrestler for Turn regression");
   const turnTargetAlignment = turnPerson.alignment === "HEEL" ? "FACE" : "HEEL";
@@ -276,6 +285,8 @@ try {
   }));
   ok(savedCard.matches.length === matches.length, "HTTP match card did not persist every booked match");
   ok(savedCard.matches.every((match) => match.type === "SINGLES"), "HTTP match card changed booked match types");
+  ok(savedCard.matches[0]?.style?.competitiveness === 84, "HTTP show-card route dropped match style");
+  ok(savedCard.matches[0]?.style?.risk === 31, "HTTP show-card route changed match style dimensions");
   ok(savedCard.segments?.length === 1 && savedCard.segments[0]?.type === "TURN", "HTTP show-card route rejected or dropped TURN");
   ok(savedCard.segments[0]?.turnPersonId === turnPerson.personId, "HTTP show-card route dropped the turning wrestler");
   ok(savedCard.segments[0]?.turnTargetAlignment === turnTargetAlignment, "HTTP show-card route dropped the target alignment");

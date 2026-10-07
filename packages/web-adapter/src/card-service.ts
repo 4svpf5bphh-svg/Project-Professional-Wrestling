@@ -4,6 +4,7 @@ import type {
   Id,
   MatchIntent,
   MatchSide,
+  MatchStyleProfile,
   MatchType,
   PpwDate,
   WorldState,
@@ -25,6 +26,7 @@ import {
 } from "../../application/src/index.js";
 import { wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
 import {
   bookHumanChampionshipMatch,
   unbookHumanChampionshipMatch,
@@ -57,6 +59,7 @@ export interface AlphaCardMatchView {
   sideBIds: Id[];
   intendedWinnerSide: MatchSide;
   intent: MatchIntent;
+  style?: MatchStyleProfile;
   plannedLengthMinutes: number;
   plannedFinish?: MatchFinish;
 }
@@ -207,6 +210,7 @@ function normalizeCompleteCard(
     if (!MATCH_SIDES.has(match.intendedWinnerSide)) throw new Error("intended winner side must be A or B");
     if (!MATCH_INTENTS.has(match.intent)) throw new Error(`unsupported match intent ${String(match.intent)}`);
     const plannedFinish = match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent);
+    const style = match.style === undefined ? undefined : normalizeMatchStyle(match.style);
     if (!isBookableMatchFinish(plannedFinish)) throw new Error("planned match finish must be clean, submission, flash or protected");
     if (!Number.isInteger(match.plannedLengthMinutes) || match.plannedLengthMinutes < 3 || match.plannedLengthMinutes > 60) {
       throw new Error("planned match length must be an integer from 3 to 60 minutes");
@@ -233,6 +237,7 @@ function normalizeCompleteCard(
       sideBIds: [...match.sideBIds],
       intendedWinnerSide: match.intendedWinnerSide,
       intent: match.intent,
+      ...(style === undefined ? {} : { style }),
       plannedLengthMinutes: match.plannedLengthMinutes,
       plannedFinish,
     } satisfies DetailedMatchDraft;
@@ -815,6 +820,7 @@ export async function loadAlphaShowCard(
           sideBIds: [...match.sideBIds],
           intendedWinnerSide: match.intendedWinnerSide,
           intent: match.intent,
+          ...(match.style === undefined ? {} : { style: { ...match.style } }),
           plannedLengthMinutes: match.plannedLengthMinutes,
           plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
         } satisfies AlphaCardMatchView]
