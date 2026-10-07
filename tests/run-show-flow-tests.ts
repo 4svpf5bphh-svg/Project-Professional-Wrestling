@@ -1,7 +1,13 @@
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
-import type { Match, MatchIntent, WrestlingEvent, WorldState } from "../packages/domain/src/types.js";
+import type {
+  Match,
+  MatchIntent,
+  MatchStyleProfile,
+  WrestlingEvent,
+  WorldState,
+} from "../packages/domain/src/types.js";
 import {
   applyCurrentWeekShowFlow,
   changePromotionWrestlerAlignment,
@@ -167,6 +173,79 @@ test("a card that builds toward intensity outperforms one that burns hot then fi
   );
   ok(wellBuilt.matches.at(-1)?.pacingReason === "BACK_TO_BACK_INTENSITY", "high-intensity closer did not retain its dominant fatigue signal");
   ok(burnedThenFlat.matches.at(-1)?.pacingReason === "FLAT_CLOSER", "flat closer did not retain an explainable pacing reason");
+});
+
+test("styled show flow uses six-dimensional similarity instead of legacy Intent repetition", () => {
+  const { state, event, personIds } = fixture(84108);
+  const sharedStyle: MatchStyleProfile = {
+    competitiveness: 70,
+    technical: 72,
+    story: 55,
+    intensity: 62,
+    risk: 28,
+    epic: 58,
+  };
+  const first = { ...completedMatch(state, event, "style-repeat-a", 1, "COMPETITIVE", 70), style: { ...sharedStyle } };
+  const second = { ...completedMatch(state, event, "style-repeat-b", 2, "EPIC", 70), style: { ...sharedStyle } };
+  attachSinglesParticipants(state, event, first, personIds[0]!, personIds[1]!);
+  attachSinglesParticipants(state, event, second, personIds[2]!, personIds[3]!);
+  for (const personId of personIds.slice(0, 4)) {
+    setWrestlerAlignment(state.people.find((person) => person.id === personId)!, "TWEENER");
+  }
+
+  const evaluation = evaluateShowFlow(state, event, [first, second]);
+  ok(evaluation.matches[1]?.pacingReason === "REPEATED_STYLE", "near-identical explicit styles were not recognised as repetition");
+  ok(evaluation.matches[1]?.pacingModifier < 0, "repeated explicit style did not cost crowd flow");
+
+  const changed = {
+    ...second,
+    style: {
+      competitiveness: 45,
+      technical: 35,
+      story: 82,
+      intensity: 35,
+      risk: 10,
+      epic: 32,
+    },
+  };
+  const varied = evaluateShowFlow(state, event, [first, changed]);
+  ok(varied.matches[1]?.pacingReason !== "REPEATED_STYLE", "meaningfully different style was still treated as repetition");
+});
+
+test("styled intensity ignores the legacy Intent label while legacy repetition remains unchanged", () => {
+  const { state, event, personIds } = fixture(84109);
+  const style: MatchStyleProfile = {
+    competitiveness: 65,
+    technical: 60,
+    story: 50,
+    intensity: 80,
+    risk: 50,
+    epic: 75,
+  };
+  const styledCompetitive = { ...completedMatch(state, event, "style-intent-a", 1, "COMPETITIVE", 70), style: { ...style } };
+  const styledProtective = { ...completedMatch(state, event, "style-intent-b", 1, "PROTECTIVE", 70), style: { ...style } };
+  attachSinglesParticipants(state, event, styledCompetitive, personIds[0]!, personIds[1]!);
+  attachSinglesParticipants(state, event, styledProtective, personIds[2]!, personIds[3]!);
+  for (const personId of personIds.slice(0, 4)) {
+    setWrestlerAlignment(state.people.find((person) => person.id === personId)!, "TWEENER");
+  }
+  const competitiveFlow = evaluateShowFlow(state, event, [styledCompetitive]);
+  const protectiveFlow = evaluateShowFlow(state, event, [styledProtective]);
+  ok(
+    competitiveFlow.matches[0]?.pacingModifier === protectiveFlow.matches[0]?.pacingModifier,
+    "legacy Intent still changed pacing for an explicit style",
+  );
+  ok(
+    competitiveFlow.matches[0]?.pacingReason === protectiveFlow.matches[0]?.pacingReason,
+    "legacy Intent still changed pacing explanation for an explicit style",
+  );
+
+  const legacyA = completedMatch(state, event, "legacy-repeat-a", 1, "STORY", 70);
+  const legacyB = completedMatch(state, event, "legacy-repeat-b", 2, "STORY", 70);
+  attachSinglesParticipants(state, event, legacyA, personIds[4]!, personIds[5]!);
+  attachSinglesParticipants(state, event, legacyB, personIds[6]!, personIds[7]!);
+  const legacyFlow = evaluateShowFlow(state, event, [legacyA, legacyB]);
+  ok(legacyFlow.matches[1]?.pacingReason === "REPEATED_INTENT", "legacy repeated Intent behaviour changed");
 });
 
 test("face versus heel clarity adds a modest emotional hook without becoming match quality", () => {

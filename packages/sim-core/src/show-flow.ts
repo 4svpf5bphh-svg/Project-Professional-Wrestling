@@ -35,6 +35,7 @@ export type ShowFlowReasonCode =
   | "PROGRAMME_REPETITION"
   | "COOL_PROGRAMME"
   | "REPEATED_INTENT"
+  | "REPEATED_STYLE"
   | "BACK_TO_BACK_INTENSITY"
   | "PACE_CONTRAST"
   | "INTENSITY_BUILD"
@@ -162,9 +163,36 @@ function programmeModifierForMatch(state: WorldState, event: WrestlingEvent, mat
   return { modifier, reason };
 }
 
+function styleIntensity(match: Match): number {
+  if (match.style === undefined) return INTENT_INTENSITY[match.intent];
+  return clamp(
+    match.style.intensity * 0.45
+      + match.style.epic * 0.25
+      + match.style.risk * 0.12
+      + match.style.competitiveness * 0.1
+      + match.style.technical * 0.04
+      + match.style.story * 0.04,
+    0,
+    100,
+  );
+}
+
+function styleSimilarity(left: Match, right: Match): number | null {
+  if (left.style === undefined || right.style === undefined) return null;
+  const differences = [
+    Math.abs(left.style.competitiveness - right.style.competitiveness),
+    Math.abs(left.style.technical - right.style.technical),
+    Math.abs(left.style.story - right.style.story),
+    Math.abs(left.style.intensity - right.style.intensity),
+    Math.abs(left.style.risk - right.style.risk),
+    Math.abs(left.style.epic - right.style.epic),
+  ];
+  return 100 - differences.reduce((sum, value) => sum + value, 0) / differences.length;
+}
+
 function pacingModifier(matches: Match[], index: number): ModifierEvaluation {
   const match = matches[index]!;
-  const intensity = INTENT_INTENSITY[match.intent];
+  const intensity = styleIntensity(match);
   const isLast = index === matches.length - 1;
   const signals = new Map<ShowFlowReasonCode, number>();
   const add = (reason: ShowFlowReasonCode, impact: number): void => {
@@ -173,11 +201,15 @@ function pacingModifier(matches: Match[], index: number): ModifierEvaluation {
 
   if (index > 0) {
     const previous = matches[index - 1]!;
-    const previousIntensity = INTENT_INTENSITY[previous.intent];
+    const previousIntensity = styleIntensity(previous);
     const difference = intensity - previousIntensity;
     const absoluteDifference = Math.abs(difference);
+    const similarity = styleSimilarity(previous, match);
 
-    if (match.intent === previous.intent) add("REPEATED_INTENT", -0.8);
+    if (similarity !== null && similarity >= 82) add("REPEATED_STYLE", similarity >= 92 ? -1.1 : -0.8);
+    else if (similarity === null && match.style === undefined && previous.style === undefined && match.intent === previous.intent) {
+      add("REPEATED_INTENT", -0.8);
+    }
     if (intensity >= 76 && previousIntensity >= 76) add("BACK_TO_BACK_INTENSITY", -1.8);
     if (absoluteDifference >= 14 && absoluteDifference <= 42) add("PACE_CONTRAST", 0.6);
     if (difference >= 10 && difference <= 45) add("INTENSITY_BUILD", 0.5);
@@ -187,7 +219,7 @@ function pacingModifier(matches: Match[], index: number): ModifierEvaluation {
 
   if (intensity >= 76) {
     let highIntensityStreak = 1;
-    for (let prior = index - 1; prior >= 0 && INTENT_INTENSITY[matches[prior]!.intent] >= 76; prior -= 1) {
+    for (let prior = index - 1; prior >= 0 && styleIntensity(matches[prior]!) >= 76; prior -= 1) {
       highIntensityStreak += 1;
     }
     if (highIntensityStreak >= 3) {

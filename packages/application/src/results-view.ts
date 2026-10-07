@@ -32,6 +32,7 @@ export type PlayerShowCrowdReasonCode =
   | "PROGRAMME_REPETITION"
   | "COOL_PROGRAMME"
   | "REPEATED_INTENT"
+  | "REPEATED_STYLE"
   | "BACK_TO_BACK_INTENSITY"
   | "PACE_CONTRAST"
   | "INTENSITY_BUILD"
@@ -184,6 +185,7 @@ const CROWD_REASON_LABELS: Record<PlayerShowCrowdReasonCode, string> = {
   PROGRAMME_REPETITION: "Programme felt overexposed",
   COOL_PROGRAMME: "Programme lacked heat",
   REPEATED_INTENT: "Similar match rhythm repeated",
+  REPEATED_STYLE: "Similar match style repeated",
   BACK_TO_BACK_INTENSITY: "Back-to-back intensity taxed the crowd",
   PACE_CONTRAST: "Change of pace refreshed the room",
   INTENSITY_BUILD: "Card intensity built at the right time",
