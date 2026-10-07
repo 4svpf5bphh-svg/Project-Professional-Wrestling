@@ -1,6 +1,6 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { Match, MatchIntent, MatchParticipant, WorldState, WrestlingEvent } from "../../domain/src/types.js";
-import { wrestlerAlignment } from "./alignment.js";
+import { wrestlerAlignmentForPromotion } from "./alignment.js";
 import {
   eventsForWeek,
   matchesForEvent,
@@ -77,6 +77,7 @@ function round1(value: number): number {
 
 function sideAlignment(
   state: WorldState,
+  promotionId: string,
   participants: readonly MatchParticipant[],
   side: "A" | "B",
 ): SideAlignment {
@@ -84,7 +85,7 @@ function sideAlignment(
     .filter((participant) => participant.side === side)
     .map((participant) => personById(state, participant.personId))
     .filter((person): person is NonNullable<ReturnType<typeof personById>> => Boolean(person))
-    .map((person) => wrestlerAlignment(person, state.world.seed));
+    .map((person) => wrestlerAlignmentForPromotion(state, promotionId, person.id));
   if (alignments.length === 0) return null;
   const unique = new Set(alignments);
   return unique.size === 1 ? alignments[0]! : "MIXED";
@@ -92,8 +93,8 @@ function sideAlignment(
 
 function alignmentModifierForMatch(state: WorldState, match: Match): ModifierEvaluation {
   const participants = participantsForMatch(state, match.id);
-  const a = sideAlignment(state, participants, "A");
-  const b = sideAlignment(state, participants, "B");
+  const a = sideAlignment(state, match.promotionId, participants, "A");
+  const b = sideAlignment(state, match.promotionId, participants, "B");
   if (!a || !b || a === "MIXED" || b === "MIXED") return { modifier: 0, reason: null };
   if ((a === "FACE" && b === "HEEL") || (a === "HEEL" && b === "FACE")) {
     return { modifier: 2.2, reason: "FACE_HEEL_CLARITY" };
