@@ -8,6 +8,7 @@ import type {
   PlayerTalentMarketView,
 } from "../../../../dist/packages/application/src/talent-view.js";
 import type {
+  AlphaRosterAlignmentResult,
   AlphaTalentOfferRequest,
   AlphaTalentOfferResult,
 } from "../../../../dist/packages/web-adapter/src/talent-service.js";
@@ -21,6 +22,7 @@ type RosterSort = "POPULARITY" | "RECOGNITION" | "DATES_ASC" | "DATES_DESC" | "E
 type RosterContractFilter = "ALL" | "EXCLUSIVE" | "NON_EXCLUSIVE";
 type MarketSort = "POPULARITY" | "RECOGNITION" | "VALUE_HIGH" | "VALUE_LOW" | "NAME";
 type MarketAvailabilityFilter = "ALL" | "FREE_AGENT" | "NON_EXCLUSIVE";
+type Alignment = PlayerRosterContractView["alignment"];
 
 type OfferTarget = {
   requestId: string;
@@ -147,10 +149,14 @@ function InjuryBadge({ injury }: { injury: { severity: string; weeksRemaining: n
 function RosterCard({
   wrestler,
   pending,
+  alignmentSaving,
+  onAlignment,
   onRenew,
 }: {
   wrestler: PlayerRosterContractView;
   pending: boolean;
+  alignmentSaving: boolean;
+  onAlignment: (alignment: Alignment) => void;
   onRenew: () => void;
 }): React.JSX.Element {
   const contract = wrestler.contract;
@@ -189,6 +195,25 @@ function RosterCard({
             <span>Weekly guarantee <b>{money(contract.weeklyGuarantee)}</b></span>
             <span>Appearance fee <b>{money(contract.appearanceFee)}</b></span>
             <span>Signing bonus <b>{money(contract.signingBonus)}</b></span>
+          </div>
+        </div>
+        <div className={styles.presentationBox}>
+          <div>
+            <span>Promotion alignment</span>
+            <small>How this wrestler is presented in your promotion. This does not rewrite their identity elsewhere in the World.</small>
+          </div>
+          <div className={styles.alignmentChoices} role="group" aria-label={`Alignment for ${wrestler.name}`}>
+            {(["FACE", "HEEL", "TWEENER"] as const).map((alignment) => (
+              <button
+                key={alignment}
+                type="button"
+                className={wrestler.alignment === alignment ? styles.alignmentActive : styles.alignmentChoice}
+                disabled={alignmentSaving}
+                onClick={() => onAlignment(alignment)}
+              >
+                {label(alignment)}
+              </button>
+            ))}
           </div>
         </div>
         <div className={styles.cardActions}>
@@ -353,6 +378,7 @@ export default function TalentClient(): React.JSX.Element {
   const [marketAvailabilityFilter, setMarketAvailabilityFilter] = useState<MarketAvailabilityFilter>("ALL");
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [alignmentSaving, setAlignmentSaving] = useState<string | null>(null);
   const [target, setTarget] = useState<OfferTarget | null>(null);
   const [draft, setDraft] = useState<OfferDraft | null>(null);
   const offerOpen = Boolean(target && draft);
@@ -427,6 +453,37 @@ export default function TalentClient(): React.JSX.Element {
     setDraft(defaultDraft(next));
     setError(null);
     setNotice(null);
+  }
+
+  async function changeAlignment(wrestler: PlayerRosterContractView, alignment: Alignment): Promise<void> {
+    if (alignment === wrestler.alignment || alignmentSaving) return;
+    setAlignmentSaving(wrestler.personId);
+    setError(null);
+    setNotice(null);
+    try {
+      const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const response = await fetch("/api/talent", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: `talent-alignment:${wrestler.personId}:${suffix}`,
+          personId: wrestler.personId,
+          alignment,
+        }),
+      });
+      const payload = await response.json() as AlphaRosterAlignmentResult | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to update wrestler alignment");
+      }
+      setView(payload.view);
+      setNotice(`${wrestler.name} is now presented as ${label(payload.alignment).toLowerCase()} in your promotion.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to update wrestler alignment");
+    } finally {
+      setAlignmentSaving(null);
+    }
   }
 
   async function submitOffer(): Promise<void> {
@@ -601,6 +658,8 @@ export default function TalentClient(): React.JSX.Element {
                 key={entry.contractId}
                 wrestler={entry}
                 pending={pendingPeople.has(entry.personId)}
+                alignmentSaving={alignmentSaving === entry.personId}
+                onAlignment={(alignment) => void changeAlignment(entry, alignment)}
                 onRenew={() => openRenewal(entry)}
               />
             )) : null}
