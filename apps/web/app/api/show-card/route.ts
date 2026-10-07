@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import type {
   MatchIntent,
   MatchSide,
+  MatchStyleProfile,
   MatchType,
 } from "../../../../../dist/packages/domain/src/types.js";
+import { normalizeMatchStyle } from "../../../../../dist/packages/sim-core/src/match-style.js";
 import {
   loadAlphaShowCard,
   saveAlphaShowCard,
@@ -81,6 +83,26 @@ function personIds(value: unknown, label: string): string[] {
   return value.map((entry, index) => requiredText(entry, `${label}[${index}]`, 128));
 }
 
+
+function matchStyle(value: unknown, label: string): MatchStyleProfile | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object") throw new Error(`${label} must be an object`);
+  const candidate = value as Record<string, unknown>;
+  const dimension = (key: keyof MatchStyleProfile): number => {
+    const entry = candidate[key];
+    if (typeof entry !== "number") throw new Error(`${label}.${key} must be a number`);
+    return entry;
+  };
+  return normalizeMatchStyle({
+    competitiveness: dimension("competitiveness"),
+    technical: dimension("technical"),
+    story: dimension("story"),
+    intensity: dimension("intensity"),
+    risk: dimension("risk"),
+    epic: dimension("epic"),
+  });
+}
+
 function matches(value: unknown): AlphaCardMatchView[] {
   if (!Array.isArray(value)) throw new Error("matches must be an array");
   return value.map((entry, index) => {
@@ -95,6 +117,7 @@ function matches(value: unknown): AlphaCardMatchView[] {
     const intent = requiredText(candidate.intent, `matches[${index}].intent`, 32) as MatchIntent;
     const plannedFinishText = optionalText(candidate.plannedFinish, `matches[${index}].plannedFinish`, 32);
     const plannedFinish = plannedFinishText as BookableFinish | undefined;
+    const style = matchStyle(candidate.style, `matches[${index}].style`);
     if (!MATCH_TYPES.has(type)) throw new Error(`unsupported match type ${type}`);
     if (!MATCH_SIDES.has(intendedWinnerSide)) throw new Error("intended winner side must be A or B");
     if (!MATCH_INTENTS.has(intent)) throw new Error(`unsupported match intent ${intent}`);
@@ -109,6 +132,7 @@ function matches(value: unknown): AlphaCardMatchView[] {
       sideBIds: personIds(candidate.sideBIds, `matches[${index}].sideBIds`),
       intendedWinnerSide,
       intent,
+      ...(style === undefined ? {} : { style }),
       plannedLengthMinutes: plannedLength(candidate.plannedLengthMinutes, `matches[${index}].plannedLengthMinutes`),
       ...(plannedFinish === undefined ? {} : { plannedFinish }),
     };
