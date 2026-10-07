@@ -237,8 +237,10 @@ export function createWorld(
   for (let i = 0; i < remainingTarget; i += 1) {
     const person = sortedByValue[i]!;
     const eligible = promotions.filter(
-      (promotion) => (assigned.get(promotion.id) ?? 0) < (quotas.get(promotion.id) ?? 0),
+      (promotion) => promotion.rosterMode !== "EXPLICIT"
+        && (assigned.get(promotion.id) ?? 0) < (quotas.get(promotion.id) ?? 0),
     );
+    if (eligible.length === 0) break;
     const promotion = rng.weightedPick(
       eligible.map((candidate) => ({ value: candidate, weight: tierAllocationWeight(candidate) })),
     );
@@ -251,6 +253,7 @@ export function createWorld(
     );
     createSignedContract(state, person, promotion, { ...terms, signingBonus: 0 }, null, true);
   }
+  const actualContracted = new Set(state.contracts.map((contract) => contract.personId)).size;
   new LedgerWriter(worldId, state.ledger).append({
     date: world.currentDate,
     type: "WORLD_GENESIS_COMPLETED",
@@ -261,8 +264,8 @@ export function createWorld(
       venues: venues.length,
       promotions: promotions.length,
       wrestlers: people.length,
-      contracted: targetContracted,
-      freeAgents: people.length - targetContracted,
+      contracted: actualContracted,
+      freeAgents: people.length - actualContracted,
       contracts: state.contracts.length,
     },
   });

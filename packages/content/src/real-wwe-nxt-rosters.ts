@@ -36,6 +36,36 @@ export const WWE_INITIAL_ROSTER_NAMES = [
   "Johnny Gargano",
   "Becky Lynch",
   "Bayley",
+  "Penta",
+  "Dominik Mysterio",
+  "Dragon Lee",
+  "Rey Mysterio",
+  "Bronson Reed",
+  "Oba Femi",
+  "Stephanie Vaquer",
+  "Je'Von Evans",
+  "Lola Vice",
+  "Sol Ruca",
+  "Roxanne Perez",
+  "Solo Sikoa",
+  "Finn Bálor",
+  "Trick Williams",
+  "Lash Legend",
+  "Charlotte Flair",
+  "Giulia",
+  "Jacy Jayne",
+  "Nia Jax",
+  "Candice LeRae",
+  "Blake Monroe",
+  "Nikki Bella",
+  "Paige",
+  "Rey Fenix",
+  "Ricky Saints",
+  "JD McDonagh",
+  "Lyra Valkyria",
+  "R-Truth",
+  "Angelo Dawkins",
+  "Montez Ford",
 ] as const;
 
 export const NXT_INITIAL_ROSTER_NAMES = [
@@ -63,6 +93,19 @@ export const NXT_INITIAL_ROSTER_NAMES = [
   "Saquon Shugars",
   "Dorian Van Dux",
   "Shiloh Hill",
+  "Brad Baylor",
+  "Ricky Smokes",
+  "Nathan Frazer",
+  "Axiom",
+  "Osiris Griffin",
+  "Cutler James",
+  "Channing \"Stacks\" Lorenzo",
+  "Uriah Connors",
+  "Hank Walker",
+  "Tank Ledger",
+  "Dion Lennox",
+  "Kam Hendrix",
+  "Tate Wilder",
 ] as const;
 
 const reviewedRosterNames = new Set([
@@ -82,12 +125,12 @@ if (new Set(allSeedNames).size !== allSeedNames.length) {
 }
 
 /**
- * Reviewed WWE/NXT assignment seed, expanded in deliberately small batches.
+ * Reviewed WWE/NXT active-core assignment seed based on current official show activity.
  *
  * WWE is the employment-rights owner for both groups. NXT wrestlers receive
  * an NXT roster affiliation while their exclusive contract remains with WWE.
- * The lists are intentionally incomplete until the assignment pipeline has
- * passed simulation validation.
+ * This is not intended to include every WWE-contracted performer, only the
+ * active-core names in the reviewed PPW identity pool with clear current show usage.
  */
 export const wweNxtInitialRosterAssignmentSource: InitialRosterAssignmentSource = ({
   people,

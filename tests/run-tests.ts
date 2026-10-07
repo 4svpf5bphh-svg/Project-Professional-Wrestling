@@ -396,10 +396,19 @@ test("first reviewed WWE/NXT seed separates WWE employment rights from NXT roste
   const nxtRosterNames = currentRosterPersonIds(state, nxt.id)
     .map((personId) => state.people.find((person) => person.id === personId)!.name);
 
+  equal(wweRosterNames.length, WWE_INITIAL_ROSTER_NAMES.length);
+  equal(nxtRosterNames.length, NXT_INITIAL_ROSTER_NAMES.length);
   for (const name of WWE_INITIAL_ROSTER_NAMES) ok(wweRosterNames.includes(name), `WWE seed missing ${name}`);
   for (const name of NXT_INITIAL_ROSTER_NAMES) ok(nxtRosterNames.includes(name), `NXT seed missing ${name}`);
   ok(!wweRosterNames.includes("Myles Borne"), "NXT wrestler leaked into WWE main roster");
   ok(!nxtRosterNames.includes("Roman Reigns"), "WWE main-roster wrestler leaked into NXT");
+  equal(activeContractsForPromotion(state, wwe.id).length, WWE_INITIAL_ROSTER_NAMES.length + NXT_INITIAL_ROSTER_NAMES.length);
+  equal(activeContractsForPromotion(state, nxt.id).length, 0);
+  equal(
+    new Set(state.contracts.filter((contract) => contract.status === "SIGNED").map((contract) => contract.personId)).size,
+    Math.floor(state.people.length * state.ruleset.initialContractedTalentRatio),
+    "real-world Genesis failed to preserve intended contracted/free-agent balance",
+  );
 
   const roman = state.people.find((person) => person.name === "Roman Reigns")!;
   const myles = state.people.find((person) => person.name === "Myles Borne")!;
@@ -414,6 +423,25 @@ test("first reviewed WWE/NXT seed separates WWE employment rights from NXT roste
   equal(roman.rosterPromotionId, wwe.id);
   equal(myles.rosterPromotionId, nxt.id);
   ok(!state.contracts.some((contract) => contract.personId === myles.id && contract.promotionId === nxt.id), "Myles Borne received a fake standalone NXT employment contract");
+});
+
+test("reviewed WWE/NXT seed survives early World simulation without rogue NXT employment", () => {
+  const state = createWorld(
+    118,
+    REAL_WORLD_ALPHA_RULESET,
+    "WWE NXT Early Sim",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    wweNxtInitialRosterAssignmentSource,
+  );
+  const nxt = state.promotions.find((promotion) => promotion.name === "NXT")!;
+  resolveWorldWeeks(state, 8);
+  const invariantErrors = validateWorldInvariants(state);
+  equal(invariantErrors.length, 0, invariantErrors.join("\n"));
+  ok(
+    !activeContractsForPromotion(state, nxt.id).some((contract) => contract.status === "SIGNED"),
+    "NXT created standalone employment contracts during early simulation",
+  );
 });
 
 test("Genesis creates formal contracts while preserving free-agent supply", () => {
