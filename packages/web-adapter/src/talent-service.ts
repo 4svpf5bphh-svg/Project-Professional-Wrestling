@@ -3,6 +3,7 @@ import type {
   ContractOffer,
   RoleExpectation,
 } from "../../domain/src/types.js";
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import {
   addPpwWeeks,
   contractIsActive,
@@ -12,6 +13,7 @@ import {
 import {
   activePromotionControlForPlayer,
   buildPlayerTalentManagementView,
+  setWrestlerAlignmentCommand,
   submitContractOfferCommand,
   type ApplicationWorldAggregate,
   type ApplicationWorldRepository,
@@ -44,6 +46,18 @@ export interface AlphaTalentOfferRequest {
 export interface AlphaTalentOfferResult {
   offerId: string;
   offerKind: "RECRUITMENT" | "RENEWAL";
+  view: PlayerTalentManagementView;
+}
+
+export interface AlphaRosterAlignmentRequest {
+  requestId: string;
+  personId: string;
+  alignment: WrestlerAlignment;
+}
+
+export interface AlphaRosterAlignmentResult {
+  personId: string;
+  alignment: WrestlerAlignment;
   view: PlayerTalentManagementView;
 }
 
@@ -233,6 +247,53 @@ export async function submitAlphaTalentOffer(
       offerKind: offer.offerKind,
       view: buildPlayerTalentManagementView(aggregate, playerId),
     } satisfies AlphaTalentOfferResult;
+  });
+
+  return transaction.result;
+}
+
+export async function setAlphaRosterAlignment(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  rawRequest: AlphaRosterAlignmentRequest,
+): Promise<AlphaRosterAlignmentResult> {
+  const request: AlphaRosterAlignmentRequest = {
+    requestId: boundedText(rawRequest.requestId, "requestId"),
+    personId: boundedText(rawRequest.personId, "personId"),
+    alignment: rawRequest.alignment,
+  };
+  if (!["FACE", "HEEL", "TWEENER"].includes(request.alignment)) {
+    throw new Error("unsupported wrestler alignment");
+  }
+
+  const transaction = await repository.transact(worldId, null, (aggregate) => {
+    const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
+    if (!control) throw new Error("player must control a promotion before changing roster alignment");
+
+    const alignment = setWrestlerAlignmentCommand(
+      aggregate.state,
+      aggregate.ownership,
+      aggregate.commands,
+      aggregate.runtime,
+      {
+        requestId: request.requestId,
+        worldId,
+        playerId,
+        commandType: "SET_WRESTLER_ALIGNMENT",
+        payload: {
+          promotionId: control.promotionId,
+          personId: request.personId,
+          alignment: request.alignment,
+        },
+      },
+    );
+
+    return {
+      personId: request.personId,
+      alignment,
+      view: buildPlayerTalentManagementView(aggregate, playerId),
+    } satisfies AlphaRosterAlignmentResult;
   });
 
   return transaction.result;
