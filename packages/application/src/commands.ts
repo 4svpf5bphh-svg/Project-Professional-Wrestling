@@ -10,6 +10,7 @@ import { createProgramme } from "../../sim-core/src/programmes.js";
 import { currentRosterPersonIds } from "../../sim-core/src/contracts.js";
 import { nextEntityId } from "../../sim-core/src/id-allocator.js";
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
+import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
 import {
   changePromotionWrestlerAlignment,
   type PromotionAlignmentChangeResult,
@@ -329,11 +330,16 @@ export function createTagTeamCommand(
     }
 
     const rosterIds = new Set(currentRosterPersonIds(state, envelope.payload.promotionId));
-    for (const personId of personIds) {
+    const teamPeople = personIds.map((personId) => {
       if (!rosterIds.has(personId)) throw new Error("both tag-team members must be on your current roster");
       const person = state.people.find((candidate) => candidate.id === personId);
       if (!person || person.status === "RETIRED") throw new Error("tag-team members must be active wrestlers");
-    }
+      return person;
+    });
+    requireSameWrestlerDivision(
+      teamPeople,
+      "tag teams cannot mix men's and women's divisions",
+    );
 
     const normalizedName = name.toLocaleLowerCase("en-GB");
     if ((state.teams ?? []).some((team) => (

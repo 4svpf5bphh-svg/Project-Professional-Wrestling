@@ -203,6 +203,34 @@ test("draft match IDs are stable planning identifiers and do not allocate simula
   ok(f.state.matches.length === simulationMatchesBefore, "draft match allocated a real simulation match");
 });
 
+test("advance booking rejects mixed-division matches without storing the draft", () => {
+  const f = fixture(15009);
+  const people = f.state.people.filter((person) => person.status !== "RETIRED").slice(0, 2);
+  people[0]!.division = "MEN";
+  people[1]!.division = "WOMEN";
+  const draft: DetailedShowDraft = {
+    ...emptyDraft(f),
+    participantIds: people.map((person) => person.id),
+    matches: [{
+      draftMatchId: "mixed-main",
+      type: "SINGLES",
+      sideAIds: [people[0]!.id],
+      sideBIds: [people[1]!.id],
+      intendedWinnerSide: "A",
+      intent: "COMPETITIVE",
+      plannedLengthMinutes: 15,
+    }],
+  };
+  let rejected = false;
+  try {
+    upsert(f, "mixed-division-draft", 0, draft);
+  } catch (error) {
+    rejected = String(error).includes("cannot mix");
+  }
+  ok(rejected, "mixed-division advance match was accepted");
+  ok(f.planning.workspaces.length === 0, "rejected mixed-division draft was stored");
+});
+
 test("removing a draft advances only the planning/application state", () => {
   const f = fixture(15008);
   upsert(f, "draft-create", 0, emptyDraft(f));

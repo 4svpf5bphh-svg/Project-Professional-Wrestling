@@ -263,6 +263,47 @@ test("creating a tag team is idempotent and does not manufacture chemistry", () 
   ok(duplicateRejected, "same pair could create a duplicate active team identity");
 });
 
+test("player-created tag teams cannot mix men's and women's divisions", () => {
+  const { state, ownership, commands, runtime } = fixture(12007);
+  joinPlayerToWorld(ownership, "player-a", state.world.currentDate);
+  const promotion = state.promotions.find(
+    (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+  )!;
+  claimIndependentPromotionCommand(state, ownership, commands, runtime, {
+    requestId: "claim-for-mixed-team",
+    worldId: state.world.id,
+    playerId: "player-a",
+    commandType: "CLAIM_INDEPENDENT_PROMOTION",
+    payload: { promotionId: promotion.id },
+  });
+  const roster = state.contracts
+    .filter((contract) => contract.promotionId === promotion.id && contract.status === "SIGNED")
+    .map((contract) => contract.personId)
+    .filter((personId, index, all) => all.indexOf(personId) === index);
+  ok(roster.length >= 2, "mixed-team fixture needs two roster wrestlers");
+  state.people.find((person) => person.id === roster[0])!.division = "MEN";
+  state.people.find((person) => person.id === roster[1])!.division = "WOMEN";
+  const teamsBefore = state.teams?.length ?? 0;
+  let rejected = false;
+  try {
+    createTagTeamCommand(state, ownership, commands, runtime, {
+      requestId: "mixed-team",
+      worldId: state.world.id,
+      playerId: "player-a",
+      commandType: "CREATE_TAG_TEAM",
+      payload: {
+        promotionId: promotion.id,
+        name: "Mixed Test Team",
+        personIds: [roster[0]!, roster[1]!] as [string, string],
+      },
+    });
+  } catch (error) {
+    rejected = String(error).includes("cannot mix");
+  }
+  ok(rejected, "mixed-division tag team was created");
+  ok((state.teams?.length ?? 0) === teamsBefore, "rejected mixed team partially mutated team state");
+});
+
 test("contract command authorization is tied to the player-owned promotion", () => {
   const { state, ownership, commands, runtime } = fixture(12005);
   joinPlayerToWorld(ownership, "player-a", state.world.currentDate);

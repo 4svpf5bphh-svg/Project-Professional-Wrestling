@@ -12,6 +12,7 @@ import type {
 import { isWrestlerAlignment, wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
 import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
+import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
 
 export const DETAILED_PLANNING_HORIZON_WEEKS = 6 as const;
 
@@ -156,6 +157,7 @@ function weekIndex(date: PpwDate, weeksPerYear: number): number {
 }
 
 function validateMatchDraft(
+  state: WorldState,
   draft: DetailedMatchDraft,
   participantIds: Set<Id>,
   usedParticipantIds: Set<Id>,
@@ -173,6 +175,12 @@ function validateMatchDraft(
 
   const sideIds = [...draft.sideAIds, ...draft.sideBIds];
   if (new Set(sideIds).size !== sideIds.length) throw new Error("one wrestler cannot occupy multiple positions in a draft match");
+  const sidePeople = sideIds.map((personId) => state.people.find((candidate) => candidate.id === personId));
+  if (sidePeople.some((person) => !person)) throw new Error("draft match references a missing wrestler");
+  requireSameWrestlerDivision(
+    sidePeople as NonNullable<(typeof sidePeople)[number]>[],
+    "draft matches cannot mix men's and women's divisions",
+  );
   for (const personId of sideIds) {
     if (!participantIds.has(personId)) throw new Error(`${personId} is not selected for this show draft`);
     if (usedParticipantIds.has(personId)) throw new Error(`${personId} is booked more than once on this draft card`);
@@ -465,7 +473,7 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
   const usedParticipantIds = new Set<Id>();
   const draftMatchIds = new Set<string>();
   const matches = draft.matches.map((match) => {
-    const validated = validateMatchDraft(match, participantIds, usedParticipantIds);
+    const validated = validateMatchDraft(state, match, participantIds, usedParticipantIds);
     if (draftMatchIds.has(validated.draftMatchId)) throw new Error("draft card contains duplicate match IDs");
     draftMatchIds.add(validated.draftMatchId);
     return validated;
