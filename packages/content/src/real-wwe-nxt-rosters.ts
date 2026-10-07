@@ -30,6 +30,12 @@ export const WWE_INITIAL_ROSTER_NAMES = [
   "LA Knight",
   "Bron Breakker",
   "Austin Theory",
+  "Sami Zayn",
+  "Kevin Owens",
+  "Randy Orton",
+  "Johnny Gargano",
+  "Becky Lynch",
+  "Bayley",
 ] as const;
 
 export const NXT_INITIAL_ROSTER_NAMES = [
@@ -51,6 +57,12 @@ export const NXT_INITIAL_ROSTER_NAMES = [
   "Sean Legacy",
   "Jaida Parker",
   "Nikkita Lyons",
+  "Noam Dar",
+  "Romeo Moreno",
+  "Mason Rook",
+  "Saquon Shugars",
+  "Dorian Van Dux",
+  "Shiloh Hill",
 ] as const;
 
 const reviewedRosterNames = new Set([
