@@ -197,6 +197,44 @@ test("complete reserved card materializes match intent and valid championship de
   ok(result.championshipAssignmentsApplied === 1, "valid advance championship assignment was not applied");
 });
 
+test("segment-only talent remains reserved and materializes without being forced into a match", () => {
+  const f = fixture(16122);
+  const full = completeSinglesCard(f, baseDraft(f));
+  const finalMatch = full.matches[full.matches.length - 1]!;
+  const segmentOnlyIds = [...finalMatch.sideAIds, ...finalMatch.sideBIds];
+  const retainedMatches = full.matches.slice(0, -1);
+  const draft: DetailedShowDraft = {
+    ...full,
+    matches: retainedMatches,
+    championshipAssignments: full.championshipAssignments.filter((assignment) => (
+      retainedMatches.some((match) => match.draftMatchId === assignment.draftMatchId)
+    )),
+    segments: [{
+      draftSegmentId: "segment-only-slot",
+      type: "INTERVIEW",
+      participantIds: segmentOnlyIds,
+      programmeId: null,
+      plannedLengthMinutes: 6,
+    }],
+    runningOrder: [
+      ...retainedMatches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+      { kind: "SEGMENT" as const, refId: "segment-only-slot" },
+    ],
+  };
+
+  saveAndReserve(f, draft);
+  const result = materializeCurrentWeekReservations(f.state, f.planning).materialized[0]!;
+  ok(result.cardMaterialized, "segment-only appearance made an otherwise complete card incomplete");
+  ok(result.matchIds.length === retainedMatches.length, "segment-only talent was incorrectly forced into another match");
+
+  const event = f.state.events.find((candidate) => candidate.id === result.eventId)!;
+  const appearances = f.state.scheduledAppearances.filter((appearance) => appearance.eventId === event.id);
+  ok(
+    segmentOnlyIds.every((personId) => appearances.some((appearance) => appearance.personId === personId)),
+    "segment-only talent did not retain its committed show appearance",
+  );
+});
+
 test("incomplete advance card still materializes the show and leaves card responsibility unresolved", () => {
   const f = fixture(16103);
   const draft = baseDraft(f);
