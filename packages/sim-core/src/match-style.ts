@@ -1,13 +1,6 @@
-import type { MatchIntent } from "../../domain/src/types.js";
+import type { MatchIntent, MatchStyleProfile } from "../../domain/src/types.js";
 
-export interface MatchStyleProfile {
-  competitiveness: number;
-  technical: number;
-  story: number;
-  intensity: number;
-  risk: number;
-  epic: number;
-}
+export type { MatchStyleProfile } from "../../domain/src/types.js";
 
 export type MatchStyleDimension = keyof MatchStyleProfile;
 export type MatchStyleLoadBand = "LIGHT" | "STANDARD" | "DEMANDING" | "EXTREME";
