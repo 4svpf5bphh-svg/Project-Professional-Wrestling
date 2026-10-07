@@ -591,9 +591,6 @@ export async function saveAlphaShowCard(
     if (participantIds.length < aggregate.state.ruleset.minEventParticipants) {
       throw new Error(`show booking requires at least ${aggregate.state.ruleset.minEventParticipants} wrestlers across the card`);
     }
-    if (participantIds.length % 2 !== 0) {
-      throw new Error("show booking currently requires an even number of unique wrestlers");
-    }
     const championshipAssignments = normalizeChampionshipAssignments(
       request.championshipAssignments,
       matches,
