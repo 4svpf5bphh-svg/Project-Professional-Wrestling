@@ -6,10 +6,15 @@ import {
 } from "../packages/web-adapter/src/alpha-service.js";
 import {
   loadAlphaTalentSession,
+  setAlphaRosterAlignment,
   submitAlphaTalentOffer,
 } from "../packages/web-adapter/src/talent-service.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
-import { addPpwWeeks } from "../packages/sim-core/src/index.js";
+import {
+  addPpwWeeks,
+  wrestlerAlignment,
+  wrestlerAlignmentForPromotion,
+} from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -71,6 +76,48 @@ await test("Talent service submits a recruitment offer through the idempotent ap
   const afterRetry = await repository.load(worldId);
   ok(afterRetry.runtime.revision === revision, "idempotent recruitment retry advanced the World revision");
   ok(afterRetry.state.contractOffers.filter((offer) => offer.id === first.offerId).length === 1, "idempotent recruitment retry duplicated the offer");
+});
+
+await test("Talent service stores promotion-specific alignment without rewriting the wrestler globally", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 73004, playerId: "player-a" });
+  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
+  const rival = aggregate.state.promotions.find((promotion) => promotion.id !== independent?.id && promotion.lifecycle === "ACTIVE");
+  if (!independent || !rival) throw new Error("alignment fixture lacks promotions");
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "player-a", {
+    promotionId: independent.id,
+    requestId: "talent-claim-alignment",
+  });
+
+  const before = await loadAlphaTalentSession(repository, worldId, "player-a");
+  const rosterEntry = before.roster[0];
+  if (!rosterEntry) throw new Error("alignment fixture has no roster wrestler");
+  const target = rosterEntry.alignment === "HEEL" ? "FACE" : "HEEL";
+  const request = {
+    requestId: "talent-alignment-001",
+    personId: rosterEntry.personId,
+    alignment: target as "FACE" | "HEEL",
+  };
+
+  const first = await setAlphaRosterAlignment(repository, worldId, "player-a", request);
+  ok(first.alignment === target, "alignment command returned the wrong value");
+  ok(first.view.roster.find((entry) => entry.personId === rosterEntry.personId)?.alignment === target, "updated alignment did not reach roster view");
+
+  const persisted = await repository.load(worldId);
+  const person = persisted.state.people.find((candidate) => candidate.id === rosterEntry.personId);
+  if (!person) throw new Error("alignment fixture lost wrestler");
+  const baseline = wrestlerAlignment(person, persisted.state.world.seed);
+  ok(wrestlerAlignmentForPromotion(persisted.state, independent.id, person.id) === target, "promotion alignment override was not persisted");
+  ok(wrestlerAlignmentForPromotion(persisted.state, rival.id, person.id) === baseline, "alignment override leaked into another promotion");
+  ok((persisted.state.promotionWrestlerPresentations ?? []).length === 1, "alignment change did not create exactly one presentation record");
+  const revision = persisted.runtime.revision;
+
+  await setAlphaRosterAlignment(repository, worldId, "player-a", request);
+  const afterRetry = await repository.load(worldId);
+  ok(afterRetry.runtime.revision === revision, "idempotent alignment retry advanced World revision");
+  ok((afterRetry.state.promotionWrestlerPresentations ?? []).length === 1, "idempotent alignment retry duplicated presentation state");
 });
 
 await test("Talent service renews only inside the renewal window and starts after the current deal", async () => {
