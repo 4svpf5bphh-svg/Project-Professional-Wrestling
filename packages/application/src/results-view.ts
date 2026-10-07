@@ -83,6 +83,20 @@ export interface PlayerShowTitleOutcomeView {
   winnerHolderName: string;
 }
 
+export type PlayerShowStyleDelivery = "NAILED" | "DELIVERED" | "STRETCHED" | "MISSED";
+
+export interface PlayerShowMatchStyleView {
+  loadBand: "LIGHT" | "STANDARD" | "DEMANDING" | "EXTREME";
+  physicalLoad: number;
+  creativeLoad: number;
+  totalLoad: number;
+  capability: number;
+  shortfall: number;
+  realizedUpside: number;
+  difficultyPenalty: number;
+  delivery: PlayerShowStyleDelivery;
+}
+
 export interface PlayerShowMatchView {
   matchId: Id;
   order: number;
@@ -94,6 +108,7 @@ export interface PlayerShowMatchView {
   criticalRatingStars: number;
   executionQuality: number;
   crowdResponse: number;
+  styleResult: PlayerShowMatchStyleView | null;
   finishChangedDueToInjury: boolean;
   participants: PlayerShowParticipantView[];
   winnerNames: string[];
@@ -267,6 +282,51 @@ function frozenCrowdFactors(
     crowdFactor(entry, "PACING", matchId, matchOrder, "showFlowPacingModifier", "showFlowPacingReason"),
   ];
   return factors.filter((factor): factor is PlayerShowCrowdFactorView => factor !== null);
+}
+
+function frozenStyleResult(
+  entry: LedgerEntry | undefined,
+  executionQuality: number,
+): PlayerShowMatchStyleView | null {
+  if (!entry || entry.payload.styleResolver !== "DIMENSIONAL") return null;
+  const physicalLoad = entry.payload.stylePhysicalLoad;
+  const creativeLoad = entry.payload.styleCreativeLoad;
+  const totalLoad = entry.payload.styleTotalLoad;
+  const loadBand = entry.payload.styleLoadBand;
+  const capability = entry.payload.styleCapability;
+  const shortfall = entry.payload.styleShortfall;
+  const realizedUpside = entry.payload.styleRealizedUpside;
+  const difficultyPenalty = entry.payload.styleDifficultyPenalty;
+  if (
+    typeof physicalLoad !== "number" || !Number.isFinite(physicalLoad)
+    || typeof creativeLoad !== "number" || !Number.isFinite(creativeLoad)
+    || typeof totalLoad !== "number" || !Number.isFinite(totalLoad)
+    || !["LIGHT", "STANDARD", "DEMANDING", "EXTREME"].includes(String(loadBand))
+    || typeof capability !== "number" || !Number.isFinite(capability)
+    || typeof shortfall !== "number" || !Number.isFinite(shortfall)
+    || typeof realizedUpside !== "number" || !Number.isFinite(realizedUpside)
+    || typeof difficultyPenalty !== "number" || !Number.isFinite(difficultyPenalty)
+  ) return null;
+
+  const delivery: PlayerShowStyleDelivery = executionQuality >= 82 && shortfall < 10
+    ? "NAILED"
+    : executionQuality >= 68 && shortfall < 18
+      ? "DELIVERED"
+      : executionQuality >= 52
+        ? "STRETCHED"
+        : "MISSED";
+  const round = (value: number): number => Math.round(value * 10) / 10;
+  return {
+    loadBand: loadBand as PlayerShowMatchStyleView["loadBand"],
+    physicalLoad: round(physicalLoad),
+    creativeLoad: round(creativeLoad),
+    totalLoad: round(totalLoad),
+    capability: round(capability),
+    shortfall: round(shortfall),
+    realizedUpside: round(realizedUpside),
+    difficultyPenalty: round(difficultyPenalty),
+    delivery,
+  };
 }
 
 function segmentFactors(segment: ReturnType<typeof resolvedShowSegmentsForEvent>[number]): PlayerShowSegmentFactorView[] {
@@ -478,6 +538,7 @@ export function buildPlayerShowHistory(
           criticalRatingStars: match.criticalRatingStars,
           executionQuality: match.executionQuality,
           crowdResponse: match.crowdResponse,
+          styleResult: frozenStyleResult(matchLedgerByMatch.get(match.id), match.executionQuality),
           finishChangedDueToInjury: match.finishChangedDueToInjury,
           participants,
           winnerNames: participants.filter((participant) => participant.won).map((participant) => participant.name),

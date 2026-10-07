@@ -279,6 +279,40 @@ test("show history keeps positive alignment clarity separate from negative volat
   ok(!factors.some((factor) => factor.reason === "ALIGNMENT_VOLATILITY" && factor.impact > 0), "confusion was displayed as a positive crowd factor");
 });
 
+test("show history exposes frozen dimensional style evidence without recomputing it", () => {
+  const { aggregate } = twoPlayerFixture(72007);
+  const event = aggregate.state.events.find((candidate) => candidate.id === "results-event-a")!;
+  const match = aggregate.state.matches.find((candidate) => candidate.eventId === event.id)!;
+  aggregate.state.ledger.push({
+    id: "results-style-evidence-ledger",
+    worldId: aggregate.state.world.id,
+    date: { ...event.date },
+    order: 902,
+    type: "MATCH_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: [match.id, event.id, event.promotionId],
+    payload: {
+      styleResolver: "DIMENSIONAL",
+      stylePhysicalLoad: 78.4,
+      styleCreativeLoad: 66.2,
+      styleTotalLoad: 74.1,
+      styleLoadBand: "DEMANDING",
+      styleCapability: 73.5,
+      styleShortfall: 8.4,
+      styleRealizedUpside: 5.2,
+      styleDifficultyPenalty: 3.1,
+    },
+  });
+  match.executionQuality = 84;
+
+  const projected = buildPlayerShowHistory(aggregate, "player-a").shows[0]!.matches[0]!;
+  ok(projected.styleResult?.loadBand === "DEMANDING", "style result lost frozen load band");
+  ok(projected.styleResult?.physicalLoad === 78.4, "style result recomputed or changed frozen physical load");
+  ok(projected.styleResult?.capability === 73.5, "style result lost frozen capability");
+  ok(projected.styleResult?.delivery === "NAILED", "style result did not classify strong delivered style");
+});
+
 test("show history remains scoped to each player's controlled promotion", () => {
   const { aggregate, promotionAId, promotionBId } = twoPlayerFixture(72002);
   const playerA = buildPlayerShowHistory(aggregate, "player-a");

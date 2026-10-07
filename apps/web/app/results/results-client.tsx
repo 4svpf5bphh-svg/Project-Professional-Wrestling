@@ -294,10 +294,34 @@ export default function ResultsClient(): React.JSX.Element {
                               <div>{sideB.map((participant) => <span className={participant.won ? styles.winner : undefined} key={participant.personId}>{participant.name}{participant.won ? " ✓" : ""}</span>)}</div>
                             </div>
                             <div className={styles.matchMeta}>
-                              <span>{label(match.intent)} intent</span>
+                              <span>{match.styleResult ? "Dimensional style" : `${label(match.intent)} intent`}</span>
                               <span>{match.actualLengthMinutes} min{match.actualLengthMinutes !== match.plannedLengthMinutes ? ` / ${match.plannedLengthMinutes} planned` : ""}</span>
                               <span>Crowd {decimal(match.crowdResponse)}</span>
                             </div>
+                            {match.styleResult ? (
+                              <div className={styles.styleResult}>
+                                <div>
+                                  <span>Style delivery</span>
+                                  <strong>{label(match.styleResult.delivery)}</strong>
+                                </div>
+                                <div>
+                                  <span>Execution</span>
+                                  <strong>{decimal(match.executionQuality)}</strong>
+                                </div>
+                                <div>
+                                  <span>Load</span>
+                                  <strong>{label(match.styleResult.loadBand)}</strong>
+                                </div>
+                                <div>
+                                  <span>Capability</span>
+                                  <strong>{decimal(match.styleResult.capability)}</strong>
+                                </div>
+                                <p>
+                                  Physical {decimal(match.styleResult.physicalLoad)} · Creative {decimal(match.styleResult.creativeLoad)}
+                                  {match.styleResult.shortfall >= 12 ? ` · Style stretch ${decimal(match.styleResult.shortfall)}` : ""}
+                                </p>
+                              </div>
+                            ) : null}
                             {match.crowdFlowFactors.length > 0 ? (
                               <div className={styles.crowdContext}>
                                 <span>Crowd context</span>
