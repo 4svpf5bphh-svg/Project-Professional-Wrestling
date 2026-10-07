@@ -94,7 +94,6 @@ export default function BusinessClient(): React.JSX.Element {
               <div><span>Lifecycle</span><strong>{label(promotion.lifecycle)}</strong></div>
               <div><span>Media reach</span><strong>{Math.round(promotion.mediaReach)}</strong></div>
               <div><span>Show cadence</span><strong>Every {promotion.eventCadenceWeeks} PPW week{promotion.eventCadenceWeeks === 1 ? "" : "s"}</strong></div>
-              <div><span>World revision</span><strong>r{view?.world.revision ?? "—"}</strong></div>
             </div>
           </section>
 
@@ -178,19 +177,27 @@ export default function BusinessClient(): React.JSX.Element {
             </div>
           </section>
 
-          <section className={styles.panel}>
-            <span className={styles.eyebrow}>RECENT TRANSACTIONS</span>
-            <h2>Promotion ledger</h2>
-            <div className={styles.list}>
-              {promotion.recentTransactions.map((transaction) => (
-                <div className={styles.transaction} key={transaction.transactionId}>
-                  <div><strong>{label(transaction.category)}</strong><span>{ppwDate(transaction.date)}</span></div>
-                  <strong className={transaction.amount >= 0 ? styles.positive : styles.negative}>{transaction.amount >= 0 ? "+" : ""}{money(transaction.amount)}</strong>
-                </div>
-              ))}
-              {promotion.recentTransactions.length === 0 ? <p className={styles.note}>No transactions posted yet.</p> : null}
+          <details className={styles.ledgerDisclosure}>
+            <summary>
+              <div>
+                <span className={styles.eyebrow}>LEDGER DETAIL</span>
+                <strong>Latest transactions</strong>
+              </div>
+              <span className={styles.ledgerHint}>Optional · latest {Math.min(8, promotion.recentTransactions.length)}</span>
+            </summary>
+            <div className={styles.ledgerBody}>
+              <p className={styles.ledgerIntro}>The four-week summary above is the main business view. This is only the underlying recent cash trail when you need to inspect it.</p>
+              <div className={styles.list}>
+                {promotion.recentTransactions.map((transaction) => (
+                  <div className={styles.transaction} key={transaction.transactionId}>
+                    <div><strong>{label(transaction.category)}</strong><span>{ppwDate(transaction.date)}</span></div>
+                    <strong className={transaction.amount >= 0 ? styles.positive : styles.negative}>{transaction.amount >= 0 ? "+" : ""}{money(transaction.amount)}</strong>
+                  </div>
+                ))}
+                {promotion.recentTransactions.length === 0 ? <p className={styles.note}>No transactions posted yet.</p> : null}
+              </div>
             </div>
-          </section>
+          </details>
         </>
       ) : null}
     </main>
