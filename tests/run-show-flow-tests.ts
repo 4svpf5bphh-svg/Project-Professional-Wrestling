@@ -8,6 +8,7 @@ import {
   evaluateShowFlow,
   setPromotionWrestlerAlignment,
   setWrestlerAlignment,
+  wrestlerAlignment,
 } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
@@ -201,7 +202,10 @@ test("promotion-specific alignment drives crowd-flow interpretation", () => {
   const promoted = evaluateShowFlow(state, event, [match]);
   ok(promoted.matches[0]?.alignmentReason === "FACE_HEEL_CLARITY", "promotion alignment override did not reach show flow");
   ok(promoted.crowdResponse > baseline.crowdResponse + 1.5, "promotion alignment override did not change crowd interpretation");
-  ok(a.alignment === "HEEL" && b.alignment === "HEEL", "promotion alignment override rewrote global wrestler alignment");
+  ok(
+    wrestlerAlignment(a, state.world.seed) === "HEEL" && wrestlerAlignment(b, state.world.seed) === "HEEL",
+    "promotion alignment override rewrote global wrestler alignment",
+  );
 });
 
 test("hot fresh Programmes help while repetition can exhaust the same story", () => {
