@@ -70,6 +70,13 @@ export function evaluateProgrammeSignals(state: WorldState, programme: Programme
 
   const eventsById = new Map(state.events.map((event) => [event.id, event]));
   const matchesById = new Map(state.matches.map((match) => [match.id, match]));
+  const resolvedSegmentImpactByEvent = new Map<string, number>();
+  for (const entry of state.ledger) {
+    if (entry.type !== "SHOW_SEGMENT_COMPLETED") continue;
+    if (entry.payload.programmeId !== programme.id || typeof entry.payload.eventId !== "string") continue;
+    if (typeof entry.payload.segmentImpact !== "number" || !Number.isFinite(entry.payload.segmentImpact)) continue;
+    resolvedSegmentImpactByEvent.set(entry.payload.eventId, entry.payload.segmentImpact);
+  }
   const maxMatchOrderByEvent = new Map<string, number>();
   for (const match of state.matches) {
     if (match.status !== "COMPLETED") continue;
@@ -115,6 +122,8 @@ export function evaluateProgrammeSignals(state: WorldState, programme: Programme
         const event = eventsById.get(match.eventId);
         impact = matchImpact(match, event, match.order === (maxMatchOrderByEvent.get(match.eventId) ?? match.order));
       }
+    } else if (activity.kind === "SEGMENT" && activity.eventId) {
+      impact = resolvedSegmentImpactByEvent.get(activity.eventId) ?? impact;
     }
     weightedImpactTotal += impact * weight;
     totalWeight += weight;

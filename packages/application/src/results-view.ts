@@ -12,7 +12,10 @@ import {
   activePromotionControlForPlayer,
   activeWorldMembership,
 } from "./ownership.js";
-import { resolvedShowSegmentsForEvent } from "./programme-segments.js";
+import {
+  resolvedShowSegmentsForEvent,
+  type ResolvedSegmentOutcomeBand,
+} from "./programme-segments.js";
 import type { DetailedShowSegmentType } from "./planning.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
@@ -103,6 +106,11 @@ export interface PlayerShowSegmentParticipantView {
   name: string;
 }
 
+export interface PlayerShowSegmentFactorView {
+  label: string;
+  impact: number;
+}
+
 export interface PlayerShowSegmentView {
   segmentId: Id;
   draftSegmentId: string;
@@ -113,6 +121,10 @@ export interface PlayerShowSegmentView {
   programmeId: Id | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
+  executionQuality: number | null;
+  crowdResponse: number | null;
+  outcomeBand: ResolvedSegmentOutcomeBand | null;
+  factors: PlayerShowSegmentFactorView[];
 }
 
 export type PlayerShowRunningOrderView =
@@ -253,6 +265,29 @@ function frozenCrowdFactors(
     crowdFactor(entry, "PACING", matchId, matchOrder, "showFlowPacingModifier", "showFlowPacingReason"),
   ];
   return factors.filter((factor): factor is PlayerShowCrowdFactorView => factor !== null);
+}
+
+function segmentFactors(segment: ReturnType<typeof resolvedShowSegmentsForEvent>[number]): PlayerShowSegmentFactorView[] {
+  const factors: PlayerShowSegmentFactorView[] = [];
+  if (Math.abs(segment.programmeModifier) >= 0.45) {
+    factors.push({
+      label: segment.programmeModifier > 0 ? "Programme heat helped" : "Programme heat / repetition hurt",
+      impact: segment.programmeModifier,
+    });
+  }
+  if (Math.abs(segment.moraleModifier) >= 0.45) {
+    factors.push({
+      label: segment.moraleModifier > 0 ? "Confidence helped the delivery" : "Low morale hurt the delivery",
+      impact: segment.moraleModifier,
+    });
+  }
+  if (segment.fatigueModifier <= -0.45) {
+    factors.push({ label: "Fatigue hurt the delivery", impact: segment.fatigueModifier });
+  }
+  if (segment.alignmentVolatilityModifier <= -0.45) {
+    factors.push({ label: "Recent alignment changes hurt credibility", impact: segment.alignmentVolatilityModifier });
+  }
+  return factors.sort((left, right) => Math.abs(right.impact) - Math.abs(left.impact));
 }
 
 function mergedRunningOrder(
@@ -463,6 +498,10 @@ export function buildPlayerShowHistory(
         programmeId: segment.programmeId,
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,
+        executionQuality: segment.executionQuality,
+        crowdResponse: segment.crowdResponse,
+        outcomeBand: segment.outcomeBand,
+        factors: segmentFactors(segment),
       }));
       const runningOrder = mergedRunningOrder(matches, segments);
       const titleChangeCount = matches.reduce(

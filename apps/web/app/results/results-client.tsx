@@ -244,7 +244,11 @@ export default function ResultsClient(): React.JSX.Element {
                             <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
                               <div className={styles.matchTop}>
                                 <span>SLOT {slot.order} · SEGMENT · {label(slot.segment.type)}</span>
-                                <strong>{slot.segment.plannedLengthMinutes} min</strong>
+                                <strong>
+                                  {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
+                                    ? `${slot.segment.plannedLengthMinutes} min`
+                                    : `${label(slot.segment.outcomeBand)} · Crowd ${decimal(slot.segment.crowdResponse)}`}
+                                </strong>
                               </div>
                               <div className={styles.segmentParticipants}>
                                 {slot.segment.participants.map((participant) => (
@@ -253,12 +257,25 @@ export default function ResultsClient(): React.JSX.Element {
                               </div>
                               <div className={styles.matchMeta}>
                                 <span>{slot.segment.programmeId ? "Programme attached" : "Standalone segment"}</span>
+                                {slot.segment.executionQuality !== null ? <span>Execution {decimal(slot.segment.executionQuality)}</span> : null}
                                 {slot.segment.type === "TURN" && slot.segment.turnTargetAlignment ? (
                                   <span>
                                     {slot.segment.participants.find((participant) => participant.personId === slot.segment.turnPersonId)?.name ?? "Wrestler"} → {label(slot.segment.turnTargetAlignment)}
                                   </span>
-                                ) : <span>Resolved show history</span>}
+                                ) : slot.segment.executionQuality === null ? <span>Resolved show history</span> : null}
                               </div>
+                              {slot.segment.factors.length > 0 ? (
+                                <div className={styles.crowdContext}>
+                                  <span>Segment context</span>
+                                  <div>
+                                    {slot.segment.factors.map((factor) => (
+                                      <span className={factor.impact >= 0 ? styles.crowdFactorPositive : styles.crowdFactorNegative} key={factor.label}>
+                                        {factor.label} <b>{signedDecimal(factor.impact)}</b>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
                             </article>
                           );
                         }
@@ -386,7 +403,11 @@ export default function ResultsClient(): React.JSX.Element {
                                 <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
                                   <div className={styles.matchTop}>
                                     <span>SLOT {slot.order} · SEGMENT · {label(slot.segment.type)}</span>
-                                    <strong>SEGMENT</strong>
+                                    <strong>
+                                      {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
+                                        ? "SEGMENT"
+                                        : `${label(slot.segment.outcomeBand)} · Crowd ${decimal(slot.segment.crowdResponse)}`}
+                                    </strong>
                                   </div>
                                   <div className={styles.segmentParticipants}>
                                     {slot.segment.participants.map((participant) => (

@@ -8,6 +8,7 @@ import {
 import {
   changePromotionWrestlerAlignment,
   isWrestlerAlignment,
+  recentAlignmentVolatilityPenalty,
 } from "../../sim-core/src/alignment.js";
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
 import type {
@@ -29,6 +30,8 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "TURN",
 ]);
 
+export type ResolvedSegmentOutcomeBand = "POOR" | "FLAT" | "SOLID" | "STRONG" | "HOT";
+
 export interface ResolvedShowSegment {
   ledgerId: Id;
   eventId: Id;
@@ -42,6 +45,14 @@ export interface ResolvedShowSegment {
   plannedLengthMinutes: number;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
+  executionQuality: number | null;
+  crowdResponse: number | null;
+  impact: number | null;
+  outcomeBand: ResolvedSegmentOutcomeBand | null;
+  programmeModifier: number;
+  fatigueModifier: number;
+  moraleModifier: number;
+  alignmentVolatilityModifier: number;
 }
 
 interface NormalizedDraftSegment {
@@ -52,6 +63,22 @@ interface NormalizedDraftSegment {
   plannedLengthMinutes: number;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function round1(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function outcomeBand(value: number): ResolvedSegmentOutcomeBand {
+  if (value >= 80) return "HOT";
+  if (value >= 68) return "STRONG";
+  if (value >= 55) return "SOLID";
+  if (value >= 42) return "FLAT";
+  return "POOR";
 }
 
 function sameWeek(left: { year: number; week: number }, right: { year: number; week: number }): boolean {
@@ -112,6 +139,90 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
   return [...typed, ...legacy];
 }
 
+function segmentOutcome(
+  state: WorldState,
+  event: WorldState["events"][number],
+  segment: NormalizedDraftSegment,
+): {
+  executionQuality: number;
+  crowdResponse: number;
+  impact: number;
+  outcomeBand: ResolvedSegmentOutcomeBand;
+  programmeModifier: number;
+  fatigueModifier: number;
+  moraleModifier: number;
+  alignmentVolatilityModifier: number;
+} {
+  const people = segment.participantIds
+    .map((personId) => state.people.find((person) => person.id === personId))
+    .filter((person): person is WorldState["people"][number] => Boolean(person));
+  const average = (selector: (person: WorldState["people"][number]) => number): number => (
+    people.length > 0 ? people.reduce((sum, person) => sum + selector(person), 0) / people.length : 0
+  );
+  const presentation = average((person) => person.skills.presentation);
+  const starPower = average((person) => (person.popularity + person.recognition) / 2);
+  const momentum = average((person) => person.momentum);
+  const morale = average((person) => person.morale);
+  const fatigue = average((person) => person.fatigue);
+  const weights: Record<DetailedShowSegmentType, [number, number, number]> = {
+    PROMO: [0.62, 0.23, 0.15],
+    INTERVIEW: [0.68, 0.20, 0.12],
+    CONFRONTATION: [0.50, 0.32, 0.18],
+    CHALLENGE: [0.56, 0.28, 0.16],
+    ATTACK: [0.38, 0.34, 0.28],
+    CELEBRATION: [0.40, 0.45, 0.15],
+    TURN: [0.55, 0.25, 0.20],
+  };
+  const [presentationWeight, starWeight, momentumWeight] = weights[segment.type];
+  const delivery = presentation * presentationWeight + starPower * starWeight + momentum * momentumWeight;
+  const moraleModifier = round1((morale - 50) * 0.08);
+  const fatigueModifier = round1(-fatigue * 0.10);
+  const programme = segment.programmeId
+    ? (state.programmes ?? []).find((candidate) => candidate.id === segment.programmeId)
+    : null;
+  const heatEffect = programme?.heat === null || programme?.heat === undefined
+    ? 0
+    : clamp((programme.heat - 50) / 10, -4, 4);
+  const repetitionPenalty = programme ? Math.min(4, programme.repetition / 20) : 0;
+  const programmeModifier = round1(heatEffect - repetitionPenalty);
+  const alignmentVolatilityModifier = segment.type === "TURN" && segment.turnPersonId
+    ? round1(recentAlignmentVolatilityPenalty(state, event.promotionId, [segment.turnPersonId]))
+    : 0;
+  const executionQuality = round1(clamp(
+    delivery
+      + moraleModifier
+      + fatigueModifier
+      + programmeModifier * 0.25
+      + alignmentVolatilityModifier * 0.5,
+    0,
+    100,
+  ));
+  const crowdResponse = round1(clamp(
+    executionQuality * 0.48
+      + starPower * 0.34
+      + event.eventImportance * 0.18
+      + programmeModifier
+      + alignmentVolatilityModifier,
+    0,
+    100,
+  ));
+  const impact = round1(clamp(
+    executionQuality * 0.45 + crowdResponse * 0.45 + event.eventImportance * 0.10,
+    0,
+    100,
+  ));
+  return {
+    executionQuality,
+    crowdResponse,
+    impact,
+    outcomeBand: outcomeBand(crowdResponse),
+    programmeModifier,
+    fatigueModifier,
+    moraleModifier,
+    alignmentVolatilityModifier,
+  };
+}
+
 function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | null {
   if (entry.type !== RESOLVED_SEGMENT_LEDGER_TYPE) return null;
   const eventId = entry.payload.eventId;
@@ -125,6 +236,16 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const plannedLengthMinutes = entry.payload.plannedLengthMinutes;
   const turnPersonId = entry.payload.turnPersonId === undefined ? null : entry.payload.turnPersonId;
   const turnTargetAlignment = entry.payload.turnTargetAlignment === undefined ? null : entry.payload.turnTargetAlignment;
+  const executionQuality = typeof entry.payload.segmentExecutionQuality === "number" ? entry.payload.segmentExecutionQuality : null;
+  const crowdResponse = typeof entry.payload.segmentCrowdResponse === "number" ? entry.payload.segmentCrowdResponse : null;
+  const impact = typeof entry.payload.segmentImpact === "number" ? entry.payload.segmentImpact : null;
+  const outcome = typeof entry.payload.segmentOutcomeBand === "string" ? entry.payload.segmentOutcomeBand : null;
+  const programmeModifier = typeof entry.payload.segmentProgrammeModifier === "number" ? entry.payload.segmentProgrammeModifier : 0;
+  const fatigueModifier = typeof entry.payload.segmentFatigueModifier === "number" ? entry.payload.segmentFatigueModifier : 0;
+  const moraleModifier = typeof entry.payload.segmentMoraleModifier === "number" ? entry.payload.segmentMoraleModifier : 0;
+  const alignmentVolatilityModifier = typeof entry.payload.segmentAlignmentVolatilityModifier === "number"
+    ? entry.payload.segmentAlignmentVolatilityModifier
+    : 0;
   if (
     typeof eventId !== "string"
     || typeof promotionId !== "string"
@@ -141,6 +262,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || !Number.isInteger(plannedLengthMinutes)
     || (turnPersonId !== null && typeof turnPersonId !== "string")
     || (turnTargetAlignment !== null && !isWrestlerAlignment(turnTargetAlignment))
+    || (outcome !== null && !["POOR", "FLAT", "SOLID", "STRONG", "HOT"].includes(outcome))
   ) return null;
 
   return {
@@ -156,6 +278,14 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     plannedLengthMinutes,
     turnPersonId,
     turnTargetAlignment: turnTargetAlignment as WrestlerAlignment | null,
+    executionQuality,
+    crowdResponse,
+    impact,
+    outcomeBand: outcome as ResolvedSegmentOutcomeBand | null,
+    programmeModifier,
+    fatigueModifier,
+    moraleModifier,
+    alignmentVolatilityModifier,
   };
 }
 
@@ -204,6 +334,7 @@ export function recordResolvedShowSegments(
       segments.forEach((segment, segmentIndex) => {
         if (existing.has(segment.draftSegmentId)) return;
         const slotOrder = segmentSlotOrder(draft, segment.draftSegmentId, segmentIndex);
+        const outcome = segmentOutcome(state, event, segment);
         writer.append({
           date: event.date,
           type: RESOLVED_SEGMENT_LEDGER_TYPE,
@@ -221,6 +352,14 @@ export function recordResolvedShowSegments(
             plannedLengthMinutes: segment.plannedLengthMinutes,
             turnPersonId: segment.turnPersonId,
             turnTargetAlignment: segment.turnTargetAlignment,
+            segmentExecutionQuality: outcome.executionQuality,
+            segmentCrowdResponse: outcome.crowdResponse,
+            segmentImpact: outcome.impact,
+            segmentOutcomeBand: outcome.outcomeBand,
+            segmentProgrammeModifier: outcome.programmeModifier,
+            segmentFatigueModifier: outcome.fatigueModifier,
+            segmentMoraleModifier: outcome.moraleModifier,
+            segmentAlignmentVolatilityModifier: outcome.alignmentVolatilityModifier,
           },
         });
         existing.add(segment.draftSegmentId);

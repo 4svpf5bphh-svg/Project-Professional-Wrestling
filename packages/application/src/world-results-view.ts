@@ -12,7 +12,10 @@ import {
   activePromotionControlForPlayer,
   activeWorldMembership,
 } from "./ownership.js";
-import { resolvedShowSegmentsForEvent } from "./programme-segments.js";
+import {
+  resolvedShowSegmentsForEvent,
+  type ResolvedSegmentOutcomeBand,
+} from "./programme-segments.js";
 import type { DetailedShowSegmentType } from "./planning.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
@@ -62,6 +65,8 @@ export interface PlayerWorldResultSegmentView {
   participants: Array<{ personId: Id; name: string }>;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
+  crowdResponse: number | null;
+  outcomeBand: ResolvedSegmentOutcomeBand | null;
 }
 
 export type PlayerWorldResultRunningOrderView =
@@ -278,6 +283,8 @@ export function buildPlayerWorldResultsView(
         })),
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,
+        crowdResponse: segment.crowdResponse,
+        outcomeBand: segment.outcomeBand,
       }));
       const runningOrder = mergedRunningOrder(matches, segments);
       const titleChangeCount = matches.reduce(

@@ -238,6 +238,49 @@ test("unexplained or repeated alignment changes reduce future crowd confidence",
   ok(confused.crowdResponse < stable.crowdResponse - 0.5, "alignment volatility did not reduce crowd response");
 });
 
+test("resolved segment crowd contributes to the overall show without rewriting match crowd", () => {
+  const { state, event, personIds } = fixture(84107);
+  const match = completedMatch(state, event, "segment-flow-hook", 1, "COMPETITIVE", 60);
+  attachSinglesParticipants(state, event, match, personIds[0]!, personIds[1]!);
+  const withoutSegment = evaluateShowFlow(state, event, [match]);
+
+  state.ledger.push({
+    id: "segment-flow-ledger",
+    worldId: state.world.id,
+    date: { ...event.date },
+    order: 999,
+    type: "SHOW_SEGMENT_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: [event.id, event.promotionId, personIds[0]!],
+    payload: {
+      eventId: event.id,
+      promotionId: event.promotionId,
+      sourceDraftId: "segment-flow-draft",
+      draftSegmentId: "segment-flow-segment",
+      slotOrder: 2,
+      segmentType: "PROMO",
+      participantIds: personIds[0]!,
+      programmeId: null,
+      plannedLengthMinutes: 5,
+      turnPersonId: null,
+      turnTargetAlignment: null,
+      segmentExecutionQuality: 92,
+      segmentCrowdResponse: 92,
+      segmentImpact: 90,
+      segmentOutcomeBand: "HOT",
+      segmentProgrammeModifier: 0,
+      segmentFatigueModifier: 0,
+      segmentMoraleModifier: 0,
+      segmentAlignmentVolatilityModifier: 0,
+    },
+  });
+  const withSegment = evaluateShowFlow(state, event, [match]);
+
+  ok(withSegment.matches[0]?.adjustedCrowdResponse === withoutSegment.matches[0]?.adjustedCrowdResponse, "segment outcome rewrote the match's own crowd score");
+  ok(withSegment.crowdResponse > withoutSegment.crowdResponse + 5, "hot segment did not lift the overall show crowd response");
+});
+
 test("hot fresh Programmes help while repetition can exhaust the same story", () => {
   const { state, event, promotionId, personIds } = fixture(84103);
   const match = completedMatch(state, event, "programme-hook", 1, "STORY", 70);

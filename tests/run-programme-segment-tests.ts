@@ -155,6 +155,9 @@ test("typed show segments can attach an active Programme and preserve running or
   const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id);
   ok(frozen.length === 1 && frozen[0]?.type === "CONFRONTATION", "typed segment was not frozen into show history");
   ok(frozen[0]?.slotOrder === 1 && frozen[0]?.plannedLengthMinutes === 7, "typed segment lost its booked slot or duration");
+  ok(frozen[0]?.executionQuality !== null && frozen[0]!.executionQuality! > 0, "typed segment did not resolve execution");
+  ok(frozen[0]?.crowdResponse !== null && frozen[0]!.crowdResponse! > 0, "typed segment did not resolve crowd response");
+  ok(frozen[0]?.outcomeBand !== null, "typed segment did not freeze an outcome band");
   ok(programmeActivities(setup.state, setup.programme.id)[0]?.kind === "SEGMENT", "typed segment did not feed Programme history");
 });
 
@@ -255,7 +258,10 @@ test("completed Programme segments become factual history once and contribute to
   ok(activities.length === 1 && activities[0]?.kind === "SEGMENT", "resolved segment was not stored as Programme activity");
   ok(activities[0]?.eventId === setup.state.events[0]?.id, "resolved segment did not retain its event link");
   ok(setup.programme.segmentCount === 1 && setup.programme.activityCount === 1, "Programme counters did not record the segment exactly once");
-  ok(signals.heat !== null && signals.heat > 40, `resolved segment did not establish meaningful Programme heat: ${signals.heat}`);
+  const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(frozen.impact !== null, "resolved Programme segment did not freeze an impact score");
+  ok(signals.averageRecentImpact === frozen.impact, "Programme Heat ignored the resolved segment quality");
+  ok(signals.heat !== null && signals.heat > 30, `resolved segment did not establish meaningful Programme heat: ${signals.heat}`);
   ok(signals.repetition === 0, `first Programme segment should not create repetition, found ${signals.repetition}`);
 });
 

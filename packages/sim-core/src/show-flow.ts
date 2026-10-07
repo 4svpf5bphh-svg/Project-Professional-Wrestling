@@ -225,9 +225,19 @@ export function evaluateShowFlow(
     return { eventId: event.id, baseCrowdResponse: 0, crowdResponse: 0, adjustment: 0, matches: [] };
   }
 
-  const baseCrowdResponse = round1(
+  const rawMatchBaseCrowdResponse = round1(
     matches.reduce((sum, match) => sum + match.crowdResponse, 0) / matches.length,
   );
+  const segmentCrowd = state.ledger
+    .filter((entry) => entry.type === "SHOW_SEGMENT_COMPLETED" && entry.payload.eventId === event.id)
+    .map((entry) => ({
+      order: typeof entry.payload.slotOrder === "number" ? entry.payload.slotOrder : Number.MAX_SAFE_INTEGER,
+      crowdResponse: entry.payload.segmentCrowdResponse,
+    }))
+    .filter((entry): entry is { order: number; crowdResponse: number } => (
+      typeof entry.crowdResponse === "number" && Number.isFinite(entry.crowdResponse)
+    ))
+    .sort((left, right) => left.order - right.order);
   const evaluations = matches.map((match, index): ShowFlowMatchEvaluation => {
     const alignment = alignmentModifierForMatch(state, match);
     const programme = programmeModifierForMatch(state, event, match);
@@ -277,9 +287,23 @@ export function evaluateShowFlow(
     };
   });
 
-  const totalWeight = evaluations.reduce((sum, evaluation) => sum + evaluation.weight, 0);
+  const matchWeightTotal = evaluations.reduce((sum, evaluation) => sum + evaluation.weight, 0);
+  const segmentWeight = 0.65;
+  const segmentWeightTotal = segmentCrowd.length * segmentWeight;
+  const totalWeight = matchWeightTotal + segmentWeightTotal;
+  const baseCrowdResponse = segmentCrowd.length === 0
+    ? rawMatchBaseCrowdResponse
+    : round1(
+      (
+        evaluations.reduce((sum, evaluation) => sum + evaluation.baseCrowdResponse * evaluation.weight, 0)
+        + segmentCrowd.reduce((sum, segment) => sum + segment.crowdResponse * segmentWeight, 0)
+      ) / totalWeight,
+    );
   const crowdResponse = round1(
-    evaluations.reduce((sum, evaluation) => sum + evaluation.adjustedCrowdResponse * evaluation.weight, 0) / totalWeight,
+    (
+      evaluations.reduce((sum, evaluation) => sum + evaluation.adjustedCrowdResponse * evaluation.weight, 0)
+      + segmentCrowd.reduce((sum, segment) => sum + segment.crowdResponse * segmentWeight, 0)
+    ) / totalWeight,
   );
   return {
     eventId: event.id,
