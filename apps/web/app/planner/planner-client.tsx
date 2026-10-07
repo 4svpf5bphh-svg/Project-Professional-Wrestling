@@ -281,7 +281,11 @@ export default function PlannerClient(): React.JSX.Element {
                               <div className={`${styles.matchRow} ${styles.segmentRow}`} key={`SEGMENT:${slot.refId}`}>
                                 <span className={styles.matchNumber}>Slot {slot.order}</span>
                                 <div>
-                                  <strong>{label(slot.segment.type)} · {slot.segment.participantNames.join(" & ")}</strong>
+                                  <strong>
+                                    {slot.segment.type === "TURN" && slot.segment.turnPersonName && slot.segment.turnTargetAlignment
+                                      ? `Turn · ${slot.segment.turnPersonName} → ${label(slot.segment.turnTargetAlignment)}`
+                                      : `${label(slot.segment.type)} · ${slot.segment.participantNames.join(" & ")}`}
+                                  </strong>
                                   <small>Segment · {slot.segment.plannedLengthMinutes} min{slot.segment.programmeId ? " · Programme attached" : ""}</small>
                                 </div>
                                 <b>SEGMENT</b>

@@ -22,7 +22,7 @@ const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
 ];
 const MATCH_FINISHES: BookableFinish[] = ["CLEAN_PIN", "SUBMISSION", "FLASH_PIN", "PROTECTED_FINISH"];
 const SEGMENT_TYPES: AlphaCardSegmentView["type"][] = [
-  "PROMO", "INTERVIEW", "CONFRONTATION", "CHALLENGE", "ATTACK", "CELEBRATION",
+  "PROMO", "INTERVIEW", "CONFRONTATION", "CHALLENGE", "ATTACK", "CELEBRATION", "TURN",
 ];
 const SHOW_TIME_GUIDE_MINUTES = 120;
 
@@ -190,6 +190,11 @@ export default function CardClient(): React.JSX.Element {
     && segment.participantIds.length <= 4
     && segment.participantIds.every(Boolean)
     && new Set(segment.participantIds).size === segment.participantIds.length
+    && (segment.type !== "TURN" || (
+      Boolean(segment.turnPersonId)
+      && segment.participantIds.includes(segment.turnPersonId ?? "")
+      && Boolean(segment.turnTargetAlignment)
+    ))
   ));
   const canSave = Boolean(
     view?.canEdit
@@ -233,6 +238,8 @@ export default function CardClient(): React.JSX.Element {
       participantIds: Array.from({ length: segmentMinimum(type) }, () => ""),
       programmeId: null,
       plannedLengthMinutes: 6,
+      turnPersonId: null,
+      turnTargetAlignment: null,
     }]);
     setRunningOrder((current) => [...current, { kind: "SEGMENT", refId: id }]);
     setExpandedSlotKey(`SEGMENT:${id}`);
@@ -275,7 +282,14 @@ export default function CardClient(): React.JSX.Element {
     const minimum = segmentMinimum(type);
     const participantIds = [...segment.participantIds];
     while (participantIds.length < minimum) participantIds.push("");
-    updateSegment(segmentId, { type, participantIds });
+    updateSegment(segmentId, {
+      type,
+      participantIds,
+      turnPersonId: type === "TURN"
+        ? (segment.turnPersonId && participantIds.includes(segment.turnPersonId) ? segment.turnPersonId : participantIds.find(Boolean) ?? null)
+        : null,
+      turnTargetAlignment: type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
+    });
   }
 
   function setSegmentProgramme(segmentId: string, programmeId: string): void {
@@ -290,7 +304,11 @@ export default function CardClient(): React.JSX.Element {
     const minimum = segmentMinimum(segment.type);
     let participantIds = segment.participantIds.filter((personId) => !personId || allowed.has(personId));
     while (participantIds.length < minimum) participantIds.push("");
-    updateSegment(segmentId, { programmeId, participantIds });
+    updateSegment(segmentId, {
+      programmeId,
+      participantIds,
+      turnPersonId: segment.turnPersonId && participantIds.includes(segment.turnPersonId) ? segment.turnPersonId : null,
+    });
   }
 
   function setSegmentParticipant(segmentId: string, index: number, personId: string): void {
@@ -298,7 +316,12 @@ export default function CardClient(): React.JSX.Element {
     if (!segment) return;
     const participantIds = [...segment.participantIds];
     participantIds[index] = personId;
-    updateSegment(segmentId, { participantIds });
+    updateSegment(segmentId, {
+      participantIds,
+      turnPersonId: segment.turnPersonId && participantIds.includes(segment.turnPersonId)
+        ? segment.turnPersonId
+        : segment.type === "TURN" ? (participantIds.find(Boolean) ?? null) : null,
+    });
   }
 
   function addSegmentParticipant(segmentId: string): void {
@@ -310,7 +333,13 @@ export default function CardClient(): React.JSX.Element {
   function removeSegmentParticipant(segmentId: string, index: number): void {
     const segment = segments.find((candidate) => candidate.draftSegmentId === segmentId);
     if (!segment || segment.participantIds.length <= segmentMinimum(segment.type)) return;
-    updateSegment(segmentId, { participantIds: segment.participantIds.filter((_, personIndex) => personIndex !== index) });
+    const participantIds = segment.participantIds.filter((_, personIndex) => personIndex !== index);
+    updateSegment(segmentId, {
+      participantIds,
+      turnPersonId: segment.turnPersonId && participantIds.includes(segment.turnPersonId)
+        ? segment.turnPersonId
+        : segment.type === "TURN" ? (participantIds.find(Boolean) ?? null) : null,
+    });
   }
 
   function removeSlot(slot: AlphaCardSlotView): void {
@@ -369,6 +398,11 @@ export default function CardClient(): React.JSX.Element {
 
   function segmentSummary(segment: AlphaCardSegmentView): string {
     const people = segment.participantIds.map(personName).join(" · ") || "No wrestlers selected";
+    if (segment.type === "TURN") {
+      const who = segment.turnPersonId ? personName(segment.turnPersonId) : "Choose wrestler";
+      const target = segment.turnTargetAlignment ? pretty(segment.turnTargetAlignment) : "Choose alignment";
+      return `Turn · ${who} → ${target} · ${segment.plannedLengthMinutes} min`;
+    }
     return `${pretty(segment.type)} · ${people} · ${segment.plannedLengthMinutes} min`;
   }
 
@@ -638,6 +672,41 @@ export default function CardClient(): React.JSX.Element {
                     <MinuteField value={segment.plannedLengthMinutes} min={2} max={20} disabled={!view.canEdit} onCommit={(plannedLengthMinutes) => updateSegment(segment.draftSegmentId, { plannedLengthMinutes })} />
                   </div>
                 </div>
+
+                {segment.type === "TURN" ? (
+                  <div className={styles.controls}>
+                    <div className={styles.control}>
+                      <label>Who turns?</label>
+                      <select
+                        value={segment.turnPersonId ?? ""}
+                        disabled={!view.canEdit}
+                        onChange={(event) => updateSegment(segment.draftSegmentId, { turnPersonId: event.target.value || null })}
+                      >
+                        <option value="">Choose wrestler</option>
+                        {segment.participantIds.filter(Boolean).map((personId) => (
+                          <option key={personId} value={personId}>{personName(personId)}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className={styles.control}>
+                      <label>Turns to</label>
+                      <select
+                        value={segment.turnTargetAlignment ?? ""}
+                        disabled={!view.canEdit}
+                        onChange={(event) => updateSegment(segment.draftSegmentId, {
+                          turnTargetAlignment: (event.target.value || null) as AlphaCardSegmentView["turnTargetAlignment"],
+                        })}
+                      >
+                        <option value="">Choose alignment</option>
+                        {(["FACE", "HEEL", "TWEENER"] as const).map((alignment) => {
+                          const current = view.availableParticipants.find((person) => person.personId === segment.turnPersonId)?.alignment
+                            ?? view.participants.find((person) => person.personId === segment.turnPersonId)?.alignment;
+                          return <option key={alignment} value={alignment} disabled={current === alignment}>{pretty(alignment)}{current === alignment ? " · current" : ""}</option>;
+                        })}
+                      </select>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className={styles.segmentPeople}>
                   <div className={styles.segmentPeopleHeader}>

@@ -1,3 +1,4 @@
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { Id, MatchType, PersonStatus, PpwDate, PromotionTier, TicketStrategy } from "../../domain/src/types.js";
 import { addPpwWeeks, comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { activePromotionControlForPlayer, activeWorldMembership } from "./ownership.js";
@@ -37,6 +38,8 @@ export interface PlayerPlannerSegmentView {
   participantNames: string[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  turnPersonName: string | null;
+  turnTargetAlignment: WrestlerAlignment | null;
 }
 
 export type PlayerPlannerRunningOrderView =
@@ -297,6 +300,8 @@ function showView(
         participantIds: [...legacy.participantIds],
         programmeId: legacy.programmeId,
         plannedLengthMinutes: 6,
+        turnPersonId: null,
+        turnTargetAlignment: null,
       })),
   ];
   const segments = segmentDrafts.map((segment): PlayerPlannerSegmentView => ({
@@ -305,6 +310,10 @@ function showView(
     participantNames: segment.participantIds.map((personId) => peopleById.get(personId)?.name ?? "Unknown wrestler"),
     programmeId: segment.programmeId,
     plannedLengthMinutes: segment.plannedLengthMinutes,
+    turnPersonName: segment.type === "TURN" && segment.turnPersonId
+      ? peopleById.get(segment.turnPersonId)?.name ?? "Unknown wrestler"
+      : null,
+    turnTargetAlignment: segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
   }));
   const matchesById = new Map(matches.map((match) => [match.draftMatchId, match]));
   const segmentsById = new Map(segments.map((segment) => [segment.draftSegmentId, segment]));

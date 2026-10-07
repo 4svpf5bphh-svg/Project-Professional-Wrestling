@@ -253,7 +253,11 @@ export default function ResultsClient(): React.JSX.Element {
                               </div>
                               <div className={styles.matchMeta}>
                                 <span>{slot.segment.programmeId ? "Programme attached" : "Standalone segment"}</span>
-                                <span>Resolved show history</span>
+                                {slot.segment.type === "TURN" && slot.segment.turnTargetAlignment ? (
+                                  <span>
+                                    {slot.segment.participants.find((participant) => participant.personId === slot.segment.turnPersonId)?.name ?? "Wrestler"} → {label(slot.segment.turnTargetAlignment)}
+                                  </span>
+                                ) : <span>Resolved show history</span>}
                               </div>
                             </article>
                           );
@@ -391,6 +395,13 @@ export default function ResultsClient(): React.JSX.Element {
                                       </a>
                                     ))}
                                   </div>
+                                  {slot.segment.type === "TURN" && slot.segment.turnTargetAlignment ? (
+                                    <div className={styles.matchMeta}>
+                                      <span>
+                                        {slot.segment.participants.find((participant) => participant.personId === slot.segment.turnPersonId)?.name ?? "Wrestler"} → {label(slot.segment.turnTargetAlignment)}
+                                      </span>
+                                    </div>
+                                  ) : null}
                                 </article>
                               );
                             }

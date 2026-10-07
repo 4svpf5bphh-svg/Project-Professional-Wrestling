@@ -1,3 +1,4 @@
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { ProgrammeParticipantRef } from "../../domain/src/programmes.js";
 import type {
   Id,
@@ -66,6 +67,8 @@ export interface AlphaCardSegmentView {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  turnPersonId?: Id | null;
+  turnTargetAlignment?: WrestlerAlignment | null;
 }
 
 export interface AlphaCardProgrammeView {
@@ -167,6 +170,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CHALLENGE",
   "ATTACK",
   "CELEBRATION",
+  "TURN",
 ]);
 
 function requiredText(value: string, label: string, maxLength = 220): string {
@@ -313,6 +317,19 @@ function normalizeSegments(
     const programmeId = segment.programmeId === null
       ? null
       : requiredText(segment.programmeId, `segments[${index}].programmeId`, 128);
+    const turnPersonId = segment.type === "TURN"
+      ? requiredText(segment.turnPersonId ?? "", `segments[${index}].turnPersonId`, 128)
+      : null;
+    const turnTargetAlignment = segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null;
+    if (segment.type === "TURN") {
+      if (!people.includes(turnPersonId!)) throw new Error("TURN segment wrestler must be one of the segment participants");
+      if (!turnTargetAlignment || !["FACE", "HEEL", "TWEENER"].includes(turnTargetAlignment)) {
+        throw new Error("TURN segment must choose face, heel or tweener");
+      }
+      if (wrestlerAlignmentForPromotion(state, promotionId, turnPersonId!) === turnTargetAlignment) {
+        throw new Error("TURN segment target alignment must differ from the wrestler's current presentation");
+      }
+    }
     if (programmeId !== null) {
       const programme = (state.programmes ?? []).find((candidate) => candidate.id === programmeId);
       if (!programme || programme.status !== "ACTIVE" || programme.promotionId !== promotionId) {
@@ -333,6 +350,7 @@ function normalizeSegments(
       participantIds: people,
       programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
+      ...(segment.type === "TURN" ? { turnPersonId, turnTargetAlignment } : {}),
     } satisfies DetailedShowSegmentDraft;
   });
 
@@ -720,6 +738,8 @@ export async function loadAlphaShowCard(
       participantIds: [...segment.participantIds],
       programmeId: segment.programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
+      turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
+      turnTargetAlignment: segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
     })),
     ...(draft.programmeSegments ?? []).map((segment) => ({
       draftSegmentId: segment.draftSegmentId,
@@ -727,6 +747,8 @@ export async function loadAlphaShowCard(
       participantIds: [...segment.participantIds],
       programmeId: segment.programmeId,
       plannedLengthMinutes: 6,
+      turnPersonId: null,
+      turnTargetAlignment: null,
     })),
   ];
   const segmentIds = new Set(segments.map((segment) => segment.draftSegmentId));
