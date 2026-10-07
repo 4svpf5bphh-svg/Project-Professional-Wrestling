@@ -229,8 +229,11 @@ test("materialized incomplete show leaves advance planning and exposes current c
   const status = playerShowPlanningStatus(f.state, f.planning, f.runtime, f.promotionId, draft.draftId);
   ok(status.state === "MATERIALIZED", "materialized incomplete show did not expose MATERIALIZED status");
   ok(status.readiness === "CARD_REQUIRED", "materialized incomplete show did not expose card responsibility");
-  ok(status.availableActions.length === 0, "materialized show still exposes advance-planning mutations");
-  throws(() => saveDraft(f, { ...draft, ticketStrategy: "PREMIUM" }, 1, "late-edit"), "EDIT_DRAFT is not allowed");
+  ok(status.availableActions.join(",") === "EDIT_CARD", "materialized show did not expose card-only editing");
+  throws(
+    () => saveDraft(f, { ...draft, ticketStrategy: "PREMIUM" }, 1, "late-edit"),
+    "materialized show logistics cannot be edited",
+  );
 });
 
 test("complete materialized card exposes READY_TO_LOCK", () => {
@@ -242,7 +245,7 @@ test("complete materialized card exposes READY_TO_LOCK", () => {
   const status = playerShowPlanningStatus(f.state, f.planning, f.runtime, f.promotionId, draft.draftId);
   ok(status.state === "READY_TO_LOCK", "complete materialized show did not expose READY_TO_LOCK");
   ok(status.readiness === "READY_TO_LOCK", "complete materialized show readiness disagrees with state");
-  ok(status.availableActions.length === 0, "ready show exposes irrelevant advance-planning actions");
+  ok(status.availableActions.join(",") === "EDIT_CARD", "ready current-week show cannot be adjusted before lock");
 });
 
 test("unresolved due commitment becomes STAFF_OWNED once the World locks", () => {

@@ -1,5 +1,6 @@
 declare const process: { exitCode?: number };
 
+import { materializePersistedCurrentWeekReservations } from "../packages/application/src/index.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import {
   advanceAlphaWorldWeek,
@@ -363,6 +364,95 @@ await test("a logistics-only show draft opens in the builder and the first valid
   const persisted = await repository.load(worldId);
   const reservation = persisted.planning.showReservations.find((candidate) => candidate.sourceDraftId === show.draftId);
   ok(reservation?.participants.length === selectedIds.length, "first card reservation did not match the booked wrestlers");
+});
+
+await test("materialized current-week show remains editable until lock and replaces its card safely", async () => {
+  const fixture = await reservedShowFixture(61023);
+  const beforeMaterialization = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const materializedPass = await materializePersistedCurrentWeekReservations(
+    fixture.repository,
+    fixture.worldId,
+    beforeMaterialization.world.revision,
+  );
+  ok(materializedPass.pass.materialized.length === 1, "fixture show did not materialize");
+
+  const materialized = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(materialized.planningState === "MATERIALIZED", "incomplete materialized show did not expose MATERIALIZED state");
+  ok(materialized.canEdit, "materialized current-week card was read-only");
+  ok(
+    materialized.availableParticipants.length === fixture.participantIds.length,
+    "materialized builder exposed wrestlers outside the committed show roster",
+  );
+
+  const firstCard = singlesCard(fixture.participantIds);
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "materialized-card-first-save",
+    expectedRevision: materialized.world.revision,
+    expectedPlanVersion: materialized.workspaceVersion,
+    matches: firstCard,
+    championshipAssignments: [],
+  });
+  ok(saved.planningState === "READY_TO_LOCK", "saved materialized card was not ready to lock");
+  ok(saved.canEdit, "ready current-week card froze before World lock");
+  ok(saved.world.revision === materialized.world.revision + 1, "materialized card save advanced revision unexpectedly");
+
+  const afterFirst = await fixture.repository.load(fixture.worldId);
+  const event = afterFirst.state.events.find((candidate) => (
+    candidate.promotionId === saved.promotion.promotionId
+    && candidate.status === "SCHEDULED"
+    && candidate.date.year === saved.world.year
+    && candidate.date.week === saved.world.week
+  ));
+  if (!event) throw new Error("materialized card fixture lost its scheduled event");
+  const firstActualIds = afterFirst.state.matches
+    .filter((match) => match.eventId === event.id && match.status === "SCHEDULED")
+    .map((match) => match.id);
+  ok(firstActualIds.length === firstCard.length, "first materialized card did not create scheduled matches");
+
+  const revisedCard = saved.matches.map((match, index) => (
+    index === 0
+      ? { ...match, intent: "TECHNICAL" as const, plannedLengthMinutes: 19 }
+      : { ...match }
+  ));
+  const revisedRequest = {
+    requestId: "materialized-card-revision",
+    expectedRevision: saved.world.revision,
+    expectedPlanVersion: saved.workspaceVersion,
+    matches: revisedCard,
+    championshipAssignments: [],
+  };
+  const revised = await saveAlphaCurrentWeekCard(
+    fixture.repository,
+    fixture.worldId,
+    "alpha-player",
+    revisedRequest,
+  );
+  ok(revised.canEdit && revised.planningState === "READY_TO_LOCK", "revised card froze before lock");
+
+  const afterRevision = await fixture.repository.load(fixture.worldId);
+  const revisedMatches = afterRevision.state.matches
+    .filter((match) => match.eventId === event.id && match.status === "SCHEDULED")
+    .sort((left, right) => left.order - right.order);
+  ok(revisedMatches.length === revisedCard.length, "card revision duplicated or dropped scheduled matches");
+  ok(revisedMatches[0]?.intent === "TECHNICAL", "card revision did not replace match intent");
+  ok(revisedMatches[0]?.plannedLengthMinutes === 19, "card revision did not replace match length");
+  ok(
+    revisedMatches.every((match) => !firstActualIds.includes(match.id)),
+    "card revision left stale scheduled matches attached to the event",
+  );
+
+  const retry = await saveAlphaCurrentWeekCard(
+    fixture.repository,
+    fixture.worldId,
+    "alpha-player",
+    revisedRequest,
+  );
+  ok(retry.world.revision === revised.world.revision, "idempotent materialized card retry advanced revision");
+  const afterRetry = await fixture.repository.load(fixture.worldId);
+  const retryIds = afterRetry.state.matches
+    .filter((match) => match.eventId === event.id && match.status === "SCHEDULED")
+    .map((match) => match.id);
+  ok(retryIds.join(",") === revisedMatches.map((match) => match.id).join(","), "idempotent retry replaced the card again");
 });
 
 await test("Alpha browser card booking rejects a championship on the wrong match division without mutation", async () => {

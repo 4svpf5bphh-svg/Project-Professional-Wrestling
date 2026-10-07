@@ -283,13 +283,13 @@ export default function PlannerClient(): React.JSX.Element {
                         ) : <p className={styles.muted}>No wrestlers selected yet.</p>}
                         {show.workspaceChangedSinceReservation ? <div className={styles.warning}>Plan changed since reservation — refresh it before relying on those commitments.</div> : null}
                         {show.riskReasons.length > 0 ? <div className={styles.warning}>{show.riskReasons.map(label).join(" · ")}</div> : null}
-                        {show.availableActions.includes("EDIT_DRAFT") ? (
+                        {show.availableActions.includes("EDIT_DRAFT") || show.availableActions.includes("EDIT_CARD") ? (
                           <a
                             className={styles.editButton}
                             style={{ display: "block", padding: "10px 14px", textAlign: "center", textDecoration: "none" }}
                             href={`/card?draftId=${encodeURIComponent(show.draftId)}`}
                           >
-                            {show.matchCount > 0 ? "Edit booking" : "Book show"}
+                            {show.matchCount > 0 ? "Edit card" : "Book card"}
                           </a>
                         ) : null}
                       </section>

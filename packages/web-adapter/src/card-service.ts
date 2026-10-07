@@ -25,6 +25,15 @@ import {
 import { wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import {
+  bookHumanChampionshipMatch,
+  unbookHumanChampionshipMatch,
+} from "../../sim-core/src/human-championships.js";
+import {
+  clearHumanMatchCard,
+  prepareHumanMatchCard,
+  type HumanMatchPlan,
+} from "../../sim-core/src/human-booking.js";
+import {
   defaultPlannedFinishForIntent,
   isBookableMatchFinish,
   type MatchFinish,
@@ -448,6 +457,56 @@ function normalizeChampionshipAssignments(
   });
 }
 
+function sameIdSet(left: readonly Id[], right: readonly Id[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return new Set(left).size === left.length && left.every((id) => rightSet.has(id));
+}
+
+function committedEventParticipantIds(state: WorldState, eventId: Id): Id[] {
+  return state.scheduledAppearances
+    .filter((appearance) => appearance.eventId === eventId && appearance.status === "COMMITTED")
+    .map((appearance) => appearance.personId);
+}
+
+function replaceMaterializedEventCard(
+  state: WorldState,
+  eventId: Id,
+  matches: DetailedMatchDraft[],
+  championshipAssignments: ChampionshipDraftAssignment[],
+): void {
+  const existingBookings = [...(state.championshipMatchBookings ?? [])]
+    .filter((booking) => booking.eventId === eventId);
+  for (const booking of existingBookings) {
+    unbookHumanChampionshipMatch(state, eventId, booking.championshipId);
+  }
+  clearHumanMatchCard(state, eventId);
+
+  const plans: HumanMatchPlan[] = matches.map((match) => {
+    if (match.intendedWinnerSide === null || match.intent === null || match.plannedLengthMinutes === null) {
+      throw new Error("materialized card contains an incomplete match");
+    }
+    return {
+      type: match.type,
+      sideAIds: [...match.sideAIds],
+      sideBIds: [...match.sideBIds],
+      intendedWinnerSide: match.intendedWinnerSide,
+      intent: match.intent,
+      plannedLengthMinutes: match.plannedLengthMinutes,
+      plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
+    };
+  });
+  const materializedMatches = prepareHumanMatchCard(state, eventId, plans);
+  const byDraftId = new Map<string, string>();
+  matches.forEach((match, index) => byDraftId.set(match.draftMatchId, materializedMatches[index]!.id));
+
+  for (const assignment of championshipAssignments) {
+    const matchId = byDraftId.get(assignment.draftMatchId);
+    if (!matchId) throw new Error(`championship assignment references missing match ${assignment.draftMatchId}`);
+    bookHumanChampionshipMatch(state, eventId, matchId, assignment.championshipId);
+  }
+}
+
 function resolveDraftId(
   promotionId: Id,
   currentDate: PpwDate,
@@ -622,12 +681,18 @@ export async function loadAlphaShowCard(
     draftId,
   );
   const peopleById = new Map(aggregate.state.people.map((person) => [person.id, person]));
-  const availableParticipants = availableCardParticipants(
+  const candidateParticipants = availableCardParticipants(
     aggregate.state,
     promotion.id,
     draft.targetDate,
     draft.participantIds,
   );
+  const committedIds = status.eventId === null
+    ? null
+    : new Set(committedEventParticipantIds(aggregate.state, status.eventId));
+  const availableParticipants = committedIds === null
+    ? candidateParticipants
+    : candidateParticipants.filter((person) => committedIds.has(person.personId));
   const availableById = new Map(availableParticipants.map((person) => [person.personId, person]));
   const participants = draft.participantIds.map((personId) => {
     const available = availableById.get(personId);
@@ -706,7 +771,8 @@ export async function loadAlphaShowCard(
     workspaceVersion: workspace.version,
     reservationId: reservation?.reservationId ?? null,
     planningState: status.state,
-    canEdit: aggregate.runtime.phase === "OPEN" && status.availableActions.includes("EDIT_DRAFT"),
+    canEdit: aggregate.runtime.phase === "OPEN"
+      && (status.availableActions.includes("EDIT_DRAFT") || status.availableActions.includes("EDIT_CARD")),
     minParticipants: aggregate.state.ruleset.minEventParticipants,
     maxParticipants: maxShowParticipants(
       promotion.tier,
@@ -784,6 +850,16 @@ export async function saveAlphaShowCard(
     if (!workspace || !draft) {
       throw new Error("Plan this show before booking its card");
     }
+    const status = playerShowPlanningStatus(
+      aggregate.state,
+      aggregate.planning,
+      aggregate.runtime,
+      control.promotionId,
+      draftId,
+    );
+    const materializedEventId = status.eventId !== null && status.availableActions.includes("EDIT_CARD")
+      ? status.eventId
+      : null;
 
     const normalizedCard = normalizeCompleteCard(request.matches);
     const normalizedSegments = normalizeSegments(request.segments, aggregate.state, control.promotionId);
@@ -803,6 +879,12 @@ export async function saveAlphaShowCard(
     ])];
     if (participantIds.length < aggregate.state.ruleset.minEventParticipants) {
       throw new Error(`show booking requires at least ${aggregate.state.ruleset.minEventParticipants} wrestlers across the card`);
+    }
+    if (materializedEventId !== null) {
+      const committedIds = committedEventParticipantIds(aggregate.state, materializedEventId);
+      if (!sameIdSet(participantIds, committedIds)) {
+        throw new Error("current-week card must use every wrestler already committed to the materialized show");
+      }
     }
     const championshipAssignments = normalizeChampionshipAssignments(
       request.championshipAssignments,
@@ -836,6 +918,18 @@ export async function saveAlphaShowCard(
         },
       },
     );
+
+    if (materializedEventId !== null) {
+      if (!cardReceipt) {
+        replaceMaterializedEventCard(
+          aggregate.state,
+          materializedEventId,
+          matches,
+          championshipAssignments,
+        );
+      }
+      return;
+    }
 
     reserveDetailedShowDraftCommand(
       aggregate.state,

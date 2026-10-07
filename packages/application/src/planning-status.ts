@@ -30,6 +30,7 @@ export type PlayerShowPlanningState =
 
 export type PlayerShowPlanningAction =
   | "EDIT_DRAFT"
+  | "EDIT_CARD"
   | "DELETE_DRAFT"
   | "RESERVE"
   | "REFRESH_RESERVATION"
@@ -117,6 +118,9 @@ function planningActions(
   if (state === "DRAFT") return ["EDIT_DRAFT", "DELETE_DRAFT", "RESERVE"];
   if (state === "RESERVED" || state === "AT_RISK") {
     return ["EDIT_DRAFT", "REFRESH_RESERVATION", "RELEASE_RESERVATION"];
+  }
+  if ((state === "MATERIALIZED" || state === "READY_TO_LOCK") && relation === "CURRENT") {
+    return ["EDIT_CARD"];
   }
   return [];
 }

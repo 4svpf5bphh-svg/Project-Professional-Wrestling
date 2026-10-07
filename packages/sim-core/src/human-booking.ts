@@ -32,6 +32,34 @@ function validateSideSize(type: MatchType, sideAIds: string[], sideBIds: string[
   }
 }
 
+export function clearHumanMatchCard(state: WorldState, eventId: string): number {
+  const event = state.events.find((candidate) => candidate.id === eventId);
+  if (!event) throw new Error(`unknown event ${eventId}`);
+  if (event.status !== "SCHEDULED") throw new Error("match card can only be cleared for a scheduled event");
+
+  const promotion = state.promotions.find((candidate) => candidate.id === event.promotionId);
+  if (!promotion || promotion.controllerType !== "HUMAN") {
+    throw new Error("manual match-card clearing requires a human-controlled promotion");
+  }
+
+  const eventMatches = state.matches.filter((match) => match.eventId === event.id);
+  if (eventMatches.some((match) => match.status !== "SCHEDULED")) {
+    throw new Error("resolved or cancelled matches cannot be replaced");
+  }
+  if ((state.championshipMatchBookings ?? []).some((booking) => booking.eventId === event.id)) {
+    throw new Error("championship designations must be unbooked before replacing the card");
+  }
+
+  const matchIds = new Set(eventMatches.map((match) => match.id));
+  for (let index = state.matchParticipants.length - 1; index >= 0; index -= 1) {
+    if (matchIds.has(state.matchParticipants[index]!.matchId)) state.matchParticipants.splice(index, 1);
+  }
+  for (let index = state.matches.length - 1; index >= 0; index -= 1) {
+    if (matchIds.has(state.matches[index]!.id)) state.matches.splice(index, 1);
+  }
+  return eventMatches.length;
+}
+
 export function prepareHumanMatchCard(
   state: WorldState,
   eventId: string,
