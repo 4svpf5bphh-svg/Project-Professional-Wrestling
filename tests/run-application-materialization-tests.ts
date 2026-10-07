@@ -235,6 +235,38 @@ test("segment-only talent remains reserved and materializes without being forced
   );
 });
 
+test("advance-booked style is rechecked at materialization when wrestler condition changes", () => {
+  const f = fixture(16123);
+  const draft = completeSinglesCard(f, baseDraft(f));
+  const firstMatch = draft.matches[0]!;
+  firstMatch.style = {
+    competitiveness: 90,
+    technical: 75,
+    story: 55,
+    intensity: 96,
+    risk: 100,
+    epic: 88,
+  };
+  firstMatch.plannedLengthMinutes = 42;
+  const reservation = saveAndReserve(f, draft);
+  const person = f.state.people.find((candidate) => candidate.id === firstMatch.sideAIds[0])!;
+  person.fatigue = 88;
+  person.wear = 82;
+  person.skills.safety = Math.min(person.skills.safety, 42);
+  person.skills.stamina = Math.min(person.skills.stamina, 44);
+
+  const assessment = assessDetailedShowReservation(f.state, f.planning, reservation);
+  ok(assessment.status === "AT_RISK", "new style refusal did not put the due reservation at risk");
+  ok(assessment.reasons.includes("MATCH_STYLE_REFUSAL"), "reservation risk did not identify style refusal");
+
+  const eventsBefore = f.state.events.length;
+  const pass = materializeCurrentWeekReservations(f.state, f.planning);
+  ok(pass.materialized.length === 0, "style-refused advance card materialized anyway");
+  ok(pass.atRisk.some((entry) => entry.reservationId === reservation.reservationId), "style-refused reservation was not returned as at risk");
+  ok(f.state.events.length === eventsBefore, "style refusal left a partial materialized event");
+  ok(f.planning.showReservations.some((entry) => entry.reservationId === reservation.reservationId), "style-refused reservation was removed before player could edit it");
+});
+
 test("incomplete advance card still materializes the show and leaves card responsibility unresolved", () => {
   const f = fixture(16103);
   const draft = baseDraft(f);

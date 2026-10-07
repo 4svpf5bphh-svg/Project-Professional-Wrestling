@@ -17,6 +17,7 @@ import {
 import { bookHumanChampionshipMatch } from "../../sim-core/src/human-championships.js";
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
 import { defaultPlannedFinishForIntent } from "../../sim-core/src/match-finishes.js";
+import { assessMatchStyleReadiness } from "../../sim-core/src/match-style.js";
 import type {
   DetailedShowDraft,
   DetailedShowReservation,
@@ -33,7 +34,8 @@ export type ReservationRiskReason =
   | "WRESTLER_DOUBLE_BOOKED"
   | "SERVICE_CAPACITY_EXCEEDED"
   | "CONTRACT_UNAVAILABLE"
-  | "CONTRACT_DATE_EXHAUSTED";
+  | "CONTRACT_DATE_EXHAUSTED"
+  | "MATCH_STYLE_REFUSAL";
 
 export type ReservationAssessmentStatus = "NOT_DUE" | "READY" | "AT_RISK" | "EXPIRED";
 
@@ -215,6 +217,30 @@ export function assessDetailedShowReservation(
       + scheduledContractDates(state, contract.id)
       + reservedContractDates(planning, contract.id, reservation.reservationId);
     if (committedDates >= contract.dateEntitlement) reasons.push("CONTRACT_DATE_EXHAUSTED");
+  }
+
+  const draft = sourceDraft(planning, reservation);
+  if (draft) {
+    for (const match of draft.matches) {
+      if (match.style === undefined || match.plannedLengthMinutes === null) continue;
+      const ids = [...match.sideAIds, ...match.sideBIds];
+      for (const personId of ids) {
+        const person = state.people.find((candidate) => candidate.id === personId);
+        if (!person || person.status !== "ACTIVE") continue;
+        const readiness = assessMatchStyleReadiness(
+          match.style,
+          person.skills,
+          match.plannedLengthMinutes,
+          person.fatigue,
+          person.wear,
+        );
+        if (readiness.status === "REFUSES") {
+          reasons.push("MATCH_STYLE_REFUSAL");
+          break;
+        }
+      }
+      if (reasons.includes("MATCH_STYLE_REFUSAL")) break;
+    }
   }
 
   const normalizedReasons = uniqueReasons(reasons);
