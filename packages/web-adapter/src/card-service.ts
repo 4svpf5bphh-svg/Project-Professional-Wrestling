@@ -16,6 +16,9 @@ import {
   type ApplicationWorldRepository,
   type ChampionshipDraftAssignment,
   type DetailedMatchDraft,
+  type DetailedShowSegmentDraft,
+  type DetailedShowSegmentType,
+  type DetailedShowSlotRef,
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
 import { wrestlerAlignment } from "../../sim-core/src/alignment.js";
@@ -45,6 +48,27 @@ export interface AlphaCardMatchView {
   intent: MatchIntent;
   plannedLengthMinutes: number;
   plannedFinish?: MatchFinish;
+}
+
+export interface AlphaCardSegmentView {
+  draftSegmentId: string;
+  type: DetailedShowSegmentType;
+  participantIds: Id[];
+  programmeId: Id | null;
+  plannedLengthMinutes: number;
+}
+
+export interface AlphaCardProgrammeView {
+  programmeId: Id;
+  label: string;
+  participantIds: Id[];
+  heat: number | null;
+  repetition: number;
+}
+
+export interface AlphaCardSlotView {
+  kind: "MATCH" | "SEGMENT";
+  refId: string;
 }
 
 export interface AlphaCardChampionshipView {
@@ -95,6 +119,9 @@ export interface AlphaCurrentWeekCardView {
   participants: AlphaCardParticipantView[];
   availableParticipants: AlphaCardParticipantView[];
   matches: AlphaCardMatchView[];
+  segments: AlphaCardSegmentView[];
+  runningOrder: AlphaCardSlotView[];
+  programmes: AlphaCardProgrammeView[];
   recentMeetings: AlphaRecentMeetingView[];
   championships: AlphaCardChampionshipView[];
   championshipAssignments: AlphaChampionshipAssignmentView[];
@@ -106,6 +133,8 @@ export interface AlphaShowCardRequest {
   expectedPlanVersion: number;
   draftId?: string;
   matches: AlphaCardMatchView[];
+  segments?: AlphaCardSegmentView[];
+  runningOrder?: AlphaCardSlotView[];
   championshipAssignments: AlphaChampionshipAssignmentView[];
 }
 
@@ -120,6 +149,14 @@ const MATCH_INTENTS = new Set<MatchIntent>([
   "STORY",
   "PROTECTIVE",
   "EPIC",
+]);
+const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
+  "PROMO",
+  "INTERVIEW",
+  "CONFRONTATION",
+  "CHALLENGE",
+  "ATTACK",
+  "CELEBRATION",
 ]);
 
 function requiredText(value: string, label: string, maxLength = 220): string {
@@ -188,6 +225,139 @@ function normalizeCompleteCard(
   });
 
   return { matches: normalized, participantIds: orderedParticipants };
+}
+
+
+function programmeParticipantIds(state: WorldState, programmeId: Id): Id[] {
+  const programme = (state.programmes ?? []).find((candidate) => candidate.id === programmeId);
+  if (!programme) return [];
+  const result = new Set<Id>();
+  for (const ref of [...programme.sideA, ...programme.sideB]) {
+    if (ref.kind === "PERSON") {
+      result.add(ref.entityId);
+      continue;
+    }
+    for (const membership of state.teamMemberships ?? []) {
+      if (membership.teamId === ref.entityId && membership.active) result.add(membership.personId);
+    }
+  }
+  return [...result];
+}
+
+function programmeSideLabel(state: WorldState, refs: WorldState["programmes"][number]["sideA"]): string {
+  return refs.map((ref) => {
+    if (ref.kind === "PERSON") {
+      return state.people.find((person) => person.id === ref.entityId)?.name ?? ref.entityId;
+    }
+    return state.teams?.find((team) => team.id === ref.entityId)?.name ?? ref.entityId;
+  }).join(" & ");
+}
+
+function cardProgrammes(state: WorldState, promotionId: Id): AlphaCardProgrammeView[] {
+  return (state.programmes ?? [])
+    .filter((programme) => programme.promotionId === promotionId && programme.status === "ACTIVE")
+    .map((programme) => ({
+      programmeId: programme.id,
+      label: `${programmeSideLabel(state, programme.sideA)} vs ${programmeSideLabel(state, programme.sideB)}`,
+      participantIds: programmeParticipantIds(state, programme.id),
+      heat: programme.heat,
+      repetition: programme.repetition,
+    }))
+    .sort((left, right) => (
+      (right.heat ?? -1) - (left.heat ?? -1)
+      || left.label.localeCompare(right.label)
+      || left.programmeId.localeCompare(right.programmeId)
+    ));
+}
+
+function normalizeSegments(
+  segments: AlphaCardSegmentView[] | undefined,
+  state: WorldState,
+  promotionId: Id,
+): { segments: DetailedShowSegmentDraft[]; participantIds: Id[] } {
+  if (segments === undefined) return { segments: [], participantIds: [] };
+  if (!Array.isArray(segments)) throw new Error("segments must be an array");
+  const segmentIds = new Set<string>();
+  const usedProgrammes = new Set<Id>();
+  const participantIds: Id[] = [];
+
+  const normalized = segments.map((segment, index) => {
+    const draftSegmentId = requiredText(segment.draftSegmentId, `segments[${index}].draftSegmentId`, 128);
+    if (segmentIds.has(draftSegmentId)) throw new Error("show contains duplicate segment IDs");
+    segmentIds.add(draftSegmentId);
+    if (!SEGMENT_TYPES.has(segment.type)) throw new Error(`unsupported segment type ${String(segment.type)}`);
+    if (!Array.isArray(segment.participantIds) || segment.participantIds.length < 1 || segment.participantIds.length > 4) {
+      throw new Error("segment requires one to four wrestlers");
+    }
+    const people = segment.participantIds.map((personId, personIndex) => (
+      requiredText(personId, `segments[${index}].participantIds[${personIndex}]`, 128)
+    ));
+    if (new Set(people).size !== people.length) throw new Error("segment cannot include the same wrestler twice");
+    if (["CONFRONTATION", "CHALLENGE", "ATTACK"].includes(segment.type) && people.length < 2) {
+      throw new Error(`${segment.type.toLowerCase()} segment requires at least two wrestlers`);
+    }
+    if (!Number.isInteger(segment.plannedLengthMinutes) || segment.plannedLengthMinutes < 2 || segment.plannedLengthMinutes > 20) {
+      throw new Error("segment length must be an integer from 2 to 20 minutes");
+    }
+
+    const programmeId = segment.programmeId === null
+      ? null
+      : requiredText(segment.programmeId, `segments[${index}].programmeId`, 128);
+    if (programmeId !== null) {
+      const programme = (state.programmes ?? []).find((candidate) => candidate.id === programmeId);
+      if (!programme || programme.status !== "ACTIVE" || programme.promotionId !== promotionId) {
+        throw new Error(`active Programme ${programmeId} was not found for this promotion`);
+      }
+      if (usedProgrammes.has(programmeId)) throw new Error("one Programme can have only one segment on a show");
+      usedProgrammes.add(programmeId);
+      const storyPeople = new Set(programmeParticipantIds(state, programmeId));
+      for (const personId of people) {
+        if (!storyPeople.has(personId)) throw new Error(`${personId} does not belong to Programme ${programmeId}`);
+      }
+    }
+
+    participantIds.push(...people);
+    return {
+      draftSegmentId,
+      type: segment.type,
+      participantIds: people,
+      programmeId,
+      plannedLengthMinutes: segment.plannedLengthMinutes,
+    } satisfies DetailedShowSegmentDraft;
+  });
+
+  return { segments: normalized, participantIds };
+}
+
+function normalizeRunningOrder(
+  runningOrder: AlphaCardSlotView[] | undefined,
+  matches: DetailedMatchDraft[],
+  segments: DetailedShowSegmentDraft[],
+): DetailedShowSlotRef[] {
+  const defaultOrder: DetailedShowSlotRef[] = [
+    ...matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ...segments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
+  ];
+  if (runningOrder === undefined) return defaultOrder;
+  if (!Array.isArray(runningOrder)) throw new Error("runningOrder must be an array");
+
+  const valid = new Set(defaultOrder.map((slot) => `${slot.kind}:${slot.refId}`));
+  const seen = new Set<string>();
+  const normalized = runningOrder.map((slot, index) => {
+    if (!slot || (slot.kind !== "MATCH" && slot.kind !== "SEGMENT")) {
+      throw new Error(`runningOrder[${index}] has an invalid slot kind`);
+    }
+    const refId = requiredText(slot.refId, `runningOrder[${index}].refId`, 128);
+    const key = `${slot.kind}:${refId}`;
+    if (!valid.has(key)) throw new Error(`running order references missing ${slot.kind.toLowerCase()} ${refId}`);
+    if (seen.has(key)) throw new Error("running order contains a duplicate slot");
+    seen.add(key);
+    return { kind: slot.kind, refId };
+  });
+  if (seen.size !== valid.size || [...valid].some((key) => !seen.has(key))) {
+    throw new Error("running order must contain every match and segment exactly once");
+  }
+  return normalized;
 }
 
 function activeReign(state: WorldState, championshipId: Id) {
