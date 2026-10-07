@@ -113,6 +113,15 @@ export function promotionAlignmentChangeContext(
   ));
   if (!existing) return { method: "INITIAL_PRESENTATION", naturalReset: true };
 
+  const changedThisWeek = state.ledger.some((entry) => (
+    entry.type === "PROMOTION_ALIGNMENT_CHANGED"
+    && entry.payload.promotionId === promotionId
+    && entry.payload.personId === personId
+    && entry.payload.changed === true
+    && sameWeek(state, entry.date, state.world.currentDate)
+  ));
+  if (changedThisWeek) return { method: "OFFSCREEN_SWITCH", naturalReset: false };
+
   const justSigned = state.contracts.some((contract) => (
     contract.promotionId === promotionId
     && contract.personId === personId

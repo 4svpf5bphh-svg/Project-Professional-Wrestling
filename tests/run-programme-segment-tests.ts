@@ -2,6 +2,7 @@ declare const process: { exitCode?: number };
 
 import { createWorldPlanningState, upsertDetailedShowDraft } from "../packages/application/src/planning.js";
 import {
+  applyResolvedShowTurns,
   recordResolvedProgrammeSegments,
   recordResolvedShowSegments,
   resolvedShowSegmentsForEvent,
@@ -14,6 +15,8 @@ import {
   createWorld,
   evaluateProgrammeSignals,
   programmeActivities,
+  setPromotionWrestlerAlignment,
+  wrestlerAlignmentForPromotion,
 } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
@@ -182,6 +185,48 @@ test("standalone segments become factual show history without inventing Programm
   ok(recorded === 1 && frozen.length === 1, "standalone segment was not frozen as completed show history");
   ok(frozen[0]?.participantIds[0] === setup.rosterIds[2], "standalone segment lost its wrestler");
   ok(programmeActivities(setup.state, setup.programme.id).length === 0, "standalone segment invented Programme activity");
+});
+
+test("TURN segment freezes its intent and changes promotion alignment only after explicit application", () => {
+  const setup = fixture(9152);
+  const personId = setup.rosterIds[0]!;
+  setPromotionWrestlerAlignment(setup.state, setup.promotion.id, personId, "HEEL");
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    draftId: "turn-segment-show",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null,
+    venueId: null,
+    ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [],
+    championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "turn-segment-1",
+      type: "TURN",
+      participantIds: [personId],
+      programmeId: null,
+      plannedLengthMinutes: 5,
+      turnPersonId: personId,
+      turnTargetAlignment: "FACE",
+    }],
+    runningOrder: [{ kind: "SEGMENT", refId: "turn-segment-1" }],
+  });
+  setup.state.events.push(completedEvent(setup));
+
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "turn segment did not resolve into show history");
+  const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(frozen.type === "TURN" && frozen.turnPersonId === personId && frozen.turnTargetAlignment === "FACE", "turn intent was not frozen");
+  ok(wrestlerAlignmentForPromotion(setup.state, setup.promotion.id, personId) === "HEEL", "freezing the segment applied the turn too early");
+
+  ok(applyResolvedShowTurns(setup.state) === 1, "resolved turn was not applied");
+  ok(wrestlerAlignmentForPromotion(setup.state, setup.promotion.id, personId) === "FACE", "resolved turn did not change promotion alignment");
+  ok(applyResolvedShowTurns(setup.state) === 0, "turn retry applied twice");
+  ok(setup.state.ledger.some((entry) => (
+    entry.type === "PROMOTION_ALIGNMENT_CHANGED"
+    && entry.payload.method === "TURN"
+    && entry.payload.sourceSegmentId === "turn-segment-1"
+  )), "turn did not retain historical alignment-change evidence");
 });
 
 test("Programme segments remain planned until their show has completed", () => {

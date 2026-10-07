@@ -16,6 +16,7 @@ import {
   type AlphaCardMatchView,
   type AlphaCardSegmentView,
 } from "../packages/web-adapter/src/card-service.js";
+import { wrestlerAlignmentForPromotion } from "../packages/sim-core/src/alignment.js";
 import { startAlphaManagedProgramme } from "../packages/web-adapter/src/programme-management-service.js";
 import {
   loadAlphaPlayerPlanner,
@@ -453,6 +454,47 @@ await test("materialized current-week show remains editable until lock and repla
     .filter((match) => match.eventId === event.id && match.status === "SCHEDULED")
     .map((match) => match.id);
   ok(retryIds.join(",") === revisedMatches.map((match) => match.id).join(","), "idempotent retry replaced the card again");
+});
+
+await test("Show Builder persists and resolves a TURN segment into promotion alignment history", async () => {
+  const fixture = await reservedShowFixture(61024);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const personId = fixture.participantIds[0]!;
+  const current = before.availableParticipants.find((person) => person.personId === personId)?.alignment
+    ?? before.participants.find((person) => person.personId === personId)?.alignment;
+  if (!current) throw new Error("turn fixture could not resolve current alignment");
+  const target = current === "HEEL" ? "FACE" : "HEEL";
+  const card = singlesCard(fixture.participantIds);
+  const turn: AlphaCardSegmentView = {
+    draftSegmentId: "turn-slot",
+    type: "TURN",
+    participantIds: [personId],
+    programmeId: null,
+    plannedLengthMinutes: 5,
+    turnPersonId: personId,
+    turnTargetAlignment: target,
+  };
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "web-card-turn-save",
+    expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion,
+    matches: card,
+    segments: [turn],
+    runningOrder: [
+      { kind: "SEGMENT", refId: turn.draftSegmentId },
+      ...card.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ],
+    championshipAssignments: [],
+  });
+  ok(saved.segments[0]?.type === "TURN" && saved.segments[0]?.turnTargetAlignment === target, "turn segment did not survive card save");
+
+  await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+    expectedRevision: saved.world.revision,
+  });
+  const resolved = await fixture.repository.load(fixture.worldId);
+  ok(wrestlerAlignmentForPromotion(resolved.state, saved.promotion.promotionId, personId) === target, "resolved turn did not change promotion alignment");
+  ok(resolved.state.ledger.some((entry) => entry.type === "SHOW_SEGMENT_COMPLETED" && entry.payload.segmentType === "TURN"), "turn was not frozen into show history");
+  ok(resolved.state.ledger.some((entry) => entry.type === "PROMOTION_ALIGNMENT_CHANGED" && entry.payload.method === "TURN"), "turn did not create alignment-change history");
 });
 
 await test("Alpha browser card booking rejects a championship on the wrong match division without mutation", async () => {

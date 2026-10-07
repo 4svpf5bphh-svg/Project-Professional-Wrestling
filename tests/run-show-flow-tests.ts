@@ -4,6 +4,7 @@ import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import type { Match, MatchIntent, WrestlingEvent, WorldState } from "../packages/domain/src/types.js";
 import {
   applyCurrentWeekShowFlow,
+  changePromotionWrestlerAlignment,
   createWorld,
   evaluateShowFlow,
   setPromotionWrestlerAlignment,
@@ -206,6 +207,25 @@ test("promotion-specific alignment drives crowd-flow interpretation", () => {
     wrestlerAlignment(a, state.world.seed) === "HEEL" && wrestlerAlignment(b, state.world.seed) === "HEEL",
     "promotion alignment override rewrote global wrestler alignment",
   );
+});
+
+test("unexplained or repeated alignment changes reduce future crowd confidence", () => {
+  const { state, event, promotionId, personIds } = fixture(84106);
+  const match = completedMatch(state, event, "alignment-volatility-hook", 1, "COMPETITIVE", 68);
+  attachSinglesParticipants(state, event, match, personIds[0]!, personIds[1]!);
+  const a = state.people.find((person) => person.id === personIds[0])!;
+  const b = state.people.find((person) => person.id === personIds[1])!;
+  setPromotionWrestlerAlignment(state, promotionId, a.id, "FACE");
+  setPromotionWrestlerAlignment(state, promotionId, b.id, "HEEL");
+  const stable = evaluateShowFlow(state, event, [match]);
+
+  changePromotionWrestlerAlignment(state, promotionId, a.id, "TWEENER", { method: "OFFSCREEN_SWITCH" });
+  setPromotionWrestlerAlignment(state, promotionId, a.id, "FACE");
+  const confused = evaluateShowFlow(state, event, [match]);
+
+  ok(stable.matches[0]?.alignmentReason === "FACE_HEEL_CLARITY", "stable fixture did not begin with clear alignment");
+  ok(confused.matches[0]?.alignmentReason === "ALIGNMENT_VOLATILITY", "unexplained switch did not surface crowd confusion");
+  ok(confused.crowdResponse < stable.crowdResponse - 0.5, "alignment volatility did not reduce crowd response");
 });
 
 test("hot fresh Programmes help while repetition can exhaust the same story", () => {

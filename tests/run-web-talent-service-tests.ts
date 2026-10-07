@@ -103,6 +103,7 @@ await test("Talent service stores promotion-specific alignment without rewriting
 
   const first = await setAlphaRosterAlignment(repository, worldId, "player-a", request);
   ok(first.alignment === target, "alignment command returned the wrong value");
+  ok(first.changeMode === "INITIAL_PRESENTATION" && first.naturalReset, "first promotion presentation was not treated as a clean establishment");
   ok(first.view.roster.find((entry) => entry.personId === rosterEntry.personId)?.alignment === target, "updated alignment did not reach roster view");
 
   const persisted = await repository.load(worldId);
@@ -118,6 +119,23 @@ await test("Talent service stores promotion-specific alignment without rewriting
   const afterRetry = await repository.load(worldId);
   ok(afterRetry.runtime.revision === revision, "idempotent alignment retry advanced World revision");
   ok((afterRetry.state.promotionWrestlerPresentations ?? []).length === 1, "idempotent alignment retry duplicated presentation state");
+  ok(
+    afterRetry.state.ledger.filter((entry) => entry.type === "PROMOTION_ALIGNMENT_CHANGED").length === 1,
+    "idempotent alignment retry duplicated alignment history",
+  );
+
+  const secondTarget = target === "HEEL" ? "TWEENER" : "HEEL";
+  const second = await setAlphaRosterAlignment(repository, worldId, "player-a", {
+    requestId: "talent-alignment-002",
+    personId: rosterEntry.personId,
+    alignment: secondTarget,
+  });
+  ok(second.changeMode === "OFFSCREEN_SWITCH" && !second.naturalReset, "repeated roster-page switch was not classified as unexplained");
+  const afterSecond = await repository.load(worldId);
+  ok(
+    afterSecond.state.ledger.some((entry) => entry.type === "PROMOTION_ALIGNMENT_CHANGED" && entry.payload.method === "OFFSCREEN_SWITCH"),
+    "off-screen alignment switch was not recorded for future crowd continuity",
+  );
 });
 
 await test("Talent service renews only inside the renewal window and starts after the current deal", async () => {

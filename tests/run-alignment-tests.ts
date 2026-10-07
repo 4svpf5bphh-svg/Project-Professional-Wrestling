@@ -5,7 +5,10 @@ import {
   WRESTLER_ALIGNMENTS,
   createWorld,
   defaultWrestlerAlignment,
+  changePromotionWrestlerAlignment,
   deterministicWorldHash,
+  promotionAlignmentChangeContext,
+  recentAlignmentVolatilityPenalty,
   setWrestlerAlignment,
   wrestlerAlignment,
 } from "../packages/sim-core/src/index.js";
@@ -59,6 +62,29 @@ test("explicit alignment override is stable state for future turn mechanics", ()
 
   ok(wrestlerAlignment(person, state.world.seed) === override, "explicit alignment override was not respected");
   ok(deterministicWorldHash(state) !== beforeHash, "explicit alignment override did not participate in World state hash");
+});
+
+test("promotion presentation gets one clean establishment before repeated switches become volatile", () => {
+  const state = createWorld(73003, DEFAULT_RULESET);
+  const promotion = state.promotions[0]!;
+  const person = state.people[0]!;
+  const baseline = wrestlerAlignment(person, state.world.seed);
+  const firstTarget = baseline === "FACE" ? "HEEL" : "FACE";
+
+  const initial = promotionAlignmentChangeContext(state, promotion.id, person.id);
+  ok(initial.method === "INITIAL_PRESENTATION" && initial.naturalReset, "first promotion presentation was not a natural establishment");
+
+  const first = changePromotionWrestlerAlignment(state, promotion.id, person.id, firstTarget);
+  ok(first.method === "INITIAL_PRESENTATION" && first.changed, "first presentation change did not use initial context");
+  ok(recentAlignmentVolatilityPenalty(state, promotion.id, [person.id]) === 0, "initial presentation created crowd confusion");
+
+  const secondContext = promotionAlignmentChangeContext(state, promotion.id, person.id);
+  ok(secondContext.method === "OFFSCREEN_SWITCH" && !secondContext.naturalReset, "second same-week switch incorrectly stayed a free reset");
+
+  const secondTarget = firstTarget === "HEEL" ? "TWEENER" : "HEEL";
+  const second = changePromotionWrestlerAlignment(state, promotion.id, person.id, secondTarget);
+  ok(second.method === "OFFSCREEN_SWITCH", "repeated roster switch was not recorded off-screen");
+  ok(recentAlignmentVolatilityPenalty(state, promotion.id, [person.id]) < -0.5, "off-screen switch did not create continuity pressure");
 });
 
 console.log(`\nAlignment tests: ${passed} passed, ${failed} failed`);
