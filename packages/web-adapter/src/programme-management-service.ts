@@ -5,7 +5,7 @@ import {
   startProgrammeCommand,
   type ApplicationWorldRepository,
 } from "../../application/src/index.js";
-import { wrestlerAlignment } from "../../sim-core/src/alignment.js";
+import { wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import { currentRosterPersonIds } from "../../sim-core/src/contracts.js";
 
 export interface AlphaProgrammeRosterPersonView {
@@ -124,7 +124,7 @@ export async function loadAlphaProgrammeManagement(
     .map((person) => ({
       personId: person.id,
       name: person.name,
-      alignment: wrestlerAlignment(person, aggregate.state.world.seed),
+      alignment: wrestlerAlignmentForPromotion(aggregate.state, promotion.id, person.id),
       popularity: person.popularity,
     } satisfies AlphaProgrammeRosterPersonView))
     .sort((left, right) => right.popularity - left.popularity || left.name.localeCompare(right.name));
