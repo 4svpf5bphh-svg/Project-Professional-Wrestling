@@ -253,14 +253,24 @@ test("show history keeps positive alignment clarity separate from negative volat
   const { aggregate } = twoPlayerFixture(72006);
   const event = aggregate.state.events.find((candidate) => candidate.id === "results-event-a")!;
   const match = aggregate.state.matches.find((candidate) => candidate.eventId === event.id)!;
-  const ledger = aggregate.state.ledger.find((entry) => entry.type === "MATCH_COMPLETED" && entry.entityIds.includes(match.id));
-  if (!ledger) throw new Error("alignment-factor fixture lacks MATCH_COMPLETED ledger");
-  ledger.payload.showFlowAlignmentModifier = 1.1;
-  ledger.payload.showFlowAlignmentReason = "ALIGNMENT_VOLATILITY";
-  ledger.payload.showFlowAlignmentBaseModifier = 2.2;
-  ledger.payload.showFlowAlignmentBaseReason = "FACE_HEEL_CLARITY";
-  ledger.payload.showFlowAlignmentVolatilityModifier = -1.1;
-  ledger.payload.showFlowAlignmentVolatilityReason = "ALIGNMENT_VOLATILITY";
+  aggregate.state.ledger.push({
+    id: "results-alignment-factor-ledger",
+    worldId: aggregate.state.world.id,
+    date: { ...event.date },
+    order: 901,
+    type: "MATCH_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: [match.id, event.id, event.promotionId],
+    payload: {
+      showFlowAlignmentModifier: 1.1,
+      showFlowAlignmentReason: "ALIGNMENT_VOLATILITY",
+      showFlowAlignmentBaseModifier: 2.2,
+      showFlowAlignmentBaseReason: "FACE_HEEL_CLARITY",
+      showFlowAlignmentVolatilityModifier: -1.1,
+      showFlowAlignmentVolatilityReason: "ALIGNMENT_VOLATILITY",
+    },
+  });
 
   const show = buildPlayerShowHistory(aggregate, "player-a").shows[0]!;
   const factors = show.matches[0]!.crowdFlowFactors.filter((factor) => factor.scope === "ALIGNMENT");
