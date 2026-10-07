@@ -10,6 +10,14 @@ import {
   REAL_ACTIVE_MENS_ROSTER_NAMES,
   realActiveMensRosterSource,
 } from "../packages/content/src/real-active-mens-roster.js";
+import {
+  REAL_ACTIVE_WOMENS_ROSTER_NAMES,
+  REAL_ACTIVE_WOMENS_ROSTER_REVIEWED_ON,
+} from "../packages/content/src/real-active-womens-roster.js";
+import {
+  REAL_ACTIVE_MIXED_ROSTER_SIZE,
+  calibratedRealActiveMixedRosterSource,
+} from "../packages/content/src/real-active-mixed-roster.js";
 import { marketWeeklyValue } from "../packages/sim-core/src/contracts.js";
 import {
   createWorld,
@@ -130,6 +138,42 @@ test("real active men's identity pool contains exactly 400 unique starting wrest
   for (const excluded of ["PAC", "Bryan Danielson", "Hiroshi Tanahashi", "Big E", "Mick Foley"]) {
     ok(!REAL_ACTIVE_MENS_ROSTER_NAMES.includes(excluded), `non-active/legend identity ${excluded} leaked into the starting roster`);
   }
+});
+
+test("reviewed women's identity pool is unique, substantial and separate from the men's pool", () => {
+  ok(REAL_ACTIVE_WOMENS_ROSTER_REVIEWED_ON === "2026-10-07", "women's roster review date is stale");
+  ok(REAL_ACTIVE_WOMENS_ROSTER_NAMES.length >= 150, "women's identity pool is too small for a living global World");
+  const women = new Set(REAL_ACTIVE_WOMENS_ROSTER_NAMES.map((name) => name.toLocaleLowerCase("en")));
+  ok(women.size === REAL_ACTIVE_WOMENS_ROSTER_NAMES.length, "women's identity pool contains duplicate names");
+  for (const man of REAL_ACTIVE_MENS_ROSTER_NAMES) {
+    ok(!women.has(man.toLocaleLowerCase("en")), `identity appears in both men's and women's pools: ${man}`);
+  }
+  for (const expected of [
+    "Rhea Ripley",
+    "IYO SKY",
+    "Mercedes Moné",
+    "Toni Storm",
+    "Athena",
+    "Xia Brookside",
+    "Persephone",
+    "Saya Kamitani",
+    "Starlight Kid",
+  ]) {
+    ok(REAL_ACTIVE_WOMENS_ROSTER_NAMES.includes(expected), `women's roster is missing ${expected}`);
+  }
+});
+
+test("expanded mixed roster source creates explicit men's and women's divisions without duplicate identities", () => {
+  const ruleset = { ...DEFAULT_RULESET, wrestlers: REAL_ACTIVE_MIXED_ROSTER_SIZE };
+  const state = createWorld(77107, ruleset, "Mixed Identity Pool", calibratedRealActiveMixedRosterSource);
+  const men = state.people.filter((person) => (person.division ?? "MEN") === "MEN");
+  const women = state.people.filter((person) => person.division === "WOMEN");
+  ok(state.people.length === REAL_ACTIVE_MIXED_ROSTER_SIZE, "mixed source created the wrong wrestler count");
+  ok(men.length === REAL_ACTIVE_MENS_ROSTER_NAMES.length, "mixed source changed the men's pool size");
+  ok(women.length === REAL_ACTIVE_WOMENS_ROSTER_NAMES.length, "mixed source changed the women's pool size");
+  ok(new Set(state.people.map((person) => person.name.toLocaleLowerCase("en"))).size === state.people.length, "mixed source contains duplicate identities");
+  ok(women.some((person) => person.name === "Rhea Ripley"), "Rhea Ripley was not tagged in the women's division");
+  ok(men.some((person) => person.name === "Roman Reigns"), "Roman Reigns disappeared from the men's division");
 });
 
 test("raw real identity overlay preserves deterministic wrestler attributes and genesis contracts", () => {
