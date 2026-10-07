@@ -141,6 +141,45 @@ test("six-week planner remains scoped to each player's controlled promotion", ()
   ok(bDraftIds.includes("planner-b-week-4") && !bDraftIds.includes("planner-a-week-3"), "player B leaked player A planning");
 });
 
+test("planner market context exposes home territory, player presence and strongest local rivals", () => {
+  const { aggregate, promotionAId, promotionBId } = twoPlayerFixture(73005);
+  const promotionA = aggregate.state.promotions.find((promotion) => promotion.id === promotionAId)!;
+  const promotionB = aggregate.state.promotions.find((promotion) => promotion.id === promotionBId)!;
+  const awayMarketId = promotionB.homeMarketId;
+  ok(awayMarketId !== promotionA.homeMarketId, "market context fixture needs different home markets");
+
+  for (const entry of aggregate.state.promotionMarketStates.filter((candidate) => candidate.marketId === awayMarketId)) {
+    entry.awareness = 8;
+    entry.liveStrength = 8;
+    entry.loyalty = 8;
+  }
+  const own = aggregate.state.promotionMarketStates.find((entry) => entry.promotionId === promotionAId && entry.marketId === awayMarketId)!;
+  own.awareness = 18;
+  own.liveStrength = 14;
+  own.loyalty = 10;
+  const rival = aggregate.state.promotionMarketStates.find((entry) => entry.promotionId === promotionBId && entry.marketId === awayMarketId)!;
+  rival.awareness = 90;
+  rival.liveStrength = 92;
+  rival.loyalty = 88;
+
+  const view = buildPlayerSixWeekPlannerView(aggregate, "player-a");
+  const away = view.promotion?.markets.find((market) => market.marketId === awayMarketId);
+  ok(away && !away.isHomeMarket, "rival home market was not identified as an away market");
+  ok(away?.yourAwareness === 18 && away.yourLiveStrength === 14 && away.yourLoyalty === 10, "player local market state was not exposed accurately");
+  ok(away?.yourPresence === "LIGHT", "weak player presence did not resolve to the expected broad band");
+  ok(away?.homePromotions.some((promotion) => promotion.promotionId === promotionBId), "resident rival promotion was not identified");
+  ok(away?.strongestRivals[0]?.promotionId === promotionBId, "strongest local rival was not ranked first");
+  ok(away?.strongestRivals[0]?.isHomePromotion === true, "resident rival was not marked as home-based");
+  ok(away?.strongestRivals[0]?.presence === "STRONG", "dominant rival presence did not resolve to the expected broad band");
+  ok(
+    away?.venues.every((venue) => Number.isFinite(venue.prestige) && Number.isFinite(venue.productionSuitability)),
+    "planner venue options did not expose existing prestige and production suitability",
+  );
+
+  const home = view.promotion?.markets.find((market) => market.marketId === promotionA.homeMarketId);
+  ok(home?.isHomeMarket === true, "controlled promotion home market lost its home flag");
+});
+
 test("six-week planner crosses PPW year boundaries correctly", () => {
   const { aggregate } = twoPlayerFixture(73003);
   aggregate.state.world.currentDate = { year: 1, week: 50, day: 1 };
