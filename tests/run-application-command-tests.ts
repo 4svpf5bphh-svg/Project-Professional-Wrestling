@@ -2,6 +2,7 @@ declare const process: { exitCode?: number };
 
 import {
   claimIndependentPromotionCommand,
+  createTagTeamCommand,
   createWorldCommandState,
   createWorldOwnershipState,
   createWorldRuntimeState,
@@ -205,6 +206,61 @@ test("retrying a contract offer cannot submit, allocate or revise twice", () => 
   );
   ok(commands.receipts.filter((receipt) => receipt.requestId === "offer-001").length === 1, "offer retry duplicated receipt");
   ok(revisionAfterFirst === 2 && runtime.revision === 2, "contract retry advanced revision more than once");
+});
+
+test("creating a tag team is idempotent and does not manufacture chemistry", () => {
+  const { state, ownership, commands, runtime } = fixture(12006);
+  joinPlayerToWorld(ownership, "player-a", state.world.currentDate);
+  const promotion = state.promotions.find(
+    (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+  )!;
+  claimIndependentPromotionCommand(state, ownership, commands, runtime, {
+    requestId: "claim-for-team",
+    worldId: state.world.id,
+    playerId: "player-a",
+    commandType: "CLAIM_INDEPENDENT_PROMOTION",
+    payload: { promotionId: promotion.id },
+  });
+  const roster = state.contracts
+    .filter((contract) => contract.promotionId === promotion.id && contract.status === "SIGNED")
+    .map((contract) => contract.personId)
+    .filter((personId, index, all) => all.indexOf(personId) === index);
+  ok(roster.length >= 2, "team fixture needs two roster wrestlers");
+  const chemistryBefore = state.workingChemistry.length;
+  const envelope = {
+    requestId: "create-team-001",
+    worldId: state.world.id,
+    playerId: "player-a",
+    commandType: "CREATE_TAG_TEAM" as const,
+    payload: {
+      promotionId: promotion.id,
+      name: "The Test Pilots",
+      personIds: [roster[0]!, roster[1]!] as [string, string],
+    },
+  };
+
+  const first = createTagTeamCommand(state, ownership, commands, runtime, envelope);
+  const revisionAfterFirst = runtime.revision;
+  const second = createTagTeamCommand(state, ownership, commands, runtime, envelope);
+
+  ok(first.id === second.id, "team retry returned a different team");
+  ok((state.teams ?? []).filter((team) => team.id === first.id).length === 1, "team retry duplicated team identity");
+  ok((state.teamMemberships ?? []).filter((membership) => membership.teamId === first.id && membership.active).length === 2, "team creation did not create exactly two memberships");
+  ok(state.workingChemistry.length === chemistryBefore, "forming a team manufactured chemistry");
+  ok(state.ledger.filter((entry) => entry.type === "TEAM_FORMED" && entry.entityIds.includes(first.id)).length === 1, "team formation history duplicated");
+  ok(runtime.revision === revisionAfterFirst, "team retry advanced World revision");
+
+  let duplicateRejected = false;
+  try {
+    createTagTeamCommand(state, ownership, commands, runtime, {
+      ...envelope,
+      requestId: "create-team-duplicate-pair",
+      payload: { ...envelope.payload, name: "Different Name" },
+    });
+  } catch {
+    duplicateRejected = true;
+  }
+  ok(duplicateRejected, "same pair could create a duplicate active team identity");
 });
 
 test("contract command authorization is tied to the player-owned promotion", () => {

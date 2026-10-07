@@ -174,6 +174,25 @@ try {
   const talent = await json(await fetch(`${baseUrl}/api/talent`, { cache: "no-store" }));
   ok(talent.promotion?.promotionId === promotionId, "HTTP talent management lost controlled promotion");
   ok(Array.isArray(talent.market) && talent.market.length > 0, "HTTP talent market exposed no available wrestlers");
+  ok(talent.roster?.length >= 2, "HTTP talent roster exposed fewer than two wrestlers for team creation");
+  const teamsBefore = await json(await fetch(`${baseUrl}/api/teams`, { cache: "no-store" }));
+  const createdTeamView = await json(await fetch(`${baseUrl}/api/teams`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requestId: "ci-http-team-001",
+      expectedRevision: teamsBefore.world.revision,
+      name: "CI HTTP Tag Team",
+      personIds: [talent.roster[0].personId, talent.roster[1].personId],
+    }),
+  }));
+  const createdTeam = createdTeamView.teams?.find((team) => team.name === "CI HTTP Tag Team");
+  ok(createdTeam?.currentMembers?.length === 2, "HTTP team creation did not persist both members");
+  ok(createdTeam?.experience?.band === "UNTESTED", "HTTP team creation granted free experience");
+
+  const afterTeam = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
+  ok(afterTeam.world.revision === teamsBefore.world.revision + 1, "HTTP team creation did not advance revision exactly once");
+
   const candidate = talent.market.find((entry) => (
     entry.availability === "FREE_AGENT" && minimumServiceCapacity(entry) >= 1.001
   ));
@@ -199,7 +218,7 @@ try {
   ok(offered.view?.pendingOffers?.some((offer) => offer.offerId === offered.offerId), "HTTP talent offer was not persisted into pending offers");
 
   const afterOffer = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
-  ok(afterOffer.world.revision > afterPlannerDetails.world.revision, "HTTP talent offer did not advance World revision");
+  ok(afterOffer.world.revision > afterTeam.world.revision, "HTTP talent offer did not advance World revision");
 
   const plan = showPlanBody(afterOffer);
   const planned = await json(await fetch(`${baseUrl}/api/show-plan`, {
