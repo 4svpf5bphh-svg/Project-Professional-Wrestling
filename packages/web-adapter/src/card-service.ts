@@ -22,7 +22,7 @@ import {
   type DetailedShowSlotRef,
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
-import { wrestlerAlignment } from "../../sim-core/src/alignment.js";
+import { wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import {
   defaultPlannedFinishForIntent,
@@ -512,7 +512,7 @@ function availableCardParticipants(
     result.push({
       personId,
       name: person.name,
-      alignment: wrestlerAlignment(person, state.world.seed),
+      alignment: wrestlerAlignmentForPromotion(state, promotionId, person.id),
       popularity: person.popularity,
       momentum: person.momentum,
       morale: person.morale,
@@ -637,7 +637,7 @@ export async function loadAlphaShowCard(
     return {
       personId,
       name: person.name,
-      alignment: wrestlerAlignment(person, aggregate.state.world.seed),
+      alignment: wrestlerAlignmentForPromotion(aggregate.state, promotion.id, person.id),
       popularity: person.popularity,
       momentum: person.momentum,
       morale: person.morale,
