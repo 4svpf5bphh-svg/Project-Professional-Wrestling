@@ -24,7 +24,6 @@ import {
 } from "./match-finishes.js";
 import {
   evaluateMatchStyleExecution,
-  evaluateMatchStyleLoad,
   type MatchStyleExecutionEvaluation,
 } from "./match-style.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";

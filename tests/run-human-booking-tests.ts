@@ -1,15 +1,23 @@
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
-import type { MatchIntent, MatchSide, MatchType, WorldState } from "../packages/domain/src/types.js";
+import type {
+  MatchIntent,
+  MatchSide,
+  MatchStyleProfile,
+  MatchType,
+  WorldState,
+} from "../packages/domain/src/types.js";
 import {
   activeContractsForPromotion,
   actualMatchFinish,
   claimIndependentPromotionForHuman,
   createWorld,
+  defaultMatchStyleForIntent,
   plannedMatchFinish,
   prepareHumanMatchCard,
   prepareHumanShow,
+  resolveEventCard,
   resolveWorldWeek,
   type MatchFinish,
 } from "../packages/sim-core/src/index.js";
@@ -70,8 +78,18 @@ function plan(
   intent: MatchIntent,
   plannedLengthMinutes: number,
   plannedFinish?: MatchFinish,
+  style?: MatchStyleProfile,
 ) {
-  return { type, sideAIds, sideBIds, intendedWinnerSide, intent, plannedLengthMinutes, plannedFinish };
+  return {
+    type,
+    sideAIds,
+    sideBIds,
+    intendedWinnerSide,
+    intent,
+    plannedLengthMinutes,
+    plannedFinish,
+    ...(style === undefined ? {} : { style }),
+  };
 }
 
 function standardCard(ids: string[]) {
@@ -165,6 +183,158 @@ test("finish choice changes match presentation without changing the booked winne
   ok(
     cleanMatch.executionQuality !== protectedMatch.executionQuality || cleanMatch.crowdResponse !== protectedMatch.crowdResponse,
     "different finish styles produced identical match presentation",
+  );
+});
+
+test("explicit match style replaces Intent as the execution driver and freezes evidence", () => {
+  const competitiveFixture = fixture(11107);
+  const epicFixture = fixture(11107);
+  const style: MatchStyleProfile = {
+    competitiveness: 72,
+    technical: 84,
+    story: 58,
+    intensity: 66,
+    risk: 32,
+    epic: 61,
+  };
+  const competitivePlans = standardCard(competitiveFixture.participantIds);
+  const epicPlans = standardCard(epicFixture.participantIds);
+  competitivePlans[0] = plan(
+    "SINGLES",
+    [competitiveFixture.participantIds[0]!],
+    [competitiveFixture.participantIds[1]!],
+    "B",
+    "COMPETITIVE",
+    16,
+    "CLEAN_PIN",
+    style,
+  );
+  epicPlans[0] = plan(
+    "SINGLES",
+    [epicFixture.participantIds[0]!],
+    [epicFixture.participantIds[1]!],
+    "B",
+    "EPIC",
+    16,
+    "CLEAN_PIN",
+    style,
+  );
+
+  prepareHumanMatchCard(competitiveFixture.state, competitiveFixture.eventId, competitivePlans);
+  prepareHumanMatchCard(epicFixture.state, epicFixture.eventId, epicPlans);
+  const competitiveEvent = competitiveFixture.state.events.find((event) => event.id === competitiveFixture.eventId)!;
+  const epicEvent = epicFixture.state.events.find((event) => event.id === epicFixture.eventId)!;
+  resolveEventCard(
+    competitiveFixture.state,
+    competitiveEvent,
+    competitiveFixture.state.scheduledAppearances.filter((appearance) => appearance.eventId === competitiveFixture.eventId),
+  );
+  resolveEventCard(
+    epicFixture.state,
+    epicEvent,
+    epicFixture.state.scheduledAppearances.filter((appearance) => appearance.eventId === epicFixture.eventId),
+  );
+
+  const competitiveMatch = competitiveFixture.state.matches.find(
+    (match) => match.eventId === competitiveFixture.eventId && match.order === 1,
+  )!;
+  const epicMatch = epicFixture.state.matches.find(
+    (match) => match.eventId === epicFixture.eventId && match.order === 1,
+  )!;
+  ok(competitiveMatch.executionQuality === epicMatch.executionQuality, "styled execution still depended on legacy Intent");
+  ok(competitiveMatch.crowdResponse === epicMatch.crowdResponse, "styled crowd response still depended on legacy Intent");
+  ok(competitiveMatch.actualLengthMinutes === epicMatch.actualLengthMinutes, "styled match length drifted with legacy Intent");
+
+  const ledger = competitiveFixture.state.ledger.find(
+    (entry) => entry.type === "MATCH_COMPLETED" && entry.entityIds.includes(competitiveMatch.id),
+  );
+  ok(ledger?.payload.styleResolver === "DIMENSIONAL", "styled match did not freeze dimensional resolver evidence");
+  ok(typeof ledger?.payload.stylePhysicalLoad === "number", "styled match did not freeze physical load");
+  ok(typeof ledger?.payload.styleCreativeLoad === "number", "styled match did not freeze creative load");
+  ok(typeof ledger?.payload.styleCapability === "number", "styled match did not freeze capability evidence");
+
+  const legacyMatch = competitiveFixture.state.matches.find(
+    (match) => match.eventId === competitiveFixture.eventId && match.order === 2,
+  )!;
+  const legacyLedger = competitiveFixture.state.ledger.find(
+    (entry) => entry.type === "MATCH_COMPLETED" && entry.entityIds.includes(legacyMatch.id),
+  );
+  ok(legacyLedger?.payload.styleResolver === undefined, "style-less legacy match unexpectedly entered the new resolver");
+});
+
+test("extreme style demand creates more physical cost without guaranteeing better execution", () => {
+  const moderateFixture = fixture(11108);
+  const extremeFixture = fixture(11108);
+  const moderate = defaultMatchStyleForIntent("COMPETITIVE");
+  const extreme: MatchStyleProfile = {
+    competitiveness: 100,
+    technical: 100,
+    story: 100,
+    intensity: 100,
+    risk: 100,
+    epic: 100,
+  };
+  const moderatePlans = standardCard(moderateFixture.participantIds);
+  const extremePlans = standardCard(extremeFixture.participantIds);
+  moderatePlans[0] = plan(
+    "SINGLES",
+    [moderateFixture.participantIds[0]!],
+    [moderateFixture.participantIds[1]!],
+    "B",
+    "COMPETITIVE",
+    24,
+    "CLEAN_PIN",
+    moderate,
+  );
+  extremePlans[0] = plan(
+    "SINGLES",
+    [extremeFixture.participantIds[0]!],
+    [extremeFixture.participantIds[1]!],
+    "B",
+    "COMPETITIVE",
+    24,
+    "CLEAN_PIN",
+    extreme,
+  );
+
+  prepareHumanMatchCard(moderateFixture.state, moderateFixture.eventId, moderatePlans);
+  prepareHumanMatchCard(extremeFixture.state, extremeFixture.eventId, extremePlans);
+  const moderateEvent = moderateFixture.state.events.find((event) => event.id === moderateFixture.eventId)!;
+  const extremeEvent = extremeFixture.state.events.find((event) => event.id === extremeFixture.eventId)!;
+  const moderatePerson = moderateFixture.state.people.find((person) => person.id === moderateFixture.participantIds[0])!;
+  const extremePerson = extremeFixture.state.people.find((person) => person.id === extremeFixture.participantIds[0])!;
+  const moderateFatigueBefore = moderatePerson.fatigue;
+  const moderateWearBefore = moderatePerson.wear;
+  const extremeFatigueBefore = extremePerson.fatigue;
+  const extremeWearBefore = extremePerson.wear;
+
+  resolveEventCard(
+    moderateFixture.state,
+    moderateEvent,
+    moderateFixture.state.scheduledAppearances.filter((appearance) => appearance.eventId === moderateFixture.eventId),
+  );
+  resolveEventCard(
+    extremeFixture.state,
+    extremeEvent,
+    extremeFixture.state.scheduledAppearances.filter((appearance) => appearance.eventId === extremeFixture.eventId),
+  );
+
+  const moderateMatch = moderateFixture.state.matches.find(
+    (match) => match.eventId === moderateFixture.eventId && match.order === 1,
+  )!;
+  const extremeMatch = extremeFixture.state.matches.find(
+    (match) => match.eventId === extremeFixture.eventId && match.order === 1,
+  )!;
+  const moderateFatigueCost = moderatePerson.fatigue - moderateFatigueBefore;
+  const moderateWearCost = moderatePerson.wear - moderateWearBefore;
+  const extremeFatigueCost = extremePerson.fatigue - extremeFatigueBefore;
+  const extremeWearCost = extremePerson.wear - extremeWearBefore;
+
+  ok(extremeFatigueCost > moderateFatigueCost, "all-100 style did not create more fatigue than a moderate style");
+  ok(extremeWearCost > moderateWearCost, "all-100 style did not create more wear than a moderate style");
+  ok(
+    extremeMatch.executionQuality <= moderateMatch.executionQuality + 3,
+    "all-100 style acted like a free execution-quality bonus",
   );
 });
 
