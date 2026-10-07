@@ -40,6 +40,20 @@ function integer(value: number): string {
   return new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 }).format(value);
 }
 
+function presenceLabel(value: string): string {
+  if (value === "STRONG") return "Strong";
+  if (value === "ESTABLISHED") return "Established";
+  if (value === "DEVELOPING") return "Developing";
+  return "Light";
+}
+
+function indexLabel(value: number): string {
+  if (value >= 80) return "Very high";
+  if (value >= 65) return "High";
+  if (value >= 45) return "Moderate";
+  return "Low";
+}
+
 function statusClass(state: string): string {
   if (state === "AT_RISK") return styles.risk;
   if (state === "RESERVED" || state === "READY_TO_LOCK") return styles.good;
@@ -299,9 +313,62 @@ export default function PlannerClient(): React.JSX.Element {
                         <label><span>Ticket strategy</span><select value={form!.ticketStrategy} onChange={(event) => setForm({ ...form!, ticketStrategy: event.target.value as TicketStrategy })}>{view.promotion!.ticketStrategies.map((strategy) => <option key={strategy} value={strategy}>{label(strategy)}</option>)}</select></label>
                       </div>
 
-                      {selectedVenue ? <div className={styles.venueSummary}>{selectedVenue.name} · {integer(selectedVenue.capacity)} cap · {money(selectedVenue.weeklyHireCost)} hire</div> : null}
+                      {selectedMarket ? (
+                        <section className={styles.marketContext}>
+                          <div className={styles.marketContextHeader}>
+                            <div>
+                              <span className={styles.eyebrow}>MARKET CONTEXT</span>
+                              <strong>{selectedMarket.name}</strong>
+                            </div>
+                            <span className={selectedMarket.isHomeMarket ? styles.homeMarketTag : styles.awayMarketTag}>
+                              {selectedMarket.isHomeMarket ? "HOME MARKET" : "AWAY MARKET"}
+                            </span>
+                          </div>
 
-                      <p className={styles.editorNote}>Talent is booked on the show card. Match and segment choices reserve contract dates automatically, so there is no separate show-roster step.</p>
+                          <div className={styles.marketContextGrid}>
+                            <div><span>Your presence</span><strong>{presenceLabel(selectedMarket.yourPresence)}</strong></div>
+                            <div><span>Awareness</span><strong>{Math.round(selectedMarket.yourAwareness)}</strong></div>
+                            <div><span>Live strength</span><strong>{Math.round(selectedMarket.yourLiveStrength)}</strong></div>
+                            <div><span>Loyalty</span><strong>{Math.round(selectedMarket.yourLoyalty)}</strong></div>
+                            <div><span>Audience potential</span><strong>{indexLabel(selectedMarket.audiencePotential)} · {Math.round(selectedMarket.audiencePotential)}</strong></div>
+                            <div><span>Wrestling interest</span><strong>{indexLabel(selectedMarket.wrestlingInterest)} · {Math.round(selectedMarket.wrestlingInterest)}</strong></div>
+                            <div><span>Spending index</span><strong>{Math.round(selectedMarket.spendingIndex)}</strong></div>
+                            <div><span>Market maturity</span><strong>{Math.round(selectedMarket.maturity)}</strong></div>
+                          </div>
+
+                          <div className={styles.territoryContext}>
+                            <div>
+                              <span>Promotions based here</span>
+                              {selectedMarket.homePromotions.length > 0 ? (
+                                <strong>{selectedMarket.homePromotions.map((promotion) => `${promotion.name} (${label(promotion.tier)})`).join(" · ")}</strong>
+                              ) : <strong>None</strong>}
+                            </div>
+                            <div>
+                              <span>Strongest rival presence</span>
+                              {selectedMarket.strongestRivals.length > 0 ? (
+                                <div className={styles.rivalPresenceList}>
+                                  {selectedMarket.strongestRivals.map((rival) => (
+                                    <span key={rival.promotionId}>
+                                      <b>{rival.name}</b>
+                                      <small>{rival.isHomePromotion ? "Home base · " : ""}{presenceLabel(rival.presence)}</small>
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : <strong>None</strong>}
+                            </div>
+                          </div>
+                        </section>
+                      ) : null}
+
+                      {selectedVenue ? (
+                        <div className={styles.venueSummary}>
+                          <strong>{selectedVenue.name}</strong>
+                          <span>{integer(selectedVenue.capacity)} capacity · {money(selectedVenue.weeklyHireCost)} hire</span>
+                          <span>Prestige {Math.round(selectedVenue.prestige)} · Production suitability {Math.round(selectedVenue.productionSuitability)}</span>
+                        </div>
+                      ) : null}
+
+                      <p className={styles.editorNote}>Market context is factual World information. Staff advice and interpretation can layer on later. Talent is booked on the show card, so there is no separate show-roster step.</p>
                       <div className={styles.editorActions}>
                         <button className={styles.button} disabled={saving} onClick={cancelEdit}>Cancel</button>
                         <button className={styles.saveButton} disabled={!canSave} onClick={() => savePlan(week)}>{saving ? "Saving…" : "Save show details"}</button>
