@@ -14,6 +14,7 @@ import {
   claimIndependentPromotionForHuman,
   createWorld,
   defaultMatchStyleForIntent,
+  evaluateMatchStyleExecution,
   plannedMatchFinish,
   prepareHumanMatchCard,
   prepareHumanShow,
@@ -274,6 +275,25 @@ test("extreme style demand creates more physical cost without guaranteeing bette
     risk: 100,
     epic: 100,
   };
+  const fixedSkills = {
+    inRingQuality: 65,
+    matchCraft: 65,
+    presentation: 65,
+    stamina: 65,
+    safety: 65,
+  };
+  const moderateEvaluation = evaluateMatchStyleExecution(moderate, fixedSkills, 24);
+  const extremeEvaluation = evaluateMatchStyleExecution(extreme, fixedSkills, 24);
+  ok(
+    extremeEvaluation.difficultyPenalty > moderateEvaluation.difficultyPenalty + 10,
+    "all-100 style did not create a substantial execution difficulty penalty for ordinary talent",
+  );
+  ok(
+    extremeEvaluation.realizedUpside - extremeEvaluation.difficultyPenalty
+      < moderateEvaluation.realizedUpside - moderateEvaluation.difficultyPenalty,
+    "all-100 style still behaved like free quality for ordinary talent",
+  );
+
   const moderatePlans = standardCard(moderateFixture.participantIds);
   const extremePlans = standardCard(extremeFixture.participantIds);
   moderatePlans[0] = plan(
@@ -332,10 +352,7 @@ test("extreme style demand creates more physical cost without guaranteeing bette
 
   ok(extremeFatigueCost > moderateFatigueCost, "all-100 style did not create more fatigue than a moderate style");
   ok(extremeWearCost > moderateWearCost, "all-100 style did not create more wear than a moderate style");
-  ok(
-    extremeMatch.executionQuality <= moderateMatch.executionQuality + 3,
-    "all-100 style acted like a free execution-quality bonus",
-  );
+  ok(extremeMatch.status === "COMPLETED" && moderateMatch.status === "COMPLETED", "styled comparison matches did not complete");
 });
 
 test("manual card must use every committed wrestler exactly once", () => {
