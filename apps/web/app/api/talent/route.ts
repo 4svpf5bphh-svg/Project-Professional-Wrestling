@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import {
   loadAlphaTalentSession,
+  setAlphaRosterAlignment,
   submitAlphaTalentOffer,
+  type AlphaRosterAlignmentRequest,
   type AlphaTalentOfferRequest,
 } from "../../../../../dist/packages/web-adapter/src/talent-service.js";
 import { withAlphaServerContext } from "../../../../../dist/packages/web-adapter/src/server-world.js";
@@ -47,5 +49,18 @@ export async function POST(request: Request): Promise<NextResponse> {
   } catch (error) {
     const rawMessage = error instanceof Error ? error.message : "Unable to submit PPW contract offer";
     return NextResponse.json({ error: playerFacingOfferError(rawMessage) }, { status: 400 });
+  }
+}
+
+export async function PATCH(request: Request): Promise<NextResponse> {
+  try {
+    const body = await request.json() as AlphaRosterAlignmentRequest;
+    const result = await withAlphaServerContext(({ repository, worldId, playerId }) => (
+      setAlphaRosterAlignment(repository, worldId, playerId, body)
+    ));
+    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to update wrestler alignment";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
