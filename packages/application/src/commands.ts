@@ -1,4 +1,5 @@
 import type { ContractOffer, Id, PpwDate, Promotion, WorldState } from "../../domain/src/types.js";
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { Programme, ProgrammeParticipantRef } from "../../domain/src/programmes.js";
 import {
   submitHumanContractOffer,
@@ -6,6 +7,8 @@ import {
 } from "../../sim-core/src/human-contracts.js";
 import type { HumanPromotionClaimOptions } from "../../sim-core/src/human-control.js";
 import { createProgramme } from "../../sim-core/src/programmes.js";
+import { currentRosterPersonIds } from "../../sim-core/src/contracts.js";
+import { setPromotionWrestlerAlignment } from "../../sim-core/src/alignment.js";
 import {
   activeWorldMembership,
   claimIndependentPromotionForPlayer,
@@ -26,7 +29,8 @@ export type ApplicationCommandType =
   | "REMOVE_DETAILED_SHOW_DRAFT"
   | "RESERVE_DETAILED_SHOW_DRAFT"
   | "RELEASE_DETAILED_SHOW_RESERVATION"
-  | "START_PROGRAMME";
+  | "START_PROGRAMME"
+  | "SET_WRESTLER_ALIGNMENT";
 
 export interface ApplicationCommandEnvelope<TPayload> {
   requestId: string;
@@ -62,6 +66,12 @@ export interface StartProgrammePayload {
   sideA: ProgrammeParticipantRef[];
   sideB: ProgrammeParticipantRef[];
   championshipId?: Id | null;
+}
+
+export interface SetWrestlerAlignmentPayload {
+  promotionId: Id;
+  personId: Id;
+  alignment: WrestlerAlignment;
 }
 
 function cloneDate(date: PpwDate): PpwDate {
@@ -239,5 +249,38 @@ export function startProgrammeCommand(
       sideB: structuredClone(envelope.payload.sideB),
       championshipId: envelope.payload.championshipId ?? null,
     });
+  });
+}
+
+export function setWrestlerAlignmentCommand(
+  state: WorldState,
+  ownership: WorldOwnershipState,
+  commandState: WorldCommandState,
+  runtime: WorldRuntimeState,
+  envelope: ApplicationCommandEnvelope<SetWrestlerAlignmentPayload>,
+): WrestlerAlignment {
+  if (envelope.commandType !== "SET_WRESTLER_ALIGNMENT") {
+    throw new Error(`expected SET_WRESTLER_ALIGNMENT command, received ${envelope.commandType}`);
+  }
+  if (envelope.worldId !== state.world.id || ownership.worldId !== state.world.id) {
+    throw new Error("alignment command ownership/World mismatch");
+  }
+
+  return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
+    if (!activeWorldMembership(ownership, envelope.playerId)) {
+      throw new Error(`${envelope.playerId} is not an active member of ${state.world.id}`);
+    }
+    if (!playerControlsPromotion(ownership, envelope.playerId, envelope.payload.promotionId)) {
+      throw new Error(`${envelope.playerId} does not control ${envelope.payload.promotionId}`);
+    }
+    if (!currentRosterPersonIds(state, envelope.payload.promotionId).includes(envelope.payload.personId)) {
+      throw new Error("only a wrestler on your current roster can have a promotion alignment");
+    }
+    return setPromotionWrestlerAlignment(
+      state,
+      envelope.payload.promotionId,
+      envelope.payload.personId,
+      envelope.payload.alignment,
+    ).alignment;
   });
 }
