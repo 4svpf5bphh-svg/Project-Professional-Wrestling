@@ -104,6 +104,7 @@ test("persisted World state has an explicit schema version and materializes lazy
   ok(Array.isArray(snapshot.championshipMatchBookings), "championship match bookings were not materialized");
   ok(Array.isArray(snapshot.programmes), "Programmes were not materialized");
   ok(Array.isArray(snapshot.programmeActivities), "Programme activities were not materialized");
+  ok(Array.isArray(snapshot.promotionWrestlerPresentations), "promotion wrestler presentation was not materialized");
   ok(state.promotionStandings === undefined, "serializing mutated the live promotion standings collection");
   ok(state.teams === undefined, "serializing mutated the live teams collection");
   ok(state.championshipMatchBookings === undefined, "serializing mutated live championship booking state");
@@ -145,6 +146,7 @@ test("schema v1 migrates unresolved Ledger title intent through the current live
     stateSchemaVersion: _discardV4Version,
     programmes: _discardV4Programmes,
     programmeActivities: _discardV4Activities,
+    promotionWrestlerPresentations: _discardV5Presentation,
     ...legacyBody
   } = current;
   const legacyV1 = { ...legacyBody, stateSchemaVersion: 1 };
@@ -172,6 +174,19 @@ test("schema v3 upgrades legacy entity counters and initializes Programme collec
   const current = createPersistedWorldState(restored);
   ok(restored.programmes?.length === 0 && restored.programmeActivities?.length === 0, "v3 migration did not initialize Programme collections");
   ok(current.entityIdCounters.programme === 0 && current.entityIdCounters.programmeActivity === 0, "v3 migration did not initialize Programme counters");
+});
+
+test("schema v4 migrates with empty promotion wrestler presentation state", () => {
+  const snapshot = createPersistedWorldState(createWorld(22010, DEFAULT_RULESET));
+  const legacyV4: any = structuredClone(snapshot);
+  legacyV4.stateSchemaVersion = 4;
+  delete legacyV4.promotionWrestlerPresentations;
+
+  const restored = restorePersistedWorldState(legacyV4);
+  ok(Array.isArray(restored.promotionWrestlerPresentations), "v4 migration did not initialize presentation state");
+  ok(restored.promotionWrestlerPresentations?.length === 0, "v4 migration invented wrestler presentation overrides");
+  const current = createPersistedWorldState(restored);
+  ok(current.stateSchemaVersion === CURRENT_WORLD_STATE_SCHEMA_VERSION, "v4 migration did not upgrade to current schema");
 });
 
 test("current schema persists live title intent independently of Ledger interpretation", () => {
@@ -205,6 +220,9 @@ test("missing or corrupt mandatory persisted booking state is rejected", () => {
 
   const missingActivities = { ...snapshot, programmeActivities: undefined };
   expectReject(() => restorePersistedWorldState(missingActivities), "field programmeActivities must be an array");
+
+  const missingPresentation = { ...snapshot, promotionWrestlerPresentations: undefined };
+  expectReject(() => restorePersistedWorldState(missingPresentation), "field promotionWrestlerPresentations must be an array");
 
   const missingCounters = { ...snapshot, entityIdCounters: undefined };
   expectReject(() => restorePersistedWorldState(missingCounters), "persisted entity ID counters must be an object");
