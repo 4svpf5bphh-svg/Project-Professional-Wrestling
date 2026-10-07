@@ -34,5 +34,6 @@ export * from "./show-flow.js";
 export * from "./snapshot.js";
 export * from "./state-schema.js";
 export * from "./talent-trust.js";
+export * from "./team-seeding.js";
 export * from "./transactions.js";
 export * from "./wrestler-division.js";

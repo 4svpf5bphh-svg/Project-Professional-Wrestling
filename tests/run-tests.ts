@@ -2,6 +2,12 @@ import {
   REAL_PROMOTION_TEMPLATES,
   realPromotionEcosystemSource,
 } from "../packages/content/src/real-promotions.js";
+import {
+  REAL_ACTIVE_TAG_TEAM_TEMPLATES,
+  REAL_ACTIVE_TAG_TEAMS_REVIEWED_ON,
+  seedRealActiveTagTeams,
+} from "../packages/content/src/real-active-tag-teams.js";
+import { calibratedRealActiveMensRosterSource } from "../packages/content/src/real-active-mens-calibration.js";
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
@@ -193,6 +199,59 @@ test("wrestler relationship foundation rejects self-links and impossible values"
     rangeRejected = true;
   }
   ok(rangeRejected, "out-of-range rivalry heat was accepted");
+});
+
+test("reviewed real tag teams seed as ordinary Team entities with partner relationships", () => {
+  const state = createWorld(
+    109,
+    DEFAULT_RULESET,
+    "Established Team Seed",
+    calibratedRealActiveMensRosterSource,
+  );
+  const teamsBefore = state.teams?.length ?? 0;
+  const seededIds = seedRealActiveTagTeams(state);
+
+  equal(REAL_ACTIVE_TAG_TEAMS_REVIEWED_ON, "2026-10-07");
+  equal(seededIds.length, REAL_ACTIVE_TAG_TEAM_TEMPLATES.length);
+  equal((state.teams?.length ?? 0) - teamsBefore, REAL_ACTIVE_TAG_TEAM_TEMPLATES.length);
+
+  for (const template of REAL_ACTIVE_TAG_TEAM_TEMPLATES) {
+    const team = state.teams?.find((candidate) => candidate.name === template.name);
+    ok(team, `missing seeded team ${template.name}`);
+    const members = (state.teamMemberships ?? [])
+      .filter((membership) => membership.teamId === team!.id && membership.active)
+      .map((membership) => state.people.find((person) => person.id === membership.personId)?.name)
+      .sort();
+    equal(members.join("|"), [...template.members].sort().join("|"));
+
+    const [leftName, rightName] = template.members;
+    const left = state.people.find((person) => person.name === leftName)!;
+    const right = state.people.find((person) => person.name === rightName)!;
+    const relationship = wrestlerRelationshipBetween(state, left.id, right.id);
+    ok(relationship, `missing partner relationship for ${template.name}`);
+    ok(relationship!.tags.includes("TAG_PARTNERS"), `${template.name} relationship lacks TAG_PARTNERS`);
+    ok(relationship!.professionalTrust >= 70, `${template.name} seeded too little professional trust`);
+    ok(relationship!.familiarity >= 80, `${template.name} seeded too little familiarity`);
+    equal(state.workingChemistry.length, 0);
+  }
+
+  const ledgerCount = state.ledger.filter((entry) => entry.type === "TAG_TEAM_PRESENT_AT_GENESIS").length;
+  equal(ledgerCount, REAL_ACTIVE_TAG_TEAM_TEMPLATES.length);
+});
+
+test("real tag-team seeding is idempotent and does not duplicate teams or genesis history", () => {
+  const state = createWorld(
+    110,
+    DEFAULT_RULESET,
+    "Established Team Idempotency",
+    calibratedRealActiveMensRosterSource,
+  );
+  seedRealActiveTagTeams(state);
+  const teamCount = state.teams?.length ?? 0;
+  const ledgerCount = state.ledger.filter((entry) => entry.type === "TAG_TEAM_PRESENT_AT_GENESIS").length;
+  seedRealActiveTagTeams(state);
+  equal(state.teams?.length ?? 0, teamCount);
+  equal(state.ledger.filter((entry) => entry.type === "TAG_TEAM_PRESENT_AT_GENESIS").length, ledgerCount);
 });
 
 test("Genesis creates formal contracts while preserving free-agent supply", () => {
