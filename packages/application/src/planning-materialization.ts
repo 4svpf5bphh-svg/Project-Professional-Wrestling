@@ -267,6 +267,7 @@ function completeCardPlans(
       sideBIds: [...match.sideBIds],
       intendedWinnerSide: match.intendedWinnerSide,
       intent: match.intent,
+      ...(match.style === undefined ? {} : { style: { ...match.style } }),
       plannedLengthMinutes: match.plannedLengthMinutes,
       plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
     });
