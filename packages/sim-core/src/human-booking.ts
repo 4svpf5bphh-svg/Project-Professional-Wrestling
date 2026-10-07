@@ -1,6 +1,7 @@
 import type {
   Match,
   MatchIntent,
+  MatchStyleProfile,
   MatchParticipant,
   MatchSide,
   MatchType,
@@ -8,6 +9,7 @@ import type {
 } from "../../domain/src/types.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
+import { normalizeMatchStyle } from "./match-style.js";
 import {
   defaultPlannedFinishForIntent,
   isBookableMatchFinish,
@@ -21,6 +23,7 @@ export interface HumanMatchPlan {
   sideBIds: string[];
   intendedWinnerSide: MatchSide;
   intent: MatchIntent;
+  style?: MatchStyleProfile;
   plannedLengthMinutes: number;
   plannedFinish?: MatchFinish;
 }
@@ -97,6 +100,7 @@ export function prepareHumanMatchCard(
     if (plan.plannedFinish !== undefined && !isBookableMatchFinish(plan.plannedFinish)) {
       throw new Error("planned match finish must be clean, submission, flash or protected");
     }
+    if (plan.style !== undefined) normalizeMatchStyle(plan.style);
     const ids = [...plan.sideAIds, ...plan.sideBIds];
     for (const personId of ids) {
       if (!committedIds.has(personId)) throw new Error(`wrestler ${personId} is not committed to this event`);
@@ -126,6 +130,7 @@ export function prepareHumanMatchCard(
       type: plan.type,
       status: "SCHEDULED",
       intent: plan.intent,
+      ...(plan.style === undefined ? {} : { style: normalizeMatchStyle(plan.style) }),
       plannedLengthMinutes: plan.plannedLengthMinutes,
       actualLengthMinutes: 0,
       intendedWinnerSide: plan.intendedWinnerSide,

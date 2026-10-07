@@ -34,6 +34,16 @@ export type WrestlingEventStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED";
 export type ScheduledAppearanceStatus = "COMMITTED" | "COMPLETED" | "CANCELLED";
 export type MatchType = "SINGLES" | "TAG";
 export type MatchIntent = "COMPETITIVE" | "SHOWCASE" | "DOMINANT" | "TECHNICAL" | "HIGH_RISK" | "STORY" | "PROTECTIVE" | "EPIC";
+
+export interface MatchStyleProfile {
+  competitiveness: number;
+  technical: number;
+  story: number;
+  intensity: number;
+  risk: number;
+  epic: number;
+}
+
 export type MatchStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED";
 export type MatchSide = "A" | "B";
 export type InjurySeverity = "MINOR" | "MODERATE" | "MAJOR" | "SEVERE";
@@ -297,6 +307,7 @@ export interface Match {
   type: MatchType;
   status: MatchStatus;
   intent: MatchIntent;
+  style?: MatchStyleProfile;
   plannedLengthMinutes: number;
   actualLengthMinutes: number;
   intendedWinnerSide: MatchSide;

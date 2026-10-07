@@ -3,6 +3,7 @@ import type {
   Id,
   MatchIntent,
   MatchSide,
+  MatchStyleProfile,
   MatchType,
   PpwDate,
   TicketStrategy,
@@ -10,6 +11,7 @@ import type {
 } from "../../domain/src/types.js";
 import { isWrestlerAlignment, wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
+import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
 
 export const DETAILED_PLANNING_HORIZON_WEEKS = 6 as const;
 
@@ -20,6 +22,7 @@ export interface DetailedMatchDraft {
   sideBIds: Id[];
   intendedWinnerSide: MatchSide | null;
   intent: MatchIntent | null;
+  style?: MatchStyleProfile;
   plannedLengthMinutes: number | null;
   plannedFinish?: MatchFinish;
 }
@@ -191,6 +194,7 @@ function validateMatchDraft(
   if (draft.plannedFinish !== undefined && !BOOKABLE_MATCH_FINISHES.has(draft.plannedFinish)) {
     throw new Error("draft planned match finish must be clean, submission, flash or protected");
   }
+  const style = draft.style === undefined ? undefined : normalizeMatchStyle(draft.style);
 
   return {
     draftMatchId,
@@ -199,6 +203,7 @@ function validateMatchDraft(
     sideBIds: [...draft.sideBIds],
     intendedWinnerSide: draft.intendedWinnerSide,
     intent: draft.intent,
+    ...(style === undefined ? {} : { style }),
     plannedLengthMinutes: draft.plannedLengthMinutes,
     ...(draft.plannedFinish === undefined ? {} : { plannedFinish: draft.plannedFinish }),
   };
