@@ -19,6 +19,7 @@ import {
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
 import { wrestlerAlignment } from "../../sim-core/src/alignment.js";
+import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import {
   defaultPlannedFinishForIntent,
   isBookableMatchFinish,
@@ -28,9 +29,11 @@ import {
 export interface AlphaCardParticipantView {
   personId: Id;
   name: string;
+  alignment: "FACE" | "HEEL" | "TWEENER";
   popularity: number;
   momentum: number;
   morale: number;
+  datesRemaining: number;
 }
 
 export interface AlphaCardMatchView {
@@ -82,12 +85,15 @@ export interface AlphaCurrentWeekCardView {
   };
   draftId: string;
   workspaceVersion: number;
-  reservationId: string;
+  reservationId: string | null;
   planningState: PlayerShowPlanningState;
   canEdit: boolean;
+  minParticipants: number;
+  maxParticipants: number;
   marketName: string;
   venueName: string;
   participants: AlphaCardParticipantView[];
+  availableParticipants: AlphaCardParticipantView[];
   matches: AlphaCardMatchView[];
   recentMeetings: AlphaRecentMeetingView[];
   championships: AlphaCardChampionshipView[];
@@ -135,12 +141,11 @@ function requirePlanVersion(value: number): number {
 
 function normalizeCompleteCard(
   matches: AlphaCardMatchView[],
-  participantIds: Id[],
-): DetailedMatchDraft[] {
+): { matches: DetailedMatchDraft[]; participantIds: Id[] } {
   if (!Array.isArray(matches) || matches.length === 0) throw new Error("match card requires at least one match");
 
-  const selected = new Set(participantIds);
   const used = new Set<Id>();
+  const orderedParticipants: Id[] = [];
   const matchIds = new Set<string>();
 
   const normalized = matches.map((match, index) => {
@@ -164,9 +169,10 @@ function normalizeCompleteCard(
     const ids = [...match.sideAIds, ...match.sideBIds];
     if (new Set(ids).size !== ids.length) throw new Error("one wrestler cannot occupy multiple positions in a match");
     for (const personId of ids) {
-      if (!selected.has(personId)) throw new Error(`${personId} is not reserved for this show`);
-      if (used.has(personId)) throw new Error(`${personId} is booked more than once on the card`);
+      requiredText(personId, `matches[${index}] wrestler`, 128);
+      if (used.has(personId)) throw new Error(`${personId} is booked in more than one match on the card`);
       used.add(personId);
+      orderedParticipants.push(personId);
     }
 
     return {
@@ -181,10 +187,7 @@ function normalizeCompleteCard(
     } satisfies DetailedMatchDraft;
   });
 
-  if (used.size !== selected.size || participantIds.some((personId) => !used.has(personId))) {
-    throw new Error("manual card must use every wrestler reserved for the show exactly once");
-  }
-  return normalized;
+  return { matches: normalized, participantIds: orderedParticipants };
 }
 
 function activeReign(state: WorldState, championshipId: Id) {
@@ -288,6 +291,66 @@ function weekIndex(date: PpwDate, weeksPerYear: number): number {
   return ((date.year - 1) * weeksPerYear) + (date.week - 1);
 }
 
+function maxShowParticipants(
+  tier: WorldState["promotions"][number]["tier"],
+  date: PpwDate,
+  weeksPerYear: number,
+  majorEventIntervalWeeks: number,
+): number {
+  const regular = tier === "GLOBAL"
+    ? 16
+    : tier === "NATIONAL"
+      ? 14
+      : tier === "RISING"
+        ? 12
+        : tier === "INDEPENDENT"
+          ? 10
+          : 8;
+  return (ppwDateToWeekIndex(date, weeksPerYear) + 1) % majorEventIntervalWeeks === 0 ? regular + 2 : regular;
+}
+
+function contractCoversDate(
+  state: WorldState,
+  contract: WorldState["contracts"][number],
+  date: PpwDate,
+): boolean {
+  return contract.status === "SIGNED"
+    && comparePpwDates(date, contract.startDate, state.ruleset.weeksPerYear) >= 0
+    && comparePpwDates(date, contract.endDate, state.ruleset.weeksPerYear) <= 0;
+}
+
+function availableCardParticipants(
+  state: WorldState,
+  promotionId: Id,
+  targetDate: PpwDate,
+  selectedIds: readonly Id[],
+): AlphaCardParticipantView[] {
+  const selected = new Set(selectedIds);
+  const datesByPerson = new Map<Id, number>();
+  for (const contract of state.contracts) {
+    if (contract.promotionId !== promotionId || !contractCoversDate(state, contract, targetDate)) continue;
+    const remaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
+    if (remaining <= 0 && !selected.has(contract.personId)) continue;
+    datesByPerson.set(contract.personId, (datesByPerson.get(contract.personId) ?? 0) + remaining);
+  }
+
+  const result: AlphaCardParticipantView[] = [];
+  for (const [personId, datesRemaining] of datesByPerson.entries()) {
+    const person = state.people.find((candidate) => candidate.id === personId);
+    if (!person || person.status !== "ACTIVE") continue;
+    result.push({
+      personId,
+      name: person.name,
+      alignment: wrestlerAlignment(person, state.world.seed),
+      popularity: person.popularity,
+      momentum: person.momentum,
+      morale: person.morale,
+      datesRemaining,
+    });
+  }
+  return result.sort((left, right) => right.popularity - left.popularity || left.name.localeCompare(right.name));
+}
+
 function pairKey(left: Id, right: Id): string {
   return left < right ? `${left}\u0000${right}` : `${right}\u0000${left}`;
 }
@@ -376,8 +439,8 @@ export async function loadAlphaShowCard(
   const workspace = aggregate.planning.workspaces.find((candidate) => candidate.promotionId === promotion.id);
   const draft = workspace?.detailedShowDrafts.find((candidate) => candidate.draftId === draftId);
   const reservation = reservationForDraft(aggregate.planning, promotion.id, draftId);
-  if (!workspace || !draft || !reservation) {
-    throw new Error("Reserve this show before booking its match card");
+  if (!workspace || !draft) {
+    throw new Error("Plan this show before booking its card");
   }
 
   const status = playerShowPlanningStatus(
@@ -388,21 +451,31 @@ export async function loadAlphaShowCard(
     draftId,
   );
   const peopleById = new Map(aggregate.state.people.map((person) => [person.id, person]));
+  const availableParticipants = availableCardParticipants(
+    aggregate.state,
+    promotion.id,
+    draft.targetDate,
+    draft.participantIds,
+  );
+  const availableById = new Map(availableParticipants.map((person) => [person.personId, person]));
   const participants = draft.participantIds.map((personId) => {
+    const available = availableById.get(personId);
+    if (available) return { ...available };
     const person = peopleById.get(personId);
-    if (!person) throw new Error(`reserved wrestler ${personId} was not found`);
-    const alignment = wrestlerAlignment(person, aggregate.state.world.seed);
+    if (!person) throw new Error(`booked wrestler ${personId} was not found`);
     return {
       personId,
-      name: `${person.name} · ${alignment}`,
+      name: person.name,
+      alignment: wrestlerAlignment(person, aggregate.state.world.seed),
       popularity: person.popularity,
       momentum: person.momentum,
       morale: person.morale,
+      datesRemaining: 0,
     } satisfies AlphaCardParticipantView;
   });
 
-  const market = aggregate.state.markets.find((candidate) => candidate.id === reservation.marketId);
-  const venue = aggregate.state.venues.find((candidate) => candidate.id === reservation.venueId);
+  const market = draft.marketId ? aggregate.state.markets.find((candidate) => candidate.id === draft.marketId) : null;
+  const venue = draft.venueId ? aggregate.state.venues.find((candidate) => candidate.id === draft.venueId) : null;
   const championships = (aggregate.state.championships ?? [])
     .filter((championship) => championship.promotionId === promotion.id && championship.status === "ACTIVE")
     .sort((a, b) => a.division.localeCompare(b.division) || a.name.localeCompare(b.name))
@@ -433,12 +506,20 @@ export async function loadAlphaShowCard(
     },
     draftId,
     workspaceVersion: workspace.version,
-    reservationId: reservation.reservationId,
+    reservationId: reservation?.reservationId ?? null,
     planningState: status.state,
     canEdit: aggregate.runtime.phase === "OPEN" && status.availableActions.includes("EDIT_DRAFT"),
-    marketName: market?.name ?? reservation.marketId,
-    venueName: venue?.name ?? reservation.venueId,
+    minParticipants: aggregate.state.ruleset.minEventParticipants,
+    maxParticipants: maxShowParticipants(
+      promotion.tier,
+      draft.targetDate,
+      aggregate.state.ruleset.weeksPerYear,
+      aggregate.state.ruleset.majorEventIntervalWeeks,
+    ),
+    marketName: market?.name ?? draft.marketId ?? "Market not selected",
+    venueName: venue?.name ?? draft.venueId ?? "Venue not selected",
     participants,
+    availableParticipants,
     matches: draft.matches.flatMap((match) => (
       match.intendedWinnerSide !== null && match.intent !== null && match.plannedLengthMinutes !== null
         ? [{
@@ -492,20 +573,27 @@ export async function saveAlphaShowCard(
     if (!control) throw new Error("Take control of a promotion before booking a card");
 
     const cardReceipt = aggregate.commands.receipts.find((receipt) => receipt.requestId === cardRequestId);
-    const reservationReceipt = aggregate.commands.receipts.find((receipt) => receipt.requestId === reservationRequestId);
-    const completeRetry = Boolean(cardReceipt && reservationReceipt);
-    if (!completeRetry && aggregate.runtime.revision !== expectedRevision) {
+    if (!cardReceipt && aggregate.runtime.revision !== expectedRevision) {
       throw new Error(`stale World revision for ${worldId}: expected ${expectedRevision}, current ${aggregate.runtime.revision}`);
     }
 
     const draftId = resolveDraftId(control.promotionId, aggregate.state.world.currentDate, requestedDraftId);
     const workspace = aggregate.planning.workspaces.find((candidate) => candidate.promotionId === control.promotionId);
     const draft = workspace?.detailedShowDrafts.find((candidate) => candidate.draftId === draftId);
-    if (!workspace || !draft || !reservationForDraft(aggregate.planning, control.promotionId, draftId)) {
-      throw new Error("Reserve this show before booking its match card");
+    if (!workspace || !draft) {
+      throw new Error("Plan this show before booking its card");
     }
 
-    const matches = normalizeCompleteCard(request.matches, draft.participantIds);
+    const normalizedCard = normalizeCompleteCard(request.matches);
+    const matches = normalizedCard.matches;
+    const legacySegmentParticipants = (draft.programmeSegments ?? []).flatMap((segment) => segment.participantIds);
+    const participantIds = [...new Set([...normalizedCard.participantIds, ...legacySegmentParticipants])];
+    if (participantIds.length < aggregate.state.ruleset.minEventParticipants) {
+      throw new Error(`show booking requires at least ${aggregate.state.ruleset.minEventParticipants} wrestlers across the card`);
+    }
+    if (participantIds.length % 2 !== 0) {
+      throw new Error("show booking currently requires an even number of unique wrestlers");
+    }
     const championshipAssignments = normalizeChampionshipAssignments(
       request.championshipAssignments,
       matches,
@@ -528,6 +616,7 @@ export async function saveAlphaShowCard(
           expectedPlanVersion,
           draft: {
             ...structuredClone(draft),
+            participantIds,
             matches,
             championshipAssignments,
           },

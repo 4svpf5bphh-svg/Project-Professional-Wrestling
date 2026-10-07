@@ -15,7 +15,6 @@ type PlanForm = {
   marketId: string;
   venueId: string;
   ticketStrategy: TicketStrategy;
-  participantIds: string[];
 };
 
 const DAY_NAMES = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -61,13 +60,6 @@ function initialPlan(view: PlayerSixWeekPlannerView, week: WeekView): PlanForm |
   const venueId = existing?.venueId ?? market?.venues[0]?.venueId;
   if (!market || !venueId) return null;
 
-  let participantIds = existing?.participants.map((person) => person.personId) ?? [];
-  if (participantIds.length === 0) {
-    const minimum = week.minParticipants % 2 === 0 ? week.minParticipants : week.minParticipants + 1;
-    participantIds = week.eligibleParticipants.slice(0, Math.min(minimum, week.maxParticipants)).map((person) => person.personId);
-  }
-  if (participantIds.length % 2 !== 0) participantIds = participantIds.slice(0, -1);
-
   return {
     year: week.year,
     week: week.week,
@@ -75,7 +67,6 @@ function initialPlan(view: PlayerSixWeekPlannerView, week: WeekView): PlanForm |
     marketId: market.marketId,
     venueId,
     ticketStrategy: existing?.ticketStrategy ?? "STANDARD",
-    participantIds,
   };
 }
 
@@ -124,16 +115,6 @@ export default function PlannerClient(): React.JSX.Element {
     if (!view?.promotion || !form) return;
     const market = view.promotion.markets.find((candidate) => candidate.marketId === marketId);
     setForm({ ...form, marketId, venueId: market?.venues[0]?.venueId ?? "" });
-  }
-
-  function toggleParticipant(personId: string, week: WeekView): void {
-    if (!form) return;
-    if (form.participantIds.includes(personId)) {
-      setForm({ ...form, participantIds: form.participantIds.filter((id) => id !== personId) });
-      return;
-    }
-    if (form.participantIds.length >= week.maxParticipants) return;
-    setForm({ ...form, participantIds: [...form.participantIds, personId] });
   }
 
   async function savePlan(week: WeekView): Promise<void> {
@@ -225,15 +206,10 @@ export default function PlannerClient(): React.JSX.Element {
               const selectedVenue = selectedMarket && isEditing
                 ? selectedMarket.venues.find((venue) => venue.venueId === form!.venueId) ?? null
                 : null;
-              const selectedCount = isEditing ? form!.participantIds.length : 0;
-              const validRoster = isEditing
-                && selectedCount >= week.minParticipants
-                && selectedCount <= week.maxParticipants
-                && selectedCount % 2 === 0;
               const editableExisting = existing?.availableActions.includes("EDIT_DRAFT") ?? false;
               const canOpenEditor = week.canPlan && (existing === null || editableExisting) && week.shows.length <= 1;
               const canSave = Boolean(
-                isEditing && validRoster && form!.marketId && form!.venueId && view.world.phase === "OPEN" && !saving,
+                isEditing && form!.marketId && form!.venueId && view.world.phase === "OPEN" && !saving,
               );
 
               return (
@@ -293,13 +269,13 @@ export default function PlannerClient(): React.JSX.Element {
                         ) : <p className={styles.muted}>No wrestlers selected yet.</p>}
                         {show.workspaceChangedSinceReservation ? <div className={styles.warning}>Plan changed since reservation — refresh it before relying on those commitments.</div> : null}
                         {show.riskReasons.length > 0 ? <div className={styles.warning}>{show.riskReasons.map(label).join(" · ")}</div> : null}
-                        {show.reservationId && show.availableActions.includes("EDIT_DRAFT") ? (
+                        {show.availableActions.includes("EDIT_DRAFT") ? (
                           <a
                             className={styles.editButton}
                             style={{ display: "block", padding: "10px 14px", textAlign: "center", textDecoration: "none" }}
                             href={`/card?draftId=${encodeURIComponent(show.draftId)}`}
                           >
-                            {show.matchCount > 0 ? "Edit match card" : "Book match card"}
+                            {show.matchCount > 0 ? "Edit booking" : "Book show"}
                           </a>
                         ) : null}
                       </section>
@@ -310,7 +286,7 @@ export default function PlannerClient(): React.JSX.Element {
 
                   {canOpenEditor && !isEditing ? (
                     <button className={styles.editButton} onClick={() => beginEdit(week)}>
-                      {existing ? (existing.reservationId ? "Edit & refresh reservation" : "Edit & reserve show") : "Plan & reserve show"}
+                      {existing ? "Edit show details" : "Plan show"}
                     </button>
                   ) : null}
 
@@ -325,25 +301,10 @@ export default function PlannerClient(): React.JSX.Element {
 
                       {selectedVenue ? <div className={styles.venueSummary}>{selectedVenue.name} · {integer(selectedVenue.capacity)} cap · {money(selectedVenue.weeklyHireCost)} hire</div> : null}
 
-                      <div className={styles.talentHeader}>
-                        <div><strong>Reserve talent</strong><span>Choose an even {week.minParticipants}–{week.maxParticipants} wrestlers.</span></div>
-                        <b className={validRoster ? styles.countGood : styles.countWarn}>{selectedCount}/{week.maxParticipants}</b>
-                      </div>
-                      <div className={styles.talentGrid}>
-                        {week.eligibleParticipants.map((person) => {
-                          const selected = form!.participantIds.includes(person.personId);
-                          const maxed = !selected && selectedCount >= week.maxParticipants;
-                          return (
-                            <button type="button" key={person.personId} className={`${styles.talentPick} ${selected ? styles.talentSelected : ""}`} disabled={maxed} onClick={() => toggleParticipant(person.personId, week)}>
-                              <span><strong>{person.name}</strong><small>{person.datesRemaining} dates · POP {person.popularity}</small></span><b>{selected ? "✓" : "+"}</b>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {existing && existing.matchCount > 0 ? <p className={styles.editorNote}>This show already has a card. Existing matches are preserved; wrestlers already used on that card must remain in the show roster.</p> : null}
+                      <p className={styles.editorNote}>Talent is booked on the show card. Match and segment choices reserve contract dates automatically, so there is no separate show-roster step.</p>
                       <div className={styles.editorActions}>
                         <button className={styles.button} disabled={saving} onClick={cancelEdit}>Cancel</button>
-                        <button className={styles.saveButton} disabled={!canSave} onClick={() => savePlan(week)}>{saving ? "Reserving…" : existing?.reservationId ? "Save & refresh reservation" : "Save & reserve"}</button>
+                        <button className={styles.saveButton} disabled={!canSave} onClick={() => savePlan(week)}>{saving ? "Saving…" : "Save show details"}</button>
                       </div>
                     </section>
                   ) : null}
@@ -352,7 +313,7 @@ export default function PlannerClient(): React.JSX.Element {
             })}
           </section>
 
-          <p className={styles.footerNote}>Reservations are shared-World commitments. The server rechecks venue, contract-date and wrestler Service Capacity when you save, so a rival action can make an otherwise valid-looking plan fail safely.</p>
+          <p className={styles.footerNote}>Show details are planning intent. Wrestler commitments become shared-World reservations from the booked card, where PPW rechecks contract dates and Service Capacity.</p>
         </>
       )}
     </main>
