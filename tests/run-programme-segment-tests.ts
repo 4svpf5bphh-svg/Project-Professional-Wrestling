@@ -116,6 +116,38 @@ test("Programme segments are validated against the show roster and Programme par
   );
 });
 
+test("typed show segments can attach an active Programme and preserve running order", () => {
+  const setup = fixture(9150);
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    draftId: "typed-segment-show",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null,
+    venueId: null,
+    ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [],
+    championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "typed-segment-1",
+      type: "CONFRONTATION",
+      participantIds: [setup.rosterIds[0]!, setup.rosterIds[1]!],
+      programmeId: setup.programme.id,
+      plannedLengthMinutes: 7,
+    }],
+    runningOrder: [{ kind: "SEGMENT", refId: "typed-segment-1" }],
+  });
+
+  const stored = setup.planning.workspaces[0]!.detailedShowDrafts[0]!;
+  ok(stored.segments?.[0]?.type === "CONFRONTATION", "typed segment did not persist its story beat");
+  ok(stored.runningOrder?.[0]?.refId === "typed-segment-1", "typed segment running order was not persisted");
+
+  setup.state.events.push(completedEvent(setup));
+  const recorded = recordResolvedProgrammeSegments(setup.state, setup.planning);
+  ok(recorded === 1, `typed Programme segment recorded ${recorded} factual beats`);
+  ok(programmeActivities(setup.state, setup.programme.id)[0]?.kind === "SEGMENT", "typed segment did not feed Programme history");
+});
+
 test("Programme segments remain planned until their show has completed", () => {
   const setup = fixture(9143);
   addSegmentDraft(setup);
