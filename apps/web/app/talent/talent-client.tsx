@@ -44,7 +44,7 @@ const ROLE_OPTIONS: OfferRole[] = [
   "SPECIAL_ATTRACTION",
 ];
 
-function isErrorPayload(payload: PlayerTalentManagementView | AlphaTalentOfferResult | ErrorPayload): payload is ErrorPayload {
+function isErrorPayload(payload: PlayerTalentManagementView | AlphaTalentOfferResult | AlphaRosterAlignmentResult | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
 }
 
