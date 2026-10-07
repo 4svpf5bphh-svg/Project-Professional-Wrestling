@@ -9,6 +9,7 @@ import {
   claimIndependentPromotionForHuman,
   createWorld,
   marketWeeklyValue,
+  resolveContractOffers,
   resolveWorldWeek,
   submitHumanContractOffer,
 } from "../packages/sim-core/src/index.js";
@@ -148,7 +149,7 @@ test("an exhausted limited-date deal can be replaced immediately without stackin
 
   ok(offer.offerKind === "RENEWAL", "exhausted replacement was not classified as renewal");
   ok(offer.sourceContractId === source.id, "exhausted replacement lost its source contract");
-  resolveWorldWeek(state);
+  resolveContractOffers(state);
   ok(offer.status === "ACCEPTED", `strong exhausted-date replacement finished as ${offer.status}`);
   ok(source.status === "TERMINATED", "accepted exhausted replacement did not supersede the spent deal");
   const replacement = state.contracts.find((contract) => contract.sourceOfferId === offer.id);
