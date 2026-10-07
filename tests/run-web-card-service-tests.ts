@@ -113,6 +113,14 @@ await test("Alpha browser card booking persists a complete card, title assignmen
   ok(singlesTitle?.holderName === null, "fresh Alpha championship should begin vacant");
 
   const card = singlesCard(fixture.participantIds);
+  card[0]!.style = {
+    competitiveness: 74,
+    technical: 81,
+    story: 63,
+    intensity: 78,
+    risk: 47,
+    epic: 72,
+  };
   const request = {
     requestId: "web-card-save-001",
     expectedRevision: beforeCard.world.revision,
@@ -131,12 +139,17 @@ await test("Alpha browser card booking persists a complete card, title assignmen
   );
   ok(saved.matches.length === fixture.participantIds.length / 2, "saved card has the wrong match count");
   ok(saved.championshipAssignments.length === 1, "saved card lost the championship assignment");
+  ok(saved.matches[0]?.style?.technical === 81, "saved card lost the player match style");
   ok(saved.workspaceVersion === beforeCard.workspaceVersion + 1, "card save did not advance plan version exactly once");
   ok(saved.world.revision === beforeCard.world.revision + 2, "card save plus reservation refresh did not advance revision twice");
 
   const persisted = await fixture.repository.load(fixture.worldId);
   ok(persisted.planning.showReservations.length === 1, "card save duplicated or dropped the show reservation");
   ok(persisted.planning.workspaces[0]?.detailedShowDrafts[0]?.matches.length === saved.matches.length, "manual card was not persisted on the show draft");
+  ok(
+    persisted.planning.workspaces[0]?.detailedShowDrafts[0]?.matches[0]?.style?.risk === 47,
+    "player match style was not persisted in planning state",
+  );
   ok(
     persisted.planning.workspaces[0]?.detailedShowDrafts[0]?.championshipAssignments.length === 1,
     "championship assignment was not persisted on the show draft",
@@ -157,6 +170,15 @@ await test("Alpha browser card booking persists a complete card, title assignmen
   });
   ok(afterWeek.promotion?.lastResolvedShow?.matchCount === saved.matches.length, "weekly materialization did not use the player-booked card");
   const resolved = await fixture.repository.load(fixture.worldId);
+  const materializedEvent = resolved.state.events.find((event) => (
+    event.promotionId === beforeCard.promotion.promotionId
+    && event.date.year === beforeCard.targetDate.year
+    && event.date.week === beforeCard.targetDate.week
+    && event.status === "COMPLETED"
+  ));
+  if (!materializedEvent) throw new Error("player show did not materialize for match-style assertion");
+  const styledMatch = resolved.state.matches.find((match) => match.eventId === materializedEvent.id && match.order === 1);
+  ok(styledMatch?.style?.epic === 72, "player match style did not materialize into the scheduled match");
   ok(
     resolved.state.ledger.some((entry) => entry.type === "HUMAN_MATCH_CARD_PREPARED"),
     "manual card preparation was not written to World history",
