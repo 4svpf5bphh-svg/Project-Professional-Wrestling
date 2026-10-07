@@ -245,7 +245,8 @@ function completeCardPlans(
 ): { plans: HumanMatchPlan[]; draftMatchIds: string[] } | null {
   if (!sameParticipantSet(draft, reservation) || draft.matches.length === 0) return null;
   const reservedIds = new Set(reservation.participants.map((participant) => participant.personId));
-  const used = new Set<Id>();
+  const usedInMatches = new Set<Id>();
+  const usedAnywhere = new Set<Id>();
   const plans: HumanMatchPlan[] = [];
   const draftMatchIds: string[] = [];
 
@@ -256,8 +257,9 @@ function completeCardPlans(
     const ids = [...match.sideAIds, ...match.sideBIds];
     if (new Set(ids).size !== ids.length) return null;
     for (const personId of ids) {
-      if (!reservedIds.has(personId) || used.has(personId)) return null;
-      used.add(personId);
+      if (!reservedIds.has(personId) || usedInMatches.has(personId)) return null;
+      usedInMatches.add(personId);
+      usedAnywhere.add(personId);
     }
     plans.push({
       type: match.type,
@@ -271,7 +273,19 @@ function completeCardPlans(
     draftMatchIds.push(match.draftMatchId);
   }
 
-  if (used.size !== reservedIds.size || [...reservedIds].some((personId) => !used.has(personId))) return null;
+  for (const segment of draft.segments ?? []) {
+    for (const personId of segment.participantIds) {
+      if (!reservedIds.has(personId)) return null;
+      usedAnywhere.add(personId);
+    }
+  }
+  for (const segment of draft.programmeSegments ?? []) {
+    for (const personId of segment.participantIds) {
+      if (!reservedIds.has(personId)) return null;
+      usedAnywhere.add(personId);
+    }
+  }
+  if (usedAnywhere.size !== reservedIds.size || [...reservedIds].some((personId) => !usedAnywhere.has(personId))) return null;
   return { plans, draftMatchIds };
 }
 
