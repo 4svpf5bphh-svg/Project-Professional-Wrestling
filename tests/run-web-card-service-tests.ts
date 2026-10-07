@@ -13,7 +13,9 @@ import {
   saveAlphaCurrentWeekCard,
   saveAlphaShowCard,
   type AlphaCardMatchView,
+  type AlphaCardSegmentView,
 } from "../packages/web-adapter/src/card-service.js";
+import { startAlphaManagedProgramme } from "../packages/web-adapter/src/programme-management-service.js";
 import {
   loadAlphaPlayerPlanner,
   saveAlphaPlannerShowPlan,
@@ -215,6 +217,59 @@ await test("Alpha browser card booking persists a complete card, title assignmen
   ));
   ok(recent?.weeksAgo === 1, "card did not expose the previous week's opponent context");
   ok((recent?.winnerPersonIds.length ?? 0) > 0, "recent opponent context did not expose the prior winning side");
+});
+
+await test("Show Builder persists an interleaved Programme segment with wrestlers who also work matches", async () => {
+  const fixture = await reservedShowFixture(61021);
+  const beforeProgramme = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const [first, second] = fixture.participantIds;
+  if (!first || !second) throw new Error("segment fixture lacks Programme wrestlers");
+
+  await startAlphaManagedProgramme(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "card-segment-programme",
+    expectedRevision: beforeProgramme.world.revision,
+    sideAIds: [first],
+    sideBIds: [second],
+    championshipId: null,
+  });
+
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(before.programmes.length === 1, "Show Builder did not expose the active Programme");
+  const programme = before.programmes[0]!;
+  ok(programme.participantIds.includes(first) && programme.participantIds.includes(second), "card Programme lost its wrestlers");
+
+  const card = singlesCard(fixture.participantIds);
+  const segment: AlphaCardSegmentView = {
+    draftSegmentId: "card-segment-1",
+    type: "CONFRONTATION",
+    participantIds: [first, second],
+    programmeId: programme.programmeId,
+    plannedLengthMinutes: 7,
+  };
+  const order = [
+    { kind: "MATCH" as const, refId: card[0]!.draftMatchId },
+    { kind: "SEGMENT" as const, refId: segment.draftSegmentId },
+    ...card.slice(1).map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+  ];
+
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "web-card-segment-save",
+    expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion,
+    matches: card,
+    segments: [segment],
+    runningOrder: order,
+    championshipAssignments: [],
+  });
+
+  ok(saved.segments.length === 1 && saved.segments[0]?.type === "CONFRONTATION", "typed card segment was not persisted");
+  ok(saved.segments[0]?.programmeId === programme.programmeId, "segment lost its Programme attachment");
+  ok(saved.runningOrder[1]?.kind === "SEGMENT" && saved.runningOrder[1]?.refId === segment.draftSegmentId, "interleaved running order was not preserved");
+  ok(saved.participants.length === fixture.participantIds.length, "wrestlers working both match and segment were double-counted in the reservation");
+
+  const reloaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(reloaded.segments[0]?.participantIds.includes(first), "segment did not survive reload");
+  ok(reloaded.runningOrder[1]?.kind === "SEGMENT", "segment slot moved after reload");
 });
 
 await test("Alpha browser card booking derives the reservation from the wrestlers actually booked", async () => {
