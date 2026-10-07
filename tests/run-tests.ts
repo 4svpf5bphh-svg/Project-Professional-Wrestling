@@ -10,6 +10,14 @@ import {
 import { calibratedRealActiveMensRosterSource } from "../packages/content/src/real-active-mens-calibration.js";
 import { calibratedRealActiveMixedRosterSource } from "../packages/content/src/real-active-mixed-roster.js";
 import {
+  AEW_CMLL_DUAL_CONTRACT_SEEDS,
+  AEW_PRIMARY_ROSTER_NAMES,
+  AEW_ROH_CMLL_ROSTER_SEED_REVIEWED_ON,
+  AEW_ROH_SECONDARY_ROSTER_NAMES,
+  ROH_PRIMARY_ROSTER_NAMES,
+  realWorldInitialRosterAssignmentSource,
+} from "../packages/content/src/real-aew-roh-cmll-rosters.js";
+import {
   NXT_INITIAL_ROSTER_NAMES,
   WWE_INITIAL_ROSTER_NAMES,
   WWE_NXT_ROSTER_SEED_REVIEWED_ON,
@@ -535,6 +543,93 @@ test("reviewed WWE/NXT seed survives early World simulation without rogue NXT em
     !activeContractsForPromotion(state, nxt.id).some((contract) => contract.status === "SIGNED"),
     "NXT created standalone employment contracts during early simulation",
   );
+});
+
+test("reviewed AEW/ROH/CMLL seed models parent rosters and confirmed dual contracts", () => {
+  const state = createWorld(
+    121,
+    REAL_WORLD_ALPHA_RULESET,
+    "AEW ROH CMLL Seed",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
+  );
+  equal(AEW_ROH_CMLL_ROSTER_SEED_REVIEWED_ON, "2026-10-07");
+
+  const aew = state.promotions.find((promotion) => promotion.name === "AEW")!;
+  const roh = state.promotions.find((promotion) => promotion.name === "ROH")!;
+  const cmll = state.promotions.find((promotion) => promotion.name === "CMLL")!;
+  equal(aew.rosterMode, "EXPLICIT");
+  equal(roh.rosterMode, "EXPLICIT");
+  equal(cmll.rosterMode, "EXPLICIT");
+  equal(roh.identity?.parentPromotionId, aew.id);
+
+  const rosterNames = (promotionId: string) => currentRosterPersonIds(state, promotionId)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  const aewNames = rosterNames(aew.id);
+  const rohNames = rosterNames(roh.id);
+  const cmllNames = rosterNames(cmll.id);
+
+  for (const name of AEW_PRIMARY_ROSTER_NAMES) ok(aewNames.includes(name), `AEW seed missing ${name}`);
+  for (const name of ROH_PRIMARY_ROSTER_NAMES) ok(rohNames.includes(name), `ROH seed missing ${name}`);
+  for (const name of AEW_ROH_SECONDARY_ROSTER_NAMES) ok(rohNames.includes(name), `ROH secondary seed missing ${name}`);
+  for (const seed of AEW_CMLL_DUAL_CONTRACT_SEEDS) {
+    ok(aewNames.includes(seed.name), `AEW dual-contract roster missing ${seed.name}`);
+    ok(cmllNames.includes(seed.name), `CMLL dual-contract roster missing ${seed.name}`);
+    if (seed.rohSecondary) ok(rohNames.includes(seed.name), `ROH secondary dual-contract roster missing ${seed.name}`);
+  }
+
+  const claudio = state.people.find((person) => person.name === "Claudio Castagnoli")!;
+  const claudioContracts = activeContractsForPerson(state, claudio.id);
+  equal(claudioContracts.length, 2);
+  equal(new Set(claudioContracts.map((contract) => contract.promotionId)).size, 2);
+  ok(claudioContracts.every((contract) => contract.family === "LIMITED_NON_EXCLUSIVE"), "Claudio dual contracts were not flexible");
+  equal(
+    state.wrestlerPromotionAffiliations?.filter((affiliation) => affiliation.personId === claudio.id).length,
+    2,
+  );
+
+  const mistico = state.people.find((person) => person.name === "Místico")!;
+  const misticoAffiliations = state.wrestlerPromotionAffiliations?.filter(
+    (affiliation) => affiliation.personId === mistico.id,
+  ) ?? [];
+  equal(activeContractsForPerson(state, mistico.id).length, 2);
+  equal(misticoAffiliations.length, 3);
+  equal(misticoAffiliations.filter((affiliation) => affiliation.role === "PRIMARY").length, 1);
+  ok(misticoAffiliations.some((affiliation) => affiliation.promotionId === roh.id && affiliation.basis === "PARENT_COMPANY"), "Místico lacks ROH parent-company affiliation");
+
+  const athena = state.people.find((person) => person.name === "Athena")!;
+  equal(activeContractsForPerson(state, athena.id).length, 1);
+  equal(activeContractsForPerson(state, athena.id)[0]!.promotionId, aew.id);
+  ok(rohNames.includes("Athena"), "Athena is missing from ROH");
+  ok(!aewNames.includes("Athena"), "ROH-primary Athena leaked into the AEW main roster");
+
+  const marina = state.people.find((person) => person.name === "Marina Shafir")!;
+  equal(activeContractsForPerson(state, marina.id).length, 1);
+  ok(aewNames.includes("Marina Shafir") && rohNames.includes("Marina Shafir"), "Marina Shafir did not receive AEW primary + ROH secondary access");
+
+  const errors = validateWorldInvariants(state);
+  equal(errors.length, 0, errors.join("\n"));
+});
+
+test("combined real-world roster seed survives early simulation with multi-roster affiliations intact", () => {
+  const state = createWorld(
+    122,
+    REAL_WORLD_ALPHA_RULESET,
+    "Real World Multi Roster Early Sim",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
+  );
+  resolveWorldWeeks(state, 4);
+  const errors = validateWorldInvariants(state);
+  equal(errors.length, 0, errors.join("\n"));
+
+  const claudio = state.people.find((person) => person.name === "Claudio Castagnoli")!;
+  const aew = state.promotions.find((promotion) => promotion.name === "AEW")!;
+  const cmll = state.promotions.find((promotion) => promotion.name === "CMLL")!;
+  ok(currentRosterPersonIds(state, aew.id).includes(claudio.id), "Claudio fell off AEW roster during early sim");
+  ok(currentRosterPersonIds(state, cmll.id).includes(claudio.id), "Claudio fell off CMLL roster during early sim");
 });
 
 test("Genesis creates formal contracts while preserving free-agent supply", () => {
