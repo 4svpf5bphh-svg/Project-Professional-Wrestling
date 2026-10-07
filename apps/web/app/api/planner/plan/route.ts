@@ -71,7 +71,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         marketId: requiredText(body.marketId, "marketId", 128),
         venueId: requiredText(body.venueId, "venueId", 128),
         ticketStrategy,
-        participantIds: participantIds(body.participantIds),
+        ...(body.participantIds === undefined ? {} : { participantIds: participantIds(body.participantIds) }),
       })
     ));
     return NextResponse.json(view, { headers: { "Cache-Control": "no-store" } });

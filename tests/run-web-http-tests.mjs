@@ -143,6 +143,34 @@ try {
   ok(afterClaim.promotion?.promotionId === promotionId, "HTTP reload lost promotion dashboard state");
   ok(afterClaim.world?.revision === 1, "HTTP reload returned the wrong persisted World revision");
 
+  const plannerBeforeDetails = await json(await fetch(`${baseUrl}/api/planner`, { cache: "no-store" }));
+  const currentPlannerWeek = plannerBeforeDetails.promotion?.weeks?.find((candidate) => candidate.isCurrentWeek);
+  const plannerMarket = plannerBeforeDetails.promotion?.markets?.[0];
+  const plannerVenue = plannerMarket?.venues?.[0];
+  ok(currentPlannerWeek && plannerMarket && plannerVenue, "HTTP planner did not expose current-week logistics");
+  const plannerDetails = await json(await fetch(`${baseUrl}/api/planner/plan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requestId: "ci-http-planner-details-001",
+      expectedRevision: plannerBeforeDetails.world.revision,
+      expectedPlanVersion: plannerBeforeDetails.promotion.workspaceVersion,
+      year: currentPlannerWeek.year,
+      week: currentPlannerWeek.week,
+      day: 6,
+      marketId: plannerMarket.marketId,
+      venueId: plannerVenue.venueId,
+      ticketStrategy: "STANDARD",
+    }),
+  }));
+  const savedDetailsWeek = plannerDetails.promotion?.weeks?.find((candidate) => candidate.isCurrentWeek);
+  ok(savedDetailsWeek?.shows?.length === 1, "HTTP planner details save did not create the current-week draft");
+  ok(savedDetailsWeek.shows[0]?.participants?.length === 0, "HTTP planner details save unexpectedly edited the show roster");
+  ok(savedDetailsWeek.shows[0]?.venueId === plannerVenue.venueId, "HTTP planner details save lost the selected venue");
+
+  const afterPlannerDetails = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
+  ok(afterPlannerDetails.world.revision === afterClaim.world.revision + 1, "HTTP planner details save did not advance World revision once");
+
   const talent = await json(await fetch(`${baseUrl}/api/talent`, { cache: "no-store" }));
   ok(talent.promotion?.promotionId === promotionId, "HTTP talent management lost controlled promotion");
   ok(Array.isArray(talent.market) && talent.market.length > 0, "HTTP talent market exposed no available wrestlers");
@@ -171,7 +199,7 @@ try {
   ok(offered.view?.pendingOffers?.some((offer) => offer.offerId === offered.offerId), "HTTP talent offer was not persisted into pending offers");
 
   const afterOffer = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
-  ok(afterOffer.world.revision > afterClaim.world.revision, "HTTP talent offer did not advance World revision");
+  ok(afterOffer.world.revision > afterPlannerDetails.world.revision, "HTTP talent offer did not advance World revision");
 
   const plan = showPlanBody(afterOffer);
   const planned = await json(await fetch(`${baseUrl}/api/show-plan`, {
