@@ -51,9 +51,10 @@ const NAV_ITEMS: NavItem[] = [
     href: "/planner",
     label: "Plan",
     shortLabel: "P",
-    matches: (pathname) => pathname.startsWith("/planner") || pathname.startsWith("/card"),
+    matches: (pathname) => pathname.startsWith("/planner") || pathname.startsWith("/card") || pathname.startsWith("/programmes"),
     destinations: [
       { href: "/planner", label: "Shows", description: "Six-week schedule, markets and venues." },
+      { href: "/programmes", label: "Programmes", description: "Create and follow ongoing rivalries and stories." },
       { href: "/card", label: "Current booking", description: "Open the show card you are working on." },
     ],
   },

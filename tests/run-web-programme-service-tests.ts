@@ -11,6 +11,10 @@ import {
   setAlphaProgrammeSegment,
   startAlphaProgramme,
 } from "../packages/web-adapter/src/programme-service.js";
+import {
+  loadAlphaProgrammeManagement,
+  startAlphaManagedProgramme,
+} from "../packages/web-adapter/src/programme-management-service.js";
 
 let passed = 0;
 let failed = 0;
@@ -73,6 +77,44 @@ async function reservedShowFixture(seed: number) {
   });
   return { repository, worldId, planned, participantIds };
 }
+
+await test("standalone Programme management uses the full controlled roster without requiring a show reservation", async () => {
+  const playerId = "programme-manager-player";
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 62001, playerId });
+  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("Programme manager fixture has no Independent promotion");
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, playerId, {
+    promotionId: independent.id,
+    requestId: "programme-manager-claim",
+  });
+
+  const before = await loadAlphaProgrammeManagement(repository, worldId, playerId);
+  ok(before.roster.length >= 2, "standalone Programme management did not expose the controlled roster");
+  ok(before.programmes.length === 0, "fresh Programme manager unexpectedly has an active Programme");
+
+  const started = await startAlphaManagedProgramme(repository, worldId, playerId, {
+    requestId: "programme-manager-start",
+    expectedRevision: before.world.revision,
+    sideAIds: [before.roster[0]!.personId],
+    sideBIds: [before.roster[1]!.personId],
+    championshipId: null,
+  });
+  ok(started.programmes.length === 1, "standalone Programme start did not persist the story");
+  ok(started.world.revision === before.world.revision + 1, "standalone Programme start did not advance revision once");
+
+  const retry = await startAlphaManagedProgramme(repository, worldId, playerId, {
+    requestId: "programme-manager-start",
+    expectedRevision: before.world.revision,
+    sideAIds: [before.roster[0]!.personId],
+    sideBIds: [before.roster[1]!.personId],
+    championshipId: null,
+  });
+  ok(retry.programmes.length === 1, "standalone Programme retry duplicated the story");
+  ok(retry.world.revision === started.world.revision, "standalone Programme retry advanced revision");
+});
 
 await test("Alpha Programme context starts and persists an idempotent wrestler Programme", async () => {
   const fixture = await reservedShowFixture(62011);
