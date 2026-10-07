@@ -379,6 +379,28 @@ test("multi-promotion roster affiliations support primary and secondary contract
   equal(currentRosterPersonIds(state, state.promotions[2]!.id).includes(person.id), true);
 });
 
+test("explicit rosters include future direct signings but respect existing explicit placement", () => {
+  const state = createWorld(120, DEFAULT_RULESET);
+  const promotion = state.promotions[1]!;
+  promotion.rosterMode = "EXPLICIT";
+  const person = state.people.find((candidate) => activeContractsForPerson(state, candidate.id).length === 0)!;
+  const terms = buildContractTerms(state, promotion, person, new DeterministicRng(120), state.world.currentDate, "EXCLUSIVE");
+  createSignedContract(state, person, promotion, { ...terms, signingBonus: 0 }, null, false);
+  equal(currentRosterPersonIds(state, promotion.id).includes(person.id), true);
+
+  const other = state.promotions[2]!;
+  other.rosterMode = "EXPLICIT";
+  state.wrestlerPromotionAffiliations ??= [];
+  state.wrestlerPromotionAffiliations.push({
+    worldId: state.world.id,
+    personId: person.id,
+    promotionId: other.id,
+    role: "PRIMARY",
+    basis: "CONTRACT",
+  });
+  equal(currentRosterPersonIds(state, promotion.id).includes(person.id), false);
+});
+
 test("parent-company roster affiliation grants child-brand access without a second contract", () => {
   const source: InitialRosterAssignmentSource = ({ people, promotions }) => {
     const parent = promotions[0]!;

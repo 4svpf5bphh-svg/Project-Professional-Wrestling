@@ -129,9 +129,15 @@ export function currentRosterPersonIds(state: WorldState, promotionId: Id): Id[]
   if (promotion?.rosterMode === "EXPLICIT") {
     return state.people
       .filter((person) => person.status !== "RETIRED")
-      .filter((person) => wrestlerPromotionAffiliationsForPerson(state, person.id)
-        .some((affiliation) => affiliation.promotionId === promotionId
-          && wrestlerAffiliationHasBookingRights(state, affiliation)))
+      .filter((person) => {
+        const affiliations = wrestlerPromotionAffiliationsForPerson(state, person.id);
+        if (affiliations.length > 0) {
+          return affiliations.some((affiliation) => affiliation.promotionId === promotionId
+            && wrestlerAffiliationHasBookingRights(state, affiliation));
+        }
+        return activeContractsForPerson(state, person.id)
+          .some((contract) => contract.promotionId === promotionId);
+      })
       .map((person) => person.id);
   }
   return [...new Set(activeContractsForPromotion(state, promotionId).map((contract) => contract.personId))];
