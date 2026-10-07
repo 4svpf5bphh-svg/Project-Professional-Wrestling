@@ -185,6 +185,59 @@ await test("Talent service renews only inside the renewal window and starts afte
   ok(persisted.state.contracts.find((contract) => contract.id === source.id)?.status === "SIGNED", "submitting a renewal terminated the existing contract");
 });
 
+await test("Talent service opens renegotiation when purchased dates are exhausted", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 73005, playerId: "player-a" });
+  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("fixture has no Independent promotion");
+  const source = aggregate.state.contracts.find((contract) => (
+    contract.promotionId === independent.id
+    && contract.status === "SIGNED"
+    && contract.family !== "ONE_OFF"
+  ));
+  if (!source) throw new Error("fixture Independent promotion has no limited-date contract");
+  source.datesUsed = source.dateEntitlement;
+  source.endDate = addPpwWeeks(aggregate.state.world.currentDate, aggregate.state.ruleset.renewalWindowWeeks + 6, aggregate.state.ruleset.weeksPerYear);
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "player-a", {
+    promotionId: independent.id,
+    requestId: "talent-claim-exhausted-renewal",
+  });
+
+  const before = await loadAlphaTalentSession(repository, worldId, "player-a");
+  const rosterEntry = before.roster.find((entry) => entry.contractId === source.id);
+  if (!rosterEntry) throw new Error("exhausted contract is missing from player roster view");
+  ok(rosterEntry.contract.datesRemaining === 0, "fixture contract was not exhausted");
+  ok(rosterEntry.contract.renewalWindowOpen, "exhausted contract did not open renegotiation");
+  ok(rosterEntry.contract.renewalReason === "DATES_EXHAUSTED", "exhausted contract exposed the wrong renewal reason");
+
+  const result = await submitAlphaTalentOffer(repository, worldId, "player-a", {
+    requestId: "talent-exhausted-renewal-001",
+    personId: source.personId,
+    sourceContractId: source.id,
+    family: "LIMITED_NON_EXCLUSIVE",
+    roleExpectation: source.roleExpectation,
+    termWeeks: 13,
+    dateEntitlement: 5,
+    weeklyGuarantee: Math.max(source.weeklyGuarantee, 50_000),
+    appearanceFee: Math.max(source.appearanceFee, 50_000),
+    signingBonus: Math.max(source.signingBonus, 100_000),
+  });
+  ok(result.offerKind === "RENEWAL", "exhausted-date action produced the wrong offer kind");
+
+  const persisted = await repository.load(worldId);
+  const offer = persisted.state.contractOffers.find((candidate) => candidate.id === result.offerId);
+  if (!offer) throw new Error("exhausted renewal offer was not persisted");
+  ok(
+    offer.startDate.year === persisted.state.world.currentDate.year
+      && offer.startDate.week === persisted.state.world.currentDate.week
+      && offer.startDate.day === persisted.state.world.currentDate.day,
+    "exhausted-date renewal did not start immediately",
+  );
+  ok(offer.sourceContractId === source.id, "exhausted-date renewal lost source contract identity");
+});
+
 await test("Talent service rejects a renewal against another promotion's private contract", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 73003, playerId: "player-a" });

@@ -86,8 +86,17 @@ function contractDensity(terms: ContractTerms, weeksPerYear: number): number {
   return terms.dateEntitlement / termWeeks;
 }
 
-export function canAcceptContractTerms(state: WorldState, person: Person, terms: ContractTerms): { ok: boolean; reason: string | null } {
-  const signed = contractsForPerson(state, person.id).filter((contract) => contract.status === "SIGNED" && contractOverlaps(contract, terms, state.ruleset.weeksPerYear));
+export function canAcceptContractTerms(
+  state: WorldState,
+  person: Person,
+  terms: ContractTerms,
+  options: { ignoreContractId?: Id | null } = {},
+): { ok: boolean; reason: string | null } {
+  const signed = contractsForPerson(state, person.id).filter((contract) => (
+    contract.status === "SIGNED"
+    && contract.id !== (options.ignoreContractId ?? null)
+    && contractOverlaps(contract, terms, state.ruleset.weeksPerYear)
+  ));
   if (terms.exclusivity === "EXCLUSIVE" && signed.length > 0) {
     return { ok: false, reason: "exclusive offer overlaps another signed contract" };
   }
@@ -386,6 +395,42 @@ export function generateAiContractOffers(state: WorldState): void {
   }
 }
 
+function exhaustedReplacementSource(state: WorldState, offer: ContractOffer): Contract | null {
+  const sourceContractId = offer.sourceContractId ?? null;
+  if (!sourceContractId) return null;
+  const source = state.contracts.find((contract) => contract.id === sourceContractId);
+  if (!source) return null;
+  if (
+    source.status !== "SIGNED"
+    || source.personId !== offer.personId
+    || source.promotionId !== offer.promotionId
+    || source.family === "ONE_OFF"
+    || source.datesUsed < source.dateEntitlement
+  ) return null;
+  return source;
+}
+
+function acceptContractOffer(state: WorldState, person: Person, offer: ContractOffer): void {
+  const promotion = state.promotions.find((candidate) => candidate.id === offer.promotionId)!;
+  const source = exhaustedReplacementSource(state, offer);
+  if (source) {
+    source.status = "TERMINATED";
+    new LedgerWriter(state.world.id, state.ledger).append({
+      date: state.world.currentDate,
+      type: "CONTRACT_SUPERSEDED",
+      significance: "ROUTINE",
+      entityIds: [source.id, person.id, promotion.id, offer.id],
+      payload: {
+        datesUsed: source.datesUsed,
+        dateEntitlement: source.dateEntitlement,
+        replacementOfferId: offer.id,
+      },
+    });
+  }
+  createSignedContract(state, person, promotion, offer, offer.id);
+  offer.status = "ACCEPTED";
+}
+
 function weeklyEquivalent(offer: ContractOffer, state: WorldState): number {
   const termWeeks = Math.max(1, weeksBetween(offer.startDate, offer.endDate, state.ruleset.weeksPerYear) + 1);
   return offer.weeklyGuarantee + offer.signingBonus / termWeeks + offer.appearanceFee * offer.dateEntitlement / termWeeks;
@@ -455,15 +500,14 @@ export function resolveContractOffers(state: WorldState): void {
     let exclusiveAccepted = false;
     for (const offer of viableExclusive) {
       const terms: ContractTerms = offer;
-      const capacity = canAcceptContractTerms(state, person, terms);
+      const source = exhaustedReplacementSource(state, offer);
+      const capacity = canAcceptContractTerms(state, person, terms, { ignoreContractId: source?.id ?? null });
       if (!capacity.ok || exclusiveAccepted) {
         offer.status = "REJECTED";
         offer.rejectionReason = capacity.reason ?? "stronger exclusive offer accepted";
         continue;
       }
-      const promotion = state.promotions.find((candidate) => candidate.id === offer.promotionId)!;
-      createSignedContract(state, person, promotion, terms, offer.id);
-      offer.status = "ACCEPTED";
+      acceptContractOffer(state, person, offer);
       exclusiveAccepted = true;
     }
 
@@ -479,15 +523,14 @@ export function resolveContractOffers(state: WorldState): void {
         offer.rejectionReason = "offer utility below acceptance threshold";
         continue;
       }
-      const capacity = canAcceptContractTerms(state, person, offer);
+      const source = exhaustedReplacementSource(state, offer);
+      const capacity = canAcceptContractTerms(state, person, offer, { ignoreContractId: source?.id ?? null });
       if (!capacity.ok) {
         offer.status = "REJECTED";
         offer.rejectionReason = capacity.reason;
         continue;
       }
-      const promotion = state.promotions.find((candidate) => candidate.id === offer.promotionId)!;
-      createSignedContract(state, person, promotion, offer, offer.id);
-      offer.status = "ACCEPTED";
+      acceptContractOffer(state, person, offer);
     }
   }
 }

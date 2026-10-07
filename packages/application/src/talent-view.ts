@@ -73,6 +73,7 @@ export interface PlayerRosterContractView {
     appearanceFee: number;
     signingBonus: number;
     renewalWindowOpen: boolean;
+    renewalReason: "DATES_EXHAUSTED" | "EXPIRY_WINDOW" | null;
   };
 }
 
@@ -222,6 +223,9 @@ export function buildPlayerTalentManagementView(
       const person = peopleById.get(contract.personId);
       if (!person) return null;
       const remaining = weeksToExpiry(aggregate, contract.endDate);
+      const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
+      const datesExhausted = contract.family !== "ONE_OFF" && datesRemaining === 0;
+      const expiryWindowOpen = remaining <= aggregate.state.ruleset.renewalWindowWeeks;
       const alignment = wrestlerAlignmentForPromotion(aggregate.state, promotion.id, person.id);
       const alignmentContext = promotionAlignmentChangeContext(aggregate.state, promotion.id, person.id);
       return {
@@ -252,11 +256,12 @@ export function buildPlayerTalentManagementView(
           weeksToExpiry: remaining,
           dateEntitlement: contract.dateEntitlement,
           datesUsed: contract.datesUsed,
-          datesRemaining: Math.max(0, contract.dateEntitlement - contract.datesUsed),
+          datesRemaining,
           weeklyGuarantee: contract.weeklyGuarantee,
           appearanceFee: contract.appearanceFee,
           signingBonus: contract.signingBonus,
-          renewalWindowOpen: remaining <= aggregate.state.ruleset.renewalWindowWeeks,
+          renewalWindowOpen: datesExhausted || expiryWindowOpen,
+          renewalReason: datesExhausted ? "DATES_EXHAUSTED" : expiryWindowOpen ? "EXPIRY_WINDOW" : null,
         },
       };
     })

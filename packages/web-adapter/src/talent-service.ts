@@ -156,10 +156,13 @@ function buildFreshPlan(
     }
     const currentIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
     const endIndex = ppwDateToWeekIndex(source.endDate, state.ruleset.weeksPerYear);
-    if (endIndex - currentIndex > state.ruleset.renewalWindowWeeks) {
+    const datesExhausted = source.family !== "ONE_OFF" && source.datesUsed >= source.dateEntitlement;
+    if (!datesExhausted && endIndex - currentIndex > state.ruleset.renewalWindowWeeks) {
       throw new Error("renewal window is not open for this contract yet");
     }
-    startDate = addPpwWeeks(source.endDate, 1, state.ruleset.weeksPerYear);
+    startDate = datesExhausted
+      ? { ...state.world.currentDate }
+      : addPpwWeeks(source.endDate, 1, state.ruleset.weeksPerYear);
   } else {
     const alreadyOurs = state.contracts.some((contract) => (
       contract.promotionId === promotionId
@@ -177,6 +180,7 @@ function buildFreshPlan(
   return {
     promotionId,
     personId,
+    sourceContractId,
     family: request.family,
     exclusivity,
     roleExpectation: request.roleExpectation,

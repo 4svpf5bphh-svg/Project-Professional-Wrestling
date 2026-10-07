@@ -189,7 +189,13 @@ function RosterCard({
         <div className={styles.contractBox}>
           <div>
             <span>{label(contract.exclusivity)} · expires {ppwDate(contract.endDate)}</span>
-            <strong>{contract.renewalWindowOpen ? "Renewal window open" : `${contract.weeksToExpiry} weeks to expiry`}</strong>
+            <strong>
+              {contract.renewalReason === "DATES_EXHAUSTED"
+                ? "All purchased dates used · renegotiation open"
+                : contract.renewalWindowOpen
+                  ? "Renewal window open"
+                  : `${contract.weeksToExpiry} weeks to expiry`}
+            </strong>
           </div>
           <div className={styles.moneyRows}>
             <span>Weekly guarantee <b>{money(contract.weeklyGuarantee)}</b></span>
@@ -227,7 +233,9 @@ function RosterCard({
         <div className={styles.cardActions}>
           <p className={styles.subtle}>Age {wrestler.biologicalAge.toFixed(1)} · Fatigue {Math.round(wrestler.fatigue)} · Wear {Math.round(wrestler.wear)} · Skill {averageSkill(wrestler)}</p>
           {pending ? <span className={styles.pending}>Your offer pending</span> : contract.renewalWindowOpen ? (
-            <button className={styles.actionButton} type="button" onClick={onRenew}>Negotiate renewal</button>
+            <button className={styles.actionButton} type="button" onClick={onRenew}>
+              {contract.renewalReason === "DATES_EXHAUSTED" ? "Renegotiate dates" : "Negotiate renewal"}
+            </button>
           ) : null}
         </div>
       </div>
@@ -320,7 +328,13 @@ function OfferEditor({
         <div>
           <span className={styles.eyebrow}>{target.sourceContractId ? "RENEWAL NEGOTIATION" : "CONTRACT OFFER"}</span>
           <h2>{target.personName}</h2>
-          <p>{target.sourceContractId ? "New terms begin after the current deal expires." : "Offer enters the normal PPW negotiation queue; acceptance is not guaranteed."}</p>
+          <p>
+            {target.sourceContractId
+              ? target.currentContract?.renewalReason === "DATES_EXHAUSTED"
+                ? "All purchased dates are used. If accepted, these terms replace the exhausted deal immediately."
+                : "New terms begin after the current deal expires."
+              : "Offer enters the normal PPW negotiation queue; acceptance is not guaranteed."}
+          </p>
         </div>
         <button className={styles.button} type="button" onClick={onCancel} disabled={submitting}>Cancel</button>
       </div>

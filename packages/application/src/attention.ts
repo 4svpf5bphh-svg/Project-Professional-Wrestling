@@ -203,6 +203,21 @@ export function buildPlayerAttention(
 
     for (const contract of activeContracts) {
       if (contract.family === "ONE_OFF") continue;
+      const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
+      if (datesRemaining === 0) {
+        const name = personName(aggregate, contract.personId);
+        items.push({
+          attentionId: `contract-dates-exhausted:${contract.id}`,
+          category: "ACTION_REQUIRED",
+          title: `${name} has no contracted dates remaining`,
+          summary: `${name}'s calendar contract is still active, but every purchased appearance has been used. Renegotiate now to buy more dates; an accepted replacement takes effect immediately.`,
+          deadline: null,
+          deepLink: "/talent",
+          dismissible: false,
+          sourceOpportunityCategory: null,
+        });
+        continue;
+      }
       const weeksRemaining = weekIndex(aggregate, contract.endDate) - weekIndex(aggregate, currentDate);
       if (weeksRemaining < 0 || weeksRemaining > aggregate.state.ruleset.renewalWindowWeeks) continue;
       const urgent = weeksRemaining <= 1;

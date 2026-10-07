@@ -250,6 +250,7 @@ export interface ContractOffer extends ContractTerms {
   offerKind: "RECRUITMENT" | "RENEWAL";
   resolvedUtility: number | null;
   rejectionReason: string | null;
+  sourceContractId?: Id | null;
 }
 
 export interface WrestlingEvent {
