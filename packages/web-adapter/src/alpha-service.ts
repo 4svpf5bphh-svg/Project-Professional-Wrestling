@@ -38,6 +38,7 @@ export interface AlphaWorldBootstrapOptions {
 export interface AlphaClaimRequest {
   promotionId: string;
   requestId: string;
+  takeoverMode?: "CONTINUE" | "REBRAND";
   name?: string;
 }
 
@@ -207,7 +208,9 @@ export async function claimAlphaPromotion(
         commandType: "CLAIM_INDEPENDENT_PROMOTION",
         payload: {
           promotionId: request.promotionId,
-          options: request.name === undefined ? undefined : { name: request.name },
+          options: request.takeoverMode === undefined && request.name === undefined
+            ? undefined
+            : { takeoverMode: request.takeoverMode, name: request.name },
         },
       },
     );

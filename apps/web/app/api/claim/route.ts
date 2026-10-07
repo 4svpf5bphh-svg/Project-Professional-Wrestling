@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 type ClaimBody = {
   promotionId?: unknown;
   requestId?: unknown;
+  takeoverMode?: unknown;
   name?: unknown;
 };
 
@@ -24,10 +25,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const body = await request.json() as ClaimBody;
     const promotionId = requiredText(body.promotionId, "promotionId", 128);
     const requestId = requiredText(body.requestId, "requestId", 256);
+    const takeoverMode = body.takeoverMode === undefined
+      ? undefined
+      : requiredText(body.takeoverMode, "takeoverMode", 16);
+    if (takeoverMode !== undefined && takeoverMode !== "CONTINUE" && takeoverMode !== "REBRAND") {
+      throw new Error("takeoverMode must be CONTINUE or REBRAND");
+    }
     const name = body.name === undefined ? undefined : requiredText(body.name, "name", 80);
 
     const view = await withAlphaServerContext(({ repository, worldId, playerId }) => (
-      claimAlphaPromotion(repository, worldId, playerId, { promotionId, requestId, name })
+      claimAlphaPromotion(repository, worldId, playerId, { promotionId, requestId, takeoverMode, name })
     ));
     return NextResponse.json(view, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
