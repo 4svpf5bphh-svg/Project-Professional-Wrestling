@@ -240,8 +240,8 @@ test("styled intensity ignores the legacy Intent label while legacy repetition r
     "legacy Intent still changed pacing explanation for an explicit style",
   );
 
-  const legacyA = completedMatch(state, event, "legacy-repeat-a", 1, "STORY", 70);
-  const legacyB = completedMatch(state, event, "legacy-repeat-b", 2, "STORY", 70);
+  const legacyA = completedMatch(state, event, "legacy-repeat-a", 1, "COMPETITIVE", 70);
+  const legacyB = completedMatch(state, event, "legacy-repeat-b", 2, "COMPETITIVE", 70);
   attachSinglesParticipants(state, event, legacyA, personIds[4]!, personIds[5]!);
   attachSinglesParticipants(state, event, legacyB, personIds[6]!, personIds[7]!);
   const legacyFlow = evaluateShowFlow(state, event, [legacyA, legacyB]);
