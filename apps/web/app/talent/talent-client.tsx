@@ -77,6 +77,59 @@ function money(value: number): string {
   }).format(value);
 }
 
+function formatMoneyInput(value: number): string {
+  return new Intl.NumberFormat("en-GB", {
+    maximumFractionDigits: 0,
+    useGrouping: true,
+  }).format(Math.max(0, Math.round(value)));
+}
+
+function parseMoneyInput(value: string): number | null {
+  const normalized = value.replace(/[\s,£$]/g, "");
+  if (normalized === "") return null;
+  if (!/^\d+$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function MoneyInput({
+  value,
+  disabled = false,
+  onChange,
+}: {
+  value: number;
+  disabled?: boolean;
+  onChange: (value: number) => void;
+}): React.JSX.Element {
+  const [text, setText] = useState(() => formatMoneyInput(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setText(formatMoneyInput(value));
+  }, [value, focused]);
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      value={text}
+      disabled={disabled}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        setText(formatMoneyInput(value));
+      }}
+      onChange={(event) => {
+        const next = event.target.value;
+        if (!/^[\d\s,£$]*$/.test(next)) return;
+        setText(next);
+        onChange(parseMoneyInput(next) ?? 0);
+      }}
+    />
+  );
+}
+
 function ppwDate(date: { year: number; week: number }): string {
   return `Y${date.year} W${date.week}`;
 }
@@ -433,15 +486,25 @@ function OfferEditor({
         </label>
         <label>
           <span>Weekly guarantee</span>
-          <input type="number" min={0} inputMode="numeric" value={draft.weeklyGuarantee} disabled={draft.family === "ONE_OFF"} onChange={(event) => onChange({ ...draft, weeklyGuarantee: Number(event.target.value) })} />
+          <MoneyInput
+            value={draft.weeklyGuarantee}
+            disabled={draft.family === "ONE_OFF"}
+            onChange={(value) => onChange({ ...draft, weeklyGuarantee: value })}
+          />
         </label>
         <label>
           <span>Appearance fee</span>
-          <input type="number" min={0} inputMode="numeric" value={draft.appearanceFee} onChange={(event) => onChange({ ...draft, appearanceFee: Number(event.target.value) })} />
+          <MoneyInput
+            value={draft.appearanceFee}
+            onChange={(value) => onChange({ ...draft, appearanceFee: value })}
+          />
         </label>
         <label>
           <span>Signing bonus</span>
-          <input type="number" min={0} inputMode="numeric" value={draft.signingBonus} onChange={(event) => onChange({ ...draft, signingBonus: Number(event.target.value) })} />
+          <MoneyInput
+            value={draft.signingBonus}
+            onChange={(value) => onChange({ ...draft, signingBonus: value })}
+          />
         </label>
         </div>
       </div>
