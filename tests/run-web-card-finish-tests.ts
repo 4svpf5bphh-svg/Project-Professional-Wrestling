@@ -36,13 +36,32 @@ function ok(value: unknown, message: string): void {
   if (!value) throw new Error(message);
 }
 
+function sameDivisionParticipantIds(
+  state: { people: Array<{ id: string; division?: "MEN" | "WOMEN" }> },
+  candidates: Array<{ personId: string }>,
+  minParticipants: number,
+  maxParticipants: number,
+): string[] {
+  const divisionById = new Map(state.people.map((person) => [person.id, person.division ?? "MEN"]));
+  const groups = (["MEN", "WOMEN"] as const)
+    .map((division) => candidates.filter((person) => divisionById.get(person.personId) === division))
+    .sort((left, right) => right.length - left.length);
+  const minimumEven = minParticipants % 2 === 0 ? minParticipants : minParticipants + 1;
+  const group = groups.find((candidate) => candidate.length >= minimumEven);
+  if (!group) throw new Error("fixture has no single division with enough wrestlers");
+  let count = Math.min(group.length, maxParticipants);
+  if (count % 2 !== 0) count -= 1;
+  if (count < minimumEven) throw new Error("fixture cannot form an even same-division roster");
+  return group.slice(0, count).map((person) => person.personId);
+}
+
 async function fixture(seed: number) {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed, playerId: "alpha-player" });
   const independent = aggregate.state.promotions.find((promotion) => (
-    promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE"
+    promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE"
   ));
-  if (!independent) throw new Error("test World has no active Independent promotion");
+  if (!independent) throw new Error("test World has no active takeover-eligible promotion");
   independent.eventCadenceWeeks = 1;
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
@@ -57,14 +76,12 @@ async function fixture(seed: number) {
   const venue = market?.venues[0];
   if (!market || !venue) throw new Error("show planner has no market/venue option");
 
-  let participantIds = promotion.roster
-    .filter((person) => person.status === "ACTIVE" && person.datesRemaining > 0)
-    .slice(0, promotion.showPlanning.maxParticipants)
-    .map((person) => person.personId);
-  if (participantIds.length % 2 !== 0) participantIds = participantIds.slice(0, -1);
-  if (participantIds.length < promotion.showPlanning.minParticipants) {
-    throw new Error("show planner has too few available wrestlers");
-  }
+  const participantIds = sameDivisionParticipantIds(
+    aggregate.state,
+    promotion.roster.filter((person) => person.status === "ACTIVE" && person.datesRemaining > 0),
+    promotion.showPlanning.minParticipants,
+    promotion.showPlanning.maxParticipants,
+  );
 
   await saveAlphaCurrentWeekShowPlan(repository, worldId, "alpha-player", {
     requestId: `finish-show-${seed}`,
