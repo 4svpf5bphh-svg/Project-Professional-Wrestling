@@ -119,6 +119,44 @@ function singlesCard(participantIds: string[]): AlphaCardMatchView[] {
   return matches;
 }
 
+await test("Show Builder exposes established teams as tag-booking shortcuts", async () => {
+  const fixture = await reservedShowFixture(61010);
+  const [first, second] = fixture.participantIds;
+  if (!first || !second) throw new Error("team shortcut fixture lacks two wrestlers");
+
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    aggregate.state.teams ??= [];
+    aggregate.state.teamMemberships ??= [];
+    aggregate.state.teams.push({
+      id: "card-shortcut-team",
+      worldId: aggregate.state.world.id,
+      name: "Card Shortcut Team",
+      status: "ACTIVE",
+      formedDate: { ...aggregate.state.world.currentDate },
+      disbandedDate: null,
+    });
+    for (const [index, personId] of [first, second].entries()) {
+      aggregate.state.teamMemberships.push({
+        id: `card-shortcut-membership-${index + 1}`,
+        worldId: aggregate.state.world.id,
+        teamId: "card-shortcut-team",
+        personId,
+        joinedDate: { ...aggregate.state.world.currentDate },
+        leftDate: null,
+        active: true,
+      });
+    }
+  });
+
+  const card = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const team = card.availableTeams.find((candidate) => candidate.teamId === "card-shortcut-team");
+  ok(team?.name === "Card Shortcut Team", "Show Builder did not expose the established team shortcut");
+  ok(
+    [...(team?.memberIds ?? [])].sort().join(":") === [first, second].sort().join(":"),
+    "Show Builder team shortcut did not preserve the team's two wrestler participants",
+  );
+});
+
 await test("Alpha browser card booking persists a complete card, title assignment and materializes both", async () => {
   const fixture = await reservedShowFixture(61011);
   const beforeCard = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
