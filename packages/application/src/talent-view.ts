@@ -26,6 +26,7 @@ import {
   wrestlerAlignmentForPromotion,
   wrestlerPromotionAffiliationsForPerson,
 } from "../../sim-core/src/index.js";
+import { talentIsWatched } from "./engagement.js";
 import {
   activePromotionControlForPlayer,
   activeWorldMembership,
@@ -101,6 +102,7 @@ export interface PlayerRosterContractView extends PlayerPublicTalentIdentityView
 export interface PlayerTalentMarketView extends PlayerPublicTalentIdentityView {
   alignment: WrestlerAlignment;
   interest: RecruitmentInterestBand;
+  watched: boolean;
   skills: PlayerTalentSkillsView;
   estimatedWeeklyValue: number;
   availability: "FREE_AGENT" | "NON_EXCLUSIVE";
@@ -351,6 +353,7 @@ export function buildPlayerTalentManagementView(
         ...publicTalentIdentity(aggregate, person),
         alignment,
         interest: recruitmentInterestBand(aggregate.state, promotion, person),
+        watched: talentIsWatched(aggregate.engagement, playerId, person.id),
         skills: publicSkills(person),
         estimatedWeeklyValue: marketWeeklyValue(person),
         availability: activeOutside.length > 0 ? "NON_EXCLUSIVE" : "FREE_AGENT",
