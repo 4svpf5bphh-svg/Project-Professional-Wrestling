@@ -6,6 +6,7 @@ import {
   createWorldPlanningState,
   createWorldRuntimeState,
   lockPersistedWorldForResolution,
+  lockScheduledShowCommitments,
   resolveScheduledWorldCycle,
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
@@ -42,6 +43,73 @@ function fixture(seed: number): ApplicationWorldAggregate {
     planning: createWorldPlanningState(state.world.id),
   };
 }
+
+await test("scheduled commitment lock freezes show commitments without advancing the World", async () => {
+  const aggregate = fixture(18010);
+  const repository = new InMemoryApplicationWorldRepository();
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+
+  const result = await lockScheduledShowCommitments(repository, worldId, "2026-10-04");
+  const after = await repository.load(worldId);
+
+  ok(result.status === "COMMITTED", "first scheduled commitment cycle did not commit");
+  ok(after.runtime.phase === "OPEN", "commitment scheduler closed the World");
+  ok(after.runtime.commitmentLockedPpwDate?.week === 1, "commitment scheduler did not lock the current PPW week");
+  ok(after.runtime.commitmentLockedRealCycleKey === "2026-10-04", "commitment scheduler did not persist its cycle key");
+  ok(after.state.world.currentDate.week === 1, "commitment scheduler advanced the PPW week");
+});
+
+await test("duplicate scheduled commitment delivery is harmless before World lock", async () => {
+  const aggregate = fixture(18011);
+  const repository = new InMemoryApplicationWorldRepository();
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+
+  await lockScheduledShowCommitments(repository, worldId, "2026-10-04");
+  const first = await repository.load(worldId);
+  const duplicate = await lockScheduledShowCommitments(repository, worldId, "2026-10-04");
+  const after = await repository.load(worldId);
+
+  ok(duplicate.status === "ALREADY_COMMITTED", "duplicate commitment delivery was not recognized");
+  ok(after.runtime.phase === "OPEN", "duplicate commitment delivery changed World phase");
+  ok(after.runtime.revision === first.runtime.revision, "duplicate commitment delivery changed World revision");
+  ok(after.state.world.currentDate.week === 1, "duplicate commitment delivery advanced the PPW week");
+});
+
+await test("World resolution follows an earlier commitment lock and clears it", async () => {
+  const aggregate = fixture(18012);
+  const repository = new InMemoryApplicationWorldRepository();
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+
+  await lockScheduledShowCommitments(repository, worldId, "2026-10-04");
+  const committed = await repository.load(worldId);
+  ok(committed.runtime.phase === "OPEN", "commitment boundary did not leave World open");
+
+  const result = await resolveScheduledWorldCycle(repository, worldId, "2026-10-04");
+  const after = await repository.load(worldId);
+
+  ok(result.status === "RESOLVED", "World lock did not resolve after commitment boundary");
+  ok(after.state.world.currentDate.week === 2, "World resolution after commitment lock did not advance exactly one week");
+  ok(after.runtime.commitmentLockedPpwDate === null, "resolved World retained the prior commitment lock");
+  ok(after.runtime.commitmentLockedRealCycleKey === null, "resolved World retained the prior commitment cycle key");
+  ok(after.runtime.lastResolvedRealCycleKey === "2026-10-04", "World resolution did not record the resolved cycle");
+});
+
+await test("commitment scheduler backs away after the same cycle has already resolved", async () => {
+  const aggregate = fixture(18013);
+  const repository = new InMemoryApplicationWorldRepository();
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+
+  await resolveScheduledWorldCycle(repository, worldId, "2026-10-04");
+  const result = await lockScheduledShowCommitments(repository, worldId, "2026-10-04");
+  const after = await repository.load(worldId);
+
+  ok(result.status === "ALREADY_RESOLVED", "late commitment delivery was not treated as already resolved");
+  ok(after.state.world.currentDate.week === 2, "late commitment delivery altered the resolved World");
+});
 
 await test("scheduled resolver advances exactly one week for a new UTC cycle", async () => {
   const aggregate = fixture(18001);
