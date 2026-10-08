@@ -246,14 +246,14 @@ test("wrestler relationship foundation rejects self-links and impossible values"
 test("reviewed real tag teams seed as ordinary Team entities with partner relationships", () => {
   const state = createWorld(
     109,
-    DEFAULT_RULESET,
+    REAL_WORLD_ALPHA_RULESET,
     "Established Team Seed",
-    calibratedRealActiveMensRosterSource,
+    calibratedRealActiveMixedRosterSource,
   );
   const teamsBefore = state.teams?.length ?? 0;
   const seededIds = seedRealActiveTagTeams(state);
 
-  equal(REAL_ACTIVE_TAG_TEAMS_REVIEWED_ON, "2026-10-07");
+  equal(REAL_ACTIVE_TAG_TEAMS_REVIEWED_ON, "2026-10-08");
   equal(seededIds.length, REAL_ACTIVE_TAG_TEAM_TEMPLATES.length);
   equal((state.teams?.length ?? 0) - teamsBefore, REAL_ACTIVE_TAG_TEAM_TEMPLATES.length);
 
@@ -279,14 +279,20 @@ test("reviewed real tag teams seed as ordinary Team entities with partner relati
 
   const ledgerCount = state.ledger.filter((entry) => entry.type === "TAG_TEAM_PRESENT_AT_GENESIS").length;
   equal(ledgerCount, REAL_ACTIVE_TAG_TEAM_TEMPLATES.length);
+  ok(state.teams?.some((team) => team.name === "JetSpeed"), "JetSpeed was not seeded");
+  ok(state.teams?.some((team) => team.name === "The Elegance Brand"), "women's TNA team was not seeded");
+  ok(state.teams?.some((team) => team.name === "FWC"), "STARDOM team was not seeded");
+  const bellas = state.people.filter((person) => person.name === "Brie Bella" || person.name === "Nikki Bella");
+  const bellaRelationship = wrestlerRelationshipBetween(state, bellas[0]!.id, bellas[1]!.id);
+  ok(bellaRelationship?.tags.includes("FAMILY"), "Bella Twins relationship lacks FAMILY");
 });
 
 test("real tag-team seeding is idempotent and does not duplicate teams or genesis history", () => {
   const state = createWorld(
     110,
-    DEFAULT_RULESET,
+    REAL_WORLD_ALPHA_RULESET,
     "Established Team Idempotency",
-    calibratedRealActiveMensRosterSource,
+    calibratedRealActiveMixedRosterSource,
   );
   seedRealActiveTagTeams(state);
   const teamCount = state.teams?.length ?? 0;

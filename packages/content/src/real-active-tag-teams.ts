@@ -1,10 +1,11 @@
 import type { WorldState, WrestlerRelationshipTag } from "../../domain/src/types.js";
 import { seedEstablishedTagTeam } from "../../sim-core/src/team-seeding.js";
 import { REAL_ACTIVE_MENS_ROSTER_NAMES } from "./real-active-mens-roster.js";
+import { REAL_ACTIVE_WOMENS_ROSTER_NAMES } from "./real-active-womens-roster.js";
 
-export const REAL_ACTIVE_TAG_TEAMS_REVIEWED_ON = "2026-10-07";
+export const REAL_ACTIVE_TAG_TEAMS_REVIEWED_ON = "2026-10-08";
 
-export type RealTagTeamPromotionKey = "WWE" | "AEW" | "TNA";
+export type RealTagTeamPromotionKey = "WWE" | "AEW" | "TNA" | "NXT" | "NJPW" | "STARDOM";
 
 export interface RealActiveTagTeamTemplate {
   name: string;
@@ -54,9 +55,48 @@ export const REAL_ACTIVE_TAG_TEAM_TEMPLATES: readonly RealActiveTagTeamTemplate[
     promotionKey: "TNA",
     relationshipTags: ["FAMILY"],
   },
+  {
+    name: "JetSpeed",
+    members: ["Kevin Knight", "Mike Bailey"],
+    promotionKey: "AEW",
+    relationshipTags: [],
+  },
+  {
+    name: "TMDK",
+    members: ["Mikey Nicholls", "Shane Haste"],
+    promotionKey: "NJPW",
+    relationshipTags: [],
+  },
+  {
+    name: "The Elegance Brand",
+    members: ["M By Elegance", "Heather By Elegance"],
+    promotionKey: "TNA",
+    relationshipTags: [],
+  },
+  {
+    name: "ZaRuca",
+    members: ["Sol Ruca", "Zaria"],
+    promotionKey: "NXT",
+    relationshipTags: [],
+  },
+  {
+    name: "FWC",
+    members: ["Hazuki", "Koguma"],
+    promotionKey: "STARDOM",
+    relationshipTags: [],
+  },
+  {
+    name: "The Bella Twins",
+    members: ["Brie Bella", "Nikki Bella"],
+    promotionKey: "WWE",
+    relationshipTags: ["FAMILY"],
+  },
 ] as const;
 
-const rosterNames = new Set(REAL_ACTIVE_MENS_ROSTER_NAMES);
+const rosterNames = new Set([
+  ...REAL_ACTIVE_MENS_ROSTER_NAMES,
+  ...REAL_ACTIVE_WOMENS_ROSTER_NAMES,
+]);
 const teamNames = new Set<string>();
 const pairKeys = new Set<string>();
 for (const template of REAL_ACTIVE_TAG_TEAM_TEMPLATES) {
@@ -65,7 +105,7 @@ for (const template of REAL_ACTIVE_TAG_TEAM_TEMPLATES) {
   teamNames.add(normalizedTeamName);
   const [left, right] = template.members;
   if (!rosterNames.has(left) || !rosterNames.has(right)) {
-    throw new Error(`real tag-team ${template.name} references a wrestler outside the reviewed men's roster`);
+    throw new Error(`real tag-team ${template.name} references a wrestler outside the reviewed mixed roster`);
   }
   const pairKey = [left, right].sort().join("::");
   if (pairKeys.has(pairKey)) throw new Error(`duplicate real tag-team pair ${pairKey}`);
