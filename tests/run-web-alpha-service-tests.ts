@@ -172,6 +172,12 @@ await test("Alpha claim travels through the transactional command path and survi
   ok(after.promotion?.weekReadiness.status !== undefined, "claimed dashboard did not expose week readiness");
   ok((after.promotion?.showPlanning.markets.length ?? 0) > 0, "claimed dashboard did not expose planning markets");
 
+  const planner = await loadAlphaPlayerPlanner(repository, worldId, "alpha-player");
+  ok(
+    (planner.promotion?.weeks ?? []).every((week) => week.maxParticipants >= 20),
+    "Alpha takeover promotion did not receive the temporary Reality Check show-cap override",
+  );
+
   const persisted = await repository.load(worldId);
   ok(persisted.ownership.promotionControls.length === 1, "claim did not persist exactly one promotion control");
   ok(persisted.commands.receipts.length === 1, "claim did not persist exactly one command receipt");
