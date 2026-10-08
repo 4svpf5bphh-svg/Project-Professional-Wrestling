@@ -1,6 +1,9 @@
 declare const process: { exitCode?: number };
 
-import { lockPersistedWorldForResolution } from "../packages/application/src/index.js";
+import {
+  lockPersistedCurrentWeekShowCommitments,
+  lockPersistedWorldForResolution,
+} from "../packages/application/src/index.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
 import {
@@ -122,6 +125,26 @@ await test("Alpha web service bootstraps and exposes a player-safe promotion cho
   ok((aggregate.state.wrestlerRelationships?.length ?? 0) >= 20, "Alpha did not seed reviewed wrestler relationships");
   ok(view.availableIndependentPromotions.length > 0, "no eligible Independent promotion choices were exposed");
   ok(view.promotion === null, "fresh Alpha session unexpectedly exposed a controlled promotion dashboard");
+});
+
+await test("Alpha session reflects persisted current-week show commitment state", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 61010, playerId: "alpha-player" });
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+
+  const before = await loadAlphaPlayerSession(repository, worldId, "alpha-player");
+  ok(before.world.showCommitmentsLocked === false, "fresh session unexpectedly showed commitments locked");
+
+  await lockPersistedCurrentWeekShowCommitments(
+    repository,
+    worldId,
+    before.world.revision,
+    "2026-10-04",
+  );
+  const after = await loadAlphaPlayerSession(repository, worldId, "alpha-player");
+  ok(after.world.showCommitmentsLocked === true, "session did not expose persisted commitment lock");
+  ok(after.world.phase === "OPEN", "commitment state projection incorrectly closed the World");
 });
 
 await test("Alpha claim travels through the transactional command path and survives reload", async () => {
