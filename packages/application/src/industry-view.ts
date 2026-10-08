@@ -6,6 +6,7 @@ import type {
   PromotionTier,
   PpwDate,
   WrestlingEventType,
+  WrestlerDivision,
 } from "../../domain/src/types.js";
 import {
   currentRosterPersonIds,
@@ -27,6 +28,7 @@ export interface PlayerIndustryStandingView {
 export interface PlayerIndustryTalentView {
   personId: Id;
   name: string;
+  division: WrestlerDivision;
   careerStage: CareerStage;
   popularity: number;
   recognition: number;
@@ -153,6 +155,7 @@ export function buildPlayerIndustryView(
       .map((person): PlayerIndustryTalentView => ({
         personId: person.id,
         name: person.name,
+        division: person.division ?? "MEN",
         careerStage: person.careerStage,
         popularity: person.popularity,
         recognition: person.recognition,
