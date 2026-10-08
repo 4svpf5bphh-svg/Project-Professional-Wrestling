@@ -17,6 +17,7 @@ import {
   activeContractsForPromotion,
   comparePpwDates,
   contractIsActive,
+  currentRosterPersonIds,
   marketWeeklyValue,
   ppwDateToWeekIndex,
   promotionAlignmentChangeContext,
@@ -108,6 +109,35 @@ export interface PlayerTalentMarketView extends PlayerPublicTalentIdentityView {
   availability: "FREE_AGENT" | "NON_EXCLUSIVE";
   injury: PlayerTalentInjuryView | null;
   hasOurPendingOffer: boolean;
+}
+
+export type PlayerTalentDirectoryStatus =
+  | "YOUR_ROSTER"
+  | "FREE_AGENT"
+  | "NON_EXCLUSIVE"
+  | "EXCLUSIVE"
+  | "RETIRED";
+
+export interface PlayerTalentDirectoryEntryView extends PlayerPublicTalentIdentityView {
+  directoryStatus: PlayerTalentDirectoryStatus;
+  watched: boolean;
+}
+
+export interface PlayerTalentDirectoryView {
+  world: {
+    worldId: Id;
+    name: string;
+    currentDate: PpwDate;
+  };
+  player: {
+    playerId: string;
+    promotionId: Id | null;
+  };
+  promotion: {
+    promotionId: Id;
+    name: string;
+  } | null;
+  entries: PlayerTalentDirectoryEntryView[];
 }
 
 export interface PlayerPendingContractOfferView {
@@ -254,6 +284,56 @@ function signedCurrentOrFutureContracts(
       aggregate.state.ruleset.weeksPerYear,
     ) >= 0
   ));
+}
+
+export function buildPlayerTalentDirectoryView(
+  aggregate: ApplicationWorldAggregate,
+  playerId: string,
+): PlayerTalentDirectoryView {
+  const membership = activeWorldMembership(aggregate.ownership, playerId);
+  if (!membership) throw new Error(`${playerId} is not an active member of ${aggregate.state.world.id}`);
+  const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
+  const currentDate = { ...aggregate.state.world.currentDate };
+  const promotion = control
+    ? aggregate.state.promotions.find((candidate) => candidate.id === control.promotionId) ?? null
+    : null;
+  const ownRosterIds = promotion
+    ? new Set(currentRosterPersonIds(aggregate.state, promotion.id))
+    : new Set<Id>();
+
+  const entries = aggregate.state.people
+    .map((person): PlayerTalentDirectoryEntryView => {
+      const signed = signedCurrentOrFutureContracts(aggregate, person.id);
+      const active = activeContractsForPerson(aggregate.state, person.id)
+        .filter((contract) => contractIsActive(aggregate.state, contract));
+      const directoryStatus: PlayerTalentDirectoryStatus = person.status === "RETIRED"
+        ? "RETIRED"
+        : ownRosterIds.has(person.id)
+          ? "YOUR_ROSTER"
+          : signed.some((contract) => contract.exclusivity === "EXCLUSIVE")
+            ? "EXCLUSIVE"
+            : active.length > 0
+              ? "NON_EXCLUSIVE"
+              : "FREE_AGENT";
+
+      return {
+        ...publicTalentIdentity(aggregate, person),
+        directoryStatus,
+        watched: talentIsWatched(aggregate.engagement, playerId, person.id),
+      };
+    })
+    .sort((left, right) => (
+      right.popularity - left.popularity
+      || right.recognition - left.recognition
+      || left.name.localeCompare(right.name)
+    ));
+
+  return {
+    world: { worldId: aggregate.state.world.id, name: aggregate.state.world.name, currentDate },
+    player: { playerId: membership.playerId, promotionId: promotion?.id ?? null },
+    promotion: promotion ? { promotionId: promotion.id, name: promotion.name } : null,
+    entries,
+  };
 }
 
 /**
