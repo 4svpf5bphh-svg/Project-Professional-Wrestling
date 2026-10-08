@@ -40,8 +40,8 @@ await test("Talent service submits a recruitment offer through the idempotent ap
   const aggregate = createAlphaWorldAggregate({ seed: 73001, playerId: "player-a" });
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
-  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
-  if (!independent) throw new Error("fixture has no Independent promotion");
+  const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("fixture has no takeover-eligible promotion");
   await claimAlphaPromotion(repository, worldId, "player-a", {
     promotionId: independent.id,
     requestId: "talent-claim-recruitment",
@@ -81,7 +81,7 @@ await test("Talent service submits a recruitment offer through the idempotent ap
 await test("Talent service stores promotion-specific alignment without rewriting the wrestler globally", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 73004, playerId: "player-a" });
-  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
+  const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
   const rival = aggregate.state.promotions.find((promotion) => promotion.id !== independent?.id && promotion.lifecycle === "ACTIVE");
   if (!independent || !rival) throw new Error("alignment fixture lacks promotions");
   await repository.initialize(aggregate);
@@ -141,10 +141,10 @@ await test("Talent service stores promotion-specific alignment without rewriting
 await test("Talent service renews only inside the renewal window and starts after the current deal", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 73002, playerId: "player-a" });
-  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
-  if (!independent) throw new Error("fixture has no Independent promotion");
+  const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("fixture has no takeover-eligible promotion");
   const source = aggregate.state.contracts.find((contract) => contract.promotionId === independent.id && contract.status === "SIGNED");
-  if (!source) throw new Error("fixture Independent promotion has no signed contract");
+  if (!source) throw new Error("fixture takeover promotion has no signed contract");
   source.endDate = addPpwWeeks(aggregate.state.world.currentDate, 2, aggregate.state.ruleset.weeksPerYear);
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
@@ -188,14 +188,14 @@ await test("Talent service renews only inside the renewal window and starts afte
 await test("Talent service opens renegotiation when purchased dates are exhausted", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 73005, playerId: "player-a" });
-  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
-  if (!independent) throw new Error("fixture has no Independent promotion");
+  const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("fixture has no takeover-eligible promotion");
   const source = aggregate.state.contracts.find((contract) => (
     contract.promotionId === independent.id
     && contract.status === "SIGNED"
     && contract.family !== "ONE_OFF"
   ));
-  if (!source) throw new Error("fixture Independent promotion has no limited-date contract");
+  if (!source) throw new Error("fixture takeover promotion has no limited-date contract");
   source.datesUsed = source.dateEntitlement;
   source.endDate = addPpwWeeks(aggregate.state.world.currentDate, aggregate.state.ruleset.renewalWindowWeeks + 6, aggregate.state.ruleset.weeksPerYear);
   await repository.initialize(aggregate);
@@ -262,8 +262,8 @@ await test("Talent service opens renegotiation when purchased dates are exhauste
 await test("Talent service rejects a renewal against another promotion's private contract", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 73003, playerId: "player-a" });
-  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
-  if (!independent) throw new Error("fixture has no Independent promotion");
+  const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("fixture has no takeover-eligible promotion");
   const rivalContract = aggregate.state.contracts.find((contract) => contract.promotionId !== independent.id && contract.status === "SIGNED");
   if (!rivalContract) throw new Error("fixture has no rival contract");
   await repository.initialize(aggregate);
