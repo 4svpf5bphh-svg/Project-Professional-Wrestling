@@ -18,7 +18,10 @@ import type {
   PromotionPlanningWorkspace,
   WorldPlanningState,
 } from "./planning.js";
-import type { WorldRuntimeState } from "./runtime.js";
+import {
+  currentWeekShowCommitmentsLocked,
+  type WorldRuntimeState,
+} from "./runtime.js";
 
 export type PlayerShowPlanningState =
   | "DRAFT"
@@ -113,8 +116,12 @@ function planningActions(
   phase: WorldRuntimeState["phase"],
   state: PlayerShowPlanningState,
   relation: "PAST" | "CURRENT" | "FUTURE",
+  currentWeekCommitmentsLocked: boolean,
 ): PlayerShowPlanningAction[] {
   if (phase !== "OPEN" || relation === "PAST") return [];
+  if (relation === "CURRENT" && currentWeekCommitmentsLocked) {
+    return state === "MATERIALIZED" || state === "READY_TO_LOCK" ? ["EDIT_CARD"] : [];
+  }
   if (state === "DRAFT") return ["EDIT_DRAFT", "DELETE_DRAFT", "RESERVE"];
   if (state === "RESERVED" || state === "AT_RISK") {
     return ["EDIT_DRAFT", "REFRESH_RESERVATION", "RELEASE_RESERVATION"];
@@ -182,6 +189,15 @@ function lockedTargetMatches(runtime: WorldRuntimeState, targetDate: PpwDate): b
     && samePpwWeek(runtime.lockedPpwDate, targetDate);
 }
 
+function commitmentLockedTargetMatches(
+  state: WorldState,
+  runtime: WorldRuntimeState,
+  targetDate: PpwDate,
+): boolean {
+  return currentWeekShowCommitmentsLocked(runtime, state)
+    && samePpwWeek(state.world.currentDate, targetDate);
+}
+
 export function playerShowPlanningStatus(
   state: WorldState,
   planning: WorldPlanningState,
@@ -219,7 +235,10 @@ export function playerShowPlanningStatus(
       planningState = "MATERIALIZED";
       readiness = weekReadiness ?? (relation === "FUTURE" ? "FUTURE" : relation === "PAST" ? "PAST" : "CARD_REQUIRED");
     }
-  } else if (lockedTargetMatches(runtime, draft.targetDate)) {
+  } else if (
+    lockedTargetMatches(runtime, draft.targetDate)
+    || commitmentLockedTargetMatches(state, runtime, draft.targetDate)
+  ) {
     planningState = "STAFF_OWNED";
     readiness = "STAFF_OWNED";
   } else {
@@ -246,7 +265,12 @@ export function playerShowPlanningStatus(
     reservedPlanVersion,
     workspaceChangedSinceReservation: reservedPlanVersion !== null && workspace.version !== reservedPlanVersion,
     worldPhase: runtime.phase,
-    availableActions: planningActions(runtime.phase, planningState, relation),
+    availableActions: planningActions(
+      runtime.phase,
+      planningState,
+      relation,
+      currentWeekShowCommitmentsLocked(runtime, state),
+    ),
   };
 }
 
