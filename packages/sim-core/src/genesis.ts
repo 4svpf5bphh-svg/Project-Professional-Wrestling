@@ -182,7 +182,7 @@ export function createWorld(
       payload: { name: promotion.name, tier: promotion.tier },
     });
   }
-  const targetContracted = Math.floor(people.length * ruleset.initialContractedTalentRatio);
+  const baselineTargetContracted = Math.floor(people.length * ruleset.initialContractedTalentRatio);
   const seededAssignments = validateInitialRosterAssignments(
     state,
     initialRosterAssignmentSource({
@@ -228,6 +228,26 @@ export function createWorld(
     createSignedContract(state, person, promotion, { ...terms, signingBonus: 0 }, null, true);
   }
 
+  const takeoverMinimumRoster = new Map(
+    promotions
+      .filter((promotion) => promotion.playerTakeoverEligibility === "STANDARD")
+      .map((promotion) => [
+        promotion.id,
+        Math.ceil(targetRosterSize(promotion) * 0.75),
+      ] as const),
+  );
+  const takeoverMinimumAdditional = [...takeoverMinimumRoster.entries()]
+    .reduce((sum, [promotionId, minimum]) => (
+      sum + Math.max(0, minimum - (assigned.get(promotionId) ?? 0))
+    ), 0);
+  const targetContracted = Math.min(
+    people.length,
+    Math.max(
+      baselineTargetContracted,
+      seededPersonIds.size + takeoverMinimumAdditional,
+    ),
+  );
+
   const sortedByValue = people
     .filter((person) => !seededPersonIds.has(person.id))
     .sort((a, b) => (
@@ -237,7 +257,14 @@ export function createWorld(
     ) || a.id.localeCompare(b.id));
   const quotas = rosterQuotas(promotions, targetContracted);
   for (const promotion of promotions) {
-    quotas.set(promotion.id, Math.max(quotas.get(promotion.id) ?? 0, assigned.get(promotion.id) ?? 0));
+    quotas.set(
+      promotion.id,
+      Math.max(
+        quotas.get(promotion.id) ?? 0,
+        assigned.get(promotion.id) ?? 0,
+        takeoverMinimumRoster.get(promotion.id) ?? 0,
+      ),
+    );
   }
   const requiredContractSlots = targetContracted + Math.max(0, seededAssignments.length - seededPersonIds.size);
   let quotaShortfall = requiredContractSlots - [...quotas.values()].reduce((sum, value) => sum + value, 0);
