@@ -19,6 +19,12 @@ export interface AttentionDismissalRecord {
   dismissedAtRevision: number;
 }
 
+export interface TalentWatchRecord {
+  playerId: string;
+  personId: Id;
+  addedAtRevision: number;
+}
+
 export interface OpportunityRecord {
   opportunityId: string;
   worldId: Id;
@@ -49,6 +55,7 @@ export interface WorldEngagementState {
   worldId: Id;
   playerActivity: PlayerActivityRecord[];
   attentionDismissals: AttentionDismissalRecord[];
+  talentWatchlist: TalentWatchRecord[];
   opportunities: OpportunityRecord[];
   stewardshipExitRequests: StewardshipExitRequest[];
 }
@@ -106,6 +113,7 @@ export function createWorldEngagementState(worldId: Id): WorldEngagementState {
     worldId,
     playerActivity: [],
     attentionDismissals: [],
+    talentWatchlist: [],
     opportunities: [],
     stewardshipExitRequests: [],
   };
@@ -126,6 +134,7 @@ export function normalizeWorldEngagementState(
       statusSinceCycleKey: record.statusSinceCycleKey ?? null,
     })),
     attentionDismissals: (input.attentionDismissals ?? []).map((record) => ({ ...record })),
+    talentWatchlist: (input.talentWatchlist ?? []).map((record) => ({ ...record })),
     opportunities: (input.opportunities ?? []).map((record) => ({
       ...record,
       createdDate: cloneDate(record.createdDate),
@@ -277,4 +286,57 @@ export function attentionIsDismissed(
   return engagement.attentionDismissals.some((record) => (
     record.playerId === playerId && record.attentionId === attentionId
   ));
+}
+
+
+export function talentWatchlistForPlayer(
+  engagement: WorldEngagementState,
+  playerId: string,
+): TalentWatchRecord[] {
+  const normalizedPlayerId = normalizedNonEmpty(playerId, "playerId");
+  return engagement.talentWatchlist.filter((record) => record.playerId === normalizedPlayerId);
+}
+
+export function talentIsWatched(
+  engagement: WorldEngagementState | undefined,
+  playerId: string,
+  personId: Id,
+): boolean {
+  if (!engagement) return false;
+  const normalizedPlayerId = normalizedNonEmpty(playerId, "playerId");
+  return engagement.talentWatchlist.some((record) => (
+    record.playerId === normalizedPlayerId && record.personId === personId
+  ));
+}
+
+export function setTalentWatched(
+  engagement: WorldEngagementState,
+  playerId: string,
+  personId: Id,
+  watched: boolean,
+  worldRevision: number,
+): void {
+  const normalizedPlayerId = normalizedNonEmpty(playerId, "playerId");
+  const normalizedPersonId = normalizedNonEmpty(personId, "personId");
+  if (!Number.isSafeInteger(worldRevision) || worldRevision < 0) throw new Error("watchlist World revision is invalid");
+
+  const index = engagement.talentWatchlist.findIndex((record) => (
+    record.playerId === normalizedPlayerId && record.personId === normalizedPersonId
+  ));
+
+  if (!watched) {
+    if (index >= 0) engagement.talentWatchlist.splice(index, 1);
+    return;
+  }
+
+  if (index >= 0) {
+    engagement.talentWatchlist[index]!.addedAtRevision = worldRevision;
+    return;
+  }
+
+  engagement.talentWatchlist.push({
+    playerId: normalizedPlayerId,
+    personId: normalizedPersonId,
+    addedAtRevision: worldRevision,
+  });
 }

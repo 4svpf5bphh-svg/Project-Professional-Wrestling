@@ -9,6 +9,8 @@
 .overview,
 .tabs,
 .search,
+.rosterToolbar,
+.marketToolbar,
 .list,
 .error,
 .notice,
@@ -298,6 +300,424 @@
   gap: 10px;
 }
 
+.rosterToolbar {
+  position: sticky;
+  top: max(0px, env(safe-area-inset-top));
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(210px, auto);
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 12px;
+  border: 1px solid rgba(129, 187, 181, .16);
+  border-radius: 14px;
+  background: rgba(7, 16, 20, .97);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .24);
+  padding: 9px;
+}
+
+.marketToolbar {
+  position: sticky;
+  top: max(0px, env(safe-area-inset-top));
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(230px, auto);
+  gap: 8px;
+  align-items: end;
+  margin-bottom: 12px;
+  border: 1px solid rgba(129, 187, 181, .16);
+  border-radius: 14px;
+  background: rgba(7, 16, 20, .97);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .24);
+  padding: 9px;
+}
+
+.marketSearch,
+.marketSelects label {
+  display: grid;
+  gap: 4px;
+}
+
+.marketSearch > span,
+.marketSelects label > span {
+  color: #8da5a2;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.marketSearch input,
+.marketSelects select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(129, 187, 181, .2);
+  border-radius: 10px;
+  background: rgba(3, 12, 15, .82);
+  color: #edf7f5;
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.marketSearch input:focus,
+.marketSelects select:focus {
+  outline: 2px solid rgba(93, 233, 206, .28);
+  border-color: rgba(93, 233, 206, .45);
+}
+
+.marketSelects {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.marketQuickFilters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.watchFilter,
+.watchFilterActive,
+.watchButton,
+.watchButtonActive {
+  border: 1px solid rgba(129, 187, 181, .2);
+  border-radius: 999px;
+  background: rgba(12, 24, 28, .95);
+  color: #9eb4b2;
+  padding: 7px 9px;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.watchFilterActive,
+.watchButtonActive {
+  border-color: rgba(240, 194, 87, .58);
+  background: rgba(240, 194, 87, .1);
+  color: #f0c257;
+}
+
+.watchButton:disabled,
+.watchButtonActive:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.marketCount {
+  grid-column: 1 / -1;
+  color: #819894;
+  font-size: 10px;
+}
+
+.marketCount b {
+  color: #c9d9d6;
+}
+
+.rosterSearch,
+.rosterSelects label {
+  display: grid;
+  gap: 4px;
+}
+
+.rosterSearch > span,
+.rosterSelects label > span {
+  color: #8da5a2;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.rosterSearch input,
+.rosterSelects select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(129, 187, 181, .2);
+  border-radius: 10px;
+  background: rgba(3, 12, 15, .82);
+  color: #edf7f5;
+  padding: 9px 10px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.rosterSearch input:focus,
+.rosterSelects select:focus {
+  outline: 2px solid rgba(93, 233, 206, .28);
+  border-color: rgba(93, 233, 206, .45);
+}
+
+.divisionToggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+}
+
+.divisionButton,
+.divisionButtonActive {
+  border: 1px solid rgba(129, 187, 181, .18);
+  border-radius: 999px;
+  background: rgba(12, 24, 28, .95);
+  color: #9eb4b2;
+  padding: 8px 9px;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.divisionButtonActive {
+  border-color: rgba(93, 233, 206, .68);
+  background: rgba(93, 233, 206, .13);
+  color: #8ff5df;
+}
+
+.rosterSelects {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.rosterGroups {
+  display: grid;
+  gap: 12px;
+}
+
+.rosterGroup {
+  overflow: hidden;
+  border: 1px solid rgba(129, 187, 181, .14);
+  border-radius: 14px;
+  background: rgba(7, 16, 20, .56);
+}
+
+.rosterGroupHeader {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 0;
+  background: rgba(255, 255, 255, .035);
+  color: #edf7f5;
+  padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rosterGroupTitle {
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.rosterGroupMeta {
+  color: #829b97;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.rosterGroupList {
+  display: grid;
+  gap: 1px;
+  border-top: 1px solid rgba(129, 187, 181, .08);
+}
+
+.rosterCard {
+  border: 0;
+  border-bottom: 1px solid rgba(129, 187, 181, .08);
+  border-radius: 0;
+  box-shadow: none;
+  background: rgba(10, 22, 26, .76);
+}
+
+.rosterCard:last-child {
+  border-bottom: 0;
+}
+
+.rosterCard .summary {
+  min-height: 48px;
+  padding: 8px 10px;
+}
+
+.rosterCard .summary strong {
+  font-size: 14px;
+}
+
+.rosterCard .summary > div:first-child {
+  gap: 2px;
+}
+
+.rosterCard .summary > div:first-child > span:last-child {
+  color: #819894;
+  font-size: 10px;
+}
+
+.rosterCard .scoreBlock b {
+  font-size: 12px;
+}
+
+.rosterCard .scoreBlock small {
+  font-size: 9px;
+}
+
+.divisionBadge {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .055);
+  color: #b8cac7;
+  padding: 3px 6px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.marketList {
+  display: grid;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid rgba(129, 187, 181, .14);
+  border-radius: 14px;
+  background: rgba(7, 16, 20, .56);
+}
+
+.marketCard {
+  border: 0;
+  border-bottom: 1px solid rgba(129, 187, 181, .08);
+  border-radius: 0;
+  box-shadow: none;
+  background: rgba(10, 22, 26, .76);
+}
+
+.marketCard:last-child {
+  border-bottom: 0;
+}
+
+.marketSummary {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.marketSummary::-webkit-details-marker {
+  display: none;
+}
+
+.marketIdentity {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.marketIdentity strong {
+  font-size: 14px;
+}
+
+.marketIdentity > span {
+  overflow: hidden;
+  color: #819894;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marketQuick {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.marketQuick b {
+  color: #72ead3;
+  font-size: 12px;
+}
+.interestPositive,
+.interestNeutral,
+.interestLow {
+  border-radius: 999px;
+  padding: 3px 6px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.interestPositive {
+  background: rgba(93, 233, 206, .12);
+  color: #8ff5df;
+}
+
+.interestNeutral {
+  background: rgba(240, 194, 87, .1);
+  color: #f0c257;
+}
+
+.interestLow {
+  background: rgba(255, 140, 140, .09);
+  color: #ffaaa8;
+}
+
+.marketDetails {
+  border-top: 1px solid rgba(129, 187, 181, .08);
+  padding: 10px;
+}
+
+.marketFacts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.marketFacts span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .035);
+  padding: 7px 8px;
+  color: #8da5a2;
+  font-size: 10px;
+}
+
+.marketFacts b {
+  color: #dce9e6;
+}
+
+.marketAffiliation {
+  margin: 9px 0 0;
+  color: #819894;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.loadMore {
+  width: 100%;
+  border: 1px solid rgba(93, 233, 206, .24);
+  border-radius: 12px;
+  background: rgba(12, 24, 28, .92);
+  color: #72ead3;
+  padding: 11px 14px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
 .card {
   border: 1px solid rgba(129, 187, 181, .14);
   border-radius: 16px;
@@ -455,6 +875,14 @@
   margin: 0;
 }
 
+.marketActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
 .marketBottom {
   display: flex;
   align-items: center;
@@ -486,6 +914,27 @@
 }
 
 @media (max-width: 620px) {
+  .marketToolbar,
+  .rosterToolbar,
+  .marketToolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+  }
+
+  .rosterSearch,
+  .marketSearch {
+    min-width: 0;
+  }
+
+  .divisionToggle {
+    justify-content: flex-end;
+  }
+
+  .rosterSelects,
+  .marketSelects {
+    grid-column: 1 / -1;
+  }
+
   .header {
     align-items: center;
   }
@@ -520,6 +969,17 @@
     flex-direction: column;
   }
 
+  .marketActions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .marketActions .actionButton,
+  .marketActions .watchButton,
+  .marketActions .watchButtonActive {
+    flex: 1 1 auto;
+  }
+
   .primaryButton,
   .actionButton {
     width: 100%;
@@ -535,6 +995,33 @@
 }
 
 @media (max-width: 430px) {
+  .rosterToolbar,
+  .marketToolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .divisionToggle {
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+
+  .marketQuickFilters {
+    overflow-x: auto;
+  }
+
+  .rosterSelects,
+  .marketSelects {
+    grid-column: auto;
+  }
+
+  .marketSelects {
+    grid-template-columns: 1fr;
+  }
+
+  .marketFacts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .formGrid {
     grid-template-columns: 1fr;
   }

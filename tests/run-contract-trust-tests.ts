@@ -8,6 +8,7 @@ import {
   ensurePromotionTalentTrust,
   evaluateContractOffer,
   marketWeeklyValue,
+  recruitmentInterestBand,
 } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
@@ -81,6 +82,29 @@ function offerFor(
     signingBonus,
   };
 }
+
+test("recruitment interest improves with stronger promotion prestige and exposure", () => {
+  const state = createWorld(10500, DEFAULT_RULESET);
+  const promotion = state.promotions.find((candidate) => candidate.lifecycle === "ACTIVE")!;
+  const person = state.people.find((candidate) => candidate.status === "ACTIVE")!;
+  const rank = {
+    NOT_INTERESTED: 0,
+    LONG_SHOT: 1,
+    OPEN_TO_TALKS: 2,
+    INTERESTED: 3,
+    KEEN: 4,
+  } as const;
+
+  promotion.tier = "LOCAL";
+  promotion.mediaReach = 10;
+  const weak = recruitmentInterestBand(state, promotion, person);
+
+  promotion.tier = "GLOBAL";
+  promotion.mediaReach = 95;
+  const strong = recruitmentInterestBand(state, promotion, person);
+
+  ok(rank[strong] >= rank[weak], `stronger promotion reduced recruitment interest: ${weak} -> ${strong}`);
+});
 
 test("higher wrestler trust improves an otherwise identical contract offer", () => {
   const { state, person, promotion, relationship } = fixture(10501);

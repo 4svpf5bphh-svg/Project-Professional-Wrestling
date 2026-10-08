@@ -141,6 +141,13 @@ export interface AlphaRecentMeetingView {
   winnerPersonIds: Id[];
 }
 
+export interface AlphaCardTeamView {
+  teamId: Id;
+  name: string;
+  memberIds: [Id, Id];
+  memberNames: [string, string];
+}
+
 export interface AlphaCurrentWeekCardView {
   world: {
     worldId: Id;
@@ -165,6 +172,7 @@ export interface AlphaCurrentWeekCardView {
   venueName: string;
   participants: AlphaCardParticipantView[];
   availableParticipants: AlphaCardParticipantView[];
+  availableTeams: AlphaCardTeamView[];
   matches: AlphaCardMatchView[];
   segments: AlphaCardSegmentView[];
   runningOrder: AlphaCardSlotView[];
@@ -809,6 +817,26 @@ export async function loadAlphaShowCard(
     ? candidateParticipants
     : candidateParticipants.filter((person) => committedIds.has(person.personId));
   const availableById = new Map(availableParticipants.map((person) => [person.personId, person]));
+  const availableParticipantIds = new Set(availableParticipants.map((person) => person.personId));
+  const availableTeams = (aggregate.state.teams ?? [])
+    .filter((team) => team.status === "ACTIVE")
+    .map((team): AlphaCardTeamView | null => {
+      const memberIds = (aggregate.state.teamMemberships ?? [])
+        .filter((membership) => membership.teamId === team.id && membership.active)
+        .map((membership) => membership.personId)
+        .sort();
+      if (memberIds.length !== 2 || !memberIds.every((personId) => availableParticipantIds.has(personId))) return null;
+      const memberNames = memberIds.map((personId) => peopleById.get(personId)?.name ?? personId);
+      return {
+        teamId: team.id,
+        name: team.name,
+        memberIds: [memberIds[0]!, memberIds[1]!],
+        memberNames: [memberNames[0]!, memberNames[1]!],
+      };
+    })
+    .filter((team): team is AlphaCardTeamView => team !== null)
+    .sort((left, right) => left.name.localeCompare(right.name));
+
   const participants = draft.participantIds.map((personId) => {
     const available = availableById.get(personId);
     if (available) return { ...available };
@@ -912,6 +940,7 @@ export async function loadAlphaShowCard(
     venueName: venue?.name ?? draft.venueId ?? "Venue not selected",
     participants,
     availableParticipants,
+    availableTeams,
     matches: draft.matches.flatMap((match) => (
       match.intendedWinnerSide !== null && match.intent !== null && match.plannedLengthMinutes !== null
         ? [{

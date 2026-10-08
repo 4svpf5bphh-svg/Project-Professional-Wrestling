@@ -1,6 +1,7 @@
 declare const process: { exitCode?: number };
 
 import {
+  buildPlayerTalentDirectoryView,
   buildPlayerTalentManagementView,
   claimIndependentPromotionForPlayer,
   createWorldCommandState,
@@ -100,10 +101,20 @@ test("talent view exposes full own roster contracts and remains source-agnostic"
   const person = aggregate.state.people.find((candidate) => candidate.id === ownContract!.personId);
   ok(person, "own contract wrestler is missing");
   person!.name = "Roster Source Replacement";
+  person!.division = "WOMEN";
 
   const view = buildPlayerTalentManagementView(aggregate, "player-a");
   const rosterEntry = view.roster.find((entry) => entry.contractId === ownContract!.id);
   ok(rosterEntry?.name === "Roster Source Replacement", "talent projection did not read the current Person source/name");
+  ok(rosterEntry?.division === "WOMEN", "talent projection did not expose wrestler division");
+  ok(
+    rosterEntry?.employmentPromotions.some((entry) => entry.promotionId === promotionAId),
+    "own roster entry did not expose public employment promotion",
+  );
+  ok(
+    rosterEntry?.rosterAffiliations.some((entry) => entry.promotionId === promotionAId && entry.role === "PRIMARY"),
+    "contract-derived roster entry did not expose public roster affiliation",
+  );
   ok(rosterEntry?.contract.weeklyGuarantee === 1_234_567, "player could not see their own contract money");
   ok(view.player.promotionId === promotionAId, "talent projection returned the wrong controlled promotion");
 });
@@ -118,14 +129,62 @@ test("talent market can expose non-exclusive availability without leaking rival 
   rivalContract!.exclusivity = "NON_EXCLUSIVE";
   rivalContract!.weeklyGuarantee = 987_654_321;
   rivalContract!.appearanceFee = 876_543_210;
+  const rivalPerson = aggregate.state.people.find((person) => person.id === rivalContract!.personId);
+  ok(rivalPerson, "rival contract wrestler is missing");
+  rivalPerson!.division = "WOMEN";
 
   const view = buildPlayerTalentManagementView(aggregate, "player-a");
   const marketEntry = view.market.find((entry) => entry.personId === rivalContract!.personId);
   ok(marketEntry?.availability === "NON_EXCLUSIVE", "non-exclusive rival talent was not represented as market-available");
+  ok(
+    ["KEEN", "INTERESTED", "OPEN_TO_TALKS", "LONG_SHOT", "NOT_INTERESTED"].includes(marketEntry?.interest ?? ""),
+    "market entry did not expose a coarse recruitment-interest band",
+  );
+  ok(marketEntry?.division === "WOMEN", "market entry did not expose wrestler division");
+  ok(
+    marketEntry?.employmentPromotions.some((entry) => entry.promotionId === promotionBId),
+    "market entry did not expose the wrestler's public employment promotion",
+  );
+  ok(
+    marketEntry?.rosterAffiliations.some((entry) => entry.promotionId === promotionBId),
+    "market entry did not expose contract-derived public roster affiliation",
+  );
   const serialized = JSON.stringify(view);
   ok(!serialized.includes("987654321"), "rival weekly guarantee leaked into player talent view");
   ok(!serialized.includes("876543210"), "rival appearance fee leaked into player talent view");
   ok(!serialized.includes(rivalContract!.id), "rival contract ID leaked into player talent view");
+  ok(!serialized.includes("resolvedUtility"), "contract utility score leaked into player talent view");
+});
+
+test("global directory includes exclusive rival talent without private contract leakage", () => {
+  const { aggregate, promotionAId, promotionBId } = fixture(73006);
+  const ownPeople = new Set(activeContractsForPromotion(aggregate.state, promotionAId).map((contract) => contract.personId));
+  const rivalContract = activeContractsForPromotion(aggregate.state, promotionBId)
+    .find((contract) => !ownPeople.has(contract.personId));
+  ok(rivalContract, "fixture has no rival-only contract for directory test");
+  rivalContract!.family = "EXCLUSIVE";
+  rivalContract!.exclusivity = "EXCLUSIVE";
+  rivalContract!.weeklyGuarantee = 912_345_678;
+  rivalContract!.appearanceFee = 812_345_678;
+
+  const directory = buildPlayerTalentDirectoryView(aggregate, "player-a");
+  ok(directory.entries.length === aggregate.state.people.length, "global directory did not include the whole World population");
+
+  const entry = directory.entries.find((candidate) => candidate.personId === rivalContract!.personId);
+  ok(entry?.directoryStatus === "EXCLUSIVE", "exclusive rival wrestler was not visible as exclusive in Directory");
+  ok(
+    entry?.employmentPromotions.some((promotion) => promotion.promotionId === promotionBId),
+    "Directory did not expose rival wrestler's public employer",
+  );
+  ok(
+    entry?.rosterAffiliations.some((promotion) => promotion.promotionId === promotionBId),
+    "Directory did not expose rival wrestler's public roster affiliation",
+  );
+
+  const serialized = JSON.stringify(directory);
+  ok(!serialized.includes("912345678"), "rival weekly guarantee leaked into global Directory");
+  ok(!serialized.includes("812345678"), "rival appearance fee leaked into global Directory");
+  ok(!serialized.includes(rivalContract!.id), "rival contract ID leaked into global Directory");
 });
 
 test("pending contract offers are private to the controlling promotion", () => {

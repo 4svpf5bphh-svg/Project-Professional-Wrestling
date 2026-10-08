@@ -172,6 +172,12 @@ await test("Alpha claim travels through the transactional command path and survi
   ok(after.promotion?.weekReadiness.status !== undefined, "claimed dashboard did not expose week readiness");
   ok((after.promotion?.showPlanning.markets.length ?? 0) > 0, "claimed dashboard did not expose planning markets");
 
+  const planner = await loadAlphaPlayerPlanner(repository, worldId, "alpha-player");
+  ok(
+    (planner.promotion?.weeks ?? []).every((week) => week.maxParticipants >= 20),
+    "Alpha takeover promotion did not receive the temporary Reality Check show-cap override",
+  );
+
   const persisted = await repository.load(worldId);
   ok(persisted.ownership.promotionControls.length === 1, "claim did not persist exactly one promotion control");
   ok(persisted.commands.receipts.length === 1, "claim did not persist exactly one command receipt");
@@ -292,11 +298,22 @@ await test("future planner edits preserve an existing match card and refresh the
     const draft = workspace?.detailedShowDrafts.find((candidate) => candidate.targetDate.year === week.year && candidate.targetDate.week === week.week);
     if (!workspace || !draft) throw new Error("future planner draft missing before card preservation test");
     if (draft.participantIds.length < 2) throw new Error("future planner draft has too few wrestlers for card preservation test");
+    const participants = draft.participantIds
+      .map((personId) => current.state.people.find((person) => person.id === personId))
+      .filter((person): person is NonNullable<typeof person> => person !== undefined);
+    const pair = participants.find((person, index) => (
+      participants.slice(index + 1).some((candidate) => (candidate.division ?? "MEN") === (person.division ?? "MEN"))
+    ));
+    if (!pair) throw new Error("future planner draft has no same-division singles pair for card preservation test");
+    const opponent = participants.find((candidate) => (
+      candidate.id !== pair.id && (candidate.division ?? "MEN") === (pair.division ?? "MEN")
+    ));
+    if (!opponent) throw new Error("future planner draft has no same-division opponent for card preservation test");
     draft.matches.push({
       draftMatchId: "future-preserved-match",
       type: "SINGLES",
-      sideAIds: [draft.participantIds[0]!],
-      sideBIds: [draft.participantIds[1]!],
+      sideAIds: [pair.id],
+      sideBIds: [opponent.id],
       intendedWinnerSide: "A",
       intent: "COMPETITIVE",
       plannedLengthMinutes: 12,

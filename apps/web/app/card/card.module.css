@@ -233,6 +233,55 @@
   line-height: 1.45;
 }
 
+.saveBlockers {
+  margin-top: 12px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 191, 112, .3);
+  border-radius: 13px;
+  background: rgba(73, 46, 17, .2);
+  color: #ffd09b;
+}
+
+.saveBlockerHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.saveBlockerHeading strong {
+  font-size: 12px;
+}
+
+.saveBlockerHeading span {
+  color: #d6aa75;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.saveBlockers ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.saveBlockers li {
+  margin: 3px 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.saveReady {
+  margin-top: 12px;
+  padding: 9px 11px;
+  border: 1px solid rgba(101, 230, 173, .22);
+  border-radius: 12px;
+  background: rgba(18, 74, 52, .12);
+  color: #65e6ad;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .saveBar {
   position: sticky;
   bottom: calc(10px + env(safe-area-inset-bottom));
@@ -247,6 +296,14 @@
 
 .saveBar button {
   width: 100%;
+}
+
+.saveBarHint {
+  display: block;
+  margin: 7px 2px 0;
+  color: #9ba9b7;
+  text-align: center;
+  font-size: 10px;
 }
 
 .saved {

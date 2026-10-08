@@ -537,6 +537,57 @@ function relationshipLoyaltyScore(state: WorldState, person: Person, promotion: 
   return Math.max(0, Math.min(100, baseline + (trust - 50) * 0.3));
 }
 
+export type RecruitmentInterestBand =
+  | "KEEN"
+  | "INTERESTED"
+  | "OPEN_TO_TALKS"
+  | "LONG_SHOT"
+  | "NOT_INTERESTED";
+
+/**
+ * Pre-negotiation interest is a coarse reading of whether a wrestler would
+ * seriously consider a normal, market-level approach from this promotion.
+ *
+ * It deliberately reuses the real contract utility model. The hypothetical
+ * terms mirror the default human recruitment offer; exact offer terms,
+ * competing bids, capacity and weekly uncertainty can still change the outcome.
+ * Only the band should be exposed to players, never the utility score.
+ */
+export function recruitmentInterestBand(
+  state: WorldState,
+  promotion: Promotion,
+  person: Person,
+): RecruitmentInterestBand {
+  const market = Math.max(1, marketWeeklyValue(person));
+  const standardOffer: ContractOffer = {
+    id: `interest:${promotion.id}:${person.id}`,
+    worldId: state.world.id,
+    personId: person.id,
+    promotionId: promotion.id,
+    submittedDate: { ...state.world.currentDate },
+    status: "PENDING",
+    offerKind: "RECRUITMENT",
+    resolvedUtility: null,
+    rejectionReason: null,
+    family: "LIMITED_NON_EXCLUSIVE",
+    exclusivity: "NON_EXCLUSIVE",
+    roleExpectation: roleForPerson(person),
+    startDate: { ...state.world.currentDate },
+    endDate: addPpwWeeks(state.world.currentDate, 12, state.ruleset.weeksPerYear),
+    dateEntitlement: 5,
+    weeklyGuarantee: Math.round(market * 0.2),
+    appearanceFee: market,
+    signingBonus: market,
+  };
+  const utility = evaluateContractOffer(state, standardOffer);
+  const threshold = state.ruleset.offerAcceptanceThreshold;
+  if (utility >= threshold + 15) return "KEEN";
+  if (utility >= threshold + 7) return "INTERESTED";
+  if (utility >= threshold - 3) return "OPEN_TO_TALKS";
+  if (utility >= threshold - 12) return "LONG_SHOT";
+  return "NOT_INTERESTED";
+}
+
 export function evaluateContractOffer(state: WorldState, offer: ContractOffer): number {
   const person = state.people.find((candidate) => candidate.id === offer.personId);
   const promotion = state.promotions.find((candidate) => candidate.id === offer.promotionId);

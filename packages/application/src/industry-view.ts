@@ -6,9 +6,10 @@ import type {
   PromotionTier,
   PpwDate,
   WrestlingEventType,
+  WrestlerDivision,
 } from "../../domain/src/types.js";
 import {
-  activeContractsForPromotion,
+  currentRosterPersonIds,
   ppwDateToWeekIndex,
 } from "../../sim-core/src/index.js";
 import {
@@ -27,6 +28,7 @@ export interface PlayerIndustryStandingView {
 export interface PlayerIndustryTalentView {
   personId: Id;
   name: string;
+  division: WrestlerDivision;
   careerStage: CareerStage;
   popularity: number;
   recognition: number;
@@ -139,8 +141,7 @@ export function buildPlayerIndustryView(
 
   const promotions = aggregate.state.promotions.map((promotion): PlayerIndustryPromotionView => {
     const standing = standingsByPromotion.get(promotion.id) ?? null;
-    const activeContracts = activeContractsForPromotion(aggregate.state, promotion.id);
-    const rosterPeople = [...new Set(activeContracts.map((contract) => contract.personId))]
+    const rosterPeople = currentRosterPersonIds(aggregate.state, promotion.id)
       .map((personId) => peopleById.get(personId))
       .filter((person): person is NonNullable<typeof person> => person !== undefined);
     const featuredTalent = rosterPeople
@@ -154,6 +155,7 @@ export function buildPlayerIndustryView(
       .map((person): PlayerIndustryTalentView => ({
         personId: person.id,
         name: person.name,
+        division: person.division ?? "MEN",
         careerStage: person.careerStage,
         popularity: person.popularity,
         recognition: person.recognition,

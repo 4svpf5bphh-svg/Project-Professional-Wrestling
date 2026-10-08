@@ -2,7 +2,16 @@ import type { Person, Promotion, WorldState } from "../packages/domain/src/types
 import { REAL_WORLD_ALPHA_RULESET } from "../packages/config/src/real-world-ruleset.js";
 import { calibratedRealActiveMixedRosterSource } from "../packages/content/src/real-active-mixed-roster.js";
 import { realPromotionEcosystemSource } from "../packages/content/src/real-promotions.js";
-import { realWorldInitialRosterAssignmentSource } from "../packages/content/src/real-aew-roh-cmll-rosters.js";
+import {
+  REAL_WORLD_TAKEOVER_STARTUP_MEN,
+  REAL_WORLD_TAKEOVER_STARTUP_ROSTER_SIZE,
+  REAL_WORLD_TAKEOVER_STARTUP_WOMEN,
+  realWorldInitialRosterAssignmentSource,
+} from "../packages/content/src/real-aew-roh-cmll-rosters.js";
+import {
+  NXT_INITIAL_ROSTER_NAMES,
+  WWE_INITIAL_ROSTER_NAMES,
+} from "../packages/content/src/real-wwe-nxt-rosters.js";
 import { seedRealActiveTagTeams } from "../packages/content/src/real-active-tag-teams.js";
 import { seedRealWrestlerRelationships } from "../packages/content/src/real-wrestler-relationships.js";
 import { realRosterValueBand } from "../packages/content/src/real-active-mens-calibration.js";
@@ -162,6 +171,44 @@ const startErrors = validateWorldInvariants(start);
 ok(startErrors.length === 0, startErrors.join("\n"));
 
 const startSnapshot = snapshot(start);
+const wwe = start.promotions.find((promotion) => promotion.name === "WWE");
+const nxt = start.promotions.find((promotion) => promotion.name === "NXT");
+const roh = start.promotions.find((promotion) => promotion.name === "ROH");
+ok(wwe && nxt && roh, "audit World is missing WWE, NXT or ROH");
+const peopleByName = new Map(start.people.map((person) => [person.name, person]));
+const takeoverIds = new Set(
+  start.promotions
+    .filter((promotion) => promotion.playerTakeoverEligibility === "STANDARD")
+    .map((promotion) => promotion.id),
+);
+for (const name of [...WWE_INITIAL_ROSTER_NAMES, ...NXT_INITIAL_ROSTER_NAMES]) {
+  const person = peopleByName.get(name);
+  ok(person, `protected WWE-system identity missing from World: ${name}`);
+  const contracts = activeContractsForPerson(start, person!.id);
+  ok(
+    contracts.length === 1
+      && contracts[0]!.promotionId === wwe!.id
+      && contracts[0]!.exclusivity === "EXCLUSIVE",
+    `WWE-system identity is not exclusively protected by WWE at Genesis: ${name}`,
+  );
+  for (const takeoverId of takeoverIds) {
+    ok(
+      !currentRosterPersonIds(start, takeoverId).includes(person!.id),
+      `WWE-system identity leaked onto takeover roster at Genesis: ${name}`,
+    );
+  }
+}
+const wweRosterIds = new Set(currentRosterPersonIds(start, wwe!.id));
+const nxtRosterIds = new Set(currentRosterPersonIds(start, nxt!.id));
+for (const name of WWE_INITIAL_ROSTER_NAMES) {
+  ok(wweRosterIds.has(peopleByName.get(name)!.id), `WWE roster affiliation missing ${name}`);
+}
+for (const name of NXT_INITIAL_ROSTER_NAMES) {
+  ok(nxtRosterIds.has(peopleByName.get(name)!.id), `NXT roster affiliation missing ${name}`);
+}
+ok(nxtRosterIds.size > 0, "NXT explicit roster is empty at Genesis");
+ok(currentRosterPersonIds(start, roh!.id).length > 0, "ROH explicit roster is empty at Genesis");
+
 ok(startSnapshot.wrestlers === REAL_WORLD_ALPHA_RULESET.wrestlers, "audit World roster size drifted");
 ok(startSnapshot.realPromotions === 8, "audit World no longer has eight real promotions");
 ok(startSnapshot.takeoverPromotions === 5, "audit World no longer has five takeover promotions");
@@ -169,16 +216,27 @@ ok(startSnapshot.allTalent.accessible > 0, "audit World has no accessible talent
 ok(startSnapshot.men.accessible > 0 && startSnapshot.women.accessible > 0, "one division has no accessible talent");
 const startTakeovers = startSnapshot.promotions.filter((promotion) => promotion.takeover === "STANDARD");
 ok(
-  startTakeovers.every((promotion) => promotion.roster >= 18 && promotion.roster <= 32),
-  "a takeover promotion starts outside the healthy 18-32 wrestler runway",
+  startTakeovers.every((promotion) => promotion.roster === REAL_WORLD_TAKEOVER_STARTUP_ROSTER_SIZE),
+  "a takeover promotion does not start with the intended seeded roster size",
 );
-ok(startSnapshot.allTalent.free >= 180, "Genesis free-agent pool is too small");
-ok(startSnapshot.allTalent.accessible >= 425, "Genesis accessible talent pool is too small");
-ok(startSnapshot.men.accessible >= 280, "Genesis accessible men's pool is too small");
+ok(
+  startTakeovers.every((promotion) => promotion.men === REAL_WORLD_TAKEOVER_STARTUP_MEN),
+  "a takeover promotion does not start with the intended men's roster depth",
+);
+ok(
+  startTakeovers.every((promotion) => promotion.women === REAL_WORLD_TAKEOVER_STARTUP_WOMEN),
+  "a takeover promotion does not start with the intended women's roster depth",
+);
+// These floors describe the correctly protected real-world ecosystem. The
+// earlier looser ownership model counted several WWE-contracted wrestlers as
+// accessible/free and therefore overstated market supply.
+ok(startSnapshot.allTalent.free >= 165, "Genesis free-agent pool is too small");
+ok(startSnapshot.allTalent.accessible >= 400, "Genesis accessible talent pool is too small");
+ok(startSnapshot.men.accessible >= 270, "Genesis accessible men's pool is too small");
 ok(startSnapshot.women.accessible >= 125, "Genesis accessible women's pool is too small");
-ok(startSnapshot.allTalent.accessibleHeadliners >= 40, "Genesis lacks accessible headline talent");
-ok(startSnapshot.women.accessibleHeadliners >= 12, "Genesis lacks accessible women's headline talent");
-ok(startSnapshot.allTalent.accessibleFeaturedOrBetter >= 140, "Genesis lacks accessible featured-or-better depth");
+ok(startSnapshot.allTalent.accessibleHeadliners >= 35, "Genesis lacks accessible headline talent");
+ok(startSnapshot.women.accessibleHeadliners >= 10, "Genesis lacks accessible women's headline talent");
+ok(startSnapshot.allTalent.accessibleFeaturedOrBetter >= 135, "Genesis lacks accessible featured-or-better depth");
 
 const week26 = buildWorld(20261008);
 resolveWorldWeeks(week26, 26);
@@ -186,12 +244,12 @@ const week26Errors = validateWorldInvariants(week26);
 ok(week26Errors.length === 0, week26Errors.join("\n"));
 const week26Snapshot = snapshot(week26);
 const week26Takeovers = week26Snapshot.promotions.filter((promotion) => promotion.takeover === "STANDARD");
-ok(week26Snapshot.allTalent.free >= 175, "week-26 free-agent pool is too small");
+ok(week26Snapshot.allTalent.free >= 165, "week-26 free-agent pool is too small");
 ok(week26Snapshot.allTalent.accessible >= 350, "week-26 accessible talent pool is too small");
-ok(week26Snapshot.men.accessible >= 240, "week-26 accessible men's pool is too small");
+ok(week26Snapshot.men.accessible >= 230, "week-26 accessible men's pool is too small");
 ok(week26Snapshot.women.accessible >= 100, "week-26 accessible women's pool is too small");
-ok(week26Snapshot.allTalent.accessibleHeadliners >= 35, "week-26 accessible headline talent is too shallow");
-ok(week26Snapshot.women.accessibleHeadliners >= 10, "week-26 accessible women's headline talent is too shallow");
+ok(week26Snapshot.allTalent.accessibleHeadliners >= 28, "week-26 accessible headline talent is too shallow");
+ok(week26Snapshot.women.accessibleHeadliners >= 8, "week-26 accessible women's headline talent is too shallow");
 ok(week26Snapshot.allTalent.accessibleFeaturedOrBetter >= 110, "week-26 featured-or-better talent is too shallow");
 ok(
   week26Takeovers.every((promotion) => promotion.roster >= 18 && promotion.roster <= 32),

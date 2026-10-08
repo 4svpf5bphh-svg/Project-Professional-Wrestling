@@ -1,13 +1,28 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AlphaProgrammeManagementView } from "../../../../dist/packages/web-adapter/src/programme-management-service.js";
+import type {
+  AlphaManagedStartProgrammeRequest,
+  AlphaProgrammeManagementView,
+} from "../../../../dist/packages/web-adapter/src/programme-management-service.js";
 import styles from "./programmes.module.css";
 
 type ErrorPayload = { error?: string };
 
 function isErrorPayload(payload: AlphaProgrammeManagementView | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
+}
+
+type ParticipantRef = AlphaManagedStartProgrammeRequest["sideA"][number];
+
+function participantToken(ref: ParticipantRef): string {
+  return `${ref.kind}:${ref.entityId}`;
+}
+
+function participantRef(token: string): ParticipantRef {
+  if (token.startsWith("TEAM:")) return { kind: "TEAM", entityId: token.slice(5) };
+  if (token.startsWith("PERSON:")) return { kind: "PERSON", entityId: token.slice(7) };
+  throw new Error("Invalid Programme participant");
 }
 
 function programmeAge(startedYear: number, startedWeek: number, year: number, week: number): string {
@@ -47,23 +62,73 @@ export default function ProgrammesClient(): React.JSX.Element {
   useEffect(() => { void load(); }, []);
 
   const selected = useMemo(
-    () => new Set([sideA1, sideA2, sideB1, sideB2].filter(Boolean)),
+    () => [sideA1, sideA2, sideB1, sideB2].filter(Boolean),
     [sideA1, sideA2, sideB1, sideB2],
   );
+
+  function personIdsForToken(token: string): string[] {
+    if (!token || !view) return [];
+    const ref = participantRef(token);
+    if (ref.kind === "PERSON") return [ref.entityId];
+    return view.teams.find((team) => team.teamId === ref.entityId)?.memberIds ?? [];
+  }
+
+  function selectionOverlaps(): boolean {
+    const seen = new Set<string>();
+    for (const token of selected) {
+      for (const personId of personIdsForToken(token)) {
+        if (seen.has(personId)) return true;
+        seen.add(personId);
+      }
+    }
+    return false;
+  }
+
   const canStart = Boolean(
     view?.canEdit
     && sideA1
     && sideB1
-    && selected.size === [sideA1, sideA2, sideB1, sideB2].filter(Boolean).length
+    && !selectionOverlaps()
     && !starting
   );
 
-  function options(current: string): React.JSX.Element[] {
-    return (view?.roster ?? []).map((person) => (
-      <option key={person.personId} value={person.personId} disabled={selected.has(person.personId) && current !== person.personId}>
-        {person.name} · {person.alignment} · POP {Math.round(person.popularity)}
-      </option>
-    ));
+  function optionDisabled(token: string, current: string): boolean {
+    if (!token || token === current) return false;
+    const occupied = new Set(
+      selected
+        .filter((selectedToken) => selectedToken !== current)
+        .flatMap((selectedToken) => personIdsForToken(selectedToken)),
+    );
+    return personIdsForToken(token).some((personId) => occupied.has(personId));
+  }
+
+  function options(current: string): React.JSX.Element {
+    return (
+      <>
+        {(view?.teams.length ?? 0) > 0 ? (
+          <optgroup label="Established teams">
+            {(view?.teams ?? []).map((team) => {
+              const token = participantToken({ kind: "TEAM", entityId: team.teamId });
+              return (
+                <option key={token} value={token} disabled={optionDisabled(token, current)}>
+                  {team.name} — {team.memberNames.join(" & ")}
+                </option>
+              );
+            })}
+          </optgroup>
+        ) : null}
+        <optgroup label="Wrestlers">
+          {(view?.roster ?? []).map((person) => {
+            const token = participantToken({ kind: "PERSON", entityId: person.personId });
+            return (
+              <option key={token} value={token} disabled={optionDisabled(token, current)}>
+                {person.name} · {person.alignment} · POP {Math.round(person.popularity)}
+              </option>
+            );
+          })}
+        </optgroup>
+      </>
+    );
   }
 
   async function start(): Promise<void> {
@@ -78,8 +143,8 @@ export default function ProgrammesClient(): React.JSX.Element {
         body: JSON.stringify({
           requestId: requestId.current,
           expectedRevision: view.world.revision,
-          sideAIds: [sideA1, sideA2].filter(Boolean),
-          sideBIds: [sideB1, sideB2].filter(Boolean),
+          sideA: [sideA1, sideA2].filter(Boolean).map(participantRef),
+          sideB: [sideB1, sideB2].filter(Boolean).map(participantRef),
           championshipId: championshipId || null,
         }),
       });
@@ -147,25 +212,25 @@ export default function ProgrammesClient(): React.JSX.Element {
           <section className={styles.panel}>
             <span className={styles.eyebrow}>START STORY</span>
             <h2>New Programme</h2>
-            <p className={styles.note}>Create the ongoing rivalry here, independently of any one show. Two to four rostered wrestlers can be involved.</p>
+            <p className={styles.note}>Create the ongoing rivalry here, independently of any one show. Select established teams as teams, or individual wrestlers for singles and custom stories.</p>
             <div className={styles.sides}>
               <div>
                 <label>Side A</label>
                 <select value={sideA1} onChange={(event) => { setSideA1(event.target.value); requestId.current = null; }} disabled={!view.canEdit || starting}>
-                  <option value="">Choose wrestler</option>{options(sideA1)}
+                  <option value="">Choose wrestler or team</option>{options(sideA1)}
                 </select>
                 <select value={sideA2} onChange={(event) => { setSideA2(event.target.value); requestId.current = null; }} disabled={!view.canEdit || starting}>
-                  <option value="">Optional second wrestler</option>{options(sideA2)}
+                  <option value="">Optional wrestler or team</option>{options(sideA2)}
                 </select>
               </div>
               <b>VS</b>
               <div>
                 <label>Side B</label>
                 <select value={sideB1} onChange={(event) => { setSideB1(event.target.value); requestId.current = null; }} disabled={!view.canEdit || starting}>
-                  <option value="">Choose wrestler</option>{options(sideB1)}
+                  <option value="">Choose wrestler or team</option>{options(sideB1)}
                 </select>
                 <select value={sideB2} onChange={(event) => { setSideB2(event.target.value); requestId.current = null; }} disabled={!view.canEdit || starting}>
-                  <option value="">Optional second wrestler</option>{options(sideB2)}
+                  <option value="">Optional wrestler or team</option>{options(sideB2)}
                 </select>
               </div>
             </div>

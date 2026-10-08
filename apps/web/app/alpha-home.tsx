@@ -108,8 +108,9 @@ function countdownCopy(nowMs: number, target: Date): string {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
-  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+  return [hours, minutes, seconds]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
 }
 
 function localLockTime(target: Date): string {
@@ -127,6 +128,7 @@ export default function AlphaHome(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [busyPromotionId, setBusyPromotionId] = useState<string | null>(null);
   const [busyAttentionId, setBusyAttentionId] = useState<string | null>(null);
+  const [advancingWeek, setAdvancingWeek] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const requestIds = useRef(new Map<string, string>());
 
@@ -175,6 +177,29 @@ export default function AlphaHome(): React.JSX.Element {
       setError(reason instanceof Error ? reason.message : "Unable to claim promotion");
     } finally {
       setBusyPromotionId(null);
+    }
+  }
+
+  async function advanceWeekForAlphaTest(): Promise<void> {
+    if (!view || advancingWeek) return;
+    if (!window.confirm("Resolve this PPW week now? This bypasses the scheduled World Clock for Alpha testing.")) return;
+    setAdvancingWeek(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/advance-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevision: view.world.revision }),
+      });
+      const payload = await response.json() as AlphaPlayerWorldView | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to resolve Alpha week");
+      }
+      setView(payload);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to resolve Alpha week");
+    } finally {
+      setAdvancingWeek(false);
     }
   }
 
@@ -229,29 +254,14 @@ export default function AlphaHome(): React.JSX.Element {
     currentPlan && (currentPlan.state === "MATERIALIZED" || currentPlan.state === "READY_TO_LOCK"),
   );
   const worldIsOpen = view.world.phase === "OPEN";
-  const nextDeadlineHeading = !worldIsOpen
-    ? `World is ${view.world.phase.toLowerCase()}`
-    : commitmentsLocked
-      ? `World lock in ${worldLockCountdown}`
-      : commitmentDeadlinePassed
-        ? "Show Commitment Lock due"
-        : `Show commitments lock in ${commitmentLockCountdown}`;
-  const resourceLockLabel = !currentPlan
-    ? "No current show"
-    : logisticsLocked
-      ? "Locked"
-      : commitmentsLocked
-        ? "Commitment window closed"
-        : commitmentDeadlinePassed
-          ? "Due now"
-          : `Locks in ${commitmentLockCountdown}`;
-  const cardDeadlineLabel = promotion?.weekReadiness.status === "NOT_REQUIRED"
-    ? "No card due"
-    : !worldIsOpen
-      ? "Closed"
-      : currentPlan && !currentPlan.canEdit
-        ? "Staff-owned"
-        : `Closes in ${worldLockCountdown}`;
+  const commitmentStateLabel = commitmentsLocked || logisticsLocked
+    ? "LOCKED"
+    : commitmentDeadlinePassed
+      ? "DUE NOW"
+      : commitmentLockCountdown;
+  const worldLockStateLabel = !worldIsOpen
+    ? view.world.phase
+    : worldLockCountdown;
 
   let weekActionHref = "/planner";
   let weekActionLabel = "Open six-week planner";
@@ -375,41 +385,47 @@ export default function AlphaHome(): React.JSX.Element {
             <div className="section-heading">
               <div>
                 <span className="eyebrow">WORLD CLOCK</span>
-                <h2>{nextDeadlineHeading}</h2>
+                <h2>Two deadlines · one World cycle</h2>
               </div>
               <span className={worldIsOpen ? "plan-pill plan-reserved" : "readiness-pill readiness-attention"}>
                 {worldIsOpen
                   ? commitmentsLocked
                     ? "CARD EDIT WINDOW"
-                    : "06:00 → 08:00 UTC"
+                    : "WORLD OPEN"
                   : view.world.phase}
               </span>
             </div>
-            <p className="muted body-copy">
-              {commitmentsLocked
-                ? <>Show commitments are locked. Card details can still be edited until the final World lock at {localLockTime(nextWorldLock)} local time · 08:00 UTC.</>
-                : <>Show Commitment Lock: {localLockTime(nextCommitmentLock)} local time · 06:00 UTC. Final World Lock: {localLockTime(nextWorldLock)} local time · 08:00 UTC.</>}
-            </p>
-            <div className="result-grid">
-              <div>
-                <span>Venue</span>
-                <strong>{resourceLockLabel}</strong>
-              </div>
-              <div>
-                <span>Committed talent</span>
-                <strong>{resourceLockLabel}</strong>
-              </div>
-              <div>
-                <span>Card submission</span>
-                <strong>{cardDeadlineLabel}</strong>
-              </div>
-              <div>
-                <span>World resolution</span>
-                <strong>{worldIsOpen ? `In ${worldLockCountdown}` : view.world.phase}</strong>
-              </div>
+
+            <div className="world-clock-grid">
+              <article className={`world-clock-card ${commitmentsLocked || logisticsLocked ? "world-clock-locked" : ""}`}>
+                <div className="world-clock-card-top">
+                  <div>
+                    <span className="eyebrow">SHOW COMMITMENT LOCK</span>
+                    <h3>06:00 UTC</h3>
+                  </div>
+                  <strong className="world-clock-countdown">{commitmentStateLabel}</strong>
+                </div>
+                <p className="muted">
+                  {localLockTime(nextCommitmentLock)} local · locks venue and committed talent.
+                </p>
+              </article>
+
+              <article className={`world-clock-card ${!worldIsOpen ? "world-clock-locked" : ""}`}>
+                <div className="world-clock-card-top">
+                  <div>
+                    <span className="eyebrow">WORLD LOCK</span>
+                    <h3>08:00 UTC</h3>
+                  </div>
+                  <strong className="world-clock-countdown">{worldLockStateLabel}</strong>
+                </div>
+                <p className="muted">
+                  {localLockTime(nextWorldLock)} local · closes card editing and resolves the PPW week.
+                </p>
+              </article>
             </div>
+
             <p className="micro-copy">
-              Before Commitment Lock you can change show logistics and reserved talent. After it, venue and committed wrestlers are fixed, but matches, segments, order, winners, finishes, styles and other card details remain editable until World Lock.
+              Before 06:00 you can change show logistics and reserved talent. Between 06:00 and 08:00 the committed venue and wrestlers are fixed, but the card remains editable. At World Lock, player editing closes and the week resolves.
             </p>
           </section>
 
@@ -443,6 +459,20 @@ export default function AlphaHome(): React.JSX.Element {
               <a href={weekActionHref} style={PRIMARY_LINK_STYLE}>{weekActionLabel}</a>
             </div>
             <p className="micro-copy">World progression is server-scheduled. Prepare required work before lock; a fully prepared show runs normally even if you are away.</p>
+            <details className="alpha-test-controls">
+              <summary>Alpha test controls</summary>
+              <div className="alpha-test-controls-body">
+                <p className="micro-copy no-margin">Testing only · bypass the real-time clock and resolve the current PPW week immediately.</p>
+                <button
+                  className="alpha-test-button"
+                  type="button"
+                  disabled={advancingWeek}
+                  onClick={() => void advanceWeekForAlphaTest()}
+                >
+                  {advancingWeek ? "Resolving week…" : "Resolve week now"}
+                </button>
+              </div>
+            </details>
           </section>
 
           {promotion.lastResolvedShow ? (

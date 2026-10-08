@@ -13,6 +13,7 @@ import {
   type PlayerShowPlanningState,
   type PlayerShowReadiness,
 } from "./planning-status.js";
+import { maxShowParticipantsForDate } from "./show-capacity.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export type PlayerPlannerShowState = "UNPLANNED" | PlayerShowPlanningState;
@@ -186,25 +187,6 @@ function marketPresenceBand(score: number): PlayerPlannerMarketPresence {
   if (score >= 45) return "ESTABLISHED";
   if (score >= 25) return "DEVELOPING";
   return "LIGHT";
-}
-
-function maxShowParticipants(
-  tier: PromotionTier,
-  date: PpwDate,
-  weeksPerYear: number,
-  majorEventIntervalWeeks: number,
-): number {
-  const regular = tier === "GLOBAL"
-    ? 16
-    : tier === "NATIONAL"
-      ? 14
-      : tier === "RISING"
-        ? 12
-        : tier === "INDEPENDENT"
-          ? 10
-          : 8;
-  const weekIndex = ppwDateToWeekIndex(date, weeksPerYear);
-  return (weekIndex + 1) % majorEventIntervalWeeks === 0 ? regular + 2 : regular;
 }
 
 function contractTouchesWeek(
@@ -492,11 +474,10 @@ export function buildPlayerSixWeekPlannerView(
         showRequired: required,
         canPlan: required && aggregate.runtime.phase === "OPEN",
         minParticipants: aggregate.state.ruleset.minEventParticipants,
-        maxParticipants: maxShowParticipants(
-          promotion.tier,
+        maxParticipants: maxShowParticipantsForDate(
+          aggregate.state,
+          promotion,
           targetDate,
-          aggregate.state.ruleset.weeksPerYear,
-          aggregate.state.ruleset.majorEventIntervalWeeks,
         ),
         eligibleParticipants: eligibleParticipantsForWeek(aggregate, promotion.id, targetDate),
         shows,

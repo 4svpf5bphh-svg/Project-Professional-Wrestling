@@ -231,17 +231,36 @@ export default function CardClient(): React.JSX.Element {
     const readiness = liveMatchReadiness(match);
     return readiness?.status === "REFUSES" && !readiness.provisional;
   });
-  const canSave = Boolean(
-    view?.canEdit
-    && matches.length > 0
-    && completeMatches
-    && completeSegments
-    && !duplicateMatchBooking
-    && !hasCurrentStyleRefusal
-    && uniqueBookedCount >= (view?.minParticipants ?? 0)
-    && uniqueBookedCount <= (view?.maxParticipants ?? Number.MAX_SAFE_INTEGER)
-    && !saving
-  );
+  const saveBlockers: string[] = [];
+  if (view && !view.canEdit) {
+    saveBlockers.push("Card editing is closed for this show.");
+  }
+  if (matches.length === 0) {
+    saveBlockers.push("Add at least one match to the card.");
+  }
+  if (matches.length > 0 && !completeMatches) {
+    saveBlockers.push("Choose every wrestler in each match.");
+  }
+  if (segments.length > 0 && !completeSegments) {
+    saveBlockers.push("Complete every segment and choose all required wrestlers.");
+  }
+  if (duplicateMatchBooking) {
+    saveBlockers.push("A wrestler can only be booked in one match. Segment appearances are still allowed.");
+  }
+  if (hasCurrentStyleRefusal) {
+    saveBlockers.push("At least one wrestler refuses the current match style. Lower the demand or change the booking.");
+  }
+  if (view && matches.length > 0 && uniqueBookedCount < view.minParticipants) {
+    saveBlockers.push(
+      `This card currently uses ${uniqueBookedCount} unique wrestler${uniqueBookedCount === 1 ? "" : "s"}; this show requires at least ${view.minParticipants}.`,
+    );
+  }
+  if (view && uniqueBookedCount > view.maxParticipants) {
+    saveBlockers.push(
+      `This card currently uses ${uniqueBookedCount} unique wrestlers; this show allows a maximum of ${view.maxParticipants}.`,
+    );
+  }
+  const canSave = Boolean(view && saveBlockers.length === 0 && !saving);
 
   function markDirty(): void {
     setSaved(false);
@@ -378,6 +397,32 @@ export default function CardClient(): React.JSX.Element {
     ids[slotIndex] = personId;
     updateMatch(matchId, side === "A" ? { sideAIds: ids } : { sideBIds: ids });
   }
+
+  function teamForSide(match: AlphaCardMatchView, side: "A" | "B"): string {
+    if (!view || match.type !== "TAG") return "";
+    const ids = [...(side === "A" ? match.sideAIds : match.sideBIds)].sort();
+    const team = view.availableTeams.find((candidate) => (
+      [...candidate.memberIds].sort().join(":") === ids.join(":")
+    ));
+    return team?.teamId ?? "";
+  }
+
+  function teamBookedElsewhere(teamId: string, matchId: string): boolean {
+    if (!view) return false;
+    const team = view.availableTeams.find((candidate) => candidate.teamId === teamId);
+    if (!team) return false;
+    return team.memberIds.some((personId) => personBookedInOtherMatch(personId, matchId, ""));
+  }
+
+  function setMatchTeam(matchId: string, side: "A" | "B", teamId: string): void {
+    if (!view || !teamId) return;
+    const team = view.availableTeams.find((candidate) => candidate.teamId === teamId);
+    if (!team) return;
+    updateMatch(matchId, side === "A"
+      ? { sideAIds: [...team.memberIds] }
+      : { sideBIds: [...team.memberIds] });
+  }
+
 
   function updateSegment(segmentId: string, patch: Partial<AlphaCardSegmentView>): void {
     setSegments((current) => current.map((segment) => (
@@ -720,6 +765,24 @@ export default function CardClient(): React.JSX.Element {
                   <div className={styles.sides}>
                     <div className={styles.side}>
                       <span className={styles.sideLabel}>Side A</span>
+                      {match.type === "TAG" && view.availableTeams.length > 0 ? (
+                        <select
+                          value={teamForSide(match, "A")}
+                          disabled={!view.canEdit}
+                          onChange={(event) => setMatchTeam(match.draftMatchId, "A", event.target.value)}
+                        >
+                          <option value="">Custom pairing</option>
+                          {view.availableTeams.map((team) => (
+                            <option
+                              key={team.teamId}
+                              value={team.teamId}
+                              disabled={teamBookedElsewhere(team.teamId, match.draftMatchId)}
+                            >
+                              {team.name} — {team.memberNames.join(" & ")}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null}
                       {match.sideAIds.map((personId, personIndex) => (
                         <select key={`A-${personIndex}`} value={personId} disabled={!view.canEdit} onChange={(event) => setMatchParticipant(match.draftMatchId, "A", personIndex, event.target.value)}>
                           <option value="">Choose wrestler</option>{participantOptions(personId)}
@@ -729,6 +792,24 @@ export default function CardClient(): React.JSX.Element {
                     <div className={styles.versus}>VS</div>
                     <div className={styles.side}>
                       <span className={styles.sideLabel}>Side B</span>
+                      {match.type === "TAG" && view.availableTeams.length > 0 ? (
+                        <select
+                          value={teamForSide(match, "B")}
+                          disabled={!view.canEdit}
+                          onChange={(event) => setMatchTeam(match.draftMatchId, "B", event.target.value)}
+                        >
+                          <option value="">Custom pairing</option>
+                          {view.availableTeams.map((team) => (
+                            <option
+                              key={team.teamId}
+                              value={team.teamId}
+                              disabled={teamBookedElsewhere(team.teamId, match.draftMatchId)}
+                            >
+                              {team.name} — {team.memberNames.join(" & ")}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null}
                       {match.sideBIds.map((personId, personIndex) => (
                         <select key={`B-${personIndex}`} value={personId} disabled={!view.canEdit} onChange={(event) => setMatchParticipant(match.draftMatchId, "B", personIndex, event.target.value)}>
                           <option value="">Choose wrestler</option>{participantOptions(personId)}
@@ -965,14 +1046,35 @@ export default function CardClient(): React.JSX.Element {
           </div>
         </div>
 
-        {!completeMatches && matches.length > 0 ? <div className={styles.assignmentWarning}>Choose every wrestler in each match before saving.</div> : null}
-        {!completeSegments && segments.length > 0 ? <div className={styles.assignmentWarning}>Complete every segment and choose the required wrestlers before saving.</div> : null}
-        {duplicateMatchBooking ? <div className={styles.assignmentWarning}>A wrestler can only be booked in one match, but may also appear in segments.</div> : null}
-        {hasCurrentStyleRefusal ? <div className={styles.refusalWarning}>A wrestler refuses the current match style. Lower the demand or change the booking before saving.</div> : null}
-        {uniqueBookedCount > 0 && uniqueBookedCount < view.minParticipants ? <div className={styles.assignmentWarning}>Use at least {view.minParticipants} unique wrestlers across matches and segments before saving.</div> : null}
+        {saveBlockers.length > 0 ? (
+          <section className={styles.saveBlockers} aria-live="polite" aria-label="Show booking save blockers">
+            <div className={styles.saveBlockerHeading}>
+              <strong>Can’t save yet</strong>
+              <span>{saveBlockers.length} {saveBlockers.length === 1 ? "issue" : "issues"}</span>
+            </div>
+            <ul>
+              {saveBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}
+            </ul>
+          </section>
+        ) : (
+          <div className={styles.saveReady}>
+            Ready to save · {uniqueBookedCount} unique wrestler{uniqueBookedCount === 1 ? "" : "s"}
+          </div>
+        )}
 
         <div className={styles.saveBar}>
-          <button className="primary-button" type="button" disabled={!canSave} onClick={() => void save()}>{saving ? "Saving booking…" : view.reservationId ? "Save & refresh reservation" : "Save show booking"}</button>
+          <button
+            className="primary-button"
+            type="button"
+            disabled={!canSave}
+            aria-describedby={saveBlockers.length > 0 ? "card-save-blockers" : undefined}
+            onClick={() => void save()}
+          >
+            {saving ? "Saving booking…" : view.reservationId ? "Save & refresh reservation" : "Save show booking"}
+          </button>
+          {saveBlockers.length > 0 ? (
+            <span id="card-save-blockers" className={styles.saveBarHint}>Resolve the issues above to enable saving.</span>
+          ) : null}
           {saved ? <div className={styles.saved}>Booking saved · running order and talent reservation refreshed</div> : null}
         </div>
       </section>

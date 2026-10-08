@@ -41,9 +41,11 @@ const NAV_ITEMS: NavItem[] = [
     shortLabel: "T",
     matches: (pathname) => pathname.startsWith("/talent") || pathname.startsWith("/teams"),
     destinations: [
-      { href: "/talent", label: "Singles & contracts", description: "Roster, alignment, contracts, market and offers." },
-      { href: "/talent/teams", label: "Tag teams", description: "Active teams fully on your roster." },
-      { href: "/talent/directory", label: "Wrestler directory", description: "Browse wrestler profiles." },
+      { href: "/talent", label: "Roster", description: "Manage your contracted wrestlers, roles, alignment and renewals." },
+      { href: "/talent?view=market", label: "Talent market", description: "Search and filter wrestlers currently available to recruit." },
+      { href: "/talent/teams", label: "Tag teams", description: "Manage established teams on your roster." },
+      { href: "/talent?view=offers", label: "Offers", description: "Review your pending contract offers." },
+      { href: "/talent/directory", label: "Wrestler directory", description: "Search everyone in the shared World." },
     ],
   },
   {
@@ -140,7 +142,10 @@ export default function GameNav(): React.JSX.Element {
                 key={destination.href}
                 className={styles.destination}
                 type="button"
-                onClick={() => router.push(destination.href)}
+                onClick={() => {
+                  setExpanded(false);
+                  router.push(destination.href);
+                }}
               >
                 <strong>{destination.label}</strong>
                 <span>{destination.description}</span>

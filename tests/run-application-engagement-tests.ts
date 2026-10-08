@@ -21,6 +21,9 @@ import {
   stewardshipExitEligibilityForContract,
   stewardshipExitEligibleContracts,
   STEWARDSHIP_TRUST_PRESSURE_PER_WEEK,
+  setTalentWatched,
+  talentIsWatched,
+  talentWatchlistForPlayer,
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
@@ -279,6 +282,25 @@ await test("opportunity eligibility never leaks across player or promotion scope
   ok(!opportunityVisibleToPlayer(opportunity, "player-b", "promotion-a"), "opportunity leaked to another player");
   ok(!opportunityVisibleToPlayer(opportunity, "player-a", "promotion-b"), "opportunity leaked to another promotion");
   ok(!opportunityVisibleToPlayer(opportunity, "player-a", null), "promotion-scoped opportunity leaked to an unclaimed player");
+});
+
+await test("Talent Watchlist is player-scoped and idempotent", () => {
+  const engagement = createWorldEngagementState("world-test");
+
+  setTalentWatched(engagement, "player-a", "person-1", true, 3);
+  setTalentWatched(engagement, "player-a", "person-1", true, 4);
+
+  ok(talentIsWatched(engagement, "player-a", "person-1"), "watched talent was not remembered");
+  ok(!talentIsWatched(engagement, "player-b", "person-1"), "Watchlist leaked to another player");
+  ok(talentWatchlistForPlayer(engagement, "player-a").length === 1, "idempotent Watch created duplicate records");
+  ok(
+    talentWatchlistForPlayer(engagement, "player-a")[0]?.addedAtRevision === 4,
+    "Watch retry did not refresh its revision",
+  );
+
+  setTalentWatched(engagement, "player-a", "person-1", false, 4);
+  ok(!talentIsWatched(engagement, "player-a", "person-1"), "Unwatch did not remove wrestler from player Watchlist");
+  ok(talentWatchlistForPlayer(engagement, "player-a").length === 0, "Unwatch left stale Watchlist record");
 });
 
 await test("Attention dismissal is player-scoped and idempotent", () => {

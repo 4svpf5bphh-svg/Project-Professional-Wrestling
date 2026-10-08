@@ -11,8 +11,8 @@ export const dynamic = "force-dynamic";
 type Body = {
   requestId?: unknown;
   expectedRevision?: unknown;
-  sideAIds?: unknown;
-  sideBIds?: unknown;
+  sideA?: unknown;
+  sideB?: unknown;
   championshipId?: unknown;
 };
 
@@ -23,9 +23,19 @@ function textValue(value: unknown, label: string, max = 220): string {
   return normalized;
 }
 
-function ids(value: unknown, label: string): string[] {
+function participants(value: unknown, label: string): Array<{ kind: "PERSON" | "TEAM"; entityId: string }> {
   if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
-  return value.map((entry, index) => textValue(entry, `${label}[${index}]`, 128));
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object") throw new Error(`${label}[${index}] must be a participant`);
+    const record = entry as { kind?: unknown; entityId?: unknown };
+    if (record.kind !== "PERSON" && record.kind !== "TEAM") {
+      throw new Error(`${label}[${index}].kind must be PERSON or TEAM`);
+    }
+    return {
+      kind: record.kind,
+      entityId: textValue(record.entityId, `${label}[${index}].entityId`, 128),
+    };
+  });
 }
 
 function revision(value: unknown): number {
@@ -58,8 +68,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       startAlphaManagedProgramme(repository, worldId, playerId, {
         requestId: textValue(body.requestId, "requestId"),
         expectedRevision: revision(body.expectedRevision),
-        sideAIds: ids(body.sideAIds, "sideAIds"),
-        sideBIds: ids(body.sideBIds, "sideBIds"),
+        sideA: participants(body.sideA, "sideA"),
+        sideB: participants(body.sideB, "sideB"),
         championshipId: body.championshipId === undefined || body.championshipId === null || body.championshipId === ""
           ? null
           : textValue(body.championshipId, "championshipId", 128),

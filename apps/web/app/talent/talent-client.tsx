@@ -11,17 +11,21 @@ import type {
   AlphaRosterAlignmentResult,
   AlphaTalentOfferRequest,
   AlphaTalentOfferResult,
+  AlphaTalentWatchResult,
 } from "../../../../dist/packages/web-adapter/src/talent-service.js";
 import styles from "./talent.module.css";
 
 type ErrorPayload = { error?: string };
-type Tab = "ROSTER" | "MARKET" | "OFFERS";
+export type TalentTab = "ROSTER" | "MARKET" | "OFFERS";
 type OfferFamily = AlphaTalentOfferRequest["family"];
 type OfferRole = AlphaTalentOfferRequest["roleExpectation"];
 type RosterSort = "POPULARITY" | "RECOGNITION" | "DATES_ASC" | "DATES_DESC" | "EXPIRY" | "NAME";
 type RosterContractFilter = "ALL" | "EXCLUSIVE" | "NON_EXCLUSIVE";
-type MarketSort = "POPULARITY" | "RECOGNITION" | "VALUE_HIGH" | "VALUE_LOW" | "NAME";
+type RosterDivisionFilter = "ALL" | "MEN" | "WOMEN";
+type MarketSort = "INTEREST" | "POPULARITY" | "RECOGNITION" | "VALUE_HIGH" | "VALUE_LOW" | "NAME";
 type MarketAvailabilityFilter = "ALL" | "FREE_AGENT" | "NON_EXCLUSIVE";
+type MarketDivisionFilter = "ALL" | "MEN" | "WOMEN";
+type MarketInterestFilter = "ALL" | "OPEN_PLUS" | "INTERESTED_PLUS";
 type Alignment = PlayerRosterContractView["alignment"];
 
 type OfferTarget = {
@@ -44,7 +48,24 @@ const ROLE_OPTIONS: OfferRole[] = [
   "SPECIAL_ATTRACTION",
 ];
 
-function isErrorPayload(payload: PlayerTalentManagementView | AlphaTalentOfferResult | AlphaRosterAlignmentResult | ErrorPayload): payload is ErrorPayload {
+const INTEREST_RANK: Record<PlayerTalentMarketView["interest"], number> = {
+  NOT_INTERESTED: 0,
+  LONG_SHOT: 1,
+  OPEN_TO_TALKS: 2,
+  INTERESTED: 3,
+  KEEN: 4,
+};
+
+const ROSTER_ROLE_ORDER: OfferRole[] = [
+  "MAIN_EVENT",
+  "SPECIAL_ATTRACTION",
+  "UPPER_CARD",
+  "FEATURED",
+  "REGULAR",
+  "DEVELOPMENTAL",
+];
+
+function isErrorPayload(payload: PlayerTalentManagementView | AlphaTalentOfferResult | AlphaRosterAlignmentResult | AlphaTalentWatchResult | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
 }
 
@@ -56,12 +77,78 @@ function money(value: number): string {
   }).format(value);
 }
 
+function formatMoneyInput(value: number): string {
+  return new Intl.NumberFormat("en-GB", {
+    maximumFractionDigits: 0,
+    useGrouping: true,
+  }).format(Math.max(0, Math.round(value)));
+}
+
+function parseMoneyInput(value: string): number | null {
+  const normalized = value.replace(/[\s,£$]/g, "");
+  if (normalized === "") return null;
+  if (!/^\d+$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function MoneyInput({
+  value,
+  disabled = false,
+  onChange,
+}: {
+  value: number;
+  disabled?: boolean;
+  onChange: (value: number) => void;
+}): React.JSX.Element {
+  const [text, setText] = useState(() => formatMoneyInput(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setText(formatMoneyInput(value));
+  }, [value, focused]);
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      value={text}
+      disabled={disabled}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        setText(formatMoneyInput(value));
+      }}
+      onChange={(event) => {
+        const next = event.target.value;
+        if (!/^[\d\s,£$]*$/.test(next)) return;
+        setText(next);
+        onChange(parseMoneyInput(next) ?? 0);
+      }}
+    />
+  );
+}
+
 function ppwDate(date: { year: number; week: number }): string {
   return `Y${date.year} W${date.week}`;
 }
 
 function label(value: string): string {
   return value.replaceAll("_", " ");
+}
+
+function interestLabel(value: PlayerTalentMarketView["interest"]): string {
+  if (value === "OPEN_TO_TALKS") return "Open to talks";
+  if (value === "LONG_SHOT") return "Long shot";
+  if (value === "NOT_INTERESTED") return "Not interested";
+  return label(value).replace(/^./, (character) => character.toUpperCase());
+}
+
+function interestClass(value: PlayerTalentMarketView["interest"]): string {
+  if (value === "KEEN" || value === "INTERESTED") return styles.interestPositive;
+  if (value === "OPEN_TO_TALKS") return styles.interestNeutral;
+  return styles.interestLow;
 }
 
 function averageSkill(entry: { skills: { inRingQuality: number; matchCraft: number; presentation: number } }): number {
@@ -161,16 +248,17 @@ function RosterCard({
 }): React.JSX.Element {
   const contract = wrestler.contract;
   return (
-    <details className={styles.card}>
+    <details className={`${styles.card} ${styles.rosterCard}`}>
       <summary className={styles.summary}>
         <div>
           <div className={styles.nameLine}>
             <strong>{wrestler.name}</strong>
+            <span className={styles.divisionBadge}>{wrestler.division === "WOMEN" ? "Women" : "Men"}</span>
             <span className={styles.availability}>{label(wrestler.alignment)}</span>
             <InjuryBadge injury={wrestler.injury} />
             <span className={styles.availability}>{contract.exclusivity === "EXCLUSIVE" ? "Exclusive" : "Non-exclusive"}</span>
           </div>
-          <span>{label(wrestler.careerStage)} · {label(contract.roleExpectation)} · {label(contract.family)}</span>
+          <span>{label(wrestler.careerStage)} · {label(contract.family)} · {contract.exclusivity === "EXCLUSIVE" ? "Exclusive" : "Non-exclusive"}</span>
         </div>
         <div className={styles.scoreBlock}>
           <b>POP {Math.round(wrestler.popularity)}</b>
@@ -245,39 +333,70 @@ function RosterCard({
 
 function MarketCard({
   wrestler,
+  watchSaving,
+  onWatch,
   onOffer,
 }: {
   wrestler: PlayerTalentMarketView;
+  watchSaving: boolean;
+  onWatch: () => void;
   onOffer: () => void;
 }): React.JSX.Element {
+  const publicHome = wrestler.rosterAffiliations[0]?.promotionName
+    ?? wrestler.employmentPromotions[0]?.promotionName
+    ?? "Free agent";
   return (
-    <article className={styles.card}>
-      <div className={styles.marketTop}>
-        <div>
+    <details className={`${styles.card} ${styles.marketCard}`}>
+      <summary className={styles.marketSummary}>
+        <div className={styles.marketIdentity}>
           <div className={styles.nameLine}>
             <strong>{wrestler.name}</strong>
-            <span className={styles.availability}>{label(wrestler.alignment)}</span>
+            <span className={styles.divisionBadge}>{wrestler.division === "WOMEN" ? "Women" : "Men"}</span>
             <InjuryBadge injury={wrestler.injury} />
           </div>
-          <span>{label(wrestler.careerStage)} · age {wrestler.biologicalAge.toFixed(1)}</span>
+          <span>{publicHome} · {label(wrestler.careerStage)}</span>
         </div>
-        <span className={styles.availability}>{wrestler.availability === "FREE_AGENT" ? "Free agent" : "Non-exclusive"}</span>
+        <div className={styles.marketQuick}>
+          <b>POP {Math.round(wrestler.popularity)}</b>
+          <span className={interestClass(wrestler.interest)}>{interestLabel(wrestler.interest)}</span>
+          <span className={styles.availability}>{wrestler.availability === "FREE_AGENT" ? "Free agent" : "Non-exclusive"}</span>
+        </div>
+      </summary>
+      <div className={styles.marketDetails}>
+        <div className={styles.marketFacts}>
+          <span>Recognition <b>{Math.round(wrestler.recognition)}</b></span>
+          <span>Momentum <b>{Math.round(wrestler.momentum)}</b></span>
+          <span>In-ring <b>{Math.round(wrestler.skills.inRingQuality)}</b></span>
+          <span>Craft <b>{Math.round(wrestler.skills.matchCraft)}</b></span>
+          <span>Presentation <b>{Math.round(wrestler.skills.presentation)}</b></span>
+          <span>Age <b>{wrestler.biologicalAge.toFixed(1)}</b></span>
+        </div>
+        {wrestler.employmentPromotions.length > 0 ? (
+          <p className={styles.marketAffiliation}>
+            Employed by {wrestler.employmentPromotions.map((entry) => entry.promotionName).join(", ")}
+            {wrestler.rosterAffiliations.length > 0
+              ? ` · Roster: ${wrestler.rosterAffiliations.map((entry) => entry.promotionName).join(", ")}`
+              : ""}
+          </p>
+        ) : null}
+        <div className={styles.marketBottom}>
+          <span>Estimated market value <b>{money(wrestler.estimatedWeeklyValue)}/wk</b></span>
+          <div className={styles.marketActions}>
+            <button
+              className={wrestler.watched ? styles.watchButtonActive : styles.watchButton}
+              type="button"
+              disabled={watchSaving}
+              onClick={onWatch}
+            >
+              {watchSaving ? "Saving…" : wrestler.watched ? "★ Watching" : "☆ Watch"}
+            </button>
+            {wrestler.hasOurPendingOffer ? <span className={styles.pending}>Your offer pending</span> : (
+              <button className={styles.actionButton} type="button" onClick={onOffer}>Make offer</button>
+            )}
+          </div>
+        </div>
       </div>
-      <div className={styles.metricGrid}>
-        <div><span>Popularity</span><strong>{Math.round(wrestler.popularity)}</strong></div>
-        <div><span>Recognition</span><strong>{Math.round(wrestler.recognition)}</strong></div>
-        <div><span>Momentum</span><strong>{Math.round(wrestler.momentum)}</strong></div>
-        <div><span>In-ring</span><strong>{Math.round(wrestler.skills.inRingQuality)}</strong></div>
-        <div><span>Craft</span><strong>{Math.round(wrestler.skills.matchCraft)}</strong></div>
-        <div><span>Presentation</span><strong>{Math.round(wrestler.skills.presentation)}</strong></div>
-      </div>
-      <div className={styles.marketBottom}>
-        <span>Estimated market value <b>{money(wrestler.estimatedWeeklyValue)}/wk</b></span>
-        {wrestler.hasOurPendingOffer ? <span className={styles.pending}>Your offer pending</span> : (
-          <button className={styles.actionButton} type="button" onClick={onOffer}>Make offer</button>
-        )}
-      </div>
-    </article>
+    </details>
   );
 }
 
@@ -367,15 +486,25 @@ function OfferEditor({
         </label>
         <label>
           <span>Weekly guarantee</span>
-          <input type="number" min={0} inputMode="numeric" value={draft.weeklyGuarantee} disabled={draft.family === "ONE_OFF"} onChange={(event) => onChange({ ...draft, weeklyGuarantee: Number(event.target.value) })} />
+          <MoneyInput
+            value={draft.weeklyGuarantee}
+            disabled={draft.family === "ONE_OFF"}
+            onChange={(value) => onChange({ ...draft, weeklyGuarantee: value })}
+          />
         </label>
         <label>
           <span>Appearance fee</span>
-          <input type="number" min={0} inputMode="numeric" value={draft.appearanceFee} onChange={(event) => onChange({ ...draft, appearanceFee: Number(event.target.value) })} />
+          <MoneyInput
+            value={draft.appearanceFee}
+            onChange={(value) => onChange({ ...draft, appearanceFee: value })}
+          />
         </label>
         <label>
           <span>Signing bonus</span>
-          <input type="number" min={0} inputMode="numeric" value={draft.signingBonus} onChange={(event) => onChange({ ...draft, signingBonus: Number(event.target.value) })} />
+          <MoneyInput
+            value={draft.signingBonus}
+            onChange={(value) => onChange({ ...draft, signingBonus: value })}
+          />
         </label>
         </div>
       </div>
@@ -388,19 +517,26 @@ function OfferEditor({
   );
 }
 
-export default function TalentClient(): React.JSX.Element {
+export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: TalentTab }): React.JSX.Element {
   const [view, setView] = useState<PlayerTalentManagementView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("ROSTER");
+  const [tab, setTab] = useState<TalentTab>(initialTab);
   const [query, setQuery] = useState("");
   const [rosterSort, setRosterSort] = useState<RosterSort>("POPULARITY");
   const [rosterContractFilter, setRosterContractFilter] = useState<RosterContractFilter>("ALL");
-  const [marketSort, setMarketSort] = useState<MarketSort>("VALUE_HIGH");
+  const [rosterDivisionFilter, setRosterDivisionFilter] = useState<RosterDivisionFilter>("ALL");
+  const [collapsedRosterRoles, setCollapsedRosterRoles] = useState<Set<OfferRole>>(() => new Set());
+  const [marketSort, setMarketSort] = useState<MarketSort>("INTEREST");
   const [marketAvailabilityFilter, setMarketAvailabilityFilter] = useState<MarketAvailabilityFilter>("ALL");
+  const [marketDivisionFilter, setMarketDivisionFilter] = useState<MarketDivisionFilter>("ALL");
+  const [marketInterestFilter, setMarketInterestFilter] = useState<MarketInterestFilter>("ALL");
+  const [marketWatchOnly, setMarketWatchOnly] = useState(false);
+  const [marketLimit, setMarketLimit] = useState(25);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [alignmentSaving, setAlignmentSaving] = useState<string | null>(null);
+  const [watchSaving, setWatchSaving] = useState<string | null>(null);
   const [target, setTarget] = useState<OfferTarget | null>(null);
   const [draft, setDraft] = useState<OfferDraft | null>(null);
   const offerOpen = Boolean(target && draft);
@@ -512,6 +648,32 @@ export default function TalentClient(): React.JSX.Element {
     }
   }
 
+  async function changeWatch(wrestler: PlayerTalentMarketView): Promise<void> {
+    if (watchSaving) return;
+    setWatchSaving(wrestler.personId);
+    setError(null);
+    try {
+      const response = await fetch("/api/talent", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personId: wrestler.personId,
+          watched: !wrestler.watched,
+        }),
+      });
+      const payload = await response.json() as AlphaTalentWatchResult | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to update Watchlist");
+      }
+      setView(payload.view);
+      setNotice(`${wrestler.name} ${payload.watched ? "added to" : "removed from"} Watchlist.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to update Watchlist");
+    } finally {
+      setWatchSaving(null);
+    }
+  }
+
   async function submitOffer(): Promise<void> {
     if (!target || !draft) return;
     setSubmitting(true);
@@ -549,6 +711,7 @@ export default function TalentClient(): React.JSX.Element {
   const roster = useMemo(() => {
     const entries = (view?.roster ?? [])
       .filter((entry) => matchesQuery(entry.name, query))
+      .filter((entry) => rosterDivisionFilter === "ALL" || entry.division === rosterDivisionFilter)
       .filter((entry) => rosterContractFilter === "ALL" || entry.contract.exclusivity === rosterContractFilter);
     return [...entries].sort((left, right) => {
       if (rosterSort === "RECOGNITION") return right.recognition - left.recognition || left.name.localeCompare(right.name);
@@ -558,24 +721,67 @@ export default function TalentClient(): React.JSX.Element {
       if (rosterSort === "NAME") return left.name.localeCompare(right.name);
       return right.popularity - left.popularity || right.recognition - left.recognition || left.name.localeCompare(right.name);
     });
-  }, [view, query, rosterContractFilter, rosterSort]);
+  }, [view, query, rosterContractFilter, rosterDivisionFilter, rosterSort]);
+  const rosterGroups = useMemo(
+    () => ROSTER_ROLE_ORDER
+      .map((role) => ({
+        role,
+        entries: roster.filter((entry) => entry.contract.roleExpectation === role),
+      }))
+      .filter((group) => group.entries.length > 0),
+    [roster],
+  );
   const market = useMemo(() => {
     const entries = (view?.market ?? [])
       .filter((entry) => matchesQuery(entry.name, query))
-      .filter((entry) => marketAvailabilityFilter === "ALL" || entry.availability === marketAvailabilityFilter);
+      .filter((entry) => marketDivisionFilter === "ALL" || entry.division === marketDivisionFilter)
+      .filter((entry) => marketAvailabilityFilter === "ALL" || entry.availability === marketAvailabilityFilter)
+      .filter((entry) => !marketWatchOnly || entry.watched)
+      .filter((entry) => {
+        if (marketInterestFilter === "INTERESTED_PLUS") return INTEREST_RANK[entry.interest] >= INTEREST_RANK.INTERESTED;
+        if (marketInterestFilter === "OPEN_PLUS") return INTEREST_RANK[entry.interest] >= INTEREST_RANK.OPEN_TO_TALKS;
+        return true;
+      });
     return [...entries].sort((left, right) => {
+      if (marketSort === "INTEREST") return INTEREST_RANK[right.interest] - INTEREST_RANK[left.interest] || right.popularity - left.popularity || left.name.localeCompare(right.name);
       if (marketSort === "POPULARITY") return right.popularity - left.popularity || left.name.localeCompare(right.name);
       if (marketSort === "RECOGNITION") return right.recognition - left.recognition || left.name.localeCompare(right.name);
       if (marketSort === "VALUE_LOW") return left.estimatedWeeklyValue - right.estimatedWeeklyValue || left.name.localeCompare(right.name);
       if (marketSort === "NAME") return left.name.localeCompare(right.name);
       return right.estimatedWeeklyValue - left.estimatedWeeklyValue || right.popularity - left.popularity || left.name.localeCompare(right.name);
     });
-  }, [view, query, marketAvailabilityFilter, marketSort]);
+  }, [view, query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketWatchOnly, marketSort]);
+  const visibleMarket = useMemo(() => market.slice(0, marketLimit), [market, marketLimit]);
   const offers = useMemo(
     () => (view?.pendingOffers ?? []).filter((entry) => matchesQuery(entry.personName, query)),
     [view, query],
   );
   const pendingPeople = useMemo(() => new Set((view?.pendingOffers ?? []).map((offer) => offer.personId)), [view]);
+
+  useEffect(() => {
+    setMarketLimit(25);
+  }, [query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketWatchOnly, marketSort]);
+
+  function selectTab(nextTab: TalentTab): void {
+    setTab(nextTab);
+    setQuery("");
+    setMarketLimit(25);
+    if (typeof window !== "undefined") {
+      const url = nextTab === "ROSTER"
+        ? "/talent"
+        : `/talent?view=${nextTab.toLowerCase()}`;
+      window.history.replaceState(window.history.state, "", url);
+    }
+  }
+
+  function toggleRosterRole(role: OfferRole): void {
+    setCollapsedRosterRoles((current) => {
+      const next = new Set(current);
+      if (next.has(role)) next.delete(role);
+      else next.add(role);
+      return next;
+    });
+  }
 
   return (
     <main className={styles.shell}>
@@ -619,77 +825,182 @@ export default function TalentClient(): React.JSX.Element {
                 role="tab"
                 aria-selected={tab === candidate}
                 className={tab === candidate ? styles.activeTab : styles.tab}
-                onClick={() => { setTab(candidate); setQuery(""); }}
+                onClick={() => selectTab(candidate)}
               >
                 {candidate === "MARKET" ? "Talent market" : candidate[0] + candidate.slice(1).toLowerCase()}
               </button>
             ))}
           </div>
 
-          <label className={styles.search}>
-            <span>Search {tab === "ROSTER" ? "your roster" : tab === "MARKET" ? "available talent" : "pending offers"}</span>
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Wrestler name" />
-          </label>
-
           {tab === "ROSTER" ? (
-            <section className={`${styles.search} ${styles.formGrid}`} aria-label="Roster filters">
-              <label>
-                <span>Sort roster</span>
-                <select value={rosterSort} onChange={(event) => setRosterSort(event.target.value as RosterSort)}>
-                  <option value="POPULARITY">Most popular</option>
-                  <option value="RECOGNITION">Most recognised</option>
-                  <option value="DATES_ASC">Fewest dates remaining</option>
-                  <option value="DATES_DESC">Most dates remaining</option>
-                  <option value="EXPIRY">Contract expiring soonest</option>
-                  <option value="NAME">Name A–Z</option>
-                </select>
+            <section className={styles.rosterToolbar} aria-label="Roster search and filters">
+              <label className={styles.rosterSearch}>
+                <span>Search roster</span>
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find wrestler…" />
               </label>
-              <label>
-                <span>Contract status</span>
-                <select value={rosterContractFilter} onChange={(event) => setRosterContractFilter(event.target.value as RosterContractFilter)}>
-                  <option value="ALL">All contracts</option>
-                  <option value="EXCLUSIVE">Exclusive</option>
-                  <option value="NON_EXCLUSIVE">Non-exclusive</option>
-                </select>
-              </label>
+              <div className={styles.divisionToggle} role="group" aria-label="Roster division">
+                {(["ALL", "MEN", "WOMEN"] as const).map((division) => (
+                  <button
+                    key={division}
+                    type="button"
+                    className={rosterDivisionFilter === division ? styles.divisionButtonActive : styles.divisionButton}
+                    onClick={() => setRosterDivisionFilter(division)}
+                  >
+                    {division === "ALL" ? "All" : division === "MEN" ? "Men" : "Women"}
+                  </button>
+                ))}
+              </div>
+              <div className={styles.rosterSelects}>
+                <label>
+                  <span>Sort</span>
+                  <select value={rosterSort} onChange={(event) => setRosterSort(event.target.value as RosterSort)}>
+                    <option value="POPULARITY">Popularity</option>
+                    <option value="RECOGNITION">Recognition</option>
+                    <option value="DATES_ASC">Dates low</option>
+                    <option value="DATES_DESC">Dates high</option>
+                    <option value="EXPIRY">Expiry</option>
+                    <option value="NAME">Name</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Deal</span>
+                  <select value={rosterContractFilter} onChange={(event) => setRosterContractFilter(event.target.value as RosterContractFilter)}>
+                    <option value="ALL">All deals</option>
+                    <option value="EXCLUSIVE">Exclusive</option>
+                    <option value="NON_EXCLUSIVE">Non-exclusive</option>
+                  </select>
+                </label>
+              </div>
             </section>
+          ) : tab === "OFFERS" ? (
+            <label className={styles.search}>
+              <span>Search pending offers</span>
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Wrestler name" />
+            </label>
           ) : null}
 
           {tab === "MARKET" ? (
-            <section className={`${styles.search} ${styles.formGrid}`} aria-label="Talent market filters">
-              <label>
-                <span>Sort market</span>
-                <select value={marketSort} onChange={(event) => setMarketSort(event.target.value as MarketSort)}>
-                  <option value="VALUE_HIGH">Highest estimated value</option>
-                  <option value="VALUE_LOW">Lowest estimated value</option>
-                  <option value="POPULARITY">Most popular</option>
-                  <option value="RECOGNITION">Most recognised</option>
-                  <option value="NAME">Name A–Z</option>
-                </select>
+            <section className={styles.marketToolbar} aria-label="Talent market search and filters">
+              <label className={styles.marketSearch}>
+                <span>Search market</span>
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find wrestler…" />
               </label>
-              <label>
-                <span>Availability</span>
-                <select value={marketAvailabilityFilter} onChange={(event) => setMarketAvailabilityFilter(event.target.value as MarketAvailabilityFilter)}>
-                  <option value="ALL">All available talent</option>
-                  <option value="FREE_AGENT">Free agents</option>
-                  <option value="NON_EXCLUSIVE">Under non-exclusive deal</option>
-                </select>
-              </label>
+              <div className={styles.marketQuickFilters}>
+                <div className={styles.divisionToggle} role="group" aria-label="Talent market division">
+                  {(["ALL", "MEN", "WOMEN"] as const).map((division) => (
+                    <button
+                      key={division}
+                      type="button"
+                      className={marketDivisionFilter === division ? styles.divisionButtonActive : styles.divisionButton}
+                      onClick={() => setMarketDivisionFilter(division)}
+                    >
+                      {division === "ALL" ? "All" : division === "MEN" ? "Men" : "Women"}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className={marketWatchOnly ? styles.watchFilterActive : styles.watchFilter}
+                  type="button"
+                  aria-pressed={marketWatchOnly}
+                  onClick={() => setMarketWatchOnly((current) => !current)}
+                >
+                  ★ Watchlist
+                </button>
+              </div>
+              <div className={styles.marketSelects}>
+                <label>
+                  <span>Availability</span>
+                  <select value={marketAvailabilityFilter} onChange={(event) => setMarketAvailabilityFilter(event.target.value as MarketAvailabilityFilter)}>
+                    <option value="ALL">All available</option>
+                    <option value="FREE_AGENT">Free agents</option>
+                    <option value="NON_EXCLUSIVE">Non-exclusive</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Interest</span>
+                  <select value={marketInterestFilter} onChange={(event) => setMarketInterestFilter(event.target.value as MarketInterestFilter)}>
+                    <option value="ALL">Any interest</option>
+                    <option value="OPEN_PLUS">Open to talks+</option>
+                    <option value="INTERESTED_PLUS">Interested+</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Sort</span>
+                  <select value={marketSort} onChange={(event) => setMarketSort(event.target.value as MarketSort)}>
+                    <option value="INTEREST">Interest</option>
+                    <option value="VALUE_HIGH">Value high</option>
+                    <option value="VALUE_LOW">Value low</option>
+                    <option value="POPULARITY">Popularity</option>
+                    <option value="RECOGNITION">Recognition</option>
+                    <option value="NAME">Name</option>
+                  </select>
+                </label>
+              </div>
+              <div className={styles.marketCount}>
+                Showing <b>{Math.min(marketLimit, market.length)}</b> of <b>{market.length}</b> matching wrestlers
+              </div>
             </section>
           ) : null}
 
           <section className={styles.list}>
-            {tab === "ROSTER" ? roster.map((entry) => (
-              <RosterCard
-                key={entry.contractId}
-                wrestler={entry}
-                pending={pendingPeople.has(entry.personId)}
-                alignmentSaving={alignmentSaving === entry.personId}
-                onAlignment={(alignment) => void changeAlignment(entry, alignment)}
-                onRenew={() => openRenewal(entry)}
-              />
-            )) : null}
-            {tab === "MARKET" ? market.map((entry) => <MarketCard key={entry.personId} wrestler={entry} onOffer={() => openMarketOffer(entry)} />) : null}
+            {tab === "ROSTER" ? (
+              <div className={styles.rosterGroups}>
+                {rosterGroups.map((group) => {
+                  const collapsed = query.trim().length === 0 && collapsedRosterRoles.has(group.role);
+                  return (
+                    <section className={styles.rosterGroup} key={group.role}>
+                      <button
+                        className={styles.rosterGroupHeader}
+                        type="button"
+                        aria-expanded={!collapsed}
+                        onClick={() => toggleRosterRole(group.role)}
+                      >
+                        <span className={styles.rosterGroupTitle}>{label(group.role)}</span>
+                        <span className={styles.rosterGroupMeta}>{group.entries.length} {group.entries.length === 1 ? "wrestler" : "wrestlers"} · {collapsed ? "Show" : "Hide"}</span>
+                      </button>
+                      {!collapsed ? (
+                        <div className={styles.rosterGroupList}>
+                          {group.entries.map((entry) => (
+                            <RosterCard
+                              key={entry.contractId}
+                              wrestler={entry}
+                              pending={pendingPeople.has(entry.personId)}
+                              alignmentSaving={alignmentSaving === entry.personId}
+                              onAlignment={(alignment) => void changeAlignment(entry, alignment)}
+                              onRenew={() => openRenewal(entry)}
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                    </section>
+                  );
+                })}
+              </div>
+            ) : null}
+            {tab === "MARKET" ? (
+              <>
+                <div className={styles.marketList}>
+                  {visibleMarket.map((entry) => (
+                    <MarketCard
+                      key={entry.personId}
+                      wrestler={entry}
+                      watchSaving={watchSaving === entry.personId}
+                      onWatch={() => void changeWatch(entry)}
+                      onOffer={() => openMarketOffer(entry)}
+                    />
+                  ))}
+                </div>
+                {visibleMarket.length < market.length ? (
+                  <button
+                    className={styles.loadMore}
+                    type="button"
+                    onClick={() => setMarketLimit((current) => current + 25)}
+                  >
+                    Load 25 more · {market.length - visibleMarket.length} remaining
+                  </button>
+                ) : null}
+              </>
+            ) : null}
             {tab === "OFFERS" ? offers.map((entry) => <OfferCard key={entry.offerId} offer={entry} />) : null}
             {(tab === "ROSTER" && roster.length === 0) || (tab === "MARKET" && market.length === 0) || (tab === "OFFERS" && offers.length === 0) ? (
               <div className={styles.empty}>Nothing matches this view right now.</div>
