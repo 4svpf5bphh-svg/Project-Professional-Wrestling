@@ -42,6 +42,25 @@ function ok(value: unknown, message: string): void {
   if (!value) throw new Error(message);
 }
 
+function sameDivisionParticipantIds(
+  state: { people: Array<{ id: string; division?: "MEN" | "WOMEN" }> },
+  candidates: Array<{ personId: string }>,
+  minParticipants: number,
+  maxParticipants: number,
+): string[] {
+  const divisionById = new Map(state.people.map((person) => [person.id, person.division ?? "MEN"]));
+  const groups = (["MEN", "WOMEN"] as const)
+    .map((division) => candidates.filter((person) => divisionById.get(person.personId) === division))
+    .sort((left, right) => right.length - left.length);
+  const minimumEven = minParticipants % 2 === 0 ? minParticipants : minParticipants + 1;
+  const group = groups.find((candidate) => candidate.length >= minimumEven);
+  if (!group) throw new Error("fixture has no single division with enough wrestlers");
+  let count = Math.min(group.length, maxParticipants);
+  if (count % 2 !== 0) count -= 1;
+  if (count < minimumEven) throw new Error("fixture cannot form an even same-division roster");
+  return group.slice(0, count).map((person) => person.personId);
+}
+
 async function reservedShowFixture(seed: number) {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed, playerId: "alpha-player" });
@@ -63,14 +82,12 @@ async function reservedShowFixture(seed: number) {
   const venue = market?.venues[0];
   if (!market || !venue) throw new Error("show planner has no market/venue option");
 
-  let participantIds = promotion.roster
-    .filter((person) => person.status === "ACTIVE" && person.datesRemaining > 0)
-    .slice(0, promotion.showPlanning.maxParticipants)
-    .map((person) => person.personId);
-  if (participantIds.length % 2 !== 0) participantIds = participantIds.slice(0, -1);
-  if (participantIds.length < promotion.showPlanning.minParticipants) {
-    throw new Error("show planner has too few available wrestlers");
-  }
+  const participantIds = sameDivisionParticipantIds(
+    aggregate.state,
+    promotion.roster.filter((person) => person.status === "ACTIVE" && person.datesRemaining > 0),
+    promotion.showPlanning.minParticipants,
+    promotion.showPlanning.maxParticipants,
+  );
 
   const planned = await saveAlphaCurrentWeekShowPlan(repository, worldId, "alpha-player", {
     requestId: `card-show-${seed}`,
@@ -344,12 +361,13 @@ await test("a logistics-only show draft opens in the builder and the first valid
   ok(builder.reservationId === null, "unbooked show builder unexpectedly had a reservation");
   ok(builder.availableParticipants.length >= builder.minParticipants, "builder did not expose enough contracted talent");
 
-  const selectedIds = builder.availableParticipants
-    .slice(0, builder.minParticipants % 2 === 0 ? builder.minParticipants : builder.minParticipants + 1)
-    .map((person) => person.personId);
-  if (selectedIds.length % 2 !== 0 || selectedIds.length < builder.minParticipants) {
-    throw new Error("slot-builder fixture could not form a valid match card");
-  }
+  const persistedForBuilder = await repository.load(worldId);
+  const selectedIds = sameDivisionParticipantIds(
+    persistedForBuilder.state,
+    builder.availableParticipants,
+    builder.minParticipants,
+    builder.maxParticipants,
+  );
   const card = singlesCard(selectedIds).map((match, index) => ({
     ...match,
     draftMatchId: `${show.draftId}:slot:${index + 1}`,
@@ -599,11 +617,13 @@ await test("Alpha six-week card booking targets the selected future draft withou
   const venue = market?.venues[0];
   if (!market || !venue) throw new Error("future-card planner has no market/venue option");
 
-  let futureParticipantIds = futureWeek.eligibleParticipants
-    .slice(0, Math.min(futureWeek.maxParticipants, Math.max(futureWeek.minParticipants, 4)))
-    .map((person) => person.personId);
-  if (futureParticipantIds.length % 2 !== 0) futureParticipantIds = futureParticipantIds.slice(0, -1);
-  if (futureParticipantIds.length < futureWeek.minParticipants) throw new Error("future-card fixture has too few eligible wrestlers");
+  const persistedForFuture = await fixture.repository.load(fixture.worldId);
+  const futureParticipantIds = sameDivisionParticipantIds(
+    persistedForFuture.state,
+    futureWeek.eligibleParticipants,
+    Math.max(futureWeek.minParticipants, 4),
+    futureWeek.maxParticipants,
+  );
 
   const plannerAfter = await saveAlphaPlannerShowPlan(fixture.repository, fixture.worldId, "alpha-player", {
     requestId: "future-card-show",
