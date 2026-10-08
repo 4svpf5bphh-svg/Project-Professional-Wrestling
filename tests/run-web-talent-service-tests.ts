@@ -7,6 +7,7 @@ import {
 import {
   loadAlphaTalentSession,
   setAlphaRosterAlignment,
+  setAlphaTalentWatch,
   submitAlphaTalentOffer,
 } from "../packages/web-adapter/src/talent-service.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
@@ -34,6 +35,54 @@ async function test(name: string, fn: () => Promise<void>): Promise<void> {
 function ok(value: unknown, message: string): void {
   if (!value) throw new Error(message);
 }
+
+await test("Talent Watchlist persists without advancing the simulation revision", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 73000, playerId: "player-a" });
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("Watchlist fixture has no takeover-eligible promotion");
+  await claimAlphaPromotion(repository, worldId, "player-a", {
+    promotionId: independent.id,
+    requestId: "talent-claim-watchlist",
+  });
+
+  const before = await loadAlphaTalentSession(repository, worldId, "player-a");
+  const candidate = before.market[0];
+  if (!candidate) throw new Error("Watchlist fixture has no market candidate");
+  const persistedBefore = await repository.load(worldId);
+  const revisionBefore = persistedBefore.runtime.revision;
+
+  const watched = await setAlphaTalentWatch(repository, worldId, "player-a", {
+    personId: candidate.personId,
+    watched: true,
+  });
+  ok(watched.watched, "Watchlist service did not confirm watched state");
+  ok(
+    watched.view.market.find((entry) => entry.personId === candidate.personId)?.watched === true,
+    "Watchlist state did not reach talent projection",
+  );
+
+  const afterWatch = await repository.load(worldId);
+  ok(afterWatch.runtime.revision === revisionBefore, "Watchlist preference advanced the simulation revision");
+  const reloaded = await loadAlphaTalentSession(repository, worldId, "player-a");
+  ok(
+    reloaded.market.find((entry) => entry.personId === candidate.personId)?.watched === true,
+    "Watchlist preference did not survive repository reload",
+  );
+
+  const unwatched = await setAlphaTalentWatch(repository, worldId, "player-a", {
+    personId: candidate.personId,
+    watched: false,
+  });
+  ok(!unwatched.watched, "Watchlist service did not confirm unwatch");
+  const afterUnwatch = await loadAlphaTalentSession(repository, worldId, "player-a");
+  ok(
+    afterUnwatch.market.find((entry) => entry.personId === candidate.personId)?.watched === false,
+    "Unwatch did not survive repository reload",
+  );
+});
 
 await test("Talent service submits a recruitment offer through the idempotent application command", async () => {
   const repository = new InMemoryApplicationWorldRepository();
