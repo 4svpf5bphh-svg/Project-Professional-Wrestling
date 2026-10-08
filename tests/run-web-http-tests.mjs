@@ -1,7 +1,15 @@
 import { spawn } from "node:child_process";
+import { createAlphaWorldAggregate } from "../dist/packages/web-adapter/src/alpha-service.js";
 
 const port = 3100;
 const baseUrl = `http://127.0.0.1:${port}`;
+const fixtureAggregate = createAlphaWorldAggregate({
+  seed: Number(process.env.PPW_ALPHA_WORLD_SEED ?? 20261002),
+  playerId: (process.env.PPW_ALPHA_PLAYER_ID ?? "alpha-player-1").trim(),
+});
+const divisionByPersonId = new Map(
+  fixtureAggregate.state.people.map((person) => [person.id, person.division ?? "MEN"]),
+);
 let output = "";
 
 const server = spawn(
@@ -65,12 +73,22 @@ function showPlanBody(view) {
   const market = planning.markets[0];
   const venue = market?.venues[0];
   ok(market && venue, "HTTP planning view exposed no market/venue options");
-  let participantIds = promotion.roster
-    .filter((person) => person.status === "ACTIVE" && person.datesRemaining > 0)
-    .slice(0, planning.maxParticipants)
+  const reservable = promotion.roster
+    .filter((person) => person.status === "ACTIVE" && person.datesRemaining > 0);
+  const minimumEven = planning.minParticipants % 2 === 0
+    ? planning.minParticipants
+    : planning.minParticipants + 1;
+  const sameDivision = (["MEN", "WOMEN"])
+    .map((division) => reservable.filter((person) => divisionByPersonId.get(person.personId) === division))
+    .sort((left, right) => right.length - left.length)
+    .find((group) => group.length >= minimumEven);
+  ok(sameDivision, "HTTP planning view exposed no single division with enough reservable wrestlers");
+  let participantCount = Math.min(sameDivision.length, planning.maxParticipants);
+  if (participantCount % 2 !== 0) participantCount -= 1;
+  const participantIds = sameDivision
+    .slice(0, participantCount)
     .map((person) => person.personId);
-  if (participantIds.length % 2 !== 0) participantIds = participantIds.slice(0, -1);
-  ok(participantIds.length >= planning.minParticipants, "HTTP planning view exposed too few reservable wrestlers");
+  ok(participantIds.length >= minimumEven, "HTTP planning view exposed too few same-division wrestlers");
   return {
     requestId: "ci-http-show-plan-001",
     expectedRevision: view.world.revision,
