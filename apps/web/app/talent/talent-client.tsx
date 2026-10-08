@@ -11,6 +11,7 @@ import type {
   AlphaRosterAlignmentResult,
   AlphaTalentOfferRequest,
   AlphaTalentOfferResult,
+  AlphaTalentWatchResult,
 } from "../../../../dist/packages/web-adapter/src/talent-service.js";
 import styles from "./talent.module.css";
 
@@ -64,7 +65,7 @@ const ROSTER_ROLE_ORDER: OfferRole[] = [
   "DEVELOPMENTAL",
 ];
 
-function isErrorPayload(payload: PlayerTalentManagementView | AlphaTalentOfferResult | AlphaRosterAlignmentResult | ErrorPayload): payload is ErrorPayload {
+function isErrorPayload(payload: PlayerTalentManagementView | AlphaTalentOfferResult | AlphaRosterAlignmentResult | AlphaTalentWatchResult | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
 }
 
@@ -279,9 +280,13 @@ function RosterCard({
 
 function MarketCard({
   wrestler,
+  watchSaving,
+  onWatch,
   onOffer,
 }: {
   wrestler: PlayerTalentMarketView;
+  watchSaving: boolean;
+  onWatch: () => void;
   onOffer: () => void;
 }): React.JSX.Element {
   const publicHome = wrestler.rosterAffiliations[0]?.promotionName
@@ -323,9 +328,19 @@ function MarketCard({
         ) : null}
         <div className={styles.marketBottom}>
           <span>Estimated market value <b>{money(wrestler.estimatedWeeklyValue)}/wk</b></span>
-          {wrestler.hasOurPendingOffer ? <span className={styles.pending}>Your offer pending</span> : (
-            <button className={styles.actionButton} type="button" onClick={onOffer}>Make offer</button>
-          )}
+          <div className={styles.marketActions}>
+            <button
+              className={wrestler.watched ? styles.watchButtonActive : styles.watchButton}
+              type="button"
+              disabled={watchSaving}
+              onClick={onWatch}
+            >
+              {watchSaving ? "Saving…" : wrestler.watched ? "★ Watching" : "☆ Watch"}
+            </button>
+            {wrestler.hasOurPendingOffer ? <span className={styles.pending}>Your offer pending</span> : (
+              <button className={styles.actionButton} type="button" onClick={onOffer}>Make offer</button>
+            )}
+          </div>
         </div>
       </div>
     </details>
@@ -453,10 +468,12 @@ export default function TalentClient(): React.JSX.Element {
   const [marketAvailabilityFilter, setMarketAvailabilityFilter] = useState<MarketAvailabilityFilter>("ALL");
   const [marketDivisionFilter, setMarketDivisionFilter] = useState<MarketDivisionFilter>("ALL");
   const [marketInterestFilter, setMarketInterestFilter] = useState<MarketInterestFilter>("ALL");
+  const [marketWatchOnly, setMarketWatchOnly] = useState(false);
   const [marketLimit, setMarketLimit] = useState(25);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [alignmentSaving, setAlignmentSaving] = useState<string | null>(null);
+  const [watchSaving, setWatchSaving] = useState<string | null>(null);
   const [target, setTarget] = useState<OfferTarget | null>(null);
   const [draft, setDraft] = useState<OfferDraft | null>(null);
   const offerOpen = Boolean(target && draft);
@@ -568,6 +585,32 @@ export default function TalentClient(): React.JSX.Element {
     }
   }
 
+  async function changeWatch(wrestler: PlayerTalentMarketView): Promise<void> {
+    if (watchSaving) return;
+    setWatchSaving(wrestler.personId);
+    setError(null);
+    try {
+      const response = await fetch("/api/talent", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personId: wrestler.personId,
+          watched: !wrestler.watched,
+        }),
+      });
+      const payload = await response.json() as AlphaTalentWatchResult | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to update Watchlist");
+      }
+      setView(payload.view);
+      setNotice(`${wrestler.name} ${payload.watched ? "added to" : "removed from"} Watchlist.`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to update Watchlist");
+    } finally {
+      setWatchSaving(null);
+    }
+  }
+
   async function submitOffer(): Promise<void> {
     if (!target || !draft) return;
     setSubmitting(true);
@@ -630,6 +673,7 @@ export default function TalentClient(): React.JSX.Element {
       .filter((entry) => matchesQuery(entry.name, query))
       .filter((entry) => marketDivisionFilter === "ALL" || entry.division === marketDivisionFilter)
       .filter((entry) => marketAvailabilityFilter === "ALL" || entry.availability === marketAvailabilityFilter)
+      .filter((entry) => !marketWatchOnly || entry.watched)
       .filter((entry) => {
         if (marketInterestFilter === "INTERESTED_PLUS") return INTEREST_RANK[entry.interest] >= INTEREST_RANK.INTERESTED;
         if (marketInterestFilter === "OPEN_PLUS") return INTEREST_RANK[entry.interest] >= INTEREST_RANK.OPEN_TO_TALKS;
@@ -643,7 +687,7 @@ export default function TalentClient(): React.JSX.Element {
       if (marketSort === "NAME") return left.name.localeCompare(right.name);
       return right.estimatedWeeklyValue - left.estimatedWeeklyValue || right.popularity - left.popularity || left.name.localeCompare(right.name);
     });
-  }, [view, query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketSort]);
+  }, [view, query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketWatchOnly, marketSort]);
   const visibleMarket = useMemo(() => market.slice(0, marketLimit), [market, marketLimit]);
   const offers = useMemo(
     () => (view?.pendingOffers ?? []).filter((entry) => matchesQuery(entry.personName, query)),
@@ -653,7 +697,7 @@ export default function TalentClient(): React.JSX.Element {
 
   useEffect(() => {
     setMarketLimit(25);
-  }, [query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketSort]);
+  }, [query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketWatchOnly, marketSort]);
 
   function toggleRosterRole(role: OfferRole): void {
     setCollapsedRosterRoles((current) => {
@@ -766,17 +810,27 @@ export default function TalentClient(): React.JSX.Element {
                 <span>Search market</span>
                 <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find wrestler…" />
               </label>
-              <div className={styles.divisionToggle} role="group" aria-label="Talent market division">
-                {(["ALL", "MEN", "WOMEN"] as const).map((division) => (
-                  <button
-                    key={division}
-                    type="button"
-                    className={marketDivisionFilter === division ? styles.divisionButtonActive : styles.divisionButton}
-                    onClick={() => setMarketDivisionFilter(division)}
-                  >
-                    {division === "ALL" ? "All" : division === "MEN" ? "Men" : "Women"}
-                  </button>
-                ))}
+              <div className={styles.marketQuickFilters}>
+                <div className={styles.divisionToggle} role="group" aria-label="Talent market division">
+                  {(["ALL", "MEN", "WOMEN"] as const).map((division) => (
+                    <button
+                      key={division}
+                      type="button"
+                      className={marketDivisionFilter === division ? styles.divisionButtonActive : styles.divisionButton}
+                      onClick={() => setMarketDivisionFilter(division)}
+                    >
+                      {division === "ALL" ? "All" : division === "MEN" ? "Men" : "Women"}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className={marketWatchOnly ? styles.watchFilterActive : styles.watchFilter}
+                  type="button"
+                  aria-pressed={marketWatchOnly}
+                  onClick={() => setMarketWatchOnly((current) => !current)}
+                >
+                  ★ Watchlist
+                </button>
               </div>
               <div className={styles.marketSelects}>
                 <label>
@@ -852,7 +906,13 @@ export default function TalentClient(): React.JSX.Element {
               <>
                 <div className={styles.marketList}>
                   {visibleMarket.map((entry) => (
-                    <MarketCard key={entry.personId} wrestler={entry} onOffer={() => openMarketOffer(entry)} />
+                    <MarketCard
+                      key={entry.personId}
+                      wrestler={entry}
+                      watchSaving={watchSaving === entry.personId}
+                      onWatch={() => void changeWatch(entry)}
+                      onOffer={() => openMarketOffer(entry)}
+                    />
                   ))}
                 </div>
                 {visibleMarket.length < market.length ? (
