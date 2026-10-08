@@ -9,6 +9,9 @@ import {
 import {
   REAL_ACTIVE_WOMENS_ROSTER_NAMES,
 } from "./real-active-womens-roster.js";
+import {
+  calibrateRealActiveWomensPerson,
+} from "./real-active-womens-calibration.js";
 
 export const REAL_ACTIVE_MIXED_ROSTER_SIZE =
   REAL_ACTIVE_MENS_ROSTER_NAMES.length + REAL_ACTIVE_WOMENS_ROSTER_NAMES.length;
@@ -49,10 +52,10 @@ export const calibratedRealActiveMixedRosterSource: WorldRosterSource = (context
     }
 
     const womenIndex = index - REAL_ACTIVE_MENS_ROSTER_NAMES.length;
-    return {
+    return calibrateRealActiveWomensPerson({
       ...person,
       name: REAL_ACTIVE_WOMENS_ROSTER_NAMES[womenIndex]!,
       division: "WOMEN",
-    };
+    });
   });
 };

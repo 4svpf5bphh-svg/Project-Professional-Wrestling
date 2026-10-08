@@ -16,6 +16,10 @@ import {
   REAL_ACTIVE_WOMENS_ROSTER_REVIEWED_ON,
 } from "../packages/content/src/real-active-womens-roster.js";
 import {
+  REAL_ACTIVE_WOMENS_CALIBRATION_VERSION,
+  realWomensRosterValueBand,
+} from "../packages/content/src/real-active-womens-calibration.js";
+import {
   REAL_ACTIVE_MIXED_ROSTER_SIZE,
   calibratedRealActiveMixedRosterSource,
 } from "../packages/content/src/real-active-mixed-roster.js";
@@ -193,6 +197,52 @@ test("expanded mixed roster source creates explicit men's and women's divisions 
   ok(new Set(state.people.map((person) => person.name.toLocaleLowerCase("en"))).size === state.people.length, "mixed source contains duplicate identities");
   ok(women.some((person) => person.name === "Rhea Ripley"), "Rhea Ripley was not tagged in the women's division");
   ok(men.some((person) => person.name === "Roman Reigns"), "Roman Reigns disappeared from the men's division");
+});
+
+test("calibrated mixed roster gives recognisable women sensible broad game bands", () => {
+  const state = createWorld(
+    77108,
+    REAL_WORLD_ALPHA_RULESET,
+    "Women's Calibration",
+    calibratedRealActiveMixedRosterSource,
+  );
+  const repeat = createWorld(
+    77108,
+    REAL_WORLD_ALPHA_RULESET,
+    "Women's Calibration",
+    calibratedRealActiveMixedRosterSource,
+  );
+  ok(REAL_ACTIVE_WOMENS_CALIBRATION_VERSION.length > 0, "women's calibration version must be declared");
+  ok(JSON.stringify(state.people) === JSON.stringify(repeat.people), "women's calibration is not deterministic");
+
+  const mercedes = requirePerson(state, "Mercedes Moné");
+  ok(realWomensRosterValueBand(mercedes.name) === "MEGASTAR", "Mercedes Moné is not in the megastar band");
+  ok(mercedes.popularity >= 90 && mercedes.recognition >= 91, "women's megastar fame calibration is too low");
+  ok(mercedes.skills.presentation >= 87, "Mercedes presentation calibration is too low");
+
+  const rhea = requirePerson(state, "Rhea Ripley");
+  ok(realWomensRosterValueBand(rhea.name) === "MEGASTAR", "Rhea Ripley is not in the megastar band");
+  ok(rhea.skills.inRingQuality >= 87 && rhea.skills.matchCraft >= 85, "Rhea workrate calibration is too low");
+
+  const saya = requirePerson(state, "Saya Kamitani");
+  ok(realWomensRosterValueBand(saya.name) === "HEADLINER", "Saya Kamitani is not in the headliner band");
+  ok(saya.skills.inRingQuality >= 87 && saya.skills.matchCraft >= 85, "Saya Kamitani workrate calibration is too low");
+
+  const chelsea = requirePerson(state, "Chelsea Green");
+  ok(realWomensRosterValueBand(chelsea.name) === "HEADLINER", "Chelsea Green is not in the headliner band");
+  ok(chelsea.skills.presentation >= 87, "Chelsea Green presentation calibration is too low");
+
+  const prospect = requirePerson(state, "Kendal Grey");
+  ok(realWomensRosterValueBand(prospect.name) === "PROSPECT", "Kendal Grey is not in the prospect value band");
+  ok(prospect.careerStage === "PROSPECT", "women's prospect career stage did not apply");
+  ok(prospect.biologicalAge <= 25.5 && prospect.developmentAptitude >= 72, "women's prospect development calibration is implausible");
+
+  const attraction = requirePerson(state, "AJ Lee");
+  ok(attraction.careerStage === "SPECIAL_ATTRACTION", "AJ Lee special-attraction career stage did not apply");
+  ok(attraction.skills.stamina <= 75, "women's special-attraction stamina cap did not apply");
+
+  const regular = requirePerson(state, "Lady Shani");
+  ok(marketWeeklyValue(mercedes) > marketWeeklyValue(regular) * 1.5, "women's star/regular contract value separation is too small");
 });
 
 test("raw real identity overlay preserves deterministic wrestler attributes and genesis contracts", () => {
