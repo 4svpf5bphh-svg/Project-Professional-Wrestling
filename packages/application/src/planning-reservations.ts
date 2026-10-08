@@ -4,10 +4,10 @@ import type {
   Person,
   PpwDate,
   Promotion,
-  WrestlingEventType,
   WorldState,
 } from "../../domain/src/types.js";
 import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { maxShowParticipantsForDate } from "./show-capacity.js";
 import { serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
 import {
   validateDetailedShowDraft,
@@ -27,24 +27,6 @@ function samePpwWeek(a: PpwDate, b: PpwDate): boolean {
 
 function reservationIdFor(promotionId: Id, draftId: string): string {
   return `show-reservation:${promotionId}:${draftId}`;
-}
-
-function targetEventType(state: WorldState, date: PpwDate): WrestlingEventType {
-  const weekIndex = ppwDateToWeekIndex(date, state.ruleset.weeksPerYear);
-  return (weekIndex + 1) % state.ruleset.majorEventIntervalWeeks === 0 ? "MAJOR" : "REGULAR";
-}
-
-function eventRosterTarget(promotion: Promotion, type: WrestlingEventType): number {
-  const regular = promotion.tier === "GLOBAL"
-    ? 16
-    : promotion.tier === "NATIONAL"
-      ? 14
-      : promotion.tier === "RISING"
-        ? 12
-        : promotion.tier === "INDEPENDENT"
-          ? 10
-          : 8;
-  return type === "MAJOR" ? regular + 2 : regular;
 }
 
 function promotionRunsAtDate(state: WorldState, promotion: Promotion, date: PpwDate): boolean {
@@ -231,7 +213,7 @@ export function reserveDetailedShowDraft(
   if (draft.participantIds.length < state.ruleset.minEventParticipants) {
     throw new Error(`reserved show roster must contain at least ${state.ruleset.minEventParticipants} wrestlers`);
   }
-  const rosterTarget = eventRosterTarget(promotion, targetEventType(state, draft.targetDate));
+  const rosterTarget = maxShowParticipantsForDate(state, promotion, draft.targetDate);
   if (draft.participantIds.length > rosterTarget) {
     throw new Error(`reserved show roster exceeds event target of ${rosterTarget}`);
   }
