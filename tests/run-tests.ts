@@ -15,6 +15,8 @@ import { calibratedRealActiveMixedRosterSource } from "../packages/content/src/r
 import {
   AEW_CMLL_DUAL_CONTRACT_SEEDS,
   AEW_PRIMARY_ROSTER_NAMES,
+  AEW_FLEXIBLE_PRIMARY_ROSTER_NAMES,
+  CMLL_PRIMARY_ROSTER_NAMES,
   AEW_ROH_CMLL_ROSTER_SEED_REVIEWED_ON,
   AEW_ROH_SECONDARY_ROSTER_NAMES,
   ROH_PRIMARY_ROSTER_NAMES,
@@ -594,6 +596,7 @@ test("reviewed AEW/ROH/CMLL seed models parent rosters and confirmed dual contra
 
   for (const name of AEW_PRIMARY_ROSTER_NAMES) ok(aewNames.includes(name), `AEW seed missing ${name}`);
   for (const name of ROH_PRIMARY_ROSTER_NAMES) ok(rohNames.includes(name), `ROH seed missing ${name}`);
+  for (const name of CMLL_PRIMARY_ROSTER_NAMES) ok(cmllNames.includes(name), `CMLL seed missing ${name}`);
   for (const name of AEW_ROH_SECONDARY_ROSTER_NAMES) ok(rohNames.includes(name), `ROH secondary seed missing ${name}`);
   for (const seed of AEW_CMLL_DUAL_CONTRACT_SEEDS) {
     ok(aewNames.includes(seed.name), `AEW dual-contract roster missing ${seed.name}`);
@@ -625,6 +628,13 @@ test("reviewed AEW/ROH/CMLL seed models parent rosters and confirmed dual contra
   equal(activeContractsForPerson(state, athena.id)[0]!.promotionId, aew.id);
   ok(rohNames.includes("Athena"), "Athena is missing from ROH");
   ok(!aewNames.includes("Athena"), "ROH-primary Athena leaked into the AEW main roster");
+
+  for (const name of AEW_FLEXIBLE_PRIMARY_ROSTER_NAMES) {
+    const person = state.people.find((candidate) => candidate.name === name)!;
+    const contract = activeContractsForPerson(state, person.id).find((candidate) => candidate.promotionId === aew.id);
+    ok(contract, `missing AEW contract for flexible roster member ${name}`);
+    equal(contract!.family, "LIMITED_NON_EXCLUSIVE");
+  }
 
   const marina = state.people.find((person) => person.name === "Marina Shafir")!;
   equal(activeContractsForPerson(state, marina.id).length, 1);
@@ -675,6 +685,9 @@ test("reviewed TNA seed creates an explicit flexible active-core roster", () => 
   for (const name of TNA_PRIMARY_ROSTER_NAMES) {
     ok(tnaRosterNames.includes(name), `TNA seed missing ${name}`);
   }
+
+  const steveMaclin = state.people.find((candidate) => candidate.name === "Steve Maclin")!;
+  ok(!currentRosterPersonIds(state, tna.id).includes(steveMaclin.id), "released Steve Maclin was incorrectly restored to TNA");
 
   for (const name of ["Nic Nemeth", "Xia Brookside", "Tasha Steelz", "Zoey Serrano"]) {
     const person = state.people.find((candidate) => candidate.name === name)!;

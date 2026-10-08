@@ -180,7 +180,37 @@ Utami Hayashishita
 Fuwa-chan
 Akari
 Matoi Hamabe
-Tetsu Akira`;
+Tetsu Akira
+Sareee
+Mayu Iwatani
+Mizuki
+Nina Samuels
+Rhio
+Kenzie Paige
+Takumi Iroha
+Miu Watanabe
+Suzume
+Miku Aono
+Natalia Markova
+Shoko Nakajima
+Janai Kai
+Tiffany Nieves
+Gisele Shaw
+Miyu Yamashita
+Chihiro Hashimoto
+Lana Austin
+Trish Adora
+Mika Iwata
+Tessa Blanchard
+Yuki Arai
+Kaho Matsushita
+Hikari Minami
+MIRAI
+Billie Starkz
+Steph De Lander
+Shotzi Blackheart
+Lady Frost
+Alexxis Falcon`;
 
 export const REAL_ACTIVE_WOMENS_ROSTER_NAMES: readonly string[] =
   REAL_ACTIVE_WOMENS_ROSTER_TEXT.split("\n");

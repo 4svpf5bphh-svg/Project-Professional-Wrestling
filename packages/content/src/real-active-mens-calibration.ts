@@ -5,7 +5,7 @@ import {
   realActiveMensRosterSource,
 } from "./real-active-mens-roster.js";
 
-export const REAL_ACTIVE_MENS_CALIBRATION_VERSION = "2026-10-04-a";
+export const REAL_ACTIVE_MENS_CALIBRATION_VERSION = "2026-10-08-b";
 
 export type RealRosterValueBand = "MEGASTAR" | "HEADLINER" | "FEATURED" | "REGULAR" | "PROSPECT";
 
@@ -100,7 +100,10 @@ Matt Riddle
 Michael Oku
 Jeff Hardy
 Matt Hardy
-MVP`);
+MVP
+Tetsuya Naito
+Kento Miyahara
+Mike Bailey`);
 
 const FEATURED = setFromText(`Austin Theory
 Angelo Dawkins
@@ -197,7 +200,26 @@ Mark Andrews
 Zak Knight
 Keith Lee
 Tommaso Ciampa
-Tyler Breeze`);
+Tyler Breeze
+Yoshiki Inamura
+Silas Mason
+Mance Warner
+Man Like DeReiss
+EFFY
+Madoka Kikuta
+Neón
+Yuki Ueno
+Soberano Jr.
+Steve Maclin
+Nigel McGuinness
+Esfinge
+Bárbaro Cavernario
+KZY
+Masaaki Mochizuki
+Cara Noir
+Averno
+Stuka Jr.
+Gran Guerrero`);
 
 const PROSPECT_VALUE = setFromText(`Blake Howard
 Brad Baylor
@@ -247,7 +269,10 @@ Cappuccino Jones
 Chazz "Starboy" Hall
 CJ Valor
 Elijah Holyfield
-Harlem Lewis`);
+Harlem Lewis
+Ryoya Tanaka
+Elijah Blum
+Xelhua`);
 
 const SPECIAL_ATTRACTIONS = setFromText(`Billy Gunn
 Jeff Jarrett
@@ -264,7 +289,13 @@ Satoshi Kojima
 TAKA Michinoku
 Super Crazy
 Ricky Morton
-MVP`);
+MVP
+Tetsuya Naito
+Nigel McGuinness
+Masaaki Mochizuki
+Averno
+Stuka Jr.
+Gran Guerrero`);
 
 const VETERANS = setFromText(`CM Punk
 Randy Orton
@@ -303,7 +334,13 @@ Nic Nemeth
 Matt Cardona
 Tom Lawlor
 Josh Barnett
-Tyler Breeze`);
+Tyler Breeze
+Tetsuya Naito
+Nigel McGuinness
+Masaaki Mochizuki
+Averno
+Stuka Jr.
+Gran Guerrero`);
 
 const PROSPECT_STAGE = new Set([
   ...PROSPECT_VALUE,
@@ -340,7 +377,13 @@ Johnny Gargano
 Nathan Frazer
 Dragon Lee
 Rey Fenix
-Penta`);
+Penta
+Kento Miyahara
+Mike Bailey
+Madoka Kikuta
+Neón
+Yuki Ueno
+Soberano Jr.`);
 
 const PRESENTATION_ACES = setFromText(`Cody Rhodes
 Roman Reigns
@@ -367,7 +410,12 @@ Moose
 Matt Cardona
 Mustafa Ali
 Psycho Clown
-Logan Paul`);
+Logan Paul
+Tetsuya Naito
+Silas Mason
+Mance Warner
+EFFY
+Cara Noir`);
 
 const KNOWN_ROSTER_NAMES = new Set(REAL_ACTIVE_MENS_ROSTER_NAMES);
 

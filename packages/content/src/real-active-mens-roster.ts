@@ -429,7 +429,34 @@ Yujiro Takahashi
 Yushin Hatazawa
 Yuto-Ice
 Yuya Uemura
-Zane Jay`;
+Zane Jay
+Tetsuya Naito
+Yoshiki Inamura
+Silas Mason
+Kento Miyahara
+Atticus Cogar
+Mance Warner
+Man Like DeReiss
+Charles Mason
+EFFY
+Madoka Kikuta
+Neón
+Yuki Ueno
+Mike Bailey
+Soberano Jr.
+Steve Maclin
+Nigel McGuinness
+Esfinge
+Bárbaro Cavernario
+KZY
+Ryoya Tanaka
+Masaaki Mochizuki
+Cara Noir
+Elijah Blum
+Averno
+Stuka Jr.
+Gran Guerrero
+Xelhua`;
 
 export const REAL_ACTIVE_MENS_ROSTER_NAMES: readonly string[] = REAL_ACTIVE_MENS_ROSTER_TEXT.split("\n");
 

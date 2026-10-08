@@ -10,7 +10,7 @@ import { DEFAULT_RULESET } from "./default-ruleset.js";
  */
 export const REAL_WORLD_ALPHA_RULESET: Ruleset = {
   ...DEFAULT_RULESET,
-  version: "sim0.0.13-real-world-preview",
+  version: "sim0.0.14-real-world-preview",
   promotions: 13,
-  wrestlers: 587,
+  wrestlers: 644,
 };

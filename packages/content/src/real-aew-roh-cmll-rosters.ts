@@ -56,6 +56,7 @@ export const AEW_PRIMARY_ROSTER_NAMES = [
   "Marina Shafir",
   "Serena Deeb",
   "Yuka Sakazaki",
+  "Mike Bailey",
 ] as const;
 
 export const ROH_PRIMARY_ROSTER_NAMES = [
@@ -78,10 +79,39 @@ export const ROH_PRIMARY_ROSTER_NAMES = [
   "Mike Bennett",
   "Tony Nese",
   "Carlie Bravo",
+  "Billie Starkz",
+  "Trish Adora",
+  "Steph De Lander",
+  "Nigel McGuinness",
 ] as const;
 
 export const AEW_ROH_SECONDARY_ROSTER_NAMES = [
   "Marina Shafir",
+] as const;
+
+export const AEW_FLEXIBLE_PRIMARY_ROSTER_NAMES = [
+  "Konosuke Takeshita",
+  "Kevin Knight",
+  "Andrade El Ídolo",
+  "Mike Bailey",
+] as const;
+
+export const CMLL_PRIMARY_ROSTER_NAMES = [
+  "Templario",
+  "Volador Jr.",
+  "Soberano Jr.",
+  "Neón",
+  "Esfinge",
+  "Bárbaro Cavernario",
+  "Averno",
+  "Stuka Jr.",
+  "Gran Guerrero",
+  "Xelhua",
+  "La Catalina",
+  "Zeuxis",
+  "Flammer",
+  "Olympia",
+  "Tessa Blanchard",
 ] as const;
 
 export const AEW_CMLL_DUAL_CONTRACT_SEEDS = [
@@ -101,6 +131,7 @@ const reviewedRosterNames = new Set([
 const primaryNames = [
   ...AEW_PRIMARY_ROSTER_NAMES,
   ...ROH_PRIMARY_ROSTER_NAMES,
+  ...CMLL_PRIMARY_ROSTER_NAMES,
   ...AEW_CMLL_DUAL_CONTRACT_SEEDS.map((seed) => seed.name),
 ];
 
@@ -141,7 +172,9 @@ export const aewRohCmllInitialRosterAssignmentSource: InitialRosterAssignmentSou
     assignments.push({
       personId: person.id,
       promotionId: aew.id,
-      family: "EXCLUSIVE",
+      family: AEW_FLEXIBLE_PRIMARY_ROSTER_NAMES.includes(
+        name as typeof AEW_FLEXIBLE_PRIMARY_ROSTER_NAMES[number],
+      ) ? "LIMITED_NON_EXCLUSIVE" : "EXCLUSIVE",
       rosterAffiliations: [
         { promotionId: aew.id, role: "PRIMARY", basis: "CONTRACT" },
         ...(rohSecondary
@@ -162,6 +195,21 @@ export const aewRohCmllInitialRosterAssignmentSource: InitialRosterAssignmentSou
         promotionId: roh.id,
         role: "PRIMARY",
         basis: "PARENT_COMPANY",
+      }],
+    });
+  }
+
+  for (const name of CMLL_PRIMARY_ROSTER_NAMES) {
+    const person = personByName.get(name);
+    if (!person) throw new Error(`CMLL initial roster seed is missing ${name}`);
+    assignments.push({
+      personId: person.id,
+      promotionId: cmll.id,
+      family: "LIMITED_NON_EXCLUSIVE",
+      rosterAffiliations: [{
+        promotionId: cmll.id,
+        role: "PRIMARY",
+        basis: "CONTRACT",
       }],
     });
   }
