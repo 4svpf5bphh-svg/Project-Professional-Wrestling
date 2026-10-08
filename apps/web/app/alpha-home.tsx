@@ -245,7 +245,7 @@ export default function AlphaHome(): React.JSX.Element {
         : commitmentDeadlinePassed
           ? "Due now"
           : `Locks in ${commitmentLockCountdown}`;
-  const cardDeadlineLabel = promotion.weekReadiness.status === "NOT_REQUIRED"
+  const cardDeadlineLabel = promotion?.weekReadiness.status === "NOT_REQUIRED"
     ? "No card due"
     : !worldIsOpen
       ? "Closed"
