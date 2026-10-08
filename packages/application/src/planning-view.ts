@@ -193,16 +193,23 @@ function maxShowParticipants(
   date: PpwDate,
   weeksPerYear: number,
   majorEventIntervalWeeks: number,
+  alphaTakeoverTesting: boolean,
 ): number {
-  const regular = tier === "GLOBAL"
-    ? 16
-    : tier === "NATIONAL"
-      ? 14
-      : tier === "RISING"
-        ? 12
-        : tier === "INDEPENDENT"
-          ? 10
-          : 8;
+  // Temporary Reality Check affordance. The permanent relationship between
+  // show identity, importance and usable roster belongs in Show/Calendar
+  // architecture; player-entry Alpha companies need enough room to test
+  // realistic 8–10-slot cards in the meantime.
+  const regular = alphaTakeoverTesting
+    ? 20
+    : tier === "GLOBAL"
+      ? 16
+      : tier === "NATIONAL"
+        ? 14
+        : tier === "RISING"
+          ? 12
+          : tier === "INDEPENDENT"
+            ? 10
+            : 8;
   const weekIndex = ppwDateToWeekIndex(date, weeksPerYear);
   return (weekIndex + 1) % majorEventIntervalWeeks === 0 ? regular + 2 : regular;
 }
@@ -497,6 +504,7 @@ export function buildPlayerSixWeekPlannerView(
           targetDate,
           aggregate.state.ruleset.weeksPerYear,
           aggregate.state.ruleset.majorEventIntervalWeeks,
+          promotion.playerTakeoverEligibility === "STANDARD",
         ),
         eligibleParticipants: eligibleParticipantsForWeek(aggregate, promotion.id, targetDate),
         shows,
