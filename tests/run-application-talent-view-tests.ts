@@ -135,6 +135,10 @@ test("talent market can expose non-exclusive availability without leaking rival 
   const view = buildPlayerTalentManagementView(aggregate, "player-a");
   const marketEntry = view.market.find((entry) => entry.personId === rivalContract!.personId);
   ok(marketEntry?.availability === "NON_EXCLUSIVE", "non-exclusive rival talent was not represented as market-available");
+  ok(
+    ["KEEN", "INTERESTED", "OPEN_TO_TALKS", "LONG_SHOT", "NOT_INTERESTED"].includes(marketEntry?.interest ?? ""),
+    "market entry did not expose a coarse recruitment-interest band",
+  );
   ok(marketEntry?.division === "WOMEN", "market entry did not expose wrestler division");
   ok(
     marketEntry?.employmentPromotions.some((entry) => entry.promotionId === promotionBId),
@@ -148,6 +152,7 @@ test("talent market can expose non-exclusive availability without leaking rival 
   ok(!serialized.includes("987654321"), "rival weekly guarantee leaked into player talent view");
   ok(!serialized.includes("876543210"), "rival appearance fee leaked into player talent view");
   ok(!serialized.includes(rivalContract!.id), "rival contract ID leaked into player talent view");
+  ok(!serialized.includes("resolvedUtility"), "contract utility score leaked into player talent view");
 });
 
 test("pending contract offers are private to the controlling promotion", () => {
