@@ -2,7 +2,12 @@ import type { Person, Promotion, WorldState } from "../packages/domain/src/types
 import { REAL_WORLD_ALPHA_RULESET } from "../packages/config/src/real-world-ruleset.js";
 import { calibratedRealActiveMixedRosterSource } from "../packages/content/src/real-active-mixed-roster.js";
 import { realPromotionEcosystemSource } from "../packages/content/src/real-promotions.js";
-import { realWorldInitialRosterAssignmentSource } from "../packages/content/src/real-aew-roh-cmll-rosters.js";
+import {
+  REAL_WORLD_TAKEOVER_STARTUP_MEN,
+  REAL_WORLD_TAKEOVER_STARTUP_ROSTER_SIZE,
+  REAL_WORLD_TAKEOVER_STARTUP_WOMEN,
+  realWorldInitialRosterAssignmentSource,
+} from "../packages/content/src/real-aew-roh-cmll-rosters.js";
 import {
   NXT_INITIAL_ROSTER_NAMES,
   WWE_INITIAL_ROSTER_NAMES,
@@ -213,8 +218,16 @@ ok(startSnapshot.allTalent.accessible > 0, "audit World has no accessible talent
 ok(startSnapshot.men.accessible > 0 && startSnapshot.women.accessible > 0, "one division has no accessible talent");
 const startTakeovers = startSnapshot.promotions.filter((promotion) => promotion.takeover === "STANDARD");
 ok(
-  startTakeovers.every((promotion) => promotion.roster >= 18 && promotion.roster <= 32),
-  "a takeover promotion starts outside the healthy 18-32 wrestler runway",
+  startTakeovers.every((promotion) => promotion.roster === REAL_WORLD_TAKEOVER_STARTUP_ROSTER_SIZE),
+  "a takeover promotion does not start with the intended seeded roster size",
+);
+ok(
+  startTakeovers.every((promotion) => promotion.men === REAL_WORLD_TAKEOVER_STARTUP_MEN),
+  "a takeover promotion does not start with the intended men's roster depth",
+);
+ok(
+  startTakeovers.every((promotion) => promotion.women === REAL_WORLD_TAKEOVER_STARTUP_WOMEN),
+  "a takeover promotion does not start with the intended women's roster depth",
 );
 // These floors describe the correctly protected real-world ecosystem. The
 // earlier looser ownership model counted several WWE-contracted wrestlers as
