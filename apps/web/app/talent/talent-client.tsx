@@ -21,9 +21,10 @@ type OfferRole = AlphaTalentOfferRequest["roleExpectation"];
 type RosterSort = "POPULARITY" | "RECOGNITION" | "DATES_ASC" | "DATES_DESC" | "EXPIRY" | "NAME";
 type RosterContractFilter = "ALL" | "EXCLUSIVE" | "NON_EXCLUSIVE";
 type RosterDivisionFilter = "ALL" | "MEN" | "WOMEN";
-type MarketSort = "POPULARITY" | "RECOGNITION" | "VALUE_HIGH" | "VALUE_LOW" | "NAME";
+type MarketSort = "INTEREST" | "POPULARITY" | "RECOGNITION" | "VALUE_HIGH" | "VALUE_LOW" | "NAME";
 type MarketAvailabilityFilter = "ALL" | "FREE_AGENT" | "NON_EXCLUSIVE";
 type MarketDivisionFilter = "ALL" | "MEN" | "WOMEN";
+type MarketInterestFilter = "ALL" | "OPEN_PLUS" | "INTERESTED_PLUS";
 type Alignment = PlayerRosterContractView["alignment"];
 
 type OfferTarget = {
@@ -45,6 +46,14 @@ const ROLE_OPTIONS: OfferRole[] = [
   "MAIN_EVENT",
   "SPECIAL_ATTRACTION",
 ];
+
+const INTEREST_RANK: Record<PlayerTalentMarketView["interest"], number> = {
+  NOT_INTERESTED: 0,
+  LONG_SHOT: 1,
+  OPEN_TO_TALKS: 2,
+  INTERESTED: 3,
+  KEEN: 4,
+};
 
 const ROSTER_ROLE_ORDER: OfferRole[] = [
   "MAIN_EVENT",
@@ -73,6 +82,19 @@ function ppwDate(date: { year: number; week: number }): string {
 
 function label(value: string): string {
   return value.replaceAll("_", " ");
+}
+
+function interestLabel(value: PlayerTalentMarketView["interest"]): string {
+  if (value === "OPEN_TO_TALKS") return "Open to talks";
+  if (value === "LONG_SHOT") return "Long shot";
+  if (value === "NOT_INTERESTED") return "Not interested";
+  return label(value).replace(/^./, (character) => character.toUpperCase());
+}
+
+function interestClass(value: PlayerTalentMarketView["interest"]): string {
+  if (value === "KEEN" || value === "INTERESTED") return styles.interestPositive;
+  if (value === "OPEN_TO_TALKS") return styles.interestNeutral;
+  return styles.interestLow;
 }
 
 function averageSkill(entry: { skills: { inRingQuality: number; matchCraft: number; presentation: number } }): number {
@@ -278,6 +300,7 @@ function MarketCard({
         </div>
         <div className={styles.marketQuick}>
           <b>POP {Math.round(wrestler.popularity)}</b>
+          <span className={interestClass(wrestler.interest)}>{interestLabel(wrestler.interest)}</span>
           <span className={styles.availability}>{wrestler.availability === "FREE_AGENT" ? "Free agent" : "Non-exclusive"}</span>
         </div>
       </summary>
@@ -426,9 +449,10 @@ export default function TalentClient(): React.JSX.Element {
   const [rosterContractFilter, setRosterContractFilter] = useState<RosterContractFilter>("ALL");
   const [rosterDivisionFilter, setRosterDivisionFilter] = useState<RosterDivisionFilter>("ALL");
   const [collapsedRosterRoles, setCollapsedRosterRoles] = useState<Set<OfferRole>>(() => new Set());
-  const [marketSort, setMarketSort] = useState<MarketSort>("VALUE_HIGH");
+  const [marketSort, setMarketSort] = useState<MarketSort>("INTEREST");
   const [marketAvailabilityFilter, setMarketAvailabilityFilter] = useState<MarketAvailabilityFilter>("ALL");
   const [marketDivisionFilter, setMarketDivisionFilter] = useState<MarketDivisionFilter>("ALL");
+  const [marketInterestFilter, setMarketInterestFilter] = useState<MarketInterestFilter>("ALL");
   const [marketLimit, setMarketLimit] = useState(25);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -605,15 +629,21 @@ export default function TalentClient(): React.JSX.Element {
     const entries = (view?.market ?? [])
       .filter((entry) => matchesQuery(entry.name, query))
       .filter((entry) => marketDivisionFilter === "ALL" || entry.division === marketDivisionFilter)
-      .filter((entry) => marketAvailabilityFilter === "ALL" || entry.availability === marketAvailabilityFilter);
+      .filter((entry) => marketAvailabilityFilter === "ALL" || entry.availability === marketAvailabilityFilter)
+      .filter((entry) => {
+        if (marketInterestFilter === "INTERESTED_PLUS") return INTEREST_RANK[entry.interest] >= INTEREST_RANK.INTERESTED;
+        if (marketInterestFilter === "OPEN_PLUS") return INTEREST_RANK[entry.interest] >= INTEREST_RANK.OPEN_TO_TALKS;
+        return true;
+      });
     return [...entries].sort((left, right) => {
+      if (marketSort === "INTEREST") return INTEREST_RANK[right.interest] - INTEREST_RANK[left.interest] || right.popularity - left.popularity || left.name.localeCompare(right.name);
       if (marketSort === "POPULARITY") return right.popularity - left.popularity || left.name.localeCompare(right.name);
       if (marketSort === "RECOGNITION") return right.recognition - left.recognition || left.name.localeCompare(right.name);
       if (marketSort === "VALUE_LOW") return left.estimatedWeeklyValue - right.estimatedWeeklyValue || left.name.localeCompare(right.name);
       if (marketSort === "NAME") return left.name.localeCompare(right.name);
       return right.estimatedWeeklyValue - left.estimatedWeeklyValue || right.popularity - left.popularity || left.name.localeCompare(right.name);
     });
-  }, [view, query, marketAvailabilityFilter, marketDivisionFilter, marketSort]);
+  }, [view, query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketSort]);
   const visibleMarket = useMemo(() => market.slice(0, marketLimit), [market, marketLimit]);
   const offers = useMemo(
     () => (view?.pendingOffers ?? []).filter((entry) => matchesQuery(entry.personName, query)),
@@ -623,7 +653,7 @@ export default function TalentClient(): React.JSX.Element {
 
   useEffect(() => {
     setMarketLimit(25);
-  }, [query, marketAvailabilityFilter, marketDivisionFilter, marketSort]);
+  }, [query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketSort]);
 
   function toggleRosterRole(role: OfferRole): void {
     setCollapsedRosterRoles((current) => {
@@ -758,8 +788,17 @@ export default function TalentClient(): React.JSX.Element {
                   </select>
                 </label>
                 <label>
+                  <span>Interest</span>
+                  <select value={marketInterestFilter} onChange={(event) => setMarketInterestFilter(event.target.value as MarketInterestFilter)}>
+                    <option value="ALL">Any interest</option>
+                    <option value="OPEN_PLUS">Open to talks+</option>
+                    <option value="INTERESTED_PLUS">Interested+</option>
+                  </select>
+                </label>
+                <label>
                   <span>Sort</span>
                   <select value={marketSort} onChange={(event) => setMarketSort(event.target.value as MarketSort)}>
+                    <option value="INTEREST">Interest</option>
                     <option value="VALUE_HIGH">Value high</option>
                     <option value="VALUE_LOW">Value low</option>
                     <option value="POPULARITY">Popularity</option>
