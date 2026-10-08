@@ -23,6 +23,7 @@ type RosterContractFilter = "ALL" | "EXCLUSIVE" | "NON_EXCLUSIVE";
 type RosterDivisionFilter = "ALL" | "MEN" | "WOMEN";
 type MarketSort = "POPULARITY" | "RECOGNITION" | "VALUE_HIGH" | "VALUE_LOW" | "NAME";
 type MarketAvailabilityFilter = "ALL" | "FREE_AGENT" | "NON_EXCLUSIVE";
+type MarketDivisionFilter = "ALL" | "MEN" | "WOMEN";
 type Alignment = PlayerRosterContractView["alignment"];
 
 type OfferTarget = {
@@ -261,34 +262,50 @@ function MarketCard({
   wrestler: PlayerTalentMarketView;
   onOffer: () => void;
 }): React.JSX.Element {
+  const publicHome = wrestler.rosterAffiliations[0]?.promotionName
+    ?? wrestler.employmentPromotions[0]?.promotionName
+    ?? "Free agent";
   return (
-    <article className={styles.card}>
-      <div className={styles.marketTop}>
-        <div>
+    <details className={`${styles.card} ${styles.marketCard}`}>
+      <summary className={styles.marketSummary}>
+        <div className={styles.marketIdentity}>
           <div className={styles.nameLine}>
             <strong>{wrestler.name}</strong>
-            <span className={styles.availability}>{label(wrestler.alignment)}</span>
+            <span className={styles.divisionBadge}>{wrestler.division === "WOMEN" ? "Women" : "Men"}</span>
             <InjuryBadge injury={wrestler.injury} />
           </div>
-          <span>{label(wrestler.careerStage)} · age {wrestler.biologicalAge.toFixed(1)}</span>
+          <span>{publicHome} · {label(wrestler.careerStage)}</span>
         </div>
-        <span className={styles.availability}>{wrestler.availability === "FREE_AGENT" ? "Free agent" : "Non-exclusive"}</span>
+        <div className={styles.marketQuick}>
+          <b>POP {Math.round(wrestler.popularity)}</b>
+          <span className={styles.availability}>{wrestler.availability === "FREE_AGENT" ? "Free agent" : "Non-exclusive"}</span>
+        </div>
+      </summary>
+      <div className={styles.marketDetails}>
+        <div className={styles.marketFacts}>
+          <span>Recognition <b>{Math.round(wrestler.recognition)}</b></span>
+          <span>Momentum <b>{Math.round(wrestler.momentum)}</b></span>
+          <span>In-ring <b>{Math.round(wrestler.skills.inRingQuality)}</b></span>
+          <span>Craft <b>{Math.round(wrestler.skills.matchCraft)}</b></span>
+          <span>Presentation <b>{Math.round(wrestler.skills.presentation)}</b></span>
+          <span>Age <b>{wrestler.biologicalAge.toFixed(1)}</b></span>
+        </div>
+        {wrestler.employmentPromotions.length > 0 ? (
+          <p className={styles.marketAffiliation}>
+            Employed by {wrestler.employmentPromotions.map((entry) => entry.promotionName).join(", ")}
+            {wrestler.rosterAffiliations.length > 0
+              ? ` · Roster: ${wrestler.rosterAffiliations.map((entry) => entry.promotionName).join(", ")}`
+              : ""}
+          </p>
+        ) : null}
+        <div className={styles.marketBottom}>
+          <span>Estimated market value <b>{money(wrestler.estimatedWeeklyValue)}/wk</b></span>
+          {wrestler.hasOurPendingOffer ? <span className={styles.pending}>Your offer pending</span> : (
+            <button className={styles.actionButton} type="button" onClick={onOffer}>Make offer</button>
+          )}
+        </div>
       </div>
-      <div className={styles.metricGrid}>
-        <div><span>Popularity</span><strong>{Math.round(wrestler.popularity)}</strong></div>
-        <div><span>Recognition</span><strong>{Math.round(wrestler.recognition)}</strong></div>
-        <div><span>Momentum</span><strong>{Math.round(wrestler.momentum)}</strong></div>
-        <div><span>In-ring</span><strong>{Math.round(wrestler.skills.inRingQuality)}</strong></div>
-        <div><span>Craft</span><strong>{Math.round(wrestler.skills.matchCraft)}</strong></div>
-        <div><span>Presentation</span><strong>{Math.round(wrestler.skills.presentation)}</strong></div>
-      </div>
-      <div className={styles.marketBottom}>
-        <span>Estimated market value <b>{money(wrestler.estimatedWeeklyValue)}/wk</b></span>
-        {wrestler.hasOurPendingOffer ? <span className={styles.pending}>Your offer pending</span> : (
-          <button className={styles.actionButton} type="button" onClick={onOffer}>Make offer</button>
-        )}
-      </div>
-    </article>
+    </details>
   );
 }
 
@@ -411,6 +428,8 @@ export default function TalentClient(): React.JSX.Element {
   const [collapsedRosterRoles, setCollapsedRosterRoles] = useState<Set<OfferRole>>(() => new Set());
   const [marketSort, setMarketSort] = useState<MarketSort>("VALUE_HIGH");
   const [marketAvailabilityFilter, setMarketAvailabilityFilter] = useState<MarketAvailabilityFilter>("ALL");
+  const [marketDivisionFilter, setMarketDivisionFilter] = useState<MarketDivisionFilter>("ALL");
+  const [marketLimit, setMarketLimit] = useState(25);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [alignmentSaving, setAlignmentSaving] = useState<string | null>(null);
@@ -585,6 +604,7 @@ export default function TalentClient(): React.JSX.Element {
   const market = useMemo(() => {
     const entries = (view?.market ?? [])
       .filter((entry) => matchesQuery(entry.name, query))
+      .filter((entry) => marketDivisionFilter === "ALL" || entry.division === marketDivisionFilter)
       .filter((entry) => marketAvailabilityFilter === "ALL" || entry.availability === marketAvailabilityFilter);
     return [...entries].sort((left, right) => {
       if (marketSort === "POPULARITY") return right.popularity - left.popularity || left.name.localeCompare(right.name);
@@ -593,12 +613,17 @@ export default function TalentClient(): React.JSX.Element {
       if (marketSort === "NAME") return left.name.localeCompare(right.name);
       return right.estimatedWeeklyValue - left.estimatedWeeklyValue || right.popularity - left.popularity || left.name.localeCompare(right.name);
     });
-  }, [view, query, marketAvailabilityFilter, marketSort]);
+  }, [view, query, marketAvailabilityFilter, marketDivisionFilter, marketSort]);
+  const visibleMarket = useMemo(() => market.slice(0, marketLimit), [market, marketLimit]);
   const offers = useMemo(
     () => (view?.pendingOffers ?? []).filter((entry) => matchesQuery(entry.personName, query)),
     [view, query],
   );
   const pendingPeople = useMemo(() => new Set((view?.pendingOffers ?? []).map((offer) => offer.personId)), [view]);
+
+  useEffect(() => {
+    setMarketLimit(25);
+  }, [query, marketAvailabilityFilter, marketDivisionFilter, marketSort]);
 
   function toggleRosterRole(role: OfferRole): void {
     setCollapsedRosterRoles((current) => {
@@ -651,7 +676,7 @@ export default function TalentClient(): React.JSX.Element {
                 role="tab"
                 aria-selected={tab === candidate}
                 className={tab === candidate ? styles.activeTab : styles.tab}
-                onClick={() => { setTab(candidate); setQuery(""); }}
+                onClick={() => { setTab(candidate); setQuery(""); setMarketLimit(25); }}
               >
                 {candidate === "MARKET" ? "Talent market" : candidate[0] + candidate.slice(1).toLowerCase()}
               </button>
@@ -698,33 +723,54 @@ export default function TalentClient(): React.JSX.Element {
                 </label>
               </div>
             </section>
-          ) : (
+          ) : tab === "OFFERS" ? (
             <label className={styles.search}>
-              <span>Search {tab === "MARKET" ? "available talent" : "pending offers"}</span>
+              <span>Search pending offers</span>
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Wrestler name" />
             </label>
-          )}
+          ) : null}
 
           {tab === "MARKET" ? (
-            <section className={`${styles.search} ${styles.formGrid}`} aria-label="Talent market filters">
-              <label>
-                <span>Sort market</span>
-                <select value={marketSort} onChange={(event) => setMarketSort(event.target.value as MarketSort)}>
-                  <option value="VALUE_HIGH">Highest estimated value</option>
-                  <option value="VALUE_LOW">Lowest estimated value</option>
-                  <option value="POPULARITY">Most popular</option>
-                  <option value="RECOGNITION">Most recognised</option>
-                  <option value="NAME">Name A–Z</option>
-                </select>
+            <section className={styles.marketToolbar} aria-label="Talent market search and filters">
+              <label className={styles.marketSearch}>
+                <span>Search market</span>
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find wrestler…" />
               </label>
-              <label>
-                <span>Availability</span>
-                <select value={marketAvailabilityFilter} onChange={(event) => setMarketAvailabilityFilter(event.target.value as MarketAvailabilityFilter)}>
-                  <option value="ALL">All available talent</option>
-                  <option value="FREE_AGENT">Free agents</option>
-                  <option value="NON_EXCLUSIVE">Under non-exclusive deal</option>
-                </select>
-              </label>
+              <div className={styles.divisionToggle} role="group" aria-label="Talent market division">
+                {(["ALL", "MEN", "WOMEN"] as const).map((division) => (
+                  <button
+                    key={division}
+                    type="button"
+                    className={marketDivisionFilter === division ? styles.divisionButtonActive : styles.divisionButton}
+                    onClick={() => setMarketDivisionFilter(division)}
+                  >
+                    {division === "ALL" ? "All" : division === "MEN" ? "Men" : "Women"}
+                  </button>
+                ))}
+              </div>
+              <div className={styles.marketSelects}>
+                <label>
+                  <span>Availability</span>
+                  <select value={marketAvailabilityFilter} onChange={(event) => setMarketAvailabilityFilter(event.target.value as MarketAvailabilityFilter)}>
+                    <option value="ALL">All available</option>
+                    <option value="FREE_AGENT">Free agents</option>
+                    <option value="NON_EXCLUSIVE">Non-exclusive</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Sort</span>
+                  <select value={marketSort} onChange={(event) => setMarketSort(event.target.value as MarketSort)}>
+                    <option value="VALUE_HIGH">Value high</option>
+                    <option value="VALUE_LOW">Value low</option>
+                    <option value="POPULARITY">Popularity</option>
+                    <option value="RECOGNITION">Recognition</option>
+                    <option value="NAME">Name</option>
+                  </select>
+                </label>
+              </div>
+              <div className={styles.marketCount}>
+                Showing <b>{Math.min(marketLimit, market.length)}</b> of <b>{market.length}</b> matching wrestlers
+              </div>
             </section>
           ) : null}
 
@@ -763,7 +809,24 @@ export default function TalentClient(): React.JSX.Element {
                 })}
               </div>
             ) : null}
-            {tab === "MARKET" ? market.map((entry) => <MarketCard key={entry.personId} wrestler={entry} onOffer={() => openMarketOffer(entry)} />) : null}
+            {tab === "MARKET" ? (
+              <>
+                <div className={styles.marketList}>
+                  {visibleMarket.map((entry) => (
+                    <MarketCard key={entry.personId} wrestler={entry} onOffer={() => openMarketOffer(entry)} />
+                  ))}
+                </div>
+                {visibleMarket.length < market.length ? (
+                  <button
+                    className={styles.loadMore}
+                    type="button"
+                    onClick={() => setMarketLimit((current) => current + 25)}
+                  >
+                    Load 25 more · {market.length - visibleMarket.length} remaining
+                  </button>
+                ) : null}
+              </>
+            ) : null}
             {tab === "OFFERS" ? offers.map((entry) => <OfferCard key={entry.offerId} offer={entry} />) : null}
             {(tab === "ROSTER" && roster.length === 0) || (tab === "MARKET" && market.length === 0) || (tab === "OFFERS" && offers.length === 0) ? (
               <div className={styles.empty}>Nothing matches this view right now.</div>
