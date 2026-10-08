@@ -123,7 +123,13 @@ await test("Alpha web service bootstraps and exposes a player-safe promotion cho
   );
   ok((aggregate.state.teams?.length ?? 0) >= 12, "Alpha did not seed reviewed established teams");
   ok((aggregate.state.wrestlerRelationships?.length ?? 0) >= 20, "Alpha did not seed reviewed wrestler relationships");
-  ok(view.availableIndependentPromotions.length > 0, "no eligible Independent promotion choices were exposed");
+  const eligibleIds = aggregate.state.promotions
+    .filter((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE")
+    .map((promotion) => promotion.id)
+    .sort();
+  const visibleChoiceIds = view.availableIndependentPromotions.map((promotion) => promotion.promotionId).sort();
+  ok(visibleChoiceIds.length === 5, "Alpha did not expose exactly five takeover/rebrand choices");
+  ok(JSON.stringify(visibleChoiceIds) === JSON.stringify(eligibleIds), "Alpha choice screen leaked a promotion that is not takeover-eligible");
   ok(view.promotion === null, "fresh Alpha session unexpectedly exposed a controlled promotion dashboard");
 });
 
