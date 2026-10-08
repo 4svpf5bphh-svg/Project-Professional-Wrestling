@@ -128,6 +128,7 @@ export default function AlphaHome(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [busyPromotionId, setBusyPromotionId] = useState<string | null>(null);
   const [busyAttentionId, setBusyAttentionId] = useState<string | null>(null);
+  const [advancingWeek, setAdvancingWeek] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const requestIds = useRef(new Map<string, string>());
 
@@ -176,6 +177,29 @@ export default function AlphaHome(): React.JSX.Element {
       setError(reason instanceof Error ? reason.message : "Unable to claim promotion");
     } finally {
       setBusyPromotionId(null);
+    }
+  }
+
+  async function advanceWeekForAlphaTest(): Promise<void> {
+    if (!view || advancingWeek) return;
+    if (!window.confirm("Resolve this PPW week now? This bypasses the scheduled World Clock for Alpha testing.")) return;
+    setAdvancingWeek(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/advance-week", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevision: view.world.revision }),
+      });
+      const payload = await response.json() as AlphaPlayerWorldView | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to resolve Alpha week");
+      }
+      setView(payload);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to resolve Alpha week");
+    } finally {
+      setAdvancingWeek(false);
     }
   }
 
@@ -435,6 +459,20 @@ export default function AlphaHome(): React.JSX.Element {
               <a href={weekActionHref} style={PRIMARY_LINK_STYLE}>{weekActionLabel}</a>
             </div>
             <p className="micro-copy">World progression is server-scheduled. Prepare required work before lock; a fully prepared show runs normally even if you are away.</p>
+            <details className="alpha-test-controls">
+              <summary>Alpha test controls</summary>
+              <div className="alpha-test-controls-body">
+                <p className="micro-copy no-margin">Testing only · bypass the real-time clock and resolve the current PPW week immediately.</p>
+                <button
+                  className="alpha-test-button"
+                  type="button"
+                  disabled={advancingWeek}
+                  onClick={() => void advanceWeekForAlphaTest()}
+                >
+                  {advancingWeek ? "Resolving week…" : "Resolve week now"}
+                </button>
+              </div>
+            </details>
           </section>
 
           {promotion.lastResolvedShow ? (
