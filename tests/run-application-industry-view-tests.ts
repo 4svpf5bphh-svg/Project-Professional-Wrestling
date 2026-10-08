@@ -11,7 +11,15 @@ import {
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
-import { activeContractsForPromotion, createWorld } from "../packages/sim-core/src/index.js";
+import { REAL_WORLD_ALPHA_RULESET } from "../packages/config/src/real-world-ruleset.js";
+import { calibratedRealActiveMixedRosterSource } from "../packages/content/src/real-active-mixed-roster.js";
+import { realPromotionEcosystemSource } from "../packages/content/src/real-promotions.js";
+import { realWorldInitialRosterAssignmentSource } from "../packages/content/src/real-aew-roh-cmll-rosters.js";
+import {
+  activeContractsForPromotion,
+  createWorld,
+  currentRosterPersonIds,
+} from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -94,6 +102,37 @@ test("industry view exposes current roster names without rival contract terms or
   ok(!serialized.includes(rivalContract!.id), "rival contract ID leaked into industry view");
   ok(!serialized.includes("weeklyGuarantee"), "rival contract schema leaked into industry view");
   ok(!serialized.includes("aiProfile"), "AI internal strategy profile leaked into industry view");
+});
+
+test("industry view uses explicit roster affiliations for child brands", () => {
+  const state = createWorld(
+    20261008,
+    REAL_WORLD_ALPHA_RULESET,
+    "Industry explicit-roster fixture",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
+  );
+  const ownership = createWorldOwnershipState(state.world.id, 1);
+  joinPlayerToWorld(ownership, "player-a", state.world.currentDate);
+  const aggregate: ApplicationWorldAggregate = {
+    state,
+    ownership,
+    commands: createWorldCommandState(state.world.id),
+    runtime: createWorldRuntimeState(state.world.id),
+    planning: createWorldPlanningState(state.world.id),
+  };
+
+  const view = buildPlayerIndustryView(aggregate, "player-a");
+  for (const name of ["NXT", "ROH"]) {
+    const promotion = state.promotions.find((candidate) => candidate.name === name);
+    ok(promotion, `missing ${name} promotion in real-world fixture`);
+    const expectedRoster = currentRosterPersonIds(state, promotion!.id);
+    ok(expectedRoster.length > 0, `${name} canonical roster is unexpectedly empty`);
+    const publicPromotion = view.promotions.find((candidate) => candidate.promotionId === promotion!.id);
+    ok(publicPromotion?.rosterSize === expectedRoster.length, `${name} Industry roster size ignored explicit affiliations`);
+    ok((publicPromotion?.featuredTalent.length ?? 0) > 0, `${name} Industry view exposed no featured talent`);
+  }
 });
 
 test("industry view derives public championship and completed-show summaries", () => {
