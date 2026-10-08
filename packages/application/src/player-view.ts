@@ -371,7 +371,7 @@ export function buildAlphaPlayerWorldView(
     : aggregate.state.promotions
       .filter((candidate) => (
         candidate.controllerType === "AI"
-        && candidate.tier === "INDEPENDENT"
+        && candidate.playerTakeoverEligibility === "STANDARD"
         && candidate.lifecycle === "ACTIVE"
       ))
       .map((candidate) => ({
