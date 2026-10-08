@@ -1,5 +1,9 @@
-import { DEFAULT_RULESET } from "../../config/src/default-ruleset.js";
-import { calibratedRealActiveMensRosterSource } from "../../content/src/real-active-mens-calibration.js";
+import { REAL_WORLD_ALPHA_RULESET } from "../../config/src/real-world-ruleset.js";
+import { calibratedRealActiveMixedRosterSource } from "../../content/src/real-active-mixed-roster.js";
+import { realPromotionEcosystemSource } from "../../content/src/real-promotions.js";
+import { realWorldInitialRosterAssignmentSource } from "../../content/src/real-aew-roh-cmll-rosters.js";
+import { seedRealActiveTagTeams } from "../../content/src/real-active-tag-teams.js";
+import { seedRealWrestlerRelationships } from "../../content/src/real-wrestler-relationships.js";
 import type { TicketStrategy } from "../../domain/src/types.js";
 import {
   activePromotionControlForPlayer,
@@ -109,10 +113,14 @@ export function createAlphaWorldAggregate(options: AlphaWorldBootstrapOptions): 
   const seed = normalizedSeed(options.seed);
   const state = createWorld(
     seed,
-    DEFAULT_RULESET,
+    REAL_WORLD_ALPHA_RULESET,
     options.worldName ?? "PPW Alpha World",
-    calibratedRealActiveMensRosterSource,
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
   );
+  seedRealActiveTagTeams(state);
+  seedRealWrestlerRelationships(state);
   ensureWorldChampionships(state);
   const ownership = createWorldOwnershipState(state.world.id, 1);
   joinPlayerToWorld(ownership, options.playerId, state.world.currentDate);

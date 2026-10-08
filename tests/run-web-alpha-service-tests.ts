@@ -107,6 +107,18 @@ await test("Alpha web service bootstraps and exposes a player-safe promotion cho
   const view = await loadAlphaPlayerSession(repository, worldId, "alpha-player");
   ok(view.player.playerId === "alpha-player", "session exposed the wrong player");
   ok(view.player.promotionId === null, "fresh Alpha player unexpectedly controls a promotion");
+  const aggregate = await repository.load(worldId);
+  ok(aggregate.state.people.length === 643, "Alpha did not bootstrap the audited 643-person roster");
+  ok(
+    aggregate.state.promotions.filter((promotion) => promotion.identity?.origin === "REAL_WORLD").length === 8,
+    "Alpha did not bootstrap the eight real promotions",
+  );
+  ok(
+    aggregate.state.promotions.filter((promotion) => promotion.playerTakeoverEligibility === "STANDARD").length === 5,
+    "Alpha did not bootstrap five takeover/rebrand companies",
+  );
+  ok((aggregate.state.teams?.length ?? 0) >= 12, "Alpha did not seed reviewed established teams");
+  ok((aggregate.state.wrestlerRelationships?.length ?? 0) >= 20, "Alpha did not seed reviewed wrestler relationships");
   ok(view.availableIndependentPromotions.length > 0, "no eligible Independent promotion choices were exposed");
   ok(view.promotion === null, "fresh Alpha session unexpectedly exposed a controlled promotion dashboard");
 });
