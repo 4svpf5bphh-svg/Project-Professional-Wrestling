@@ -232,6 +232,8 @@ resolveWorldWeeks(week26, 26);
 const week26Errors = validateWorldInvariants(week26);
 ok(week26Errors.length === 0, week26Errors.join("\n"));
 const week26Snapshot = snapshot(week26);
+console.log("REAL_WORLD_ECOSYSTEM_AUDIT_WEEK_26_PRECHECK");
+console.log(JSON.stringify(week26Snapshot, null, 2));
 const week26Takeovers = week26Snapshot.promotions.filter((promotion) => promotion.takeover === "STANDARD");
 ok(week26Snapshot.allTalent.free >= 175, "week-26 free-agent pool is too small");
 ok(week26Snapshot.allTalent.accessible >= 350, "week-26 accessible talent pool is too small");
