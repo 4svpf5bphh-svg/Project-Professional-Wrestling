@@ -29,6 +29,25 @@ function ok(value: unknown, message: string): void {
   if (!value) throw new Error(message);
 }
 
+function sameDivisionParticipantIds(
+  state: { people: Array<{ id: string; division?: "MEN" | "WOMEN" }> },
+  candidates: Array<{ personId: string }>,
+  minParticipants: number,
+  maxParticipants: number,
+): string[] {
+  const divisionById = new Map(state.people.map((person) => [person.id, person.division ?? "MEN"]));
+  const groups = (["MEN", "WOMEN"] as const)
+    .map((division) => candidates.filter((person) => divisionById.get(person.personId) === division))
+    .sort((left, right) => right.length - left.length);
+  const minimumEven = minParticipants % 2 === 0 ? minParticipants : minParticipants + 1;
+  const group = groups.find((candidate) => candidate.length >= minimumEven);
+  if (!group) throw new Error("planner swap fixture has no single division with enough wrestlers");
+  let count = Math.min(group.length, maxParticipants);
+  if (count % 2 !== 0) count -= 1;
+  if (count < minimumEven) throw new Error("planner swap fixture cannot form an even same-division roster");
+  return group.slice(0, count).map((person) => person.personId);
+}
+
 await test("future reservation roster swaps clear only card content that uses the removed wrestler", async () => {
   const playerId = "planner-swap-player";
   const repository = new InMemoryApplicationWorldRepository();
@@ -54,13 +73,12 @@ await test("future reservation roster swaps clear only card content that uses th
   const venue = market?.venues[0];
   if (!market || !venue) throw new Error("planner swap fixture has no market/venue");
 
-  let participantIds = week.eligibleParticipants
-    .slice(0, Math.min(week.maxParticipants, Math.max(week.minParticipants, 6)))
-    .map((person) => person.personId);
-  if (participantIds.length % 2 !== 0) participantIds = participantIds.slice(0, -1);
-  if (participantIds.length < Math.max(4, week.minParticipants)) {
-    throw new Error("planner swap fixture has too few eligible participants");
-  }
+  const participantIds = sameDivisionParticipantIds(
+    aggregate.state,
+    week.eligibleParticipants,
+    Math.max(week.minParticipants, 6),
+    week.maxParticipants,
+  );
 
   await saveAlphaPlannerShowPlan(repository, worldId, playerId, {
     requestId: "planner-swap-initial",
