@@ -30,8 +30,10 @@ export interface RealPromotionTemplate {
  * They encode the public-facing contrast we want the game world to reproduce:
  * WWE-style lockdown at one end, more outside-booking flexibility elsewhere.
  *
- * Template order intentionally matches Genesis tier slots:
- * 1 Global, 2 National, 2 Rising, then Independent companies.
+ * Template order determines stable promotion identity slots. A real promotion
+ * may intentionally use a different PPW tier from the generated slot beneath
+ * it; in that case the source also applies a generated financial/event baseline
+ * for the real promotion's actual tier.
  * Any remaining source slots stay fictional and may be used for player takeover.
  */
 export const REAL_PROMOTION_TEMPLATES: readonly RealPromotionTemplate[] = [
@@ -115,7 +117,7 @@ export const REAL_PROMOTION_TEMPLATES: readonly RealPromotionTemplate[] = [
   {
     key: "STARDOM",
     name: "STARDOM",
-    tier: "INDEPENDENT",
+    tier: "RISING",
     parentKey: null,
     contractPolicy: {
       exclusiveContractChance: 42,
@@ -164,10 +166,19 @@ export const realPromotionEcosystemSource: WorldPromotionSource = (context) => {
     const parentPromotionId = template.parentKey === null
       ? null
       : idByKey.get(template.parentKey)!;
+    const tierBaseline = promotion.tier === template.tier
+      ? promotion
+      : generated.find((candidate) => candidate.tier === template.tier) ?? promotion;
     return {
       ...promotion,
       name: template.name,
       tier: template.tier,
+      cash: tierBaseline.cash,
+      mediaReach: tierBaseline.mediaReach,
+      weeklyMediaIncome: tierBaseline.weeklyMediaIncome,
+      weeklySponsorIncome: tierBaseline.weeklySponsorIncome,
+      weeklyFixedOverhead: tierBaseline.weeklyFixedOverhead,
+      eventCadenceWeeks: tierBaseline.eventCadenceWeeks,
       identity: {
         origin: "REAL_WORLD",
         canonicalName: template.name,

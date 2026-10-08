@@ -202,6 +202,13 @@ ok(
   crisisTakeovers.length === 0,
   `takeover promotion reaches financial crisis inside the 26-week runway: ${JSON.stringify(crisisTakeovers)}`,
 );
+const crisisRealPromotions = week26Snapshot.promotions.filter(
+  (promotion) => promotion.origin === "REAL_WORLD" && promotion.financialDistress === "CRISIS",
+);
+ok(
+  crisisRealPromotions.length === 0,
+  `real promotion reaches financial crisis inside the 26-week runway: ${JSON.stringify(crisisRealPromotions)}`,
+);
 
 console.log("REAL_WORLD_ECOSYSTEM_AUDIT_START");
 console.log(JSON.stringify(startSnapshot, null, 2));

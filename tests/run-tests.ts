@@ -189,6 +189,8 @@ test("real promotion catalog preserves parent links and keeps real companies tak
   equal(roh.identity?.parentPromotionId, aew.id);
   ok(stardom.identity?.origin === "REAL_WORLD", "STARDOM was not created as a real promotion");
   ok(stardom.playerTakeoverEligibility === "LOCKED", "STARDOM was exposed as a player takeover");
+  equal(stardom.tier, "RISING");
+  ok(stardom.cash >= 5_000_000, "STARDOM did not receive a RISING financial baseline");
   ok(wwe.contractPolicy!.exclusiveContractChance > aew.contractPolicy!.exclusiveContractChance, "WWE and AEW contract cultures were not differentiated");
 });
 
