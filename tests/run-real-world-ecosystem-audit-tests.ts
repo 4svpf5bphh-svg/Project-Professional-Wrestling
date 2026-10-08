@@ -197,9 +197,10 @@ ok(
   week26Takeovers.every((promotion) => promotion.roster >= 18 && promotion.roster <= 32),
   "a takeover promotion becomes roster-starved or bloated by week 26",
 );
+const crisisTakeovers = week26Takeovers.filter((promotion) => promotion.financialDistress === "CRISIS");
 ok(
-  week26Takeovers.every((promotion) => promotion.financialDistress !== "CRISIS"),
-  "a takeover promotion reaches financial crisis inside the 26-week runway",
+  crisisTakeovers.length === 0,
+  `takeover promotion reaches financial crisis inside the 26-week runway: ${JSON.stringify(crisisTakeovers)}`,
 );
 
 console.log("REAL_WORLD_ECOSYSTEM_AUDIT_START");
