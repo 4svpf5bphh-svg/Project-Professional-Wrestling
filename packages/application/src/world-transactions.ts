@@ -1,7 +1,7 @@
 import type { Id } from "../../domain/src/types.js";
 import { generateWorldOpportunities } from "./opportunity-generation.js";
 import {
-  closeCurrentWeekReservationsAtLock,
+  closeCurrentWeekReservationsAtCommitmentLock,
   materializeCurrentWeekReservations,
   type ReservationMaterializationPass,
 } from "./planning-materialization.js";
@@ -13,7 +13,9 @@ import type { ApplicationWorldRepository } from "./world-aggregate.js";
 import {
   assertWorldOpenForPlayerMutation,
   beginWorldResolution,
+  currentWeekShowCommitmentsLocked,
   incrementWorldRevision,
+  lockCurrentWeekShowCommitments,
   lockWorldForResolution,
   resolveLockedWorldWeek,
 } from "./runtime.js";
@@ -36,6 +38,34 @@ export async function materializePersistedCurrentWeekReservations(
   return { pass: committed.result, revision: committed.revision };
 }
 
+export async function lockPersistedCurrentWeekShowCommitments(
+  repository: ApplicationWorldRepository,
+  worldId: Id,
+  expectedRevision: number,
+  realCycleKey: string | null = null,
+): Promise<number> {
+  const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
+    assertWorldOpenForPlayerMutation(aggregate.runtime);
+    if (currentWeekShowCommitmentsLocked(aggregate.runtime, aggregate.state)) {
+      lockCurrentWeekShowCommitments(aggregate.runtime, aggregate.state, realCycleKey);
+      return;
+    }
+
+    const closure = closeCurrentWeekReservationsAtCommitmentLock(
+      aggregate.state,
+      aggregate.planning,
+    );
+    if (
+      passMutatedWorld(closure)
+      || closure.releasedAtRisk.length > 0
+    ) {
+      incrementWorldRevision(aggregate.runtime);
+    }
+    lockCurrentWeekShowCommitments(aggregate.runtime, aggregate.state, realCycleKey);
+  });
+  return committed.revision;
+}
+
 export async function lockPersistedWorldForResolution(
   repository: ApplicationWorldRepository,
   worldId: Id,
@@ -43,12 +73,18 @@ export async function lockPersistedWorldForResolution(
   realCycleKey: string | null = null,
 ): Promise<number> {
   const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
-    const closure = closeCurrentWeekReservationsAtLock(aggregate.state, aggregate.planning);
-    if (
-      passMutatedWorld(closure)
-      || closure.releasedAtRisk.length > 0
-    ) {
-      incrementWorldRevision(aggregate.runtime);
+    if (!currentWeekShowCommitmentsLocked(aggregate.runtime, aggregate.state)) {
+      const closure = closeCurrentWeekReservationsAtCommitmentLock(
+        aggregate.state,
+        aggregate.planning,
+      );
+      if (
+        passMutatedWorld(closure)
+        || closure.releasedAtRisk.length > 0
+      ) {
+        incrementWorldRevision(aggregate.runtime);
+      }
+      lockCurrentWeekShowCommitments(aggregate.runtime, aggregate.state, realCycleKey);
     }
     lockWorldForResolution(aggregate.runtime, aggregate.state, realCycleKey);
   });
@@ -70,7 +106,6 @@ export async function resolvePersistedWorldWeek(
         applyResolvedShowTurns(state);
       },
     });
-    materializeCurrentWeekReservations(aggregate.state, aggregate.planning);
     generateWorldOpportunities(aggregate);
   });
   return committed.revision;
