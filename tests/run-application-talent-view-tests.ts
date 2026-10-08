@@ -1,6 +1,7 @@
 declare const process: { exitCode?: number };
 
 import {
+  buildPlayerTalentDirectoryView,
   buildPlayerTalentManagementView,
   claimIndependentPromotionForPlayer,
   createWorldCommandState,
@@ -153,6 +154,37 @@ test("talent market can expose non-exclusive availability without leaking rival 
   ok(!serialized.includes("876543210"), "rival appearance fee leaked into player talent view");
   ok(!serialized.includes(rivalContract!.id), "rival contract ID leaked into player talent view");
   ok(!serialized.includes("resolvedUtility"), "contract utility score leaked into player talent view");
+});
+
+test("global directory includes exclusive rival talent without private contract leakage", () => {
+  const { aggregate, promotionAId, promotionBId } = fixture(73006);
+  const ownPeople = new Set(activeContractsForPromotion(aggregate.state, promotionAId).map((contract) => contract.personId));
+  const rivalContract = activeContractsForPromotion(aggregate.state, promotionBId)
+    .find((contract) => !ownPeople.has(contract.personId));
+  ok(rivalContract, "fixture has no rival-only contract for directory test");
+  rivalContract!.family = "EXCLUSIVE";
+  rivalContract!.exclusivity = "EXCLUSIVE";
+  rivalContract!.weeklyGuarantee = 912_345_678;
+  rivalContract!.appearanceFee = 812_345_678;
+
+  const directory = buildPlayerTalentDirectoryView(aggregate, "player-a");
+  ok(directory.entries.length === aggregate.state.people.length, "global directory did not include the whole World population");
+
+  const entry = directory.entries.find((candidate) => candidate.personId === rivalContract!.personId);
+  ok(entry?.directoryStatus === "EXCLUSIVE", "exclusive rival wrestler was not visible as exclusive in Directory");
+  ok(
+    entry?.employmentPromotions.some((promotion) => promotion.promotionId === promotionBId),
+    "Directory did not expose rival wrestler's public employer",
+  );
+  ok(
+    entry?.rosterAffiliations.some((promotion) => promotion.promotionId === promotionBId),
+    "Directory did not expose rival wrestler's public roster affiliation",
+  );
+
+  const serialized = JSON.stringify(directory);
+  ok(!serialized.includes("912345678"), "rival weekly guarantee leaked into global Directory");
+  ok(!serialized.includes("812345678"), "rival appearance fee leaked into global Directory");
+  ok(!serialized.includes(rivalContract!.id), "rival contract ID leaked into global Directory");
 });
 
 test("pending contract offers are private to the controlling promotion", () => {
