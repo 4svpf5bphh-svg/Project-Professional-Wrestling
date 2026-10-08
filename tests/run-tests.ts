@@ -8,6 +8,11 @@ import {
   seedRealActiveTagTeams,
 } from "../packages/content/src/real-active-tag-teams.js";
 import {
+  REAL_WRESTLER_RELATIONSHIPS_REVIEWED_ON,
+  REAL_WRESTLER_RELATIONSHIP_TEMPLATES,
+  seedRealWrestlerRelationships,
+} from "../packages/content/src/real-wrestler-relationships.js";
+import {
   calibratedRealActiveMensRosterSource,
   realRosterValueBand,
 } from "../packages/content/src/real-active-mens-calibration.js";
@@ -300,6 +305,63 @@ test("real tag-team seeding is idempotent and does not duplicate teams or genesi
   seedRealActiveTagTeams(state);
   equal(state.teams?.length ?? 0, teamCount);
   equal(state.ledger.filter((entry) => entry.type === "TAG_TEAM_PRESENT_AT_GENESIS").length, ledgerCount);
+});
+
+test("reviewed real wrestler relationships seed public wrestling-history context without creating chemistry", () => {
+  const state = createWorld(
+    127,
+    REAL_WORLD_ALPHA_RULESET,
+    "Real Relationship Seed",
+    calibratedRealActiveMixedRosterSource,
+  );
+  seedRealActiveTagTeams(state);
+  const chemistryBefore = state.workingChemistry.length;
+  const seeded = seedRealWrestlerRelationships(state);
+
+  equal(REAL_WRESTLER_RELATIONSHIPS_REVIEWED_ON, "2026-10-08");
+  equal(seeded, REAL_WRESTLER_RELATIONSHIP_TEMPLATES.length);
+  equal(state.workingChemistry.length, chemistryBefore);
+
+  const relationshipByNames = (leftName: string, rightName: string) => {
+    const left = state.people.find((person) => person.name === leftName)!;
+    const right = state.people.find((person) => person.name === rightName)!;
+    return wrestlerRelationshipBetween(state, left.id, right.id);
+  };
+
+  const reyDominik = relationshipByNames("Rey Mysterio", "Dominik Mysterio");
+  ok(reyDominik?.tags.includes("FAMILY"), "Rey/Dominik family relationship missing");
+  ok((reyDominik?.rivalryHeat ?? 0) >= 90, "Rey/Dominik rivalry history too low");
+
+  const owensZayn = relationshipByNames("Kevin Owens", "Sami Zayn");
+  ok(owensZayn?.tags.includes("FORMER_PARTNERS"), "Owens/Zayn former-partner history missing");
+  ok(owensZayn?.tags.includes("ALLY"), "Owens/Zayn alliance history missing");
+  ok((owensZayn?.rivalryHeat ?? 0) >= 90, "Owens/Zayn rivalry history too low");
+
+  const bayleyMercedes = relationshipByNames("Bayley", "Mercedes Moné");
+  ok(bayleyMercedes?.tags.includes("FORMER_PARTNERS"), "Bayley/Mercedes former-partner history missing");
+  ok((bayleyMercedes?.familiarity ?? 0) >= 95, "Bayley/Mercedes familiarity too low");
+
+  const sayaMomo = relationshipByNames("Saya Kamitani", "Momo Watanabe");
+  ok(sayaMomo?.tags.includes("ALLY"), "Saya/Momo stablemate relationship missing");
+  ok((sayaMomo?.rivalryHeat ?? 0) >= 75, "Saya/Momo competitive friction too low");
+
+  const bellas = relationshipByNames("Brie Bella", "Nikki Bella");
+  ok(bellas?.tags.includes("FAMILY"), "existing Bella family tag was lost when relationship seed ran");
+  ok(bellas?.tags.includes("TAG_PARTNERS"), "existing Bella tag-partner history was lost when relationship seed ran");
+});
+
+test("real wrestler relationship seeding is idempotent", () => {
+  const state = createWorld(
+    128,
+    REAL_WORLD_ALPHA_RULESET,
+    "Real Relationship Idempotency",
+    calibratedRealActiveMixedRosterSource,
+  );
+  seedRealActiveTagTeams(state);
+  seedRealWrestlerRelationships(state);
+  const snapshot = JSON.stringify(state.wrestlerRelationships);
+  seedRealWrestlerRelationships(state);
+  equal(JSON.stringify(state.wrestlerRelationships), snapshot);
 });
 
 test("initial roster assignment source pins wrestlers to promotions without changing default Genesis", () => {
