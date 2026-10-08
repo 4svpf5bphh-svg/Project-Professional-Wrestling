@@ -279,10 +279,17 @@ export function createWorld(
   const remainingTarget = Math.max(0, targetContracted - seededPersonIds.size);
   for (let i = 0; i < remainingTarget; i += 1) {
     const person = sortedByValue[i]!;
-    const eligible = promotions.filter(
+    const takeoverFloorEligible = promotions.filter(
       (promotion) => promotion.rosterMode !== "EXPLICIT"
-        && (assigned.get(promotion.id) ?? 0) < (quotas.get(promotion.id) ?? 0),
+        && promotion.playerTakeoverEligibility === "STANDARD"
+        && (assigned.get(promotion.id) ?? 0) < (takeoverMinimumRoster.get(promotion.id) ?? 0),
     );
+    const eligible = takeoverFloorEligible.length > 0
+      ? takeoverFloorEligible
+      : promotions.filter(
+        (promotion) => promotion.rosterMode !== "EXPLICIT"
+          && (assigned.get(promotion.id) ?? 0) < (quotas.get(promotion.id) ?? 0),
+      );
     if (eligible.length === 0) break;
     const promotion = rng.weightedPick(
       eligible.map((candidate) => ({ value: candidate, weight: tierAllocationWeight(candidate) })),
