@@ -127,6 +127,23 @@ ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS commitment_locked_ppw_date jsonb
 ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS commitment_locked_real_cycle_key text NULL;
 `,
   },
+  {
+    version: 7,
+    name: "reset Alpha World for audited real-world ecosystem cutover",
+    sql: `
+DELETE FROM ppw_worlds AS worlds
+WHERE worlds.world_id = 'world-20261002'
+   OR (
+     worlds.world_state->'world'->>'name' = 'PPW Alpha World'
+     AND EXISTS (
+       SELECT 1
+       FROM ppw_world_memberships AS memberships
+       WHERE memberships.world_id = worlds.world_id
+         AND memberships.player_id = 'alpha-player-1'
+     )
+   );
+`,
+  },
 ] as const;
 
 export const POSTGRES_APPLICATION_SCHEMA_SQL = [
