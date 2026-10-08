@@ -151,7 +151,16 @@ export const realPromotionEcosystemSource: WorldPromotionSource = (context) => {
 
   return generated.map((promotion, index) => {
     const template = REAL_PROMOTION_TEMPLATES[index];
-    if (!template) return promotion;
+    if (!template) {
+      if (promotion.playerTakeoverEligibility !== "STANDARD") return promotion;
+      return {
+        ...promotion,
+        // Player-entry companies remain Independent businesses, but start at
+        // the top of the normal Independent cash range so a takeover has the
+        // intended 20-30+ week runway instead of inheriting an immediate crisis.
+        cash: Math.max(promotion.cash, 6_000_000),
+      };
+    }
     const parentPromotionId = template.parentKey === null
       ? null
       : idByKey.get(template.parentKey)!;

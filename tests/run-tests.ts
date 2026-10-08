@@ -176,6 +176,7 @@ test("real promotion catalog preserves parent links and keeps real companies tak
   ok(realPromotions.every((promotion) => promotion.playerTakeoverEligibility === "LOCKED"), "real promotion source exposed a standard player takeover");
   ok(takeoverPromotions.every((promotion) => promotion.identity?.origin === "FICTIONAL"), "real promotion became a takeover slot");
   ok(takeoverPromotions.every((promotion) => promotion.tier === "INDEPENDENT"), "player takeover slot is not Independent");
+  ok(takeoverPromotions.every((promotion) => promotion.cash >= 6_000_000), "player takeover slot lacks the intended startup reserve");
 
   const wwe = state.promotions.find((promotion) => promotion.name === "WWE")!;
   const nxt = state.promotions.find((promotion) => promotion.name === "NXT")!;
