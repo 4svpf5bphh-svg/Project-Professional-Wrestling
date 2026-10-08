@@ -8,6 +8,7 @@ import {
   createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  lockPersistedCurrentWeekShowCommitments,
   lockPersistedWorldForResolution,
   resolvePersistedWorldWeek,
   upsertDetailedShowDraftCommand,
@@ -191,6 +192,20 @@ try {
     ok(loaded.commands.receipts.length === 0, "rollback left command receipt");
     ok(loaded.planning.workspaces.length === 0, "rollback unexpectedly created planning state");
     ok(loaded.state.promotions.find((candidate) => candidate.id === promotion.id)?.controllerType === "AI", "rollback left simulation mutation");
+  });
+
+  await test("PostgreSQL persists show commitment lock across reload", async () => {
+    const aggregate = fixture(14005);
+    await repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+
+    await lockPersistedCurrentWeekShowCommitments(repository, worldId, 0, "2026-10-07");
+    const loaded = await repository.load(worldId);
+
+    ok(loaded.runtime.phase === "OPEN", "persisted commitment lock incorrectly closed the World");
+    ok(loaded.runtime.commitmentLockedPpwDate?.year === aggregate.state.world.currentDate.year, "commitment lock year was not persisted");
+    ok(loaded.runtime.commitmentLockedPpwDate?.week === aggregate.state.world.currentDate.week, "commitment lock week was not persisted");
+    ok(loaded.runtime.commitmentLockedRealCycleKey === "2026-10-07", "commitment lock real-cycle key was not persisted");
   });
 
   await test("PostgreSQL keeps weekly lock durable and resolves the week atomically", async () => {
