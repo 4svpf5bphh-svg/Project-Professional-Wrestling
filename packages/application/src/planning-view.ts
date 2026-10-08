@@ -1,5 +1,5 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
-import type { Id, MatchType, PersonStatus, PpwDate, PromotionTier, TicketStrategy } from "../../domain/src/types.js";
+import type { Id, MatchType, PersonStatus, PpwDate, TicketStrategy } from "../../domain/src/types.js";
 import { addPpwWeeks, comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { activePromotionControlForPlayer, activeWorldMembership } from "./ownership.js";
 import {
@@ -13,6 +13,7 @@ import {
   type PlayerShowPlanningState,
   type PlayerShowReadiness,
 } from "./planning-status.js";
+import { maxShowParticipantsForDate } from "./show-capacity.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export type PlayerPlannerShowState = "UNPLANNED" | PlayerShowPlanningState;
@@ -186,32 +187,6 @@ function marketPresenceBand(score: number): PlayerPlannerMarketPresence {
   if (score >= 45) return "ESTABLISHED";
   if (score >= 25) return "DEVELOPING";
   return "LIGHT";
-}
-
-function maxShowParticipants(
-  tier: PromotionTier,
-  date: PpwDate,
-  weeksPerYear: number,
-  majorEventIntervalWeeks: number,
-  alphaTakeoverTesting: boolean,
-): number {
-  // Temporary Reality Check affordance. The permanent relationship between
-  // show identity, importance and usable roster belongs in Show/Calendar
-  // architecture; player-entry Alpha companies need enough room to test
-  // realistic 8–10-slot cards in the meantime.
-  const regular = alphaTakeoverTesting
-    ? 20
-    : tier === "GLOBAL"
-      ? 16
-      : tier === "NATIONAL"
-        ? 14
-        : tier === "RISING"
-          ? 12
-          : tier === "INDEPENDENT"
-            ? 10
-            : 8;
-  const weekIndex = ppwDateToWeekIndex(date, weeksPerYear);
-  return (weekIndex + 1) % majorEventIntervalWeeks === 0 ? regular + 2 : regular;
 }
 
 function contractTouchesWeek(
@@ -499,12 +474,10 @@ export function buildPlayerSixWeekPlannerView(
         showRequired: required,
         canPlan: required && aggregate.runtime.phase === "OPEN",
         minParticipants: aggregate.state.ruleset.minEventParticipants,
-        maxParticipants: maxShowParticipants(
-          promotion.tier,
+        maxParticipants: maxShowParticipantsForDate(
+          aggregate.state,
+          promotion,
           targetDate,
-          aggregate.state.ruleset.weeksPerYear,
-          aggregate.state.ruleset.majorEventIntervalWeeks,
-          promotion.playerTakeoverEligibility === "STANDARD",
         ),
         eligibleParticipants: eligibleParticipantsForWeek(aggregate, promotion.id, targetDate),
         shows,
