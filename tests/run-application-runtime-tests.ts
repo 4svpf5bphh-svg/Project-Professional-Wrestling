@@ -6,7 +6,9 @@ import {
   createWorldCommandState,
   createWorldOwnershipState,
   createWorldRuntimeState,
+  currentWeekShowCommitmentsLocked,
   joinPlayerToWorld,
+  lockCurrentWeekShowCommitments,
   lockWorldForResolution,
   resolveLockedWorldWeek,
 } from "../packages/application/src/index.js";
@@ -57,7 +59,20 @@ test("World runtime starts open at revision zero", () => {
   ok(runtime.phase === "OPEN", "new World runtime did not start OPEN");
   ok(runtime.revision === 0, "new World runtime did not start at revision zero");
   ok(runtime.lockedPpwDate === null, "new World runtime unexpectedly started locked");
+  ok(runtime.commitmentLockedPpwDate === null, "new World runtime unexpectedly started with show commitments locked");
   ok(runtime.lastResolvedPpwDate === null, "new World runtime unexpectedly had a resolved week");
+});
+
+test("show commitment lock keeps the World open for non-logistics player actions", () => {
+  const { state, ownership, commands, runtime, promotion, envelope } = claimFixture(13008);
+  lockCurrentWeekShowCommitments(runtime, state, "2026-10-04");
+
+  ok(runtime.phase === "OPEN", "show commitment lock incorrectly closed the whole World");
+  ok(currentWeekShowCommitmentsLocked(runtime, state), "show commitment lock was not recorded for the current PPW week");
+
+  const result = claimIndependentPromotionCommand(state, ownership, commands, runtime, envelope);
+  ok(result.id === promotion.id, "ordinary player command failed while only show commitments were locked");
+  ok(runtime.revision === 1, "ordinary player command did not commit normally after show commitment lock");
 });
 
 test("new player mutations are rejected once the World enters locking", () => {
@@ -133,6 +148,7 @@ test("the locked worker resolves exactly one week then reopens the World", () =>
 
   ok(runtime.phase === "OPEN", "resolved World did not reopen");
   ok(runtime.lockedPpwDate === null, "resolved World retained its active lock date");
+  ok(runtime.commitmentLockedPpwDate === null, "resolved World retained the prior week's show commitment lock");
   ok(runtime.revision === 1, "weekly resolution did not advance the World revision exactly once");
   ok(
     runtime.lastResolvedPpwDate?.year === lockedDate.year
