@@ -132,6 +132,7 @@ export interface AlphaPlayerWorldView {
     day: number;
     phase: ApplicationWorldAggregate["runtime"]["phase"];
     revision: number;
+    showCommitmentsLocked: boolean;
     lastResolvedPpwDate: PpwDate | null;
   };
   player: {
@@ -391,6 +392,7 @@ export function buildAlphaPlayerWorldView(
       day: date.day,
       phase: aggregate.runtime.phase,
       revision: aggregate.runtime.revision,
+      showCommitmentsLocked: currentWeekShowCommitmentsLocked(aggregate.runtime, aggregate.state),
       lastResolvedPpwDate: aggregate.runtime.lastResolvedPpwDate
         ? { ...aggregate.runtime.lastResolvedPpwDate }
         : null,
