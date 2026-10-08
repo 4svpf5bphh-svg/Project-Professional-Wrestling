@@ -144,6 +144,23 @@ WHERE worlds.world_id = 'world-20261002'
    );
 `,
   },
+  {
+    version: 8,
+    name: "reset Alpha World for Reality Check roster and talent release",
+    sql: `
+DELETE FROM ppw_worlds AS worlds
+WHERE worlds.world_id = 'world-20261002'
+   OR (
+     worlds.world_state->'world'->>'name' = 'PPW Alpha World'
+     AND EXISTS (
+       SELECT 1
+       FROM ppw_world_memberships AS memberships
+       WHERE memberships.world_id = worlds.world_id
+         AND memberships.player_id = 'alpha-player-1'
+     )
+   );
+`,
+  },
 ] as const;
 
 export const POSTGRES_APPLICATION_SCHEMA_SQL = [
