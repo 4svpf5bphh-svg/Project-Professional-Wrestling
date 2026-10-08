@@ -108,8 +108,9 @@ function countdownCopy(nowMs: number, target: Date): string {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
-  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+  return [hours, minutes, seconds]
+    .map((value) => String(value).padStart(2, "0"))
+    .join(":");
 }
 
 function localLockTime(target: Date): string {
@@ -229,29 +230,14 @@ export default function AlphaHome(): React.JSX.Element {
     currentPlan && (currentPlan.state === "MATERIALIZED" || currentPlan.state === "READY_TO_LOCK"),
   );
   const worldIsOpen = view.world.phase === "OPEN";
-  const nextDeadlineHeading = !worldIsOpen
-    ? `World is ${view.world.phase.toLowerCase()}`
-    : commitmentsLocked
-      ? `World lock in ${worldLockCountdown}`
-      : commitmentDeadlinePassed
-        ? "Show Commitment Lock due"
-        : `Show commitments lock in ${commitmentLockCountdown}`;
-  const resourceLockLabel = !currentPlan
-    ? "No current show"
-    : logisticsLocked
-      ? "Locked"
-      : commitmentsLocked
-        ? "Commitment window closed"
-        : commitmentDeadlinePassed
-          ? "Due now"
-          : `Locks in ${commitmentLockCountdown}`;
-  const cardDeadlineLabel = promotion?.weekReadiness.status === "NOT_REQUIRED"
-    ? "No card due"
-    : !worldIsOpen
-      ? "Closed"
-      : currentPlan && !currentPlan.canEdit
-        ? "Staff-owned"
-        : `Closes in ${worldLockCountdown}`;
+  const commitmentStateLabel = commitmentsLocked || logisticsLocked
+    ? "LOCKED"
+    : commitmentDeadlinePassed
+      ? "DUE NOW"
+      : commitmentLockCountdown;
+  const worldLockStateLabel = !worldIsOpen
+    ? view.world.phase
+    : worldLockCountdown;
 
   let weekActionHref = "/planner";
   let weekActionLabel = "Open six-week planner";
@@ -375,41 +361,47 @@ export default function AlphaHome(): React.JSX.Element {
             <div className="section-heading">
               <div>
                 <span className="eyebrow">WORLD CLOCK</span>
-                <h2>{nextDeadlineHeading}</h2>
+                <h2>Two deadlines · one World cycle</h2>
               </div>
               <span className={worldIsOpen ? "plan-pill plan-reserved" : "readiness-pill readiness-attention"}>
                 {worldIsOpen
                   ? commitmentsLocked
                     ? "CARD EDIT WINDOW"
-                    : "06:00 → 08:00 UTC"
+                    : "WORLD OPEN"
                   : view.world.phase}
               </span>
             </div>
-            <p className="muted body-copy">
-              {commitmentsLocked
-                ? <>Show commitments are locked. Card details can still be edited until the final World lock at {localLockTime(nextWorldLock)} local time · 08:00 UTC.</>
-                : <>Show Commitment Lock: {localLockTime(nextCommitmentLock)} local time · 06:00 UTC. Final World Lock: {localLockTime(nextWorldLock)} local time · 08:00 UTC.</>}
-            </p>
-            <div className="result-grid">
-              <div>
-                <span>Venue</span>
-                <strong>{resourceLockLabel}</strong>
-              </div>
-              <div>
-                <span>Committed talent</span>
-                <strong>{resourceLockLabel}</strong>
-              </div>
-              <div>
-                <span>Card submission</span>
-                <strong>{cardDeadlineLabel}</strong>
-              </div>
-              <div>
-                <span>World resolution</span>
-                <strong>{worldIsOpen ? `In ${worldLockCountdown}` : view.world.phase}</strong>
-              </div>
+
+            <div className="world-clock-grid">
+              <article className={`world-clock-card ${commitmentsLocked || logisticsLocked ? "world-clock-locked" : ""}`}>
+                <div className="world-clock-card-top">
+                  <div>
+                    <span className="eyebrow">SHOW COMMITMENT LOCK</span>
+                    <h3>06:00 UTC</h3>
+                  </div>
+                  <strong className="world-clock-countdown">{commitmentStateLabel}</strong>
+                </div>
+                <p className="muted">
+                  {localLockTime(nextCommitmentLock)} local · locks venue and committed talent.
+                </p>
+              </article>
+
+              <article className={`world-clock-card ${!worldIsOpen ? "world-clock-locked" : ""}`}>
+                <div className="world-clock-card-top">
+                  <div>
+                    <span className="eyebrow">WORLD LOCK</span>
+                    <h3>08:00 UTC</h3>
+                  </div>
+                  <strong className="world-clock-countdown">{worldLockStateLabel}</strong>
+                </div>
+                <p className="muted">
+                  {localLockTime(nextWorldLock)} local · closes card editing and resolves the PPW week.
+                </p>
+              </article>
             </div>
+
             <p className="micro-copy">
-              Before Commitment Lock you can change show logistics and reserved talent. After it, venue and committed wrestlers are fixed, but matches, segments, order, winners, finishes, styles and other card details remain editable until World Lock.
+              Before 06:00 you can change show logistics and reserved talent. Between 06:00 and 08:00 the committed venue and wrestlers are fixed, but the card remains editable. At World Lock, player editing closes and the week resolves.
             </p>
           </section>
 
