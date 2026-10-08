@@ -40,8 +40,8 @@ await test("Team-history service creates a named team without granting free expe
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 73312, playerId: "player-a" });
   await repository.initialize(aggregate);
-  const promotion = aggregate.state.promotions.find((candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE");
-  if (!promotion) throw new Error("team-create fixture has no Independent promotion");
+  const promotion = aggregate.state.promotions.find((candidate) => candidate.playerTakeoverEligibility === "STANDARD" && candidate.lifecycle === "ACTIVE");
+  if (!promotion) throw new Error("team-create fixture has no takeover-eligible promotion");
   await claimAlphaPromotion(repository, aggregate.state.world.id, "player-a", {
     promotionId: promotion.id,
     requestId: "team-create-claim",
