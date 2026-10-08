@@ -12,7 +12,10 @@ import {
 } from "../../sim-core/src/index.js";
 import {
   activePromotionControlForPlayer,
+  activeWorldMembership,
   buildPlayerTalentManagementView,
+  createWorldEngagementState,
+  setTalentWatched,
   setWrestlerAlignmentCommand,
   submitContractOfferCommand,
   type ApplicationWorldAggregate,
@@ -60,6 +63,18 @@ export interface AlphaRosterAlignmentResult {
   alignment: WrestlerAlignment;
   changeMode: "INITIAL_PRESENTATION" | "JUST_SIGNED" | "RETURNING" | "OFFSCREEN_SWITCH";
   naturalReset: boolean;
+  view: PlayerTalentManagementView;
+}
+
+
+export interface AlphaTalentWatchRequest {
+  personId: string;
+  watched: boolean;
+}
+
+export interface AlphaTalentWatchResult {
+  personId: string;
+  watched: boolean;
   view: PlayerTalentManagementView;
 }
 
@@ -255,6 +270,36 @@ export async function submitAlphaTalentOffer(
       offerKind: offer.offerKind,
       view: buildPlayerTalentManagementView(aggregate, playerId),
     } satisfies AlphaTalentOfferResult;
+  });
+
+  return transaction.result;
+}
+
+export async function setAlphaTalentWatch(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  rawRequest: AlphaTalentWatchRequest,
+): Promise<AlphaTalentWatchResult> {
+  const personId = boundedText(rawRequest.personId, "personId");
+  if (typeof rawRequest.watched !== "boolean") throw new Error("watched must be a boolean");
+
+  const transaction = await repository.transact(worldId, null, (aggregate) => {
+    if (!activeWorldMembership(aggregate.ownership, playerId)) {
+      throw new Error("player must be an active World member before changing Watchlist");
+    }
+    const person = aggregate.state.people.find((candidate) => candidate.id === personId);
+    if (!person || person.status === "RETIRED") throw new Error(`unknown active wrestler ${personId}`);
+
+    const engagement = aggregate.engagement ?? createWorldEngagementState(worldId);
+    aggregate.engagement = engagement;
+    setTalentWatched(engagement, playerId, personId, rawRequest.watched, aggregate.runtime.revision);
+
+    return {
+      personId,
+      watched: rawRequest.watched,
+      view: buildPlayerTalentManagementView(aggregate, playerId),
+    } satisfies AlphaTalentWatchResult;
   });
 
   return transaction.result;
