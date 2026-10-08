@@ -379,6 +379,32 @@ export default function CardClient(): React.JSX.Element {
     updateMatch(matchId, side === "A" ? { sideAIds: ids } : { sideBIds: ids });
   }
 
+  function teamForSide(match: AlphaCardMatchView, side: "A" | "B"): string {
+    if (!view || match.type !== "TAG") return "";
+    const ids = [...(side === "A" ? match.sideAIds : match.sideBIds)].sort();
+    const team = view.availableTeams.find((candidate) => (
+      [...candidate.memberIds].sort().join(":") === ids.join(":")
+    ));
+    return team?.teamId ?? "";
+  }
+
+  function teamBookedElsewhere(teamId: string, matchId: string): boolean {
+    if (!view) return false;
+    const team = view.availableTeams.find((candidate) => candidate.teamId === teamId);
+    if (!team) return false;
+    return team.memberIds.some((personId) => personBookedInOtherMatch(personId, matchId, ""));
+  }
+
+  function setMatchTeam(matchId: string, side: "A" | "B", teamId: string): void {
+    if (!view || !teamId) return;
+    const team = view.availableTeams.find((candidate) => candidate.teamId === teamId);
+    if (!team) return;
+    updateMatch(matchId, side === "A"
+      ? { sideAIds: [...team.memberIds] }
+      : { sideBIds: [...team.memberIds] });
+  }
+
+
   function updateSegment(segmentId: string, patch: Partial<AlphaCardSegmentView>): void {
     setSegments((current) => current.map((segment) => (
       segment.draftSegmentId === segmentId ? { ...segment, ...patch } : segment
@@ -720,6 +746,24 @@ export default function CardClient(): React.JSX.Element {
                   <div className={styles.sides}>
                     <div className={styles.side}>
                       <span className={styles.sideLabel}>Side A</span>
+                      {match.type === "TAG" && view.availableTeams.length > 0 ? (
+                        <select
+                          value={teamForSide(match, "A")}
+                          disabled={!view.canEdit}
+                          onChange={(event) => setMatchTeam(match.draftMatchId, "A", event.target.value)}
+                        >
+                          <option value="">Custom pairing</option>
+                          {view.availableTeams.map((team) => (
+                            <option
+                              key={team.teamId}
+                              value={team.teamId}
+                              disabled={teamBookedElsewhere(team.teamId, match.draftMatchId)}
+                            >
+                              {team.name} — {team.memberNames.join(" & ")}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null}
                       {match.sideAIds.map((personId, personIndex) => (
                         <select key={`A-${personIndex}`} value={personId} disabled={!view.canEdit} onChange={(event) => setMatchParticipant(match.draftMatchId, "A", personIndex, event.target.value)}>
                           <option value="">Choose wrestler</option>{participantOptions(personId)}
@@ -729,6 +773,24 @@ export default function CardClient(): React.JSX.Element {
                     <div className={styles.versus}>VS</div>
                     <div className={styles.side}>
                       <span className={styles.sideLabel}>Side B</span>
+                      {match.type === "TAG" && view.availableTeams.length > 0 ? (
+                        <select
+                          value={teamForSide(match, "B")}
+                          disabled={!view.canEdit}
+                          onChange={(event) => setMatchTeam(match.draftMatchId, "B", event.target.value)}
+                        >
+                          <option value="">Custom pairing</option>
+                          {view.availableTeams.map((team) => (
+                            <option
+                              key={team.teamId}
+                              value={team.teamId}
+                              disabled={teamBookedElsewhere(team.teamId, match.draftMatchId)}
+                            >
+                              {team.name} — {team.memberNames.join(" & ")}
+                            </option>
+                          ))}
+                        </select>
+                      ) : null}
                       {match.sideBIds.map((personId, personIndex) => (
                         <select key={`B-${personIndex}`} value={personId} disabled={!view.canEdit} onChange={(event) => setMatchParticipant(match.draftMatchId, "B", personIndex, event.target.value)}>
                           <option value="">Choose wrestler</option>{participantOptions(personId)}
