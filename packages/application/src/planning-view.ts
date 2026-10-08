@@ -1,5 +1,5 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
-import type { Id, MatchType, PersonStatus, PpwDate, TicketStrategy } from "../../domain/src/types.js";
+import type { Id, MatchType, PersonStatus, PpwDate, PromotionTier, TicketStrategy } from "../../domain/src/types.js";
 import { addPpwWeeks, comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { activePromotionControlForPlayer, activeWorldMembership } from "./ownership.js";
 import {
