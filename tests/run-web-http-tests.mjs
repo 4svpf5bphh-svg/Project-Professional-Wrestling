@@ -176,16 +176,31 @@ try {
   ok(Array.isArray(talent.market) && talent.market.length > 0, "HTTP talent market exposed no available wrestlers");
   ok(talent.roster?.length >= 2, "HTTP talent roster exposed fewer than two wrestlers for team creation");
   const teamsBefore = await json(await fetch(`${baseUrl}/api/teams`, { cache: "no-store" }));
-  const createdTeamView = await json(await fetch(`${baseUrl}/api/teams`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      requestId: "ci-http-team-001",
-      expectedRevision: teamsBefore.world.revision,
-      name: "CI HTTP Tag Team",
-      personIds: [talent.roster[0].personId, talent.roster[1].personId],
-    }),
-  }));
+  let createdTeamView = null;
+  for (let left = 0; left < talent.roster.length && !createdTeamView; left += 1) {
+    for (let right = left + 1; right < talent.roster.length && !createdTeamView; right += 1) {
+      const response = await fetch(`${baseUrl}/api/teams`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: `ci-http-team-${left + 1}-${right + 1}`,
+          expectedRevision: teamsBefore.world.revision,
+          name: "CI HTTP Tag Team",
+          personIds: [talent.roster[left].personId, talent.roster[right].personId],
+        }),
+      });
+      const payload = await response.json();
+      if (response.ok) {
+        createdTeamView = payload;
+        break;
+      }
+      if (response.status === 409 && payload?.error === "tag teams cannot mix men's and women's divisions") {
+        continue;
+      }
+      throw new Error(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
+    }
+  }
+  ok(createdTeamView, "HTTP talent roster exposed no valid same-division pair for team creation");
   const createdTeam = createdTeamView.teams?.find((team) => team.name === "CI HTTP Tag Team");
   ok(createdTeam?.currentMembers?.length === 2, "HTTP team creation did not persist both members");
   ok(createdTeam?.experience?.band === "UNTESTED", "HTTP team creation granted free experience");
