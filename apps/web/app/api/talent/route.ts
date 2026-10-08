@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import {
   loadAlphaTalentSession,
   setAlphaRosterAlignment,
+  setAlphaTalentWatch,
   submitAlphaTalentOffer,
   type AlphaRosterAlignmentRequest,
   type AlphaTalentOfferRequest,
+  type AlphaTalentWatchRequest,
 } from "../../../../../dist/packages/web-adapter/src/talent-service.js";
 import { withAlphaServerContext } from "../../../../../dist/packages/web-adapter/src/server-world.js";
 
@@ -49,6 +51,19 @@ export async function POST(request: Request): Promise<NextResponse> {
   } catch (error) {
     const rawMessage = error instanceof Error ? error.message : "Unable to submit PPW contract offer";
     return NextResponse.json({ error: playerFacingOfferError(rawMessage) }, { status: 400 });
+  }
+}
+
+export async function PUT(request: Request): Promise<NextResponse> {
+  try {
+    const body = await request.json() as AlphaTalentWatchRequest;
+    const result = await withAlphaServerContext(({ repository, worldId, playerId }) => (
+      setAlphaTalentWatch(repository, worldId, playerId, body)
+    ));
+    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to update talent Watchlist";
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
 
