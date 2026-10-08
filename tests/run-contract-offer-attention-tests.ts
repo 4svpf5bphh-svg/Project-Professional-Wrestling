@@ -29,9 +29,9 @@ test("resolved player contract offers surface accepted and rejected Attention wi
   const playerId = "contract-attention-player";
   const aggregate = createAlphaWorldAggregate({ seed: 61992, playerId });
   const promotion = aggregate.state.promotions.find((candidate) => (
-    candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE"
+    candidate.playerTakeoverEligibility === "STANDARD" && candidate.lifecycle === "ACTIVE"
   ));
-  if (!promotion) throw new Error("contract attention fixture has no Independent promotion");
+  if (!promotion) throw new Error("contract attention fixture has no takeover-eligible promotion");
   claimIndependentPromotionForPlayer(aggregate.state, aggregate.ownership, playerId, promotion.id);
   aggregate.runtime.lastResolvedPpwDate = { ...aggregate.state.world.currentDate };
 
