@@ -249,8 +249,8 @@ await test("Show Builder persists an interleaved Programme segment with wrestler
   await startAlphaManagedProgramme(fixture.repository, fixture.worldId, "alpha-player", {
     requestId: "card-segment-programme",
     expectedRevision: beforeProgramme.world.revision,
-    sideAIds: [first],
-    sideBIds: [second],
+    sideA: [{ kind: "PERSON", entityId: first }],
+    sideB: [{ kind: "PERSON", entityId: second }],
     championshipId: null,
   });
 
