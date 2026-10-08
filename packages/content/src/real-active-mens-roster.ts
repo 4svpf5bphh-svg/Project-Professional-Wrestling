@@ -451,7 +451,6 @@ Bárbaro Cavernario
 KZY
 Ryoya Tanaka
 Masaaki Mochizuki
-Cara Noir
 Elijah Blum
 Averno
 Stuka Jr.

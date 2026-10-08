@@ -181,7 +181,7 @@ test("reviewed women's identity pool is unique, substantial and separate from th
 
 test("expanded mixed roster source creates explicit men's and women's divisions without duplicate identities", () => {
   ok(REAL_WORLD_ALPHA_RULESET.wrestlers === REAL_ACTIVE_MIXED_ROSTER_SIZE, "future real-world ruleset drifted from the reviewed mixed roster");
-  ok(REAL_ACTIVE_MIXED_ROSTER_SIZE === 644, "popular-wrestler audit roster size changed unexpectedly");
+  ok(REAL_ACTIVE_MIXED_ROSTER_SIZE === 643, "popular-wrestler audit roster size changed unexpectedly");
   ok(REAL_WORLD_ALPHA_RULESET.promotions === 13, "future real-world ruleset lost reserved player takeover slots");
   const ruleset = { ...DEFAULT_RULESET, wrestlers: REAL_ACTIVE_MIXED_ROSTER_SIZE };
   const state = createWorld(77107, ruleset, "Mixed Identity Pool", calibratedRealActiveMixedRosterSource);
