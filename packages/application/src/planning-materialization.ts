@@ -491,7 +491,7 @@ export function materializeCurrentWeekReservations(
   return { materialized, atRisk, expiredReservationIds };
 }
 
-export function closeCurrentWeekReservationsAtLock(
+export function closeCurrentWeekReservationsAtCommitmentLock(
   state: WorldState,
   planning: WorldPlanningState,
 ): ReservationLockClosure {
@@ -511,6 +511,17 @@ export function closeCurrentWeekReservationsAtLock(
     releasedAtRisk.push(assessment);
   }
   return { ...pass, releasedAtRisk };
+}
+
+/**
+ * Compatibility alias for older callers. The resource boundary is now the
+ * Show Commitment Lock; final World lock should only close player mutation.
+ */
+export function closeCurrentWeekReservationsAtLock(
+  state: WorldState,
+  planning: WorldPlanningState,
+): ReservationLockClosure {
+  return closeCurrentWeekReservationsAtCommitmentLock(state, planning);
 }
 
 export function reservationAssessmentForDraft(
