@@ -46,9 +46,9 @@ async function reservedShowFixture(seed: number) {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed, playerId: "alpha-player" });
   const independent = aggregate.state.promotions.find((promotion) => (
-    promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE"
+    promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE"
   ));
-  if (!independent) throw new Error("test World has no active Independent promotion");
+  if (!independent) throw new Error("test World has no active takeover-eligible promotion");
   independent.eventCadenceWeeks = 1;
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
@@ -306,9 +306,9 @@ await test("a logistics-only show draft opens in the builder and the first valid
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 61022, playerId });
   const independent = aggregate.state.promotions.find((promotion) => (
-    promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE"
+    promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE"
   ));
-  if (!independent) throw new Error("slot-builder fixture has no Independent promotion");
+  if (!independent) throw new Error("slot-builder fixture has no takeover-eligible promotion");
   independent.eventCadenceWeeks = 1;
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
