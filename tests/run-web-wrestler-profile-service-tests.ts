@@ -30,8 +30,8 @@ await test("Wrestler profile service loads a player-safe profile from the persis
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 73111, playerId: "player-a" });
   await repository.initialize(aggregate);
-  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
-  if (!independent) throw new Error("fixture has no Independent promotion");
+  const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("fixture has no takeover-eligible promotion");
   await claimAlphaPromotion(repository, aggregate.state.world.id, "player-a", {
     promotionId: independent.id,
     requestId: "profile-service-claim",
