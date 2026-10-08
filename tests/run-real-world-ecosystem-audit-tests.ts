@@ -32,8 +32,14 @@ type PromotionAudit = {
   tier: string;
   takeover: string;
   roster: number;
+  men: number;
+  women: number;
   target: number;
   delta: number;
+  cash: number;
+  debt: number;
+  financialDistress: string;
+  runwayWeeks: number | null;
 };
 
 function ok(value: unknown, message: string): void {
@@ -87,7 +93,11 @@ function talentPool(state: WorldState, division?: "MEN" | "WOMEN"): TalentPool {
 
 function promotionAudit(state: WorldState): PromotionAudit[] {
   return state.promotions.map((promotion: Promotion) => {
-    const roster = currentRosterPersonIds(state, promotion.id).length;
+    const rosterIds = currentRosterPersonIds(state, promotion.id);
+    const rosterPeople = rosterIds
+      .map((personId) => state.people.find((person) => person.id === personId))
+      .filter((person): person is Person => person !== undefined);
+    const roster = rosterPeople.length;
     const target = targetRosterSize(promotion);
     return {
       name: promotion.name,
@@ -95,8 +105,14 @@ function promotionAudit(state: WorldState): PromotionAudit[] {
       tier: promotion.tier,
       takeover: promotion.playerTakeoverEligibility ?? "LEGACY",
       roster,
+      men: rosterPeople.filter((person) => divisionOf(person) === "MEN").length,
+      women: rosterPeople.filter((person) => divisionOf(person) === "WOMEN").length,
       target,
       delta: roster - target,
+      cash: promotion.cash,
+      debt: promotion.debt,
+      financialDistress: promotion.financialDistress,
+      runwayWeeks: promotion.runwayWeeks,
     };
   });
 }
@@ -151,18 +167,40 @@ ok(startSnapshot.realPromotions === 8, "audit World no longer has eight real pro
 ok(startSnapshot.takeoverPromotions === 5, "audit World no longer has five takeover promotions");
 ok(startSnapshot.allTalent.accessible > 0, "audit World has no accessible talent");
 ok(startSnapshot.men.accessible > 0 && startSnapshot.women.accessible > 0, "one division has no accessible talent");
+const startTakeovers = startSnapshot.promotions.filter((promotion) => promotion.takeover === "STANDARD");
 ok(
-  startSnapshot.promotions
-    .filter((promotion) => promotion.takeover === "STANDARD")
-    .every((promotion) => promotion.roster > 0),
-  "a takeover promotion starts with an empty roster",
+  startTakeovers.every((promotion) => promotion.roster >= 18 && promotion.roster <= 32),
+  "a takeover promotion starts outside the healthy 18-32 wrestler runway",
 );
+ok(startSnapshot.allTalent.free >= 180, "Genesis free-agent pool is too small");
+ok(startSnapshot.allTalent.accessible >= 425, "Genesis accessible talent pool is too small");
+ok(startSnapshot.men.accessible >= 280, "Genesis accessible men's pool is too small");
+ok(startSnapshot.women.accessible >= 125, "Genesis accessible women's pool is too small");
+ok(startSnapshot.allTalent.accessibleHeadliners >= 40, "Genesis lacks accessible headline talent");
+ok(startSnapshot.women.accessibleHeadliners >= 12, "Genesis lacks accessible women's headline talent");
+ok(startSnapshot.allTalent.accessibleFeaturedOrBetter >= 140, "Genesis lacks accessible featured-or-better depth");
 
 const week26 = buildWorld(20261008);
 resolveWorldWeeks(week26, 26);
 const week26Errors = validateWorldInvariants(week26);
 ok(week26Errors.length === 0, week26Errors.join("\n"));
 const week26Snapshot = snapshot(week26);
+const week26Takeovers = week26Snapshot.promotions.filter((promotion) => promotion.takeover === "STANDARD");
+ok(week26Snapshot.allTalent.free >= 175, "week-26 free-agent pool is too small");
+ok(week26Snapshot.allTalent.accessible >= 350, "week-26 accessible talent pool is too small");
+ok(week26Snapshot.men.accessible >= 240, "week-26 accessible men's pool is too small");
+ok(week26Snapshot.women.accessible >= 100, "week-26 accessible women's pool is too small");
+ok(week26Snapshot.allTalent.accessibleHeadliners >= 35, "week-26 accessible headline talent is too shallow");
+ok(week26Snapshot.women.accessibleHeadliners >= 10, "week-26 accessible women's headline talent is too shallow");
+ok(week26Snapshot.allTalent.accessibleFeaturedOrBetter >= 110, "week-26 featured-or-better talent is too shallow");
+ok(
+  week26Takeovers.every((promotion) => promotion.roster >= 18 && promotion.roster <= 32),
+  "a takeover promotion becomes roster-starved or bloated by week 26",
+);
+ok(
+  week26Takeovers.every((promotion) => promotion.financialDistress !== "CRISIS"),
+  "a takeover promotion reaches financial crisis inside the 26-week runway",
+);
 
 console.log("REAL_WORLD_ECOSYSTEM_AUDIT_START");
 console.log(JSON.stringify(startSnapshot, null, 2));
