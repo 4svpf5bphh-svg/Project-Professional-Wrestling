@@ -373,6 +373,41 @@
   gap: 6px;
 }
 
+.marketQuickFilters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.watchFilter,
+.watchFilterActive,
+.watchButton,
+.watchButtonActive {
+  border: 1px solid rgba(129, 187, 181, .2);
+  border-radius: 999px;
+  background: rgba(12, 24, 28, .95);
+  color: #9eb4b2;
+  padding: 7px 9px;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.watchFilterActive,
+.watchButtonActive {
+  border-color: rgba(240, 194, 87, .58);
+  background: rgba(240, 194, 87, .1);
+  color: #f0c257;
+}
+
+.watchButton:disabled,
+.watchButtonActive:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
 .marketCount {
   grid-column: 1 / -1;
   color: #819894;
@@ -840,6 +875,14 @@
   margin: 0;
 }
 
+.marketActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
 .marketBottom {
   display: flex;
   align-items: center;
@@ -926,6 +969,17 @@
     flex-direction: column;
   }
 
+  .marketActions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .marketActions .actionButton,
+  .marketActions .watchButton,
+  .marketActions .watchButtonActive {
+    flex: 1 1 auto;
+  }
+
   .primaryButton,
   .actionButton {
     width: 100%;
@@ -948,6 +1002,10 @@
 
   .divisionToggle {
     justify-content: flex-start;
+    overflow-x: auto;
+  }
+
+  .marketQuickFilters {
     overflow-x: auto;
   }
 
