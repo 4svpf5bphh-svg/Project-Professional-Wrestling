@@ -7,6 +7,8 @@ type ErrorPayload = { error?: string };
 type AttentionItem = AlphaPlayerWorldView["attention"][number];
 
 const DAY_NAMES = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const SHOW_COMMITMENT_LOCK_HOUR_UTC = 6;
+const WORLD_LOCK_HOUR_UTC = 8;
 const PRIMARY_LINK_STYLE = {
   minHeight: 48,
   display: "grid",
@@ -90,9 +92,15 @@ function attentionDeadline(item: AttentionItem): string | null {
 function nextAutomaticWorldLock(nowMs: number): Date {
   const now = new Date(nowMs);
   const next = new Date(nowMs);
-  next.setUTCHours(8, 0, 0, 0);
+  next.setUTCHours(WORLD_LOCK_HOUR_UTC, 0, 0, 0);
   if (next.getTime() <= now.getTime()) next.setUTCDate(next.getUTCDate() + 1);
   return next;
+}
+
+function showCommitmentLockForWorldCycle(worldLock: Date): Date {
+  const commitment = new Date(worldLock.getTime());
+  commitment.setUTCHours(SHOW_COMMITMENT_LOCK_HOUR_UTC, 0, 0, 0);
+  return commitment;
 }
 
 function countdownCopy(nowMs: number, target: Date): string {
@@ -212,11 +220,38 @@ export default function AlphaHome(): React.JSX.Element {
     ? currentMarket.venues.find((venue) => venue.venueId === currentPlan.venueId) ?? null
     : null;
   const nextWorldLock = nextAutomaticWorldLock(nowMs);
+  const nextCommitmentLock = showCommitmentLockForWorldCycle(nextWorldLock);
   const worldLockCountdown = countdownCopy(nowMs, nextWorldLock);
+  const commitmentLockCountdown = countdownCopy(nowMs, nextCommitmentLock);
+  const commitmentDeadlinePassed = nextCommitmentLock.getTime() <= nowMs;
+  const commitmentsLocked = view.world.showCommitmentsLocked;
   const logisticsLocked = Boolean(
     currentPlan && (currentPlan.state === "MATERIALIZED" || currentPlan.state === "READY_TO_LOCK"),
   );
   const worldIsOpen = view.world.phase === "OPEN";
+  const nextDeadlineHeading = !worldIsOpen
+    ? `World is ${view.world.phase.toLowerCase()}`
+    : commitmentsLocked
+      ? `World lock in ${worldLockCountdown}`
+      : commitmentDeadlinePassed
+        ? "Show Commitment Lock due"
+        : `Show commitments lock in ${commitmentLockCountdown}`;
+  const resourceLockLabel = !currentPlan
+    ? "No current show"
+    : logisticsLocked
+      ? "Locked"
+      : commitmentsLocked
+        ? "Commitment window closed"
+        : commitmentDeadlinePassed
+          ? "Due now"
+          : `Locks in ${commitmentLockCountdown}`;
+  const cardDeadlineLabel = promotion.weekReadiness.status === "NOT_REQUIRED"
+    ? "No card due"
+    : !worldIsOpen
+      ? "Closed"
+      : currentPlan && !currentPlan.canEdit
+        ? "Staff-owned"
+        : `Closes in ${worldLockCountdown}`;
 
   let weekActionHref = "/planner";
   let weekActionLabel = "Open six-week planner";
@@ -340,27 +375,33 @@ export default function AlphaHome(): React.JSX.Element {
             <div className="section-heading">
               <div>
                 <span className="eyebrow">WORLD CLOCK</span>
-                <h2>{worldIsOpen ? `Next lock in ${worldLockCountdown}` : `World is ${view.world.phase.toLowerCase()}`}</h2>
+                <h2>{nextDeadlineHeading}</h2>
               </div>
               <span className={worldIsOpen ? "plan-pill plan-reserved" : "readiness-pill readiness-attention"}>
-                {worldIsOpen ? "08:00 UTC DAILY" : view.world.phase}
+                {worldIsOpen
+                  ? commitmentsLocked
+                    ? "CARD EDIT WINDOW"
+                    : "06:00 → 08:00 UTC"
+                  : view.world.phase}
               </span>
             </div>
             <p className="muted body-copy">
-              Next automatic World cycle: {localLockTime(nextWorldLock)} local time · 08:00 UTC. One automatic cycle advances one PPW week.
+              {commitmentsLocked
+                ? <>Show commitments are locked. Card details can still be edited until the final World lock at {localLockTime(nextWorldLock)} local time · 08:00 UTC.</>
+                : <>Show Commitment Lock: {localLockTime(nextCommitmentLock)} local time · 06:00 UTC. Final World Lock: {localLockTime(nextWorldLock)} local time · 08:00 UTC.</>}
             </p>
             <div className="result-grid">
               <div>
                 <span>Venue</span>
-                <strong>{currentPlan ? (logisticsLocked ? "Locked" : `Locks in ${worldLockCountdown}`) : "No current show"}</strong>
+                <strong>{resourceLockLabel}</strong>
               </div>
               <div>
                 <span>Committed talent</span>
-                <strong>{currentPlan ? (logisticsLocked ? "Locked" : `Locks in ${worldLockCountdown}`) : "No current show"}</strong>
+                <strong>{resourceLockLabel}</strong>
               </div>
               <div>
                 <span>Card submission</span>
-                <strong>{promotion.weekReadiness.status === "NOT_REQUIRED" ? "No card due" : worldIsOpen ? `Closes in ${worldLockCountdown}` : "Closed"}</strong>
+                <strong>{cardDeadlineLabel}</strong>
               </div>
               <div>
                 <span>World resolution</span>
@@ -368,7 +409,7 @@ export default function AlphaHome(): React.JSX.Element {
               </div>
             </div>
             <p className="micro-copy">
-              Future reservations stay editable until they materialise into their show week. Once materialised, venue and committed talent are fixed; match/segment order and card details remain editable until World lock.
+              Before Commitment Lock you can change show logistics and reserved talent. After it, venue and committed wrestlers are fixed, but matches, segments, order, winners, finishes, styles and other card details remain editable until World Lock.
             </p>
           </section>
 
