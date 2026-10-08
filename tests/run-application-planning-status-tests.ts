@@ -2,12 +2,14 @@ declare const process: { exitCode?: number };
 
 import {
   claimIndependentPromotionCommand,
+  closeCurrentWeekReservationsAtCommitmentLock,
   closeCurrentWeekReservationsAtLock,
   createWorldCommandState,
   createWorldOwnershipState,
   createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  lockCurrentWeekShowCommitments,
   lockWorldForResolution,
   materializeCurrentWeekReservations,
   playerShowPlanningStatus,
@@ -234,6 +236,45 @@ test("materialized incomplete show leaves advance planning and exposes current c
     () => saveDraft(f, { ...draft, ticketStrategy: "PREMIUM" }, 1, "late-edit"),
     "materialized show logistics cannot be edited",
   );
+});
+
+test("commitment lock freezes current logistics but leaves the card and future weeks editable", () => {
+  const f = fixture(17109);
+  const draft = completeSinglesCard(baseDraft(f, "commitment-show"));
+  saveDraft(f, draft);
+  reserveDraft(f, draft.draftId);
+
+  const closure = closeCurrentWeekReservationsAtCommitmentLock(f.state, f.planning);
+  ok(closure.materialized.length === 1, "commitment lock did not materialize the healthy current reservation");
+  lockCurrentWeekShowCommitments(f.runtime, f.state, "2026-10-04");
+
+  const committed = playerShowPlanningStatus(f.state, f.planning, f.runtime, f.promotionId, draft.draftId);
+  ok(committed.state === "READY_TO_LOCK", "committed complete show was not ready for final World lock");
+  ok(committed.availableActions.join(",") === "EDIT_CARD", "commitment lock did not reduce the current show to card-only editing");
+
+  throws(
+    () => saveDraft(f, { ...draft, venueId: null }, f.planning.workspaces[0]!.version, "late-logistics"),
+    "materialized show logistics cannot be edited",
+  );
+
+  const futureDraft = {
+    ...baseDraft(f, "future-after-commitment"),
+    targetDate: {
+      year: f.state.world.currentDate.year,
+      week: f.state.world.currentDate.week + 1,
+      day: 5,
+    },
+  };
+  const currentVersion = f.planning.workspaces[0]!.version;
+  saveDraft(f, futureDraft, currentVersion, "future-edit");
+  const future = playerShowPlanningStatus(
+    f.state,
+    f.planning,
+    f.runtime,
+    f.promotionId,
+    futureDraft.draftId,
+  );
+  ok(future.availableActions.includes("EDIT_DRAFT"), "current-week commitment lock incorrectly froze future planning");
 });
 
 test("complete materialized card exposes READY_TO_LOCK", () => {
