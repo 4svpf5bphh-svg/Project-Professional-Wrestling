@@ -16,7 +16,7 @@ import type {
 import styles from "./talent.module.css";
 
 type ErrorPayload = { error?: string };
-type Tab = "ROSTER" | "MARKET" | "OFFERS";
+export type TalentTab = "ROSTER" | "MARKET" | "OFFERS";
 type OfferFamily = AlphaTalentOfferRequest["family"];
 type OfferRole = AlphaTalentOfferRequest["roleExpectation"];
 type RosterSort = "POPULARITY" | "RECOGNITION" | "DATES_ASC" | "DATES_DESC" | "EXPIRY" | "NAME";
@@ -454,11 +454,11 @@ function OfferEditor({
   );
 }
 
-export default function TalentClient(): React.JSX.Element {
+export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: TalentTab }): React.JSX.Element {
   const [view, setView] = useState<PlayerTalentManagementView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("ROSTER");
+  const [tab, setTab] = useState<TalentTab>(initialTab);
   const [query, setQuery] = useState("");
   const [rosterSort, setRosterSort] = useState<RosterSort>("POPULARITY");
   const [rosterContractFilter, setRosterContractFilter] = useState<RosterContractFilter>("ALL");
@@ -699,6 +699,18 @@ export default function TalentClient(): React.JSX.Element {
     setMarketLimit(25);
   }, [query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketWatchOnly, marketSort]);
 
+  function selectTab(nextTab: TalentTab): void {
+    setTab(nextTab);
+    setQuery("");
+    setMarketLimit(25);
+    if (typeof window !== "undefined") {
+      const url = nextTab === "ROSTER"
+        ? "/talent"
+        : `/talent?view=${nextTab.toLowerCase()}`;
+      window.history.replaceState(window.history.state, "", url);
+    }
+  }
+
   function toggleRosterRole(role: OfferRole): void {
     setCollapsedRosterRoles((current) => {
       const next = new Set(current);
@@ -750,7 +762,7 @@ export default function TalentClient(): React.JSX.Element {
                 role="tab"
                 aria-selected={tab === candidate}
                 className={tab === candidate ? styles.activeTab : styles.tab}
-                onClick={() => { setTab(candidate); setQuery(""); setMarketLimit(25); }}
+                onClick={() => selectTab(candidate)}
               >
                 {candidate === "MARKET" ? "Talent market" : candidate[0] + candidate.slice(1).toLowerCase()}
               </button>
