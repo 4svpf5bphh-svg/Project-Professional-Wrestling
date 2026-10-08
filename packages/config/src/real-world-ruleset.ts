@@ -12,8 +12,4 @@ export const REAL_WORLD_ALPHA_RULESET: Ruleset = {
   version: "sim0.0.14-real-world-preview",
   promotions: 13,
   wrestlers: 643,
-  // The audited real promotions legitimately lock substantially more talent
-  // than fictional Genesis. Keep enough contracted capacity for five healthy
-  // player-entry companies without changing generic World allocation.
-  initialContractedTalentRatio: 0.74,
 };
