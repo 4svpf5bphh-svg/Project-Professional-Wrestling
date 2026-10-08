@@ -4,7 +4,9 @@
   "installCommand": "npm install",
   "buildCommand": "npm run web:build",
   "outputDirectory": "apps/web/.next",
-  "regions": ["lhr1"],
+  "regions": [
+    "lhr1"
+  ],
   "git": {
     "deploymentEnabled": {
       "alpha1a-freeze-*": false,
@@ -12,6 +14,10 @@
     }
   },
   "crons": [
+    {
+      "path": "/api/internal/commit-shows",
+      "schedule": "0 6 * * *"
+    },
     {
       "path": "/api/internal/resolve-week",
       "schedule": "0 8 * * *"
