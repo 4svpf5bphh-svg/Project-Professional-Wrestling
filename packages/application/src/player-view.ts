@@ -19,6 +19,7 @@ import {
   playerShowPlanningStatus,
   type PlayerShowPlanningState,
 } from "./planning-status.js";
+import { currentWeekShowCommitmentsLocked } from "./runtime.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export interface AlphaRosterMemberView {
