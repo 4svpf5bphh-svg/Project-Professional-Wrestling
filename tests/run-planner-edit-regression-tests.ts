@@ -34,9 +34,9 @@ await test("future reservation roster swaps clear only card content that uses th
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 61991, playerId });
   const promotion = aggregate.state.promotions.find((candidate) => (
-    candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE"
+    candidate.playerTakeoverEligibility === "STANDARD" && candidate.lifecycle === "ACTIVE"
   ));
-  if (!promotion) throw new Error("planner swap fixture has no Independent promotion");
+  if (!promotion) throw new Error("planner swap fixture has no takeover-eligible promotion");
   promotion.eventCadenceWeeks = 2;
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
