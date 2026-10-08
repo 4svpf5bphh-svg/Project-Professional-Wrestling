@@ -248,9 +248,56 @@ export const aewRohCmllInitialRosterAssignmentSource: InitialRosterAssignmentSou
   return assignments;
 };
 
-export const realWorldInitialRosterAssignmentSource: InitialRosterAssignmentSource = (context) => [
-  ...wweNxtInitialRosterAssignmentSource(context),
-  ...aewRohCmllInitialRosterAssignmentSource(context),
-  ...tnaInitialRosterAssignmentSource(context),
-  ...njpwStardomInitialRosterAssignmentSource(context),
-];
+export const REAL_WORLD_TAKEOVER_STARTUP_ROSTER_SIZE = 18;
+
+function takeoverStartupAssignments(
+  context: InitialRosterAssignmentContext,
+  protectedAssignments: InitialRosterAssignment[],
+): InitialRosterAssignment[] {
+  const protectedPeople = new Set(protectedAssignments.map((assignment) => assignment.personId));
+  const takeoverPromotions = context.promotions
+    .filter((promotion) => promotion.playerTakeoverEligibility === "STANDARD")
+    .sort((left, right) => left.id.localeCompare(right.id));
+  if (takeoverPromotions.length === 0) return [];
+
+  const candidates = context.people
+    .filter((person) => !protectedPeople.has(person.id))
+    .slice()
+    .sort((left, right) => {
+      const leftValue = left.skills.inRingQuality + left.skills.matchCraft + left.skills.presentation
+        + left.recognition + left.popularity;
+      const rightValue = right.skills.inRingQuality + right.skills.matchCraft + right.skills.presentation
+        + right.recognition + right.popularity;
+      return rightValue - leftValue || left.id.localeCompare(right.id);
+    });
+
+  const required = takeoverPromotions.length * REAL_WORLD_TAKEOVER_STARTUP_ROSTER_SIZE;
+  if (candidates.length < required) {
+    throw new Error(
+      `real-world takeover startup requires ${required} unassigned wrestlers; only ${candidates.length} are available`,
+    );
+  }
+
+  const assignments: InitialRosterAssignment[] = [];
+  for (let index = 0; index < required; index += 1) {
+    assignments.push({
+      personId: candidates[index]!.id,
+      promotionId: takeoverPromotions[index % takeoverPromotions.length]!.id,
+      family: "LIMITED_NON_EXCLUSIVE",
+    });
+  }
+  return assignments;
+}
+
+export const realWorldInitialRosterAssignmentSource: InitialRosterAssignmentSource = (context) => {
+  const protectedAssignments: InitialRosterAssignment[] = [
+    ...wweNxtInitialRosterAssignmentSource(context),
+    ...aewRohCmllInitialRosterAssignmentSource(context),
+    ...tnaInitialRosterAssignmentSource(context),
+    ...njpwStardomInitialRosterAssignmentSource(context),
+  ];
+  return [
+    ...protectedAssignments,
+    ...takeoverStartupAssignments(context, protectedAssignments),
+  ];
+};
