@@ -128,6 +128,37 @@ test("Programme foundation rejects invalid or unavailable participants and dupli
   }), "already exists");
 });
 
+test("Programme rejects overlapping team and wrestler participant identity", () => {
+  const { state, promotion, personIds } = programmeFixture(90821);
+  state.teams ??= [];
+  state.teamMemberships ??= [];
+  state.teams.push({
+    id: "programme-overlap-team",
+    worldId: state.world.id,
+    name: "Overlap Test Team",
+    status: "ACTIVE",
+    formedDate: { ...state.world.currentDate },
+    disbandedDate: null,
+  });
+  for (const [index, personId] of personIds.slice(0, 2).entries()) {
+    state.teamMemberships.push({
+      id: `programme-overlap-membership-${index + 1}`,
+      worldId: state.world.id,
+      teamId: "programme-overlap-team",
+      personId,
+      joinedDate: { ...state.world.currentDate },
+      leftDate: null,
+      active: true,
+    });
+  }
+
+  expectReject(() => createProgramme(state, {
+    promotionId: promotion.id,
+    sideA: [{ kind: "TEAM", entityId: "programme-overlap-team" }],
+    sideB: [{ kind: "PERSON", entityId: personIds[0]! }],
+  }), "multiple participant selections");
+});
+
 test("Programme state survives persistence and schema restore", () => {
   const { state, promotion, personIds } = programmeFixture(9083);
   const programme = createProgramme(state, {
