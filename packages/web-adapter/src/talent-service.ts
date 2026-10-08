@@ -13,6 +13,7 @@ import {
 import {
   activePromotionControlForPlayer,
   activeWorldMembership,
+  buildPlayerTalentDirectoryView,
   buildPlayerTalentManagementView,
   createWorldEngagementState,
   setTalentWatched,
@@ -20,6 +21,7 @@ import {
   submitContractOfferCommand,
   type ApplicationWorldAggregate,
   type ApplicationWorldRepository,
+  type PlayerTalentDirectoryView,
   type PlayerTalentManagementView,
 } from "../../application/src/index.js";
 
@@ -216,6 +218,15 @@ export async function loadAlphaTalentSession(
   playerId: string,
 ): Promise<PlayerTalentManagementView> {
   return buildPlayerTalentManagementView(await repository.load(worldId), playerId);
+}
+
+
+export async function loadAlphaTalentDirectorySession(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+): Promise<PlayerTalentDirectoryView> {
+  return buildPlayerTalentDirectoryView(await repository.load(worldId), playerId);
 }
 
 export async function submitAlphaTalentOffer(
