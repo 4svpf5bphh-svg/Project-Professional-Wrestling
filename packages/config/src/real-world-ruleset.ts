@@ -5,7 +5,7 @@ import { DEFAULT_RULESET } from "./default-ruleset.js";
  * Staged ruleset for the future real-world Alpha reset.
  *
  * This is intentionally not wired into the deployed Alpha yet. It expands the
- * World to hold the reviewed mixed roster and leaves three fictional
+ * World to hold the reviewed mixed roster and leaves five fictional
  * Independent promotions available for player takeover/rebrand.
  */
 export const REAL_WORLD_ALPHA_RULESET: Ruleset = {

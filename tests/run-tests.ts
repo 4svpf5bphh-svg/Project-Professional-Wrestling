@@ -165,7 +165,7 @@ test("real promotion catalog preserves parent links and keeps real companies tak
   const realPromotions = state.promotions.filter((promotion) => promotion.identity?.origin === "REAL_WORLD");
   const takeoverPromotions = state.promotions.filter((promotion) => promotion.playerTakeoverEligibility === "STANDARD");
   equal(realPromotions.length, REAL_PROMOTION_TEMPLATES.length);
-  equal(takeoverPromotions.length, 3);
+  equal(takeoverPromotions.length, 5);
   ok(realPromotions.every((promotion) => promotion.playerTakeoverEligibility === "LOCKED"), "real promotion source exposed a standard player takeover");
   ok(takeoverPromotions.every((promotion) => promotion.identity?.origin === "FICTIONAL"), "real promotion became a takeover slot");
   ok(takeoverPromotions.every((promotion) => promotion.tier === "INDEPENDENT"), "player takeover slot is not Independent");
@@ -175,6 +175,8 @@ test("real promotion catalog preserves parent links and keeps real companies tak
   const aew = state.promotions.find((promotion) => promotion.name === "AEW")!;
   const roh = state.promotions.find((promotion) => promotion.name === "ROH")!;
   const stardom = state.promotions.find((promotion) => promotion.name === "STARDOM")!;
+  ok(!state.promotions.some((promotion) => promotion.name === "AAA"), "AAA remained a real World promotion");
+  ok(!state.promotions.some((promotion) => promotion.name === "Pro Wrestling NOAH"), "NOAH remained a real World promotion");
   equal(nxt.identity?.parentPromotionId, wwe.id);
   equal(roh.identity?.parentPromotionId, aew.id);
   ok(stardom.identity?.origin === "REAL_WORLD", "STARDOM was not created as a real promotion");

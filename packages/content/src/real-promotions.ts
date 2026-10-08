@@ -14,9 +14,7 @@ export type RealPromotionKey =
   | "NXT"
   | "TNA"
   | "CMLL"
-  | "AAA"
   | "ROH"
-  | "NOAH"
   | "STARDOM";
 
 export interface RealPromotionTemplate {
@@ -104,17 +102,6 @@ export const REAL_PROMOTION_TEMPLATES: readonly RealPromotionTemplate[] = [
     },
   },
   {
-    key: "AAA",
-    name: "AAA",
-    tier: "INDEPENDENT",
-    parentKey: null,
-    contractPolicy: {
-      exclusiveContractChance: 22,
-      starExclusiveBonus: 6,
-      outsideBookingPolicy: "PERMITTED",
-    },
-  },
-  {
     key: "ROH",
     name: "ROH",
     tier: "INDEPENDENT",
@@ -123,17 +110,6 @@ export const REAL_PROMOTION_TEMPLATES: readonly RealPromotionTemplate[] = [
       exclusiveContractChance: 35,
       starExclusiveBonus: 8,
       outsideBookingPolicy: "PERMITTED",
-    },
-  },
-  {
-    key: "NOAH",
-    name: "Pro Wrestling NOAH",
-    tier: "INDEPENDENT",
-    parentKey: null,
-    contractPolicy: {
-      exclusiveContractChance: 38,
-      starExclusiveBonus: 8,
-      outsideBookingPolicy: "APPROVAL_REQUIRED",
     },
   },
   {
