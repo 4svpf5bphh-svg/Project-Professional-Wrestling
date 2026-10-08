@@ -2,12 +2,14 @@ declare const process: { exitCode?: number };
 
 import {
   claimIndependentPromotionCommand,
+  closeCurrentWeekReservationsAtCommitmentLock,
   closeCurrentWeekReservationsAtLock,
   createWorldCommandState,
   createWorldOwnershipState,
   createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  lockCurrentWeekShowCommitments,
   lockWorldForResolution,
   materializeCurrentWeekReservations,
   playerShowPlanningStatus,
@@ -166,6 +168,7 @@ test("reserved status permits edits but requires explicit refresh for changed in
   reserveDraft(f, draft.draftId);
   const reserved = playerShowPlanningStatus(f.state, f.planning, f.runtime, f.promotionId, draft.draftId);
   ok(reserved.state === "RESERVED", "reservation did not expose RESERVED status");
+  ok(reserved.readiness === "CARD_REQUIRED", "healthy current-week reservation did not recognise that only its card remains");
   ok(reserved.availableActions.includes("REFRESH_RESERVATION"), "reserved plan cannot refresh its commitment");
   ok(!reserved.availableActions.includes("DELETE_DRAFT"), "reserved plan incorrectly permits direct deletion");
 
@@ -173,6 +176,20 @@ test("reserved status permits edits but requires explicit refresh for changed in
   const edited = playerShowPlanningStatus(f.state, f.planning, f.runtime, f.promotionId, draft.draftId);
   ok(edited.workspaceChangedSinceReservation, "editing reserved intent did not expose refresh requirement");
   ok(edited.state === "RESERVED", "editing intent silently changed reservation state");
+  ok(edited.readiness === "RESERVATION_DUE", "changed reserved intent did not require reservation refresh");
+});
+
+test("complete reserved card is ready for lock before materialization but remains editable", () => {
+  const f = fixture(17108);
+  const draft = completeSinglesCard(baseDraft(f));
+  saveDraft(f, draft);
+  reserveDraft(f, draft.draftId);
+  const status = playerShowPlanningStatus(f.state, f.planning, f.runtime, f.promotionId, draft.draftId);
+  ok(status.state === "RESERVED", "prepared show was presented as materialized before lock");
+  ok(status.readiness === "READY_TO_LOCK", "complete healthy reservation was not presented as ready for lock");
+  ok(status.availableActions.includes("EDIT_DRAFT"), "prepared reserved show could no longer be edited before lock");
+  ok(status.availableActions.includes("REFRESH_RESERVATION"), "prepared reserved show lost its refresh action before lock");
+  ok(f.state.events.length === 0, "readiness projection created a simulation event before materialization");
 });
 
 test("reserved draft cannot be deleted before its scarce-resource commitment is released", () => {
@@ -214,8 +231,50 @@ test("materialized incomplete show leaves advance planning and exposes current c
   const status = playerShowPlanningStatus(f.state, f.planning, f.runtime, f.promotionId, draft.draftId);
   ok(status.state === "MATERIALIZED", "materialized incomplete show did not expose MATERIALIZED status");
   ok(status.readiness === "CARD_REQUIRED", "materialized incomplete show did not expose card responsibility");
-  ok(status.availableActions.length === 0, "materialized show still exposes advance-planning mutations");
-  throws(() => saveDraft(f, { ...draft, ticketStrategy: "PREMIUM" }, 1, "late-edit"), "EDIT_DRAFT is not allowed");
+  ok(status.availableActions.join(",") === "EDIT_CARD", "materialized show did not expose card-only editing");
+  throws(
+    () => saveDraft(f, { ...draft, ticketStrategy: "PREMIUM" }, 1, "late-edit"),
+    "materialized show logistics cannot be edited",
+  );
+});
+
+test("commitment lock freezes current logistics but leaves the card and future weeks editable", () => {
+  const f = fixture(17109);
+  const draft = completeSinglesCard(baseDraft(f, "commitment-show"));
+  saveDraft(f, draft);
+  reserveDraft(f, draft.draftId);
+
+  const closure = closeCurrentWeekReservationsAtCommitmentLock(f.state, f.planning);
+  ok(closure.materialized.length === 1, "commitment lock did not materialize the healthy current reservation");
+  lockCurrentWeekShowCommitments(f.runtime, f.state, "2026-10-04");
+
+  const committed = playerShowPlanningStatus(f.state, f.planning, f.runtime, f.promotionId, draft.draftId);
+  ok(committed.state === "READY_TO_LOCK", "committed complete show was not ready for final World lock");
+  ok(committed.availableActions.join(",") === "EDIT_CARD", "commitment lock did not reduce the current show to card-only editing");
+
+  throws(
+    () => saveDraft(f, { ...draft, venueId: null }, f.planning.workspaces[0]!.version, "late-logistics"),
+    "materialized show logistics cannot be edited",
+  );
+
+  const futureDraft = {
+    ...baseDraft(f, "future-after-commitment"),
+    targetDate: {
+      year: f.state.world.currentDate.year,
+      week: f.state.world.currentDate.week + 1,
+      day: 5,
+    },
+  };
+  const currentVersion = f.planning.workspaces[0]!.version;
+  saveDraft(f, futureDraft, currentVersion, "future-edit");
+  const future = playerShowPlanningStatus(
+    f.state,
+    f.planning,
+    f.runtime,
+    f.promotionId,
+    futureDraft.draftId,
+  );
+  ok(future.availableActions.includes("EDIT_DRAFT"), "current-week commitment lock incorrectly froze future planning");
 });
 
 test("complete materialized card exposes READY_TO_LOCK", () => {
@@ -227,7 +286,7 @@ test("complete materialized card exposes READY_TO_LOCK", () => {
   const status = playerShowPlanningStatus(f.state, f.planning, f.runtime, f.promotionId, draft.draftId);
   ok(status.state === "READY_TO_LOCK", "complete materialized show did not expose READY_TO_LOCK");
   ok(status.readiness === "READY_TO_LOCK", "complete materialized show readiness disagrees with state");
-  ok(status.availableActions.length === 0, "ready show exposes irrelevant advance-planning actions");
+  ok(status.availableActions.join(",") === "EDIT_CARD", "ready current-week show cannot be adjusted before lock");
 });
 
 test("unresolved due commitment becomes STAFF_OWNED once the World locks", () => {

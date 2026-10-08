@@ -8,6 +8,7 @@ import type {
   PlayerTalentMarketView,
 } from "../../../../dist/packages/application/src/talent-view.js";
 import type {
+  AlphaRosterAlignmentResult,
   AlphaTalentOfferRequest,
   AlphaTalentOfferResult,
 } from "../../../../dist/packages/web-adapter/src/talent-service.js";
@@ -17,6 +18,11 @@ type ErrorPayload = { error?: string };
 type Tab = "ROSTER" | "MARKET" | "OFFERS";
 type OfferFamily = AlphaTalentOfferRequest["family"];
 type OfferRole = AlphaTalentOfferRequest["roleExpectation"];
+type RosterSort = "POPULARITY" | "RECOGNITION" | "DATES_ASC" | "DATES_DESC" | "EXPIRY" | "NAME";
+type RosterContractFilter = "ALL" | "EXCLUSIVE" | "NON_EXCLUSIVE";
+type MarketSort = "POPULARITY" | "RECOGNITION" | "VALUE_HIGH" | "VALUE_LOW" | "NAME";
+type MarketAvailabilityFilter = "ALL" | "FREE_AGENT" | "NON_EXCLUSIVE";
+type Alignment = PlayerRosterContractView["alignment"];
 
 type OfferTarget = {
   requestId: string;
@@ -38,7 +44,7 @@ const ROLE_OPTIONS: OfferRole[] = [
   "SPECIAL_ATTRACTION",
 ];
 
-function isErrorPayload(payload: PlayerTalentManagementView | AlphaTalentOfferResult | ErrorPayload): payload is ErrorPayload {
+function isErrorPayload(payload: PlayerTalentManagementView | AlphaTalentOfferResult | AlphaRosterAlignmentResult | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
 }
 
@@ -143,10 +149,14 @@ function InjuryBadge({ injury }: { injury: { severity: string; weeksRemaining: n
 function RosterCard({
   wrestler,
   pending,
+  alignmentSaving,
+  onAlignment,
   onRenew,
 }: {
   wrestler: PlayerRosterContractView;
   pending: boolean;
+  alignmentSaving: boolean;
+  onAlignment: (alignment: Alignment) => void;
   onRenew: () => void;
 }): React.JSX.Element {
   const contract = wrestler.contract;
@@ -156,7 +166,9 @@ function RosterCard({
         <div>
           <div className={styles.nameLine}>
             <strong>{wrestler.name}</strong>
+            <span className={styles.availability}>{label(wrestler.alignment)}</span>
             <InjuryBadge injury={wrestler.injury} />
+            <span className={styles.availability}>{contract.exclusivity === "EXCLUSIVE" ? "Exclusive" : "Non-exclusive"}</span>
           </div>
           <span>{label(wrestler.careerStage)} · {label(contract.roleExpectation)} · {label(contract.family)}</span>
         </div>
@@ -177,7 +189,13 @@ function RosterCard({
         <div className={styles.contractBox}>
           <div>
             <span>{label(contract.exclusivity)} · expires {ppwDate(contract.endDate)}</span>
-            <strong>{contract.renewalWindowOpen ? "Renewal window open" : `${contract.weeksToExpiry} weeks to expiry`}</strong>
+            <strong>
+              {contract.renewalReason === "DATES_EXHAUSTED"
+                ? "All purchased dates used · renegotiation open"
+                : contract.renewalWindowOpen
+                  ? "Renewal window open"
+                  : `${contract.weeksToExpiry} weeks to expiry`}
+            </strong>
           </div>
           <div className={styles.moneyRows}>
             <span>Weekly guarantee <b>{money(contract.weeklyGuarantee)}</b></span>
@@ -185,10 +203,39 @@ function RosterCard({
             <span>Signing bonus <b>{money(contract.signingBonus)}</b></span>
           </div>
         </div>
+        <div className={styles.presentationBox}>
+          <div>
+            <span>Promotion alignment</span>
+            <small>
+              {wrestler.alignmentNaturalReset
+                ? wrestler.alignmentChangeMode === "INITIAL_PRESENTATION"
+                  ? "Establish their initial presentation in your promotion. No turn is needed yet."
+                  : wrestler.alignmentChangeMode === "JUST_SIGNED"
+                    ? "New signing window: you can establish a fresh presentation cleanly."
+                    : "Return window: a fresh presentation can make sense after the layoff."
+                : "Changing this here is an unexplained off-screen switch. It is allowed, but the crowd may lose confidence. For a proper change, book a Turn segment."}
+            </small>
+          </div>
+          <div className={styles.alignmentChoices} role="group" aria-label={`Alignment for ${wrestler.name}`}>
+            {(["FACE", "HEEL", "TWEENER"] as const).map((alignment) => (
+              <button
+                key={alignment}
+                type="button"
+                className={wrestler.alignment === alignment ? styles.alignmentActive : styles.alignmentChoice}
+                disabled={alignmentSaving}
+                onClick={() => onAlignment(alignment)}
+              >
+                {label(alignment)}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className={styles.cardActions}>
           <p className={styles.subtle}>Age {wrestler.biologicalAge.toFixed(1)} · Fatigue {Math.round(wrestler.fatigue)} · Wear {Math.round(wrestler.wear)} · Skill {averageSkill(wrestler)}</p>
           {pending ? <span className={styles.pending}>Your offer pending</span> : contract.renewalWindowOpen ? (
-            <button className={styles.actionButton} type="button" onClick={onRenew}>Negotiate renewal</button>
+            <button className={styles.actionButton} type="button" onClick={onRenew}>
+              {contract.renewalReason === "DATES_EXHAUSTED" ? "Renegotiate dates" : "Negotiate renewal"}
+            </button>
           ) : null}
         </div>
       </div>
@@ -209,6 +256,7 @@ function MarketCard({
         <div>
           <div className={styles.nameLine}>
             <strong>{wrestler.name}</strong>
+            <span className={styles.availability}>{label(wrestler.alignment)}</span>
             <InjuryBadge injury={wrestler.injury} />
           </div>
           <span>{label(wrestler.careerStage)} · age {wrestler.biologicalAge.toFixed(1)}</span>
@@ -280,12 +328,19 @@ function OfferEditor({
         <div>
           <span className={styles.eyebrow}>{target.sourceContractId ? "RENEWAL NEGOTIATION" : "CONTRACT OFFER"}</span>
           <h2>{target.personName}</h2>
-          <p>{target.sourceContractId ? "New terms begin after the current deal expires." : "Offer enters the normal PPW negotiation queue; acceptance is not guaranteed."}</p>
+          <p>
+            {target.sourceContractId
+              ? target.currentContract?.renewalReason === "DATES_EXHAUSTED"
+                ? "All purchased dates are used. If accepted, these terms replace the exhausted deal immediately."
+                : "New terms begin after the current deal expires."
+              : "Offer enters the normal PPW negotiation queue; acceptance is not guaranteed."}
+          </p>
         </div>
         <button className={styles.button} type="button" onClick={onCancel} disabled={submitting}>Cancel</button>
       </div>
 
-      <div className={styles.formGrid}>
+      <div className={styles.editorBody}>
+        <div className={styles.formGrid}>
         <label>
           <span>Contract</span>
           <select value={draft.family} onChange={(event) => onChange(draftForFamily(event.target.value as OfferFamily, target.referenceValue, draft))}>
@@ -322,6 +377,7 @@ function OfferEditor({
           <span>Signing bonus</span>
           <input type="number" min={0} inputMode="numeric" value={draft.signingBonus} onChange={(event) => onChange({ ...draft, signingBonus: Number(event.target.value) })} />
         </label>
+        </div>
       </div>
 
       <div className={styles.editorFooter}>
@@ -338,10 +394,39 @@ export default function TalentClient(): React.JSX.Element {
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("ROSTER");
   const [query, setQuery] = useState("");
+  const [rosterSort, setRosterSort] = useState<RosterSort>("POPULARITY");
+  const [rosterContractFilter, setRosterContractFilter] = useState<RosterContractFilter>("ALL");
+  const [marketSort, setMarketSort] = useState<MarketSort>("VALUE_HIGH");
+  const [marketAvailabilityFilter, setMarketAvailabilityFilter] = useState<MarketAvailabilityFilter>("ALL");
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [alignmentSaving, setAlignmentSaving] = useState<string | null>(null);
   const [target, setTarget] = useState<OfferTarget | null>(null);
   const [draft, setDraft] = useState<OfferDraft | null>(null);
+  const offerOpen = Boolean(target && draft);
+
+  useEffect(() => {
+    if (!offerOpen || typeof window === "undefined") return;
+    const body = document.body;
+    const scrollY = window.scrollY;
+    const previous = {
+      position: body.style.position,
+      top: body.style.top,
+      width: body.style.width,
+      overflow: body.style.overflow,
+    };
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+    return () => {
+      body.style.position = previous.position;
+      body.style.top = previous.top;
+      body.style.width = previous.width;
+      body.style.overflow = previous.overflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, [offerOpen]);
 
   async function refresh(): Promise<void> {
     setLoading(true);
@@ -392,6 +477,41 @@ export default function TalentClient(): React.JSX.Element {
     setNotice(null);
   }
 
+  async function changeAlignment(wrestler: PlayerRosterContractView, alignment: Alignment): Promise<void> {
+    if (alignment === wrestler.alignment || alignmentSaving) return;
+    setAlignmentSaving(wrestler.personId);
+    setError(null);
+    setNotice(null);
+    try {
+      const suffix = typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const response = await fetch("/api/talent", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: `talent-alignment:${wrestler.personId}:${suffix}`,
+          personId: wrestler.personId,
+          alignment,
+        }),
+      });
+      const payload = await response.json() as AlphaRosterAlignmentResult | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to update wrestler alignment");
+      }
+      setView(payload.view);
+      setNotice(
+        payload.naturalReset
+          ? `${wrestler.name} is now presented as ${label(payload.alignment).toLowerCase()} in your promotion.`
+          : `${wrestler.name} was switched to ${label(payload.alignment).toLowerCase()} off-screen. The crowd may question the unexplained change.`,
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to update wrestler alignment");
+    } finally {
+      setAlignmentSaving(null);
+    }
+  }
+
   async function submitOffer(): Promise<void> {
     if (!target || !draft) return;
     setSubmitting(true);
@@ -426,14 +546,31 @@ export default function TalentClient(): React.JSX.Element {
     }
   }
 
-  const roster = useMemo(
-    () => (view?.roster ?? []).filter((entry) => matchesQuery(entry.name, query)),
-    [view, query],
-  );
-  const market = useMemo(
-    () => (view?.market ?? []).filter((entry) => matchesQuery(entry.name, query)),
-    [view, query],
-  );
+  const roster = useMemo(() => {
+    const entries = (view?.roster ?? [])
+      .filter((entry) => matchesQuery(entry.name, query))
+      .filter((entry) => rosterContractFilter === "ALL" || entry.contract.exclusivity === rosterContractFilter);
+    return [...entries].sort((left, right) => {
+      if (rosterSort === "RECOGNITION") return right.recognition - left.recognition || left.name.localeCompare(right.name);
+      if (rosterSort === "DATES_ASC") return left.contract.datesRemaining - right.contract.datesRemaining || left.name.localeCompare(right.name);
+      if (rosterSort === "DATES_DESC") return right.contract.datesRemaining - left.contract.datesRemaining || left.name.localeCompare(right.name);
+      if (rosterSort === "EXPIRY") return left.contract.weeksToExpiry - right.contract.weeksToExpiry || left.name.localeCompare(right.name);
+      if (rosterSort === "NAME") return left.name.localeCompare(right.name);
+      return right.popularity - left.popularity || right.recognition - left.recognition || left.name.localeCompare(right.name);
+    });
+  }, [view, query, rosterContractFilter, rosterSort]);
+  const market = useMemo(() => {
+    const entries = (view?.market ?? [])
+      .filter((entry) => matchesQuery(entry.name, query))
+      .filter((entry) => marketAvailabilityFilter === "ALL" || entry.availability === marketAvailabilityFilter);
+    return [...entries].sort((left, right) => {
+      if (marketSort === "POPULARITY") return right.popularity - left.popularity || left.name.localeCompare(right.name);
+      if (marketSort === "RECOGNITION") return right.recognition - left.recognition || left.name.localeCompare(right.name);
+      if (marketSort === "VALUE_LOW") return left.estimatedWeeklyValue - right.estimatedWeeklyValue || left.name.localeCompare(right.name);
+      if (marketSort === "NAME") return left.name.localeCompare(right.name);
+      return right.estimatedWeeklyValue - left.estimatedWeeklyValue || right.popularity - left.popularity || left.name.localeCompare(right.name);
+    });
+  }, [view, query, marketAvailabilityFilter, marketSort]);
   const offers = useMemo(
     () => (view?.pendingOffers ?? []).filter((entry) => matchesQuery(entry.personName, query)),
     [view, query],
@@ -494,12 +631,61 @@ export default function TalentClient(): React.JSX.Element {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Wrestler name" />
           </label>
 
+          {tab === "ROSTER" ? (
+            <section className={`${styles.search} ${styles.formGrid}`} aria-label="Roster filters">
+              <label>
+                <span>Sort roster</span>
+                <select value={rosterSort} onChange={(event) => setRosterSort(event.target.value as RosterSort)}>
+                  <option value="POPULARITY">Most popular</option>
+                  <option value="RECOGNITION">Most recognised</option>
+                  <option value="DATES_ASC">Fewest dates remaining</option>
+                  <option value="DATES_DESC">Most dates remaining</option>
+                  <option value="EXPIRY">Contract expiring soonest</option>
+                  <option value="NAME">Name A–Z</option>
+                </select>
+              </label>
+              <label>
+                <span>Contract status</span>
+                <select value={rosterContractFilter} onChange={(event) => setRosterContractFilter(event.target.value as RosterContractFilter)}>
+                  <option value="ALL">All contracts</option>
+                  <option value="EXCLUSIVE">Exclusive</option>
+                  <option value="NON_EXCLUSIVE">Non-exclusive</option>
+                </select>
+              </label>
+            </section>
+          ) : null}
+
+          {tab === "MARKET" ? (
+            <section className={`${styles.search} ${styles.formGrid}`} aria-label="Talent market filters">
+              <label>
+                <span>Sort market</span>
+                <select value={marketSort} onChange={(event) => setMarketSort(event.target.value as MarketSort)}>
+                  <option value="VALUE_HIGH">Highest estimated value</option>
+                  <option value="VALUE_LOW">Lowest estimated value</option>
+                  <option value="POPULARITY">Most popular</option>
+                  <option value="RECOGNITION">Most recognised</option>
+                  <option value="NAME">Name A–Z</option>
+                </select>
+              </label>
+              <label>
+                <span>Availability</span>
+                <select value={marketAvailabilityFilter} onChange={(event) => setMarketAvailabilityFilter(event.target.value as MarketAvailabilityFilter)}>
+                  <option value="ALL">All available talent</option>
+                  <option value="FREE_AGENT">Free agents</option>
+                  <option value="NON_EXCLUSIVE">Under non-exclusive deal</option>
+                </select>
+              </label>
+            </section>
+          ) : null}
+
           <section className={styles.list}>
             {tab === "ROSTER" ? roster.map((entry) => (
               <RosterCard
                 key={entry.contractId}
                 wrestler={entry}
                 pending={pendingPeople.has(entry.personId)}
+                alignmentSaving={alignmentSaving === entry.personId}
+                onAlignment={(alignment) => void changeAlignment(entry, alignment)}
                 onRenew={() => openRenewal(entry)}
               />
             )) : null}
@@ -510,7 +696,7 @@ export default function TalentClient(): React.JSX.Element {
             ) : null}
           </section>
 
-          {tab === "MARKET" ? <p className={styles.footerNote}>Market values are PPW estimates. Rival salary, bonus, role and pending-offer details remain private. Submitted offers resolve through the same World contract system used by AI promotions.</p> : null}
+          {tab === "MARKET" ? <p className={styles.footerNote}>Exclusive wrestlers are unavailable to recruit and are not listed here. Market values are PPW estimates; rival salary, bonus, role and pending-offer details remain private. Submitted offers resolve through the same World contract system used by AI promotions.</p> : null}
         </>
       ) : null}
     </main>

@@ -44,6 +44,22 @@ jobs:
         run: npm install
       - name: Run full test suite
         run: npm test
+      - name: Run planner roster-edit regression coverage
+        run: node dist/tests/run-planner-edit-regression-tests.js
+      - name: Run contract-offer Attention coverage
+        run: node dist/tests/run-contract-offer-attention-tests.js
+      - name: Run alignment foundation coverage
+        run: node dist/tests/run-alignment-tests.js
+      - name: Run show-flow coverage
+        run: node dist/tests/run-show-flow-tests.js
+      - name: Run Programme web service coverage
+        run: node dist/tests/run-web-programme-service-tests.js
+      - name: Run Programme match integration coverage
+        run: node dist/tests/run-programme-match-integration-tests.js
+      - name: Run Programme signal coverage
+        run: node dist/tests/run-programme-signal-tests.js
+      - name: Run Programme segment coverage
+        run: node dist/tests/run-programme-segment-tests.js
       - name: Build Alpha web app
         run: npm run web:build
       - name: Run Alpha HTTP integration

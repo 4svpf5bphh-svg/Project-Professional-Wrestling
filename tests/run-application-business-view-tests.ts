@@ -127,6 +127,25 @@ await test("Business projection scopes finance and standing to each controlled p
   );
 });
 
+await test("Business projection keeps the recent ledger concise without deleting financial history", () => {
+  const f = twoPlayerFixture(19503);
+  const date = { ...f.aggregate.state.world.currentDate };
+  f.aggregate.state.financialTransactions = Array.from({ length: 12 }, (_, index) => ({
+    id: `business-ledger-${index + 1}`,
+    worldId: f.aggregate.state.world.id,
+    promotionId: f.promotionA,
+    date,
+    category: index % 2 === 0 ? "MEDIA_INCOME" as const : "FIXED_OVERHEAD" as const,
+    amount: index % 2 === 0 ? 1_000 + index : -(500 + index),
+    source: "business-ledger-test",
+  }));
+
+  const view = buildPlayerBusinessView(f.aggregate, f.playerA);
+  ok(f.aggregate.state.financialTransactions.length === 12, "business projection mutated the underlying financial ledger");
+  ok(view.promotion?.recentTransactions.length === 8, "business view did not cap recent ledger detail at eight entries");
+  ok(view.promotion?.rollingFourWeeks.byCategory.length === 2, "concise ledger cap changed the four-week category summary");
+});
+
 await test("Business projection rejects a non-member instead of exposing World finances", () => {
   const f = twoPlayerFixture(19502);
   let rejected = false;

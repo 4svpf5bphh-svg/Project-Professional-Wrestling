@@ -30,6 +30,9 @@ export function validateWorldInvariants(state: WorldState): string[] {
     personIds.add(person.id);
     if (person.worldId !== state.world.id) errors.push(`person ${person.id} crosses world boundary`);
     if (!marketIds.has(person.homeMarketId)) errors.push(`person ${person.id} has invalid home market`);
+    if (person.rosterPromotionId !== undefined && !promotionIds.has(person.rosterPromotionId)) {
+      errors.push(`person ${person.id} has invalid roster promotion`);
+    }
     if (person.biologicalAge < 15 || person.biologicalAge > 90) errors.push(`person ${person.id} biological age outside plausible bounds`);
     if (person.careerExperience < 0 || person.careerExperience > 100) errors.push(`person ${person.id} career experience outside 0-100`);
     if (person.developmentAptitude < 0 || person.developmentAptitude > 100) errors.push(`person ${person.id} development aptitude outside 0-100`);
@@ -140,6 +143,42 @@ export function validateWorldInvariants(state: WorldState): string[] {
 
   const chemistryKeys = new Set<string>();
   for (const chemistry of state.workingChemistry) { const key = `${chemistry.personAId}:${chemistry.personBId}:${chemistry.context}`; if (chemistryKeys.has(key)) errors.push(`duplicate chemistry record ${key}`); chemistryKeys.add(key); if (chemistry.worldId !== state.world.id) errors.push(`chemistry ${chemistry.id} crosses world boundary`); if (!personIds.has(chemistry.personAId) || !personIds.has(chemistry.personBId)) errors.push(`chemistry ${chemistry.id} references missing person`); if (chemistry.personAId >= chemistry.personBId) errors.push(`chemistry ${chemistry.id} pair ordering is not canonical`); if (chemistry.familiarity < 0 || chemistry.familiarity > 100) errors.push(`chemistry ${chemistry.id} familiarity outside 0-100`); }
+
+  const relationshipKeys = new Set<string>();
+  for (const relationship of state.wrestlerRelationships ?? []) {
+    const key = `${relationship.personAId}:${relationship.personBId}`;
+    if (relationshipKeys.has(key)) errors.push(`duplicate wrestler relationship ${key}`);
+    relationshipKeys.add(key);
+    if (relationship.worldId !== state.world.id) errors.push(`wrestler relationship ${relationship.id} crosses world boundary`);
+    if (!personIds.has(relationship.personAId) || !personIds.has(relationship.personBId)) {
+      errors.push(`wrestler relationship ${relationship.id} references missing person`);
+    }
+    if (relationship.personAId >= relationship.personBId) errors.push(`wrestler relationship ${relationship.id} pair ordering is not canonical`);
+    if (relationship.affinity < -100 || relationship.affinity > 100) errors.push(`wrestler relationship ${relationship.id} affinity outside -100..100`);
+    if (relationship.professionalTrust < -100 || relationship.professionalTrust > 100) errors.push(`wrestler relationship ${relationship.id} professional trust outside -100..100`);
+    if (relationship.rivalryHeat < 0 || relationship.rivalryHeat > 100) errors.push(`wrestler relationship ${relationship.id} rivalry heat outside 0-100`);
+    if (relationship.familiarity < 0 || relationship.familiarity > 100) errors.push(`wrestler relationship ${relationship.id} familiarity outside 0-100`);
+    if (new Set(relationship.tags).size !== relationship.tags.length) errors.push(`wrestler relationship ${relationship.id} contains duplicate tags`);
+  }
+
+  const affiliationKeys = new Set<string>();
+  const primaryAffiliations = new Set<string>();
+  for (const affiliation of state.wrestlerPromotionAffiliations ?? []) {
+    const key = `${affiliation.personId}:${affiliation.promotionId}`;
+    if (affiliationKeys.has(key)) errors.push(`duplicate wrestler promotion affiliation ${key}`);
+    affiliationKeys.add(key);
+    if (affiliation.worldId !== state.world.id) errors.push(`wrestler promotion affiliation ${key} crosses world boundary`);
+    if (!personIds.has(affiliation.personId)) errors.push(`wrestler promotion affiliation ${key} references missing person`);
+    if (!promotionIds.has(affiliation.promotionId)) errors.push(`wrestler promotion affiliation ${key} references missing promotion`);
+    if (affiliation.role === "PRIMARY") {
+      if (primaryAffiliations.has(affiliation.personId)) errors.push(`wrestler ${affiliation.personId} has multiple primary promotion affiliations`);
+      primaryAffiliations.add(affiliation.personId);
+    }
+    if (affiliation.basis === "PARENT_COMPANY") {
+      const promotion = state.promotions.find((candidate) => candidate.id === affiliation.promotionId);
+      if (!promotion?.identity?.parentPromotionId) errors.push(`wrestler promotion affiliation ${key} has parent-company basis without a parent promotion`);
+    }
+  }
 
   const transactionIds = new Set<string>();
   for (const transaction of state.financialTransactions) { if (transactionIds.has(transaction.id)) errors.push(`duplicate financial transaction id: ${transaction.id}`); transactionIds.add(transaction.id); if (transaction.worldId !== state.world.id) errors.push(`financial transaction ${transaction.id} crosses world boundary`); if (!promotionIds.has(transaction.promotionId)) errors.push(`financial transaction ${transaction.id} references missing promotion`); if (!Number.isFinite(transaction.amount)) errors.push(`financial transaction ${transaction.id} has non-finite amount`); }

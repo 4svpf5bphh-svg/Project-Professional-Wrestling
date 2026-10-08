@@ -3,6 +3,7 @@ import type {
   ContractOffer,
   RoleExpectation,
 } from "../../domain/src/types.js";
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import {
   addPpwWeeks,
   contractIsActive,
@@ -12,6 +13,7 @@ import {
 import {
   activePromotionControlForPlayer,
   buildPlayerTalentManagementView,
+  setWrestlerAlignmentCommand,
   submitContractOfferCommand,
   type ApplicationWorldAggregate,
   type ApplicationWorldRepository,
@@ -44,6 +46,20 @@ export interface AlphaTalentOfferRequest {
 export interface AlphaTalentOfferResult {
   offerId: string;
   offerKind: "RECRUITMENT" | "RENEWAL";
+  view: PlayerTalentManagementView;
+}
+
+export interface AlphaRosterAlignmentRequest {
+  requestId: string;
+  personId: string;
+  alignment: WrestlerAlignment;
+}
+
+export interface AlphaRosterAlignmentResult {
+  personId: string;
+  alignment: WrestlerAlignment;
+  changeMode: "INITIAL_PRESENTATION" | "JUST_SIGNED" | "RETURNING" | "OFFSCREEN_SWITCH";
+  naturalReset: boolean;
   view: PlayerTalentManagementView;
 }
 
@@ -90,6 +106,7 @@ function replayPlanFromOffer(offer: ContractOffer) {
   return {
     promotionId: offer.promotionId,
     personId: offer.personId,
+    sourceContractId: offer.sourceContractId ?? null,
     family: offer.family,
     exclusivity: offer.exclusivity,
     roleExpectation: offer.roleExpectation,
@@ -109,6 +126,7 @@ function requestMatchesOffer(
 ): boolean {
   const termWeeks = weeksBetween(offer.startDate, offer.endDate, aggregate.state.ruleset.weeksPerYear) + 1;
   return offer.personId === request.personId
+    && (offer.sourceContractId ?? null) === (request.sourceContractId ?? null)
     && offer.family === request.family
     && offer.roleExpectation === request.roleExpectation
     && termWeeks === request.termWeeks
@@ -140,10 +158,13 @@ function buildFreshPlan(
     }
     const currentIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
     const endIndex = ppwDateToWeekIndex(source.endDate, state.ruleset.weeksPerYear);
-    if (endIndex - currentIndex > state.ruleset.renewalWindowWeeks) {
+    const datesExhausted = source.family !== "ONE_OFF" && source.datesUsed >= source.dateEntitlement;
+    if (!datesExhausted && endIndex - currentIndex > state.ruleset.renewalWindowWeeks) {
       throw new Error("renewal window is not open for this contract yet");
     }
-    startDate = addPpwWeeks(source.endDate, 1, state.ruleset.weeksPerYear);
+    startDate = datesExhausted
+      ? { ...state.world.currentDate }
+      : addPpwWeeks(source.endDate, 1, state.ruleset.weeksPerYear);
   } else {
     const alreadyOurs = state.contracts.some((contract) => (
       contract.promotionId === promotionId
@@ -161,6 +182,7 @@ function buildFreshPlan(
   return {
     promotionId,
     personId,
+    sourceContractId,
     family: request.family,
     exclusivity,
     roleExpectation: request.roleExpectation,
@@ -233,6 +255,55 @@ export async function submitAlphaTalentOffer(
       offerKind: offer.offerKind,
       view: buildPlayerTalentManagementView(aggregate, playerId),
     } satisfies AlphaTalentOfferResult;
+  });
+
+  return transaction.result;
+}
+
+export async function setAlphaRosterAlignment(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  rawRequest: AlphaRosterAlignmentRequest,
+): Promise<AlphaRosterAlignmentResult> {
+  const request: AlphaRosterAlignmentRequest = {
+    requestId: boundedText(rawRequest.requestId, "requestId"),
+    personId: boundedText(rawRequest.personId, "personId"),
+    alignment: rawRequest.alignment,
+  };
+  if (!["FACE", "HEEL", "TWEENER"].includes(request.alignment)) {
+    throw new Error("unsupported wrestler alignment");
+  }
+
+  const transaction = await repository.transact(worldId, null, (aggregate) => {
+    const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
+    if (!control) throw new Error("player must control a promotion before changing roster alignment");
+
+    const change = setWrestlerAlignmentCommand(
+      aggregate.state,
+      aggregate.ownership,
+      aggregate.commands,
+      aggregate.runtime,
+      {
+        requestId: request.requestId,
+        worldId,
+        playerId,
+        commandType: "SET_WRESTLER_ALIGNMENT",
+        payload: {
+          promotionId: control.promotionId,
+          personId: request.personId,
+          alignment: request.alignment,
+        },
+      },
+    );
+
+    return {
+      personId: request.personId,
+      alignment: change.alignment,
+      changeMode: change.method as AlphaRosterAlignmentResult["changeMode"],
+      naturalReset: change.method !== "OFFSCREEN_SWITCH",
+      view: buildPlayerTalentManagementView(aggregate, playerId),
+    } satisfies AlphaRosterAlignmentResult;
   });
 
   return transaction.result;

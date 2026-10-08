@@ -4,7 +4,10 @@ import {
   evaluatePlayerInactivity,
 } from "./engagement.js";
 import { activePromotionControls } from "./ownership.js";
-import { incrementWorldRevision } from "./runtime.js";
+import {
+  currentWeekShowCommitmentsLocked,
+  incrementWorldRevision,
+} from "./runtime.js";
 import {
   applyStewardshipTalentTrustPressure,
   openEligibleStewardshipExitRequests,
@@ -14,12 +17,21 @@ import { runAiStewardshipBuyouts } from "./stewardship-ai-buyouts.js";
 import { runStewardshipCaretakerRecruitment } from "./stewardship-caretaker.js";
 import type { ApplicationWorldRepository } from "./world-aggregate.js";
 import {
+  lockPersistedCurrentWeekShowCommitments,
   lockPersistedWorldForResolution,
-  materializePersistedCurrentWeekReservations,
   resolvePersistedWorldWeek,
 } from "./world-transactions.js";
 
 export type ScheduledResolutionStatus = "RESOLVED" | "ALREADY_RESOLVED";
+
+export type ScheduledCommitmentStatus = "COMMITTED" | "ALREADY_COMMITTED" | "ALREADY_RESOLVED";
+
+export interface ScheduledCommitmentResult {
+  worldId: Id;
+  cycleKey: string;
+  status: ScheduledCommitmentStatus;
+  revision: number;
+}
 
 export interface ScheduledResolutionResult {
   worldId: Id;
@@ -43,6 +55,7 @@ function requireUtcCycleKey(value: string): string {
 function retryableSchedulerConflict(message: string): boolean {
   return message.includes("stale World revision")
     || message.includes("cannot lock from phase")
+    || message.includes("cannot lock show commitments from phase")
     || message.includes("cannot accept player mutations")
     || message.includes("cannot begin resolution from phase")
     || message.includes("scheduled lock changed before recovery");
@@ -99,6 +112,60 @@ async function evaluateScheduledPlayerInactivity(
   return committed.revision;
 }
 
+export async function lockScheduledShowCommitments(
+  repository: ApplicationWorldRepository,
+  worldId: Id,
+  rawCycleKey: string,
+): Promise<ScheduledCommitmentResult> {
+  const cycleKey = requireUtcCycleKey(rawCycleKey);
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    const before = await repository.load(worldId);
+    const lastResolved = before.runtime.lastResolvedRealCycleKey ?? null;
+    if (lastResolved !== null && lastResolved >= cycleKey) {
+      return {
+        worldId,
+        cycleKey,
+        status: "ALREADY_RESOLVED",
+        revision: before.runtime.revision,
+      };
+    }
+
+    if (before.runtime.phase !== "OPEN") {
+      return {
+        worldId,
+        cycleKey,
+        status: "ALREADY_COMMITTED",
+        revision: before.runtime.revision,
+      };
+    }
+
+    if (currentWeekShowCommitmentsLocked(before.runtime, before.state)) {
+      return {
+        worldId,
+        cycleKey,
+        status: "ALREADY_COMMITTED",
+        revision: before.runtime.revision,
+      };
+    }
+
+    try {
+      const revision = await lockPersistedCurrentWeekShowCommitments(
+        repository,
+        worldId,
+        before.runtime.revision,
+        cycleKey,
+      );
+      return { worldId, cycleKey, status: "COMMITTED", revision };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!retryableSchedulerConflict(message) || attempt === 5) throw error;
+    }
+  }
+
+  throw new Error(`World ${worldId} scheduled commitment lock could not acquire a stable runtime state`);
+}
+
 export async function resolveScheduledWorldCycle(
   repository: ApplicationWorldRepository,
   worldId: Id,
@@ -149,15 +216,10 @@ export async function resolveScheduledWorldCycle(
         before.runtime.revision,
         cycleKey,
       );
-      const materialized = await materializePersistedCurrentWeekReservations(
-        repository,
-        worldId,
-        activityRevision,
-      );
       const lockedRevision = await lockPersistedWorldForResolution(
         repository,
         worldId,
-        materialized.revision,
+        activityRevision,
         cycleKey,
       );
       const revision = await resolvePersistedWorldWeek(repository, worldId, lockedRevision);

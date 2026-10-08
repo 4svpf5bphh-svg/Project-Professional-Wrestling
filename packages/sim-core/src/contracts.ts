@@ -6,6 +6,7 @@ import type {
   Id,
   Person,
   Promotion,
+  PromotionContractPolicy,
   PromotionTier,
   RoleExpectation,
   WorldState,
@@ -34,6 +35,25 @@ const TIER_PRESTIGE: Record<PromotionTier, number> = {
   GLOBAL: 92,
 };
 
+export function defaultPromotionContractPolicy(tier: PromotionTier): PromotionContractPolicy {
+  switch (tier) {
+    case "GLOBAL":
+      return { exclusiveContractChance: 72, starExclusiveBonus: 8, outsideBookingPolicy: "PROHIBITED" };
+    case "NATIONAL":
+      return { exclusiveContractChance: 52, starExclusiveBonus: 8, outsideBookingPolicy: "APPROVAL_REQUIRED" };
+    case "RISING":
+      return { exclusiveContractChance: 27, starExclusiveBonus: 8, outsideBookingPolicy: "PERMITTED" };
+    case "INDEPENDENT":
+      return { exclusiveContractChance: 8, starExclusiveBonus: 8, outsideBookingPolicy: "PERMITTED" };
+    case "LOCAL":
+      return { exclusiveContractChance: 3, starExclusiveBonus: 8, outsideBookingPolicy: "PERMITTED" };
+  }
+}
+
+export function promotionContractPolicy(promotion: Promotion): PromotionContractPolicy {
+  return promotion.contractPolicy ?? defaultPromotionContractPolicy(promotion.tier);
+}
+
 export function contractIsActive(state: WorldState, contract: Contract): boolean {
   if (contract.status !== "SIGNED") return false;
   const weeksPerYear = state.ruleset.weeksPerYear;
@@ -54,7 +74,72 @@ export function activeContractsForPromotion(state: WorldState, promotionId: Id):
   return contractsForPromotion(state, promotionId).filter((contract) => contractIsActive(state, contract));
 }
 
+export function contractGrantsBookingRightsToPromotion(
+  state: WorldState,
+  contract: Contract,
+  promotionId: Id,
+): boolean {
+  if (!contractIsActive(state, contract)) return false;
+  if (contract.promotionId === promotionId) return true;
+  const promotion = state.promotions.find((candidate) => candidate.id === promotionId);
+  return promotion?.identity?.parentPromotionId === contract.promotionId;
+}
+
+export function wrestlerPromotionAffiliationsForPerson(
+  state: WorldState,
+  personId: Id,
+): NonNullable<WorldState["wrestlerPromotionAffiliations"]> {
+  const explicit = state.wrestlerPromotionAffiliations ?? [];
+  if (explicit.some((affiliation) => affiliation.personId === personId)) {
+    return explicit.filter((affiliation) => affiliation.personId === personId);
+  }
+  const person = state.people.find((candidate) => candidate.id === personId);
+  if (!person?.rosterPromotionId) return [];
+  const promotion = state.promotions.find((candidate) => candidate.id === person.rosterPromotionId);
+  const activeContracts = activeContractsForPerson(state, person.id);
+  const direct = activeContracts.some((contract) => contract.promotionId === person.rosterPromotionId);
+  const parent = promotion?.identity?.parentPromotionId;
+  const parentBacked = parent !== null && parent !== undefined
+    && activeContracts.some((contract) => contract.promotionId === parent);
+  return [{
+    worldId: state.world.id,
+    personId,
+    promotionId: person.rosterPromotionId,
+    role: "PRIMARY",
+    basis: direct ? "CONTRACT" : parentBacked ? "PARENT_COMPANY" : "CONTRACT",
+  }];
+}
+
+export function wrestlerAffiliationHasBookingRights(
+  state: WorldState,
+  affiliation: NonNullable<WorldState["wrestlerPromotionAffiliations"]>[number],
+): boolean {
+  const contracts = activeContractsForPerson(state, affiliation.personId);
+  if (affiliation.basis === "CONTRACT") {
+    return contracts.some((contract) => contract.promotionId === affiliation.promotionId);
+  }
+  const promotion = state.promotions.find((candidate) => candidate.id === affiliation.promotionId);
+  const parentPromotionId = promotion?.identity?.parentPromotionId;
+  return parentPromotionId !== null && parentPromotionId !== undefined
+    && contracts.some((contract) => contract.promotionId === parentPromotionId);
+}
+
 export function currentRosterPersonIds(state: WorldState, promotionId: Id): Id[] {
+  const promotion = state.promotions.find((candidate) => candidate.id === promotionId);
+  if (promotion?.rosterMode === "EXPLICIT") {
+    return state.people
+      .filter((person) => person.status !== "RETIRED")
+      .filter((person) => {
+        const affiliations = wrestlerPromotionAffiliationsForPerson(state, person.id);
+        if (affiliations.length > 0) {
+          return affiliations.some((affiliation) => affiliation.promotionId === promotionId
+            && wrestlerAffiliationHasBookingRights(state, affiliation));
+        }
+        return activeContractsForPerson(state, person.id)
+          .some((contract) => contract.promotionId === promotionId);
+      })
+      .map((person) => person.id);
+  }
   return [...new Set(activeContractsForPromotion(state, promotionId).map((contract) => contract.personId))];
 }
 
@@ -86,8 +171,17 @@ function contractDensity(terms: ContractTerms, weeksPerYear: number): number {
   return terms.dateEntitlement / termWeeks;
 }
 
-export function canAcceptContractTerms(state: WorldState, person: Person, terms: ContractTerms): { ok: boolean; reason: string | null } {
-  const signed = contractsForPerson(state, person.id).filter((contract) => contract.status === "SIGNED" && contractOverlaps(contract, terms, state.ruleset.weeksPerYear));
+export function canAcceptContractTerms(
+  state: WorldState,
+  person: Person,
+  terms: ContractTerms,
+  options: { ignoreContractId?: Id | null } = {},
+): { ok: boolean; reason: string | null } {
+  const signed = contractsForPerson(state, person.id).filter((contract) => (
+    contract.status === "SIGNED"
+    && contract.id !== (options.ignoreContractId ?? null)
+    && contractOverlaps(contract, terms, state.ruleset.weeksPerYear)
+  ));
   if (terms.exclusivity === "EXCLUSIVE" && signed.length > 0) {
     return { ok: false, reason: "exclusive offer overlaps another signed contract" };
   }
@@ -114,17 +208,24 @@ function roleForPerson(person: Person): RoleExpectation {
 
 function familyForPromotion(promotion: Promotion, person: Person, rng: DeterministicRng): ContractFamily {
   const starScore = (person.recognition + person.popularity + person.skills.presentation) / 3;
-  const exclusiveChance = promotion.tier === "GLOBAL" ? 0.72
-    : promotion.tier === "NATIONAL" ? 0.52
-      : promotion.tier === "RISING" ? 0.27
-        : promotion.tier === "INDEPENDENT" ? 0.08
-          : 0.03;
-  const adjusted = Math.min(0.9, exclusiveChance + (starScore >= 72 ? 0.08 : 0));
+  const policy = promotionContractPolicy(promotion);
+  const exclusiveChance = Math.max(0, Math.min(100, policy.exclusiveContractChance)) / 100;
+  const starBonus = starScore >= 72
+    ? Math.max(0, Math.min(100, policy.starExclusiveBonus)) / 100
+    : 0;
+  const adjusted = Math.min(1, exclusiveChance + starBonus);
   return rng.chance(adjusted) ? "EXCLUSIVE" : "LIMITED_NON_EXCLUSIVE";
 }
 
-export function buildContractTerms(state: WorldState, promotion: Promotion, person: Person, rng: DeterministicRng, startDate = state.world.currentDate): ContractTerms {
-  const family = familyForPromotion(promotion, person, rng);
+export function buildContractTerms(
+  state: WorldState,
+  promotion: Promotion,
+  person: Person,
+  rng: DeterministicRng,
+  startDate = state.world.currentDate,
+  forcedFamily?: ContractFamily,
+): ContractTerms {
+  const family = forcedFamily ?? familyForPromotion(promotion, person, rng);
   const market = marketWeeklyValue(person);
   const generosity = 0.88 + (100 - promotion.aiProfile.financialCaution) / 300 + promotion.aiProfile.riskTolerance / 600;
   const roleExpectation = roleForPerson(person);
@@ -386,6 +487,42 @@ export function generateAiContractOffers(state: WorldState): void {
   }
 }
 
+function exhaustedReplacementSource(state: WorldState, offer: ContractOffer): Contract | null {
+  const sourceContractId = offer.sourceContractId ?? null;
+  if (!sourceContractId) return null;
+  const source = state.contracts.find((contract) => contract.id === sourceContractId);
+  if (!source) return null;
+  if (
+    source.status !== "SIGNED"
+    || source.personId !== offer.personId
+    || source.promotionId !== offer.promotionId
+    || source.family === "ONE_OFF"
+    || source.datesUsed < source.dateEntitlement
+  ) return null;
+  return source;
+}
+
+function acceptContractOffer(state: WorldState, person: Person, offer: ContractOffer): void {
+  const promotion = state.promotions.find((candidate) => candidate.id === offer.promotionId)!;
+  const source = exhaustedReplacementSource(state, offer);
+  if (source) {
+    source.status = "TERMINATED";
+    new LedgerWriter(state.world.id, state.ledger).append({
+      date: state.world.currentDate,
+      type: "CONTRACT_SUPERSEDED",
+      significance: "ROUTINE",
+      entityIds: [source.id, person.id, promotion.id, offer.id],
+      payload: {
+        datesUsed: source.datesUsed,
+        dateEntitlement: source.dateEntitlement,
+        replacementOfferId: offer.id,
+      },
+    });
+  }
+  createSignedContract(state, person, promotion, offer, offer.id);
+  offer.status = "ACCEPTED";
+}
+
 function weeklyEquivalent(offer: ContractOffer, state: WorldState): number {
   const termWeeks = Math.max(1, weeksBetween(offer.startDate, offer.endDate, state.ruleset.weeksPerYear) + 1);
   return offer.weeklyGuarantee + offer.signingBonus / termWeeks + offer.appearanceFee * offer.dateEntitlement / termWeeks;
@@ -455,15 +592,14 @@ export function resolveContractOffers(state: WorldState): void {
     let exclusiveAccepted = false;
     for (const offer of viableExclusive) {
       const terms: ContractTerms = offer;
-      const capacity = canAcceptContractTerms(state, person, terms);
+      const source = exhaustedReplacementSource(state, offer);
+      const capacity = canAcceptContractTerms(state, person, terms, { ignoreContractId: source?.id ?? null });
       if (!capacity.ok || exclusiveAccepted) {
         offer.status = "REJECTED";
         offer.rejectionReason = capacity.reason ?? "stronger exclusive offer accepted";
         continue;
       }
-      const promotion = state.promotions.find((candidate) => candidate.id === offer.promotionId)!;
-      createSignedContract(state, person, promotion, terms, offer.id);
-      offer.status = "ACCEPTED";
+      acceptContractOffer(state, person, offer);
       exclusiveAccepted = true;
     }
 
@@ -479,15 +615,14 @@ export function resolveContractOffers(state: WorldState): void {
         offer.rejectionReason = "offer utility below acceptance threshold";
         continue;
       }
-      const capacity = canAcceptContractTerms(state, person, offer);
+      const source = exhaustedReplacementSource(state, offer);
+      const capacity = canAcceptContractTerms(state, person, offer, { ignoreContractId: source?.id ?? null });
       if (!capacity.ok) {
         offer.status = "REJECTED";
         offer.rejectionReason = capacity.reason;
         continue;
       }
-      const promotion = state.promotions.find((candidate) => candidate.id === offer.promotionId)!;
-      createSignedContract(state, person, promotion, offer, offer.id);
-      offer.status = "ACCEPTED";
+      acceptContractOffer(state, person, offer);
     }
   }
 }

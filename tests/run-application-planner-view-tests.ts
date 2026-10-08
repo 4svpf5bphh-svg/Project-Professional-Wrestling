@@ -59,9 +59,13 @@ function twoPlayerFixture(seed: number): {
   const marketB = state.markets.find((market) => market.id === promotions[1]!.homeMarketId) ?? state.markets[1]!;
   const venueA = state.venues.find((venue) => venue.marketId === marketA.id) ?? state.venues[0]!;
   const venueB = state.venues.find((venue) => venue.marketId === marketB.id) ?? state.venues[1]!;
-  const personA = state.contracts.find((contract) => contract.promotionId === promotions[0]!.id)?.personId;
+  const personAIds = state.contracts
+    .filter((contract) => contract.promotionId === promotions[0]!.id && contract.status === "SIGNED")
+    .map((contract) => contract.personId)
+    .filter((personId, index, all) => all.indexOf(personId) === index)
+    .slice(0, 2);
   const personB = state.contracts.find((contract) => contract.promotionId === promotions[1]!.id)?.personId;
-  if (!personA || !personB) throw new Error("planner fixture promotions need contracted talent");
+  if (personAIds.length < 2 || !personB) throw new Error("planner fixture promotions need contracted talent");
 
   const draftA: DetailedShowDraft = {
     draftId: "planner-a-week-3",
@@ -70,9 +74,28 @@ function twoPlayerFixture(seed: number): {
     marketId: marketA.id,
     venueId: venueA.id,
     ticketStrategy: "STANDARD",
-    participantIds: [personA],
-    matches: [],
+    participantIds: personAIds,
+    matches: [{
+      draftMatchId: "planner-a-match-1",
+      type: "SINGLES",
+      sideAIds: [personAIds[0]!],
+      sideBIds: [personAIds[1]!],
+      intendedWinnerSide: "A",
+      intent: "COMPETITIVE",
+      plannedLengthMinutes: 17,
+    }],
     championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "planner-a-segment-1",
+      type: "CONFRONTATION",
+      participantIds: [...personAIds],
+      programmeId: null,
+      plannedLengthMinutes: 6,
+    }],
+    runningOrder: [
+      { kind: "SEGMENT", refId: "planner-a-segment-1" },
+      { kind: "MATCH", refId: "planner-a-match-1" },
+    ],
   };
   const draftB: DetailedShowDraft = {
     draftId: "planner-b-week-4",
@@ -110,8 +133,19 @@ test("six-week planner returns the complete current plus five future week horizo
   ok(view.promotion?.weeks[5]?.offset === 5, "planner did not expose the fifth future week");
   const planned = view.promotion?.weeks[2]?.shows[0];
   ok(planned?.draftId === "planner-a-week-3", "player draft did not appear in its future week");
-  ok(planned?.participants.length === 1, "planner did not expose selected wrestler names");
+  ok(planned?.participants.length === 2, "planner did not expose selected wrestler names");
   ok(planned?.marketName !== null && planned?.venueName !== null, "planner did not expose selected logistics");
+  ok(planned?.matches.length === 1, "planner did not expose the saved match");
+  ok(planned?.matches[0]?.order === 1 && planned.matches[0].isMainEvent, "planner did not identify the final match as the main event");
+  ok(planned?.matches[0]?.sideANames.length === 1 && planned.matches[0].sideBNames.length === 1, "planner running order lost match participant names");
+  ok(planned?.segments.length === 1, "planner did not expose the saved segment");
+  ok(planned?.segments[0]?.participantNames.length === 2, "planner segment lost participant names");
+  ok(planned?.runningOrder.length === 2, "planner did not expose the complete running order");
+  ok(planned?.runningOrder[0]?.kind === "SEGMENT" && planned.runningOrder[1]?.kind === "MATCH", "planner changed the interleaved running order");
+  ok(planned?.plannedMatchMinutes === 17, "planner did not total booked match minutes");
+  ok(planned?.plannedSegmentMinutes === 6, "planner did not total segment minutes");
+  ok(planned?.plannedShowMinutes === 23, "planner did not total complete show minutes");
+  ok(planned?.matchCount === 1 && planned.segmentCount === 1 && planned.slotCount === 2, "planner slot counts are incorrect");
 });
 
 test("six-week planner remains scoped to each player's controlled promotion", () => {
@@ -123,6 +157,45 @@ test("six-week planner remains scoped to each player's controlled promotion", ()
   ok(playerA.player.promotionId === promotionAId && playerB.player.promotionId === promotionBId, "planner controls crossed promotions");
   ok(aDraftIds.includes("planner-a-week-3") && !aDraftIds.includes("planner-b-week-4"), "player A leaked player B planning");
   ok(bDraftIds.includes("planner-b-week-4") && !bDraftIds.includes("planner-a-week-3"), "player B leaked player A planning");
+});
+
+test("planner market context exposes home territory, player presence and strongest local rivals", () => {
+  const { aggregate, promotionAId, promotionBId } = twoPlayerFixture(73005);
+  const promotionA = aggregate.state.promotions.find((promotion) => promotion.id === promotionAId)!;
+  const promotionB = aggregate.state.promotions.find((promotion) => promotion.id === promotionBId)!;
+  const awayMarketId = promotionB.homeMarketId;
+  ok(awayMarketId !== promotionA.homeMarketId, "market context fixture needs different home markets");
+
+  for (const entry of aggregate.state.promotionMarketStates.filter((candidate) => candidate.marketId === awayMarketId)) {
+    entry.awareness = 8;
+    entry.liveStrength = 8;
+    entry.loyalty = 8;
+  }
+  const own = aggregate.state.promotionMarketStates.find((entry) => entry.promotionId === promotionAId && entry.marketId === awayMarketId)!;
+  own.awareness = 18;
+  own.liveStrength = 14;
+  own.loyalty = 10;
+  const rival = aggregate.state.promotionMarketStates.find((entry) => entry.promotionId === promotionBId && entry.marketId === awayMarketId)!;
+  rival.awareness = 90;
+  rival.liveStrength = 92;
+  rival.loyalty = 88;
+
+  const view = buildPlayerSixWeekPlannerView(aggregate, "player-a");
+  const away = view.promotion?.markets.find((market) => market.marketId === awayMarketId);
+  ok(away && !away.isHomeMarket, "rival home market was not identified as an away market");
+  ok(away?.yourAwareness === 18 && away.yourLiveStrength === 14 && away.yourLoyalty === 10, "player local market state was not exposed accurately");
+  ok(away?.yourPresence === "LIGHT", "weak player presence did not resolve to the expected broad band");
+  ok(away?.homePromotions.some((promotion) => promotion.promotionId === promotionBId), "resident rival promotion was not identified");
+  ok(away?.strongestRivals[0]?.promotionId === promotionBId, "strongest local rival was not ranked first");
+  ok(away?.strongestRivals[0]?.isHomePromotion === true, "resident rival was not marked as home-based");
+  ok(away?.strongestRivals[0]?.presence === "STRONG", "dominant rival presence did not resolve to the expected broad band");
+  ok(
+    away?.venues.every((venue) => Number.isFinite(venue.prestige) && Number.isFinite(venue.productionSuitability)),
+    "planner venue options did not expose existing prestige and production suitability",
+  );
+
+  const home = view.promotion?.markets.find((market) => market.marketId === promotionA.homeMarketId);
+  ok(home?.isHomeMarket === true, "controlled promotion home market lost its home flag");
 });
 
 test("six-week planner crosses PPW year boundaries correctly", () => {

@@ -1,8 +1,16 @@
 import type { Id, Promotion, WorldState } from "../../domain/src/types.js";
 import { LedgerWriter } from "./ledger.js";
 
+export type HumanPromotionTakeoverMode = "CONTINUE" | "REBRAND";
+
 export interface HumanPromotionClaimOptions {
+  takeoverMode?: HumanPromotionTakeoverMode;
   name?: string;
+}
+
+function takeoverMode(options: HumanPromotionClaimOptions): HumanPromotionTakeoverMode {
+  if (options.takeoverMode !== undefined) return options.takeoverMode;
+  return options.name === undefined ? "CONTINUE" : "REBRAND";
 }
 
 function normalizedPromotionName(name: string | undefined): string | null {
@@ -21,21 +29,30 @@ export function claimIndependentPromotionForHuman(
   const promotion = state.promotions.find((candidate) => candidate.id === promotionId);
   if (!promotion) throw new Error(`unknown promotion ${promotionId}`);
   if (promotion.controllerType !== "AI") throw new Error(`${promotionId} is already human-controlled`);
-  if (promotion.tier !== "INDEPENDENT") {
-    throw new Error("human claim requires an Independent promotion");
+  const takeoverEligibility = promotion.playerTakeoverEligibility
+    ?? (promotion.tier === "INDEPENDENT" ? "STANDARD" : "LOCKED");
+  if (takeoverEligibility !== "STANDARD") {
+    throw new Error("human claim requires a promotion open to standard takeover");
   }
   if (promotion.lifecycle !== "ACTIVE") {
     throw new Error("human claim requires an active promotion");
   }
 
   const previousName = promotion.name;
+  const mode = takeoverMode(options);
   const requestedName = normalizedPromotionName(options.name);
-  if (requestedName !== null) {
+  if (mode === "CONTINUE" && requestedName !== null) {
+    throw new Error("continue takeover cannot rename the promotion");
+  }
+  if (mode === "REBRAND" && requestedName === null) {
+    throw new Error("rebrand takeover requires a promotion name");
+  }
+  if (mode === "REBRAND") {
     const duplicate = state.promotions.some(
-      (candidate) => candidate.id !== promotion.id && candidate.name.toLowerCase() === requestedName.toLowerCase(),
+      (candidate) => candidate.id !== promotion.id && candidate.name.toLowerCase() === requestedName!.toLowerCase(),
     );
     if (duplicate) throw new Error(`promotion name already exists: ${requestedName}`);
-    promotion.name = requestedName;
+    promotion.name = requestedName!;
   }
   promotion.controllerType = "HUMAN";
 
@@ -45,6 +62,7 @@ export function claimIndependentPromotionForHuman(
     significance: "HISTORIC",
     entityIds: [promotion.id, promotion.homeMarketId],
     payload: {
+      takeoverMode: mode,
       previousName,
       name: promotion.name,
       tier: promotion.tier,

@@ -6,10 +6,15 @@ import {
 } from "../packages/web-adapter/src/alpha-service.js";
 import {
   loadAlphaTalentSession,
+  setAlphaRosterAlignment,
   submitAlphaTalentOffer,
 } from "../packages/web-adapter/src/talent-service.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
-import { addPpwWeeks } from "../packages/sim-core/src/index.js";
+import {
+  addPpwWeeks,
+  wrestlerAlignment,
+  wrestlerAlignmentForPromotion,
+} from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -35,8 +40,8 @@ await test("Talent service submits a recruitment offer through the idempotent ap
   const aggregate = createAlphaWorldAggregate({ seed: 73001, playerId: "player-a" });
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
-  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
-  if (!independent) throw new Error("fixture has no Independent promotion");
+  const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("fixture has no takeover-eligible promotion");
   await claimAlphaPromotion(repository, worldId, "player-a", {
     promotionId: independent.id,
     requestId: "talent-claim-recruitment",
@@ -73,13 +78,73 @@ await test("Talent service submits a recruitment offer through the idempotent ap
   ok(afterRetry.state.contractOffers.filter((offer) => offer.id === first.offerId).length === 1, "idempotent recruitment retry duplicated the offer");
 });
 
+await test("Talent service stores promotion-specific alignment without rewriting the wrestler globally", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 73004, playerId: "player-a" });
+  const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
+  const rival = aggregate.state.promotions.find((promotion) => promotion.id !== independent?.id && promotion.lifecycle === "ACTIVE");
+  if (!independent || !rival) throw new Error("alignment fixture lacks promotions");
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "player-a", {
+    promotionId: independent.id,
+    requestId: "talent-claim-alignment",
+  });
+
+  const before = await loadAlphaTalentSession(repository, worldId, "player-a");
+  const rosterEntry = before.roster[0];
+  if (!rosterEntry) throw new Error("alignment fixture has no roster wrestler");
+  const target = rosterEntry.alignment === "HEEL" ? "FACE" : "HEEL";
+  const request = {
+    requestId: "talent-alignment-001",
+    personId: rosterEntry.personId,
+    alignment: target as "FACE" | "HEEL",
+  };
+
+  const first = await setAlphaRosterAlignment(repository, worldId, "player-a", request);
+  ok(first.alignment === target, "alignment command returned the wrong value");
+  ok(first.changeMode === "INITIAL_PRESENTATION" && first.naturalReset, "first promotion presentation was not treated as a clean establishment");
+  ok(first.view.roster.find((entry) => entry.personId === rosterEntry.personId)?.alignment === target, "updated alignment did not reach roster view");
+
+  const persisted = await repository.load(worldId);
+  const person = persisted.state.people.find((candidate) => candidate.id === rosterEntry.personId);
+  if (!person) throw new Error("alignment fixture lost wrestler");
+  const baseline = wrestlerAlignment(person, persisted.state.world.seed);
+  ok(wrestlerAlignmentForPromotion(persisted.state, independent.id, person.id) === target, "promotion alignment override was not persisted");
+  ok(wrestlerAlignmentForPromotion(persisted.state, rival.id, person.id) === baseline, "alignment override leaked into another promotion");
+  ok((persisted.state.promotionWrestlerPresentations ?? []).length === 1, "alignment change did not create exactly one presentation record");
+  const revision = persisted.runtime.revision;
+
+  await setAlphaRosterAlignment(repository, worldId, "player-a", request);
+  const afterRetry = await repository.load(worldId);
+  ok(afterRetry.runtime.revision === revision, "idempotent alignment retry advanced World revision");
+  ok((afterRetry.state.promotionWrestlerPresentations ?? []).length === 1, "idempotent alignment retry duplicated presentation state");
+  ok(
+    afterRetry.state.ledger.filter((entry) => entry.type === "PROMOTION_ALIGNMENT_CHANGED").length === 1,
+    "idempotent alignment retry duplicated alignment history",
+  );
+
+  const secondTarget = target === "HEEL" ? "TWEENER" : "HEEL";
+  const second = await setAlphaRosterAlignment(repository, worldId, "player-a", {
+    requestId: "talent-alignment-002",
+    personId: rosterEntry.personId,
+    alignment: secondTarget,
+  });
+  ok(second.changeMode === "OFFSCREEN_SWITCH" && !second.naturalReset, "repeated roster-page switch was not classified as unexplained");
+  const afterSecond = await repository.load(worldId);
+  ok(
+    afterSecond.state.ledger.some((entry) => entry.type === "PROMOTION_ALIGNMENT_CHANGED" && entry.payload.method === "OFFSCREEN_SWITCH"),
+    "off-screen alignment switch was not recorded for future crowd continuity",
+  );
+});
+
 await test("Talent service renews only inside the renewal window and starts after the current deal", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 73002, playerId: "player-a" });
-  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
-  if (!independent) throw new Error("fixture has no Independent promotion");
+  const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("fixture has no takeover-eligible promotion");
   const source = aggregate.state.contracts.find((contract) => contract.promotionId === independent.id && contract.status === "SIGNED");
-  if (!source) throw new Error("fixture Independent promotion has no signed contract");
+  if (!source) throw new Error("fixture takeover promotion has no signed contract");
   source.endDate = addPpwWeeks(aggregate.state.world.currentDate, 2, aggregate.state.ruleset.weeksPerYear);
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
@@ -120,11 +185,85 @@ await test("Talent service renews only inside the renewal window and starts afte
   ok(persisted.state.contracts.find((contract) => contract.id === source.id)?.status === "SIGNED", "submitting a renewal terminated the existing contract");
 });
 
+await test("Talent service opens renegotiation when purchased dates are exhausted", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 73005, playerId: "player-a" });
+  const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("fixture has no takeover-eligible promotion");
+  const source = aggregate.state.contracts.find((contract) => (
+    contract.promotionId === independent.id
+    && contract.status === "SIGNED"
+    && contract.family !== "ONE_OFF"
+  ));
+  if (!source) throw new Error("fixture takeover promotion has no limited-date contract");
+  source.datesUsed = source.dateEntitlement;
+  source.endDate = addPpwWeeks(aggregate.state.world.currentDate, aggregate.state.ruleset.renewalWindowWeeks + 6, aggregate.state.ruleset.weeksPerYear);
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "player-a", {
+    promotionId: independent.id,
+    requestId: "talent-claim-exhausted-renewal",
+  });
+
+  const before = await loadAlphaTalentSession(repository, worldId, "player-a");
+  const rosterEntry = before.roster.find((entry) => entry.contractId === source.id);
+  if (!rosterEntry) throw new Error("exhausted contract is missing from player roster view");
+  ok(rosterEntry.contract.datesRemaining === 0, "fixture contract was not exhausted");
+  ok(rosterEntry.contract.renewalWindowOpen, "exhausted contract did not open renegotiation");
+  ok(rosterEntry.contract.renewalReason === "DATES_EXHAUSTED", "exhausted contract exposed the wrong renewal reason");
+
+  const result = await submitAlphaTalentOffer(repository, worldId, "player-a", {
+    requestId: "talent-exhausted-renewal-001",
+    personId: source.personId,
+    sourceContractId: source.id,
+    family: "LIMITED_NON_EXCLUSIVE",
+    roleExpectation: source.roleExpectation,
+    termWeeks: 13,
+    dateEntitlement: 5,
+    weeklyGuarantee: Math.max(source.weeklyGuarantee, 50_000),
+    appearanceFee: Math.max(source.appearanceFee, 50_000),
+    signingBonus: Math.max(source.signingBonus, 100_000),
+  });
+  ok(result.offerKind === "RENEWAL", "exhausted-date action produced the wrong offer kind");
+
+  const persisted = await repository.load(worldId);
+  const offer = persisted.state.contractOffers.find((candidate) => candidate.id === result.offerId);
+  if (!offer) throw new Error("exhausted renewal offer was not persisted");
+  ok(
+    offer.startDate.year === persisted.state.world.currentDate.year
+      && offer.startDate.week === persisted.state.world.currentDate.week
+      && offer.startDate.day === persisted.state.world.currentDate.day,
+    "exhausted-date renewal did not start immediately",
+  );
+  ok(offer.sourceContractId === source.id, "exhausted-date renewal lost source contract identity");
+  const revisionAfterFirst = persisted.runtime.revision;
+
+  const retry = await submitAlphaTalentOffer(repository, worldId, "player-a", {
+    requestId: "talent-exhausted-renewal-001",
+    personId: source.personId,
+    sourceContractId: source.id,
+    family: "LIMITED_NON_EXCLUSIVE",
+    roleExpectation: source.roleExpectation,
+    termWeeks: 13,
+    dateEntitlement: 5,
+    weeklyGuarantee: Math.max(source.weeklyGuarantee, 50_000),
+    appearanceFee: Math.max(source.appearanceFee, 50_000),
+    signingBonus: Math.max(source.signingBonus, 100_000),
+  });
+  ok(retry.offerId === result.offerId, "idempotent exhausted-date renewal returned a different offer");
+  const afterRetry = await repository.load(worldId);
+  ok(afterRetry.runtime.revision === revisionAfterFirst, "idempotent exhausted-date renewal advanced World revision twice");
+  ok(
+    afterRetry.state.contractOffers.filter((candidate) => candidate.id === result.offerId).length === 1,
+    "idempotent exhausted-date renewal duplicated the offer",
+  );
+});
+
 await test("Talent service rejects a renewal against another promotion's private contract", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 73003, playerId: "player-a" });
-  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
-  if (!independent) throw new Error("fixture has no Independent promotion");
+  const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("fixture has no takeover-eligible promotion");
   const rivalContract = aggregate.state.contracts.find((contract) => contract.promotionId !== independent.id && contract.status === "SIGNED");
   if (!rivalContract) throw new Error("fixture has no rival contract");
   await repository.initialize(aggregate);

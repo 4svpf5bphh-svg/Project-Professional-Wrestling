@@ -354,7 +354,6 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
 
   const participantIds = [...new Set(plan.participantIds)];
   if (participantIds.length !== plan.participantIds.length) throw new Error("show roster contains duplicate wrestlers");
-  if (participantIds.length % 2 !== 0) throw new Error("show roster must contain an even number of wrestlers");
   if (participantIds.length < state.ruleset.minEventParticipants) {
     throw new Error(`show roster requires at least ${state.ruleset.minEventParticipants} wrestlers`);
   }

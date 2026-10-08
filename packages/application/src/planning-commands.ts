@@ -52,6 +52,49 @@ function authorizePlanningMutation(
   }
 }
 
+function samePpwDate(
+  left: { year: number; week: number; day: number },
+  right: { year: number; week: number; day: number },
+): boolean {
+  return left.year === right.year && left.week === right.week && left.day === right.day;
+}
+
+function sameIdSet(left: readonly Id[], right: readonly Id[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return new Set(left).size === left.length && left.every((id) => rightSet.has(id));
+}
+
+function assertMaterializedCardOnlyEdit(
+  state: WorldState,
+  existing: DetailedShowDraft,
+  next: DetailedShowDraft,
+  eventId: Id | null,
+): void {
+  if (!eventId) throw new Error("materialized show card edit is missing its committed event");
+  if (
+    next.draftId !== existing.draftId
+    || next.promotionId !== existing.promotionId
+    || !samePpwDate(next.targetDate, existing.targetDate)
+    || next.marketId !== existing.marketId
+    || next.venueId !== existing.venueId
+    || next.ticketStrategy !== existing.ticketStrategy
+  ) {
+    throw new Error("materialized show logistics cannot be edited after the show is committed");
+  }
+
+  const event = state.events.find((candidate) => candidate.id === eventId);
+  if (!event || event.status !== "SCHEDULED" || event.promotionId !== existing.promotionId) {
+    throw new Error("materialized show card can only be edited while its event is scheduled");
+  }
+  const committedIds = state.scheduledAppearances
+    .filter((appearance) => appearance.eventId === event.id && appearance.status === "COMMITTED")
+    .map((appearance) => appearance.personId);
+  if (!sameIdSet(next.participantIds, committedIds)) {
+    throw new Error("materialized show card must keep the wrestlers already committed to the event");
+  }
+}
+
 export function upsertDetailedShowDraftCommand(
   state: WorldState,
   ownership: WorldOwnershipState,
@@ -77,7 +120,12 @@ export function upsertDetailedShowDraftCommand(
         envelope.payload.promotionId,
         existing.draftId,
       );
-      assertPlayerShowPlanningActionAllowed(status, "EDIT_DRAFT");
+      if (status.availableActions.includes("EDIT_DRAFT")) {
+        assertPlayerShowPlanningActionAllowed(status, "EDIT_DRAFT");
+      } else {
+        assertPlayerShowPlanningActionAllowed(status, "EDIT_CARD");
+        assertMaterializedCardOnlyEdit(state, existing, envelope.payload.draft, status.eventId);
+      }
     }
     return upsertDetailedShowDraft(
       state,

@@ -9,6 +9,7 @@ import type {
   PpwDate,
   RoleExpectation,
 } from "../../domain/src/types.js";
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import {
   activeContractsForPerson,
   activeContractsForPromotion,
@@ -16,6 +17,9 @@ import {
   contractIsActive,
   marketWeeklyValue,
   ppwDateToWeekIndex,
+  promotionAlignmentChangeContext,
+  wrestlerAlignment,
+  wrestlerAlignmentForPromotion,
 } from "../../sim-core/src/index.js";
 import {
   activePromotionControlForPlayer,
@@ -40,6 +44,9 @@ export interface PlayerRosterContractView {
   contractId: Id;
   personId: Id;
   name: string;
+  alignment: WrestlerAlignment;
+  alignmentChangeMode: "INITIAL_PRESENTATION" | "JUST_SIGNED" | "RETURNING" | "OFFSCREEN_SWITCH";
+  alignmentNaturalReset: boolean;
   careerStage: CareerStage;
   status: PersonStatus;
   biologicalAge: number;
@@ -66,12 +73,14 @@ export interface PlayerRosterContractView {
     appearanceFee: number;
     signingBonus: number;
     renewalWindowOpen: boolean;
+    renewalReason: "DATES_EXHAUSTED" | "EXPIRY_WINDOW" | null;
   };
 }
 
 export interface PlayerTalentMarketView {
   personId: Id;
   name: string;
+  alignment: WrestlerAlignment;
   careerStage: CareerStage;
   status: PersonStatus;
   biologicalAge: number;
@@ -214,10 +223,18 @@ export function buildPlayerTalentManagementView(
       const person = peopleById.get(contract.personId);
       if (!person) return null;
       const remaining = weeksToExpiry(aggregate, contract.endDate);
+      const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
+      const datesExhausted = contract.family !== "ONE_OFF" && datesRemaining === 0;
+      const expiryWindowOpen = remaining <= aggregate.state.ruleset.renewalWindowWeeks;
+      const alignment = wrestlerAlignmentForPromotion(aggregate.state, promotion.id, person.id);
+      const alignmentContext = promotionAlignmentChangeContext(aggregate.state, promotion.id, person.id);
       return {
         contractId: contract.id,
         personId: person.id,
         name: person.name,
+        alignment,
+        alignmentChangeMode: alignmentContext.method,
+        alignmentNaturalReset: alignmentContext.naturalReset,
         careerStage: person.careerStage,
         status: person.status,
         biologicalAge: person.biologicalAge,
@@ -239,11 +256,12 @@ export function buildPlayerTalentManagementView(
           weeksToExpiry: remaining,
           dateEntitlement: contract.dateEntitlement,
           datesUsed: contract.datesUsed,
-          datesRemaining: Math.max(0, contract.dateEntitlement - contract.datesUsed),
+          datesRemaining,
           weeklyGuarantee: contract.weeklyGuarantee,
           appearanceFee: contract.appearanceFee,
           signingBonus: contract.signingBonus,
-          renewalWindowOpen: remaining <= aggregate.state.ruleset.renewalWindowWeeks,
+          renewalWindowOpen: datesExhausted || expiryWindowOpen,
+          renewalReason: datesExhausted ? "DATES_EXHAUSTED" : expiryWindowOpen ? "EXPIRY_WINDOW" : null,
         },
       };
     })
@@ -262,9 +280,11 @@ export function buildPlayerTalentManagementView(
       if (signed.some((contract) => contract.exclusivity === "EXCLUSIVE")) return null;
       const activeOutside = activeContractsForPerson(aggregate.state, person.id)
         .filter((contract) => contract.promotionId !== promotion.id && contractIsActive(aggregate.state, contract));
+      const alignment = wrestlerAlignment(person, aggregate.state.world.seed);
       return {
         personId: person.id,
         name: person.name,
+        alignment,
         careerStage: person.careerStage,
         status: person.status,
         biologicalAge: person.biologicalAge,

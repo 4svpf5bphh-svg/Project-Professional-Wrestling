@@ -9,6 +9,7 @@ import {
   claimIndependentPromotionForHuman,
   createWorld,
   marketWeeklyValue,
+  resolveContractOffers,
   resolveWorldWeek,
   submitHumanContractOffer,
 } from "../packages/sim-core/src/index.js";
@@ -122,6 +123,39 @@ test("an existing wrestler relationship is classified as a renewal", () => {
   });
 
   ok(offer.offerKind === "RENEWAL", "existing relationship was incorrectly classified as recruitment");
+});
+
+test("an exhausted limited-date deal can be replaced immediately without stacking contracts", () => {
+  const { state, promotionId } = fixture(11006);
+  const source = activeContractsForPromotion(state, promotionId).find((contract) => contract.family !== "ONE_OFF")!;
+  ok(Boolean(source), "expected a renewable limited-date contract");
+  source.datesUsed = source.dateEntitlement;
+  const person = state.people.find((candidate) => candidate.id === source.personId)!;
+  const market = marketWeeklyValue(person);
+  const offer = submitHumanContractOffer(state, {
+    promotionId,
+    personId: source.personId,
+    sourceContractId: source.id,
+    family: "LIMITED_NON_EXCLUSIVE",
+    exclusivity: "NON_EXCLUSIVE",
+    roleExpectation: source.roleExpectation,
+    startDate: { ...state.world.currentDate },
+    endDate: addPpwWeeks(state.world.currentDate, 12, state.ruleset.weeksPerYear),
+    dateEntitlement: 5,
+    weeklyGuarantee: market * 4,
+    appearanceFee: market * 4,
+    signingBonus: market * 12,
+  });
+
+  ok(offer.offerKind === "RENEWAL", "exhausted replacement was not classified as renewal");
+  ok(offer.sourceContractId === source.id, "exhausted replacement lost its source contract");
+  resolveContractOffers(state);
+  ok(offer.status === "ACCEPTED", `strong exhausted-date replacement finished as ${offer.status}`);
+  ok(source.status === "TERMINATED", "accepted exhausted replacement did not supersede the spent deal");
+  const replacement = state.contracts.find((contract) => contract.sourceOfferId === offer.id);
+  ok(Boolean(replacement) && replacement!.status === "SIGNED", "accepted exhausted replacement did not create a live contract");
+  ok(replacement!.datesUsed === 0 && replacement!.dateEntitlement === 5, "replacement did not restore purchased dates");
+  ok(activeContractsForPromotion(state, promotionId).filter((contract) => contract.personId === source.personId).length === 1, "exhausted replacement stacked multiple active contracts");
 });
 
 test("structurally impossible overlapping exclusive terms are rejected before submission", () => {

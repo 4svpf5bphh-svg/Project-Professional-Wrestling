@@ -62,6 +62,9 @@ export interface WorldSummary {
   championshipCoronations: number;
   titleChanges: number;
   successfulDefenses: number;
+  programmes: number;
+  activeProgrammes: number;
+  programmeActivities: number;
   injuries: number;
   activeInjuries: number;
   globalPromotion: string | null;
@@ -113,6 +116,10 @@ export function deterministicWorldHash(state: WorldState): string {
   if (state.championshipMatchBookings?.length) {
     collections.push(["championshipMatchBookings", state.championshipMatchBookings]);
   }
+  if (state.programmes?.length) collections.push(["programmes", state.programmes]);
+  if (state.programmeActivities?.length) collections.push(["programmeActivities", state.programmeActivities]);
+  if (state.wrestlerRelationships?.length) collections.push(["wrestlerRelationships", state.wrestlerRelationships]);
+  if (state.wrestlerPromotionAffiliations?.length) collections.push(["wrestlerPromotionAffiliations", state.wrestlerPromotionAffiliations]);
 
   for (const [name, collection] of collections) {
     hash = fnv1a32Update(hash, `|${name}:${collection.length}:[`);
@@ -151,6 +158,7 @@ export function summarizeWorld(state: WorldState): WorldSummary {
   const championships = state.championships ?? [];
   const reigns = state.championshipReigns ?? [];
   const contests = state.championshipContests ?? [];
+  const programmes = state.programmes ?? [];
   const distressCounts: Record<FinancialDistressState, number> = {
     HEALTHY: 0,
     WATCH: 0,
@@ -221,6 +229,9 @@ export function summarizeWorld(state: WorldState): WorldSummary {
     championshipCoronations: contests.filter((contest) => contest.previousHolderId === null).length,
     titleChanges: contests.filter((contest) => contest.previousHolderId !== null && contest.titleChanged).length,
     successfulDefenses: contests.filter((contest) => contest.previousHolderId !== null && !contest.titleChanged).length,
+    programmes: programmes.length,
+    activeProgrammes: programmes.filter((programme) => programme.status === "ACTIVE").length,
+    programmeActivities: state.programmeActivities?.length ?? 0,
     injuries: state.injuries.length,
     activeInjuries: state.injuries.filter((injury) => injury.status === "ACTIVE").length,
     globalPromotion: globalPromotion?.name ?? null,

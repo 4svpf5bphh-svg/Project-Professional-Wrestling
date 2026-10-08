@@ -8,6 +8,7 @@ import {
   createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  lockPersistedCurrentWeekShowCommitments,
   lockPersistedWorldForResolution,
   resolvePersistedWorldWeek,
   upsertDetailedShowDraftCommand,
@@ -132,6 +133,59 @@ try {
     ok(Number(migrationRows[0]?.count) === 1, "Alpha reset migration was not recorded exactly once after replay");
   });
 
+  await test("real-world cutover reset removes only the Alpha World and cascades its child rows", async () => {
+    await inspectionSql`DELETE FROM ppw_worlds WHERE world_id = 'world-20261002'`;
+
+    const target = fixture(20261002);
+    target.state.world.name = "PPW Alpha World";
+    joinPlayerToWorld(target.ownership, "alpha-player-1", target.state.world.currentDate);
+    const targetPromotion = target.state.promotions.find(
+      (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+    )!;
+    claimIndependentPromotionCommand(target.state, target.ownership, target.commands, target.runtime, {
+      requestId: "real-world-cutover-target-claim",
+      worldId: target.state.world.id,
+      playerId: "alpha-player-1",
+      commandType: "CLAIM_INDEPENDENT_PROMOTION",
+      payload: { promotionId: targetPromotion.id },
+    });
+    await repository.initialize(target);
+
+    const unrelated = fixture(14006);
+    unrelated.state.world.name = "Unrelated Test World";
+    joinPlayerToWorld(unrelated.ownership, "alpha-player-1", unrelated.state.world.currentDate);
+    await repository.initialize(unrelated);
+
+    await inspectionSql`DELETE FROM ppw_schema_migrations WHERE version = 7`;
+    await repository.migrate();
+
+    let targetMissing = false;
+    try {
+      await repository.load(target.state.world.id);
+    } catch (error) {
+      targetMissing = (error instanceof Error ? error.message : String(error)).includes("was not found");
+    }
+    ok(targetMissing, "real-world cutover reset did not remove the deterministic Alpha World");
+
+    const preserved = await repository.load(unrelated.state.world.id);
+    ok(preserved.state.world.name === "Unrelated Test World", "real-world cutover reset removed an unrelated World sharing the Alpha player id");
+
+    const childRows = await inspectionSql`
+      SELECT
+        (SELECT count(*)::int FROM ppw_world_memberships WHERE world_id = ${target.state.world.id}) AS memberships,
+        (SELECT count(*)::int FROM ppw_promotion_controls WHERE world_id = ${target.state.world.id}) AS controls,
+        (SELECT count(*)::int FROM ppw_command_receipts WHERE world_id = ${target.state.world.id}) AS receipts
+    ` as unknown as Array<{ memberships: number; controls: number; receipts: number }>;
+    ok(Number(childRows[0]?.memberships) === 0, "cutover reset left Alpha membership rows behind");
+    ok(Number(childRows[0]?.controls) === 0, "cutover reset left Alpha promotion-control rows behind");
+    ok(Number(childRows[0]?.receipts) === 0, "cutover reset left Alpha command-receipt rows behind");
+
+    const migrationRows = await inspectionSql`
+      SELECT count(*)::int AS count FROM ppw_schema_migrations WHERE version = 7
+    ` as unknown as Array<{ count: number }>;
+    ok(Number(migrationRows[0]?.count) === 1, "cutover reset migration was not recorded exactly once after replay");
+  });
+
   await test("PostgreSQL repository atomically persists command ownership receipt and World state", async () => {
     const aggregate = fixture(14001);
     joinPlayerToWorld(aggregate.ownership, "player-a", aggregate.state.world.currentDate);
@@ -191,6 +245,20 @@ try {
     ok(loaded.commands.receipts.length === 0, "rollback left command receipt");
     ok(loaded.planning.workspaces.length === 0, "rollback unexpectedly created planning state");
     ok(loaded.state.promotions.find((candidate) => candidate.id === promotion.id)?.controllerType === "AI", "rollback left simulation mutation");
+  });
+
+  await test("PostgreSQL persists show commitment lock across reload", async () => {
+    const aggregate = fixture(14005);
+    await repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+
+    await lockPersistedCurrentWeekShowCommitments(repository, worldId, 0, "2026-10-07");
+    const loaded = await repository.load(worldId);
+
+    ok(loaded.runtime.phase === "OPEN", "persisted commitment lock incorrectly closed the World");
+    ok(loaded.runtime.commitmentLockedPpwDate?.year === aggregate.state.world.currentDate.year, "commitment lock year was not persisted");
+    ok(loaded.runtime.commitmentLockedPpwDate?.week === aggregate.state.world.currentDate.week, "commitment lock week was not persisted");
+    ok(loaded.runtime.commitmentLockedRealCycleKey === "2026-10-07", "commitment lock real-cycle key was not persisted");
   });
 
   await test("PostgreSQL keeps weekly lock durable and resolves the week atomically", async () => {

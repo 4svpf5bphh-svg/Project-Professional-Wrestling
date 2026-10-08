@@ -1,16 +1,23 @@
-import { DEFAULT_RULESET } from "../../config/src/default-ruleset.js";
-import { calibratedRealActiveMensRosterSource } from "../../content/src/real-active-mens-calibration.js";
+import { REAL_WORLD_ALPHA_RULESET } from "../../config/src/real-world-ruleset.js";
+import { calibratedRealActiveMixedRosterSource } from "../../content/src/real-active-mixed-roster.js";
+import { realPromotionEcosystemSource } from "../../content/src/real-promotions.js";
+import { realWorldInitialRosterAssignmentSource } from "../../content/src/real-aew-roh-cmll-rosters.js";
+import { seedRealActiveTagTeams } from "../../content/src/real-active-tag-teams.js";
+import { seedRealWrestlerRelationships } from "../../content/src/real-wrestler-relationships.js";
 import type { TicketStrategy } from "../../domain/src/types.js";
 import {
   activePromotionControlForPlayer,
   alphaCurrentWeekShowDraftId,
   buildAlphaPlayerWorldView,
+  buildPlayerAttention,
   buildPlayerShowHistory,
   claimIndependentPromotionCommand,
   createWorldCommandState,
+  createWorldEngagementState,
   createWorldOwnershipState,
   createWorldPlanningState,
   createWorldRuntimeState,
+  dismissAttention,
   joinPlayerToWorld,
   lockPersistedWorldForResolution,
   materializePersistedCurrentWeekReservations,
@@ -35,11 +42,16 @@ export interface AlphaWorldBootstrapOptions {
 export interface AlphaClaimRequest {
   promotionId: string;
   requestId: string;
+  takeoverMode?: "CONTINUE" | "REBRAND";
   name?: string;
 }
 
 export interface AlphaAdvanceWeekRequest {
   expectedRevision: number;
+}
+
+export interface AlphaDismissAttentionRequest {
+  attentionId: string;
 }
 
 export interface AlphaShowPlanRequest {
@@ -81,6 +93,13 @@ function requireRequestId(value: string): string {
   return normalized;
 }
 
+function requireAttentionId(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) throw new Error("attentionId must not be empty");
+  if (normalized.length > 240) throw new Error("attentionId is too long");
+  return normalized;
+}
+
 function requireShowDay(day: number): number {
   if (!Number.isSafeInteger(day) || day < 1 || day > 7) throw new Error("show day must be an integer from 1 to 7");
   return day;
@@ -94,10 +113,14 @@ export function createAlphaWorldAggregate(options: AlphaWorldBootstrapOptions): 
   const seed = normalizedSeed(options.seed);
   const state = createWorld(
     seed,
-    DEFAULT_RULESET,
+    REAL_WORLD_ALPHA_RULESET,
     options.worldName ?? "PPW Alpha World",
-    calibratedRealActiveMensRosterSource,
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
   );
+  seedRealActiveTagTeams(state);
+  seedRealWrestlerRelationships(state);
   ensureWorldChampionships(state);
   const ownership = createWorldOwnershipState(state.world.id, 1);
   joinPlayerToWorld(ownership, options.playerId, state.world.currentDate);
@@ -148,6 +171,32 @@ export async function loadAlphaPlayerResults(
   return buildPlayerShowHistory(await repository.load(worldId), playerId);
 }
 
+export async function dismissAlphaAttention(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  request: AlphaDismissAttentionRequest,
+): Promise<AlphaPlayerWorldView> {
+  const attentionId = requireAttentionId(request.attentionId);
+  await repository.transact(worldId, null, (aggregate) => {
+    const visibleItem = buildPlayerAttention(aggregate, playerId)
+      .find((item) => item.attentionId === attentionId);
+    if (!visibleItem) {
+      const alreadyDismissed = aggregate.engagement?.attentionDismissals.some((record) => (
+        record.playerId === playerId && record.attentionId === attentionId
+      ));
+      if (alreadyDismissed) return;
+      throw new Error("Attention item is not currently visible");
+    }
+    if (!visibleItem.dismissible) throw new Error("Attention item cannot be dismissed");
+
+    const engagement = aggregate.engagement ?? createWorldEngagementState(worldId);
+    aggregate.engagement = engagement;
+    dismissAttention(engagement, playerId, attentionId, aggregate.runtime.revision);
+  });
+  return loadAlphaPlayerSession(repository, worldId, playerId);
+}
+
 export async function claimAlphaPromotion(
   repository: ApplicationWorldRepository,
   worldId: string,
@@ -167,7 +216,9 @@ export async function claimAlphaPromotion(
         commandType: "CLAIM_INDEPENDENT_PROMOTION",
         payload: {
           promotionId: request.promotionId,
-          options: request.name === undefined ? undefined : { name: request.name },
+          options: request.takeoverMode === undefined && request.name === undefined
+            ? undefined
+            : { takeoverMode: request.takeoverMode, name: request.name },
         },
       },
     );

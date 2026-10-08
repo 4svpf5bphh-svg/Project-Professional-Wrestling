@@ -1,5 +1,8 @@
 import type { WorldState } from "../../domain/src/types.js";
-import { decayAudienceMarketHeatForWeek } from "./audience.js";
+import {
+  applyCurrentWeekShowFlowAudienceConsequences,
+  decayAudienceMarketHeatForWeek,
+} from "./audience.js";
 import { advanceWeek } from "./clock.js";
 import { processCareerProgressionForWeek, recoverWrestlersForNewWeek } from "./career.js";
 import { maintainChampionshipsForWeek, processCompetitionForWeek } from "./competition.js";
@@ -10,11 +13,19 @@ import { processPromotionTierGrowthForWeek } from "./growth.js";
 import { prepareRoutineContinuityForWeek } from "./human-routine.js";
 import { processPromotionSurvivalForWeek } from "./lifecycle.js";
 import { processWrestlerMoraleForWeek } from "./morale.js";
+import { recordCurrentWeekProgrammeMatches } from "./programme-match-integration.js";
+import { updateProgrammeSignalsForCurrentWeek } from "./programme-signals.js";
 import { processPromotionStandingForWeek } from "./reputation.js";
 import { applyRenewalRelationshipResistance } from "./renewal-resistance.js";
+import { applyCurrentWeekShowFlow } from "./show-flow.js";
 import { processTalentTrustForWeek } from "./talent-trust.js";
 
-export function resolveWorldWeek(state: WorldState): void {
+export interface WorldResolutionHooks {
+  afterProgrammeMatches?: (state: WorldState) => void;
+  afterShowFlow?: (state: WorldState) => void;
+}
+
+export function resolveWorldWeek(state: WorldState, hooks: WorldResolutionHooks = {}): void {
   const routineTakeovers = prepareRoutineContinuityForWeek(state);
   const staffPlansShow = new Set(
     [...routineTakeovers.entries()]
@@ -33,6 +44,12 @@ export function resolveWorldWeek(state: WorldState): void {
 
   planWorldEvents(state, { staffMayPlanShowFor: staffPlansShow });
   resolveWorldEvents(state, { staffMayBookCardFor: staffControlsCard });
+  recordCurrentWeekProgrammeMatches(state);
+  hooks.afterProgrammeMatches?.(state);
+  applyCurrentWeekShowFlow(state);
+  applyCurrentWeekShowFlowAudienceConsequences(state);
+  hooks.afterShowFlow?.(state);
+  updateProgrammeSignalsForCurrentWeek(state);
 
   processCompetitionForWeek(state);
   settleWorldFinances(state);

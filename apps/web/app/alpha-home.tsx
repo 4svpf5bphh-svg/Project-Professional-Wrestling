@@ -7,6 +7,8 @@ type ErrorPayload = { error?: string };
 type AttentionItem = AlphaPlayerWorldView["attention"][number];
 
 const DAY_NAMES = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const SHOW_COMMITMENT_LOCK_HOUR_UTC = 6;
+const WORLD_LOCK_HOUR_UTC = 8;
 const PRIMARY_LINK_STYLE = {
   minHeight: 48,
   display: "grid",
@@ -87,10 +89,45 @@ function attentionDeadline(item: AttentionItem): string | null {
   return `Year ${item.deadline.year} · Week ${item.deadline.week} · ${day}`;
 }
 
+function nextAutomaticWorldLock(nowMs: number): Date {
+  const now = new Date(nowMs);
+  const next = new Date(nowMs);
+  next.setUTCHours(WORLD_LOCK_HOUR_UTC, 0, 0, 0);
+  if (next.getTime() <= now.getTime()) next.setUTCDate(next.getUTCDate() + 1);
+  return next;
+}
+
+function showCommitmentLockForWorldCycle(worldLock: Date): Date {
+  const commitment = new Date(worldLock.getTime());
+  commitment.setUTCHours(SHOW_COMMITMENT_LOCK_HOUR_UTC, 0, 0, 0);
+  return commitment;
+}
+
+function countdownCopy(nowMs: number, target: Date): string {
+  const totalSeconds = Math.max(0, Math.floor((target.getTime() - nowMs) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+  return `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+}
+
+function localLockTime(target: Date): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(target);
+}
+
 export default function AlphaHome(): React.JSX.Element {
   const [view, setView] = useState<AlphaPlayerWorldView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyPromotionId, setBusyPromotionId] = useState<string | null>(null);
+  const [busyAttentionId, setBusyAttentionId] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const requestIds = useRef(new Map<string, string>());
 
   async function refresh(): Promise<void> {
@@ -107,6 +144,11 @@ export default function AlphaHome(): React.JSX.Element {
     refresh().catch((reason: unknown) => {
       setError(reason instanceof Error ? reason.message : "Unable to load PPW Alpha");
     });
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   async function claim(promotionId: string): Promise<void> {
@@ -136,6 +178,27 @@ export default function AlphaHome(): React.JSX.Element {
     }
   }
 
+  async function dismissAttentionItem(attentionId: string): Promise<void> {
+    setBusyAttentionId(attentionId);
+    setError(null);
+    try {
+      const response = await fetch("/api/attention/dismiss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attentionId }),
+      });
+      const payload = await response.json() as AlphaPlayerWorldView | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to dismiss Attention item");
+      }
+      setView(payload);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to dismiss Attention item");
+    } finally {
+      setBusyAttentionId(null);
+    }
+  }
+
   if (!view) {
     return (
       <main className="app-shell loading-shell">
@@ -156,6 +219,39 @@ export default function AlphaHome(): React.JSX.Element {
   const currentVenue = currentPlan?.venueId && currentMarket
     ? currentMarket.venues.find((venue) => venue.venueId === currentPlan.venueId) ?? null
     : null;
+  const nextWorldLock = nextAutomaticWorldLock(nowMs);
+  const nextCommitmentLock = showCommitmentLockForWorldCycle(nextWorldLock);
+  const worldLockCountdown = countdownCopy(nowMs, nextWorldLock);
+  const commitmentLockCountdown = countdownCopy(nowMs, nextCommitmentLock);
+  const commitmentDeadlinePassed = nextCommitmentLock.getTime() <= nowMs;
+  const commitmentsLocked = view.world.showCommitmentsLocked;
+  const logisticsLocked = Boolean(
+    currentPlan && (currentPlan.state === "MATERIALIZED" || currentPlan.state === "READY_TO_LOCK"),
+  );
+  const worldIsOpen = view.world.phase === "OPEN";
+  const nextDeadlineHeading = !worldIsOpen
+    ? `World is ${view.world.phase.toLowerCase()}`
+    : commitmentsLocked
+      ? `World lock in ${worldLockCountdown}`
+      : commitmentDeadlinePassed
+        ? "Show Commitment Lock due"
+        : `Show commitments lock in ${commitmentLockCountdown}`;
+  const resourceLockLabel = !currentPlan
+    ? "No current show"
+    : logisticsLocked
+      ? "Locked"
+      : commitmentsLocked
+        ? "Commitment window closed"
+        : commitmentDeadlinePassed
+          ? "Due now"
+          : `Locks in ${commitmentLockCountdown}`;
+  const cardDeadlineLabel = promotion?.weekReadiness.status === "NOT_REQUIRED"
+    ? "No card due"
+    : !worldIsOpen
+      ? "Closed"
+      : currentPlan && !currentPlan.canEdit
+        ? "Staff-owned"
+        : `Closes in ${worldLockCountdown}`;
 
   let weekActionHref = "/planner";
   let weekActionLabel = "Open six-week planner";
@@ -241,7 +337,26 @@ export default function AlphaHome(): React.JSX.Element {
                         {deadline ? <span className="revision">{deadline}</span> : <span className={attentionPillClass(item.category)}>{attentionLabel(item.category)}</span>}
                       </div>
                       <p className="muted body-copy">{item.summary}</p>
-                      {item.deepLink ? <a href={item.deepLink} style={{ color: "#5de9ce", fontWeight: 850, textDecoration: "none" }}>Open →</a> : null}
+                      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                        {item.deepLink ? <a href={item.deepLink} style={{ color: "#5de9ce", fontWeight: 850, textDecoration: "none" }}>Open →</a> : null}
+                        {item.dismissible ? (
+                          <button
+                            type="button"
+                            disabled={busyAttentionId !== null}
+                            onClick={() => void dismissAttentionItem(item.attentionId)}
+                            style={{
+                              border: 0,
+                              background: "transparent",
+                              color: "#8ea0b4",
+                              fontWeight: 800,
+                              padding: 0,
+                              cursor: busyAttentionId === null ? "pointer" : "default",
+                            }}
+                          >
+                            {busyAttentionId === item.attentionId ? "Dismissing…" : "Dismiss"}
+                          </button>
+                        ) : null}
+                      </div>
                     </article>
                   );
                 })}
@@ -254,6 +369,48 @@ export default function AlphaHome(): React.JSX.Element {
             <article className="metric-card"><span>Last week</span><strong className={promotion.lastWeeklyNet >= 0 ? "positive" : "negative"}>{promotion.lastWeeklyNet >= 0 ? "+" : ""}{money(promotion.lastWeeklyNet)}</strong></article>
             <article className="metric-card"><span>Roster</span><strong>{promotion.roster.length}</strong></article>
             <article className="metric-card"><span>Runway</span><strong>{promotion.runwayWeeks === null ? "—" : `${promotion.runwayWeeks.toFixed(1)}w`}</strong></article>
+          </section>
+
+          <section className="panel">
+            <div className="section-heading">
+              <div>
+                <span className="eyebrow">WORLD CLOCK</span>
+                <h2>{nextDeadlineHeading}</h2>
+              </div>
+              <span className={worldIsOpen ? "plan-pill plan-reserved" : "readiness-pill readiness-attention"}>
+                {worldIsOpen
+                  ? commitmentsLocked
+                    ? "CARD EDIT WINDOW"
+                    : "06:00 → 08:00 UTC"
+                  : view.world.phase}
+              </span>
+            </div>
+            <p className="muted body-copy">
+              {commitmentsLocked
+                ? <>Show commitments are locked. Card details can still be edited until the final World lock at {localLockTime(nextWorldLock)} local time · 08:00 UTC.</>
+                : <>Show Commitment Lock: {localLockTime(nextCommitmentLock)} local time · 06:00 UTC. Final World Lock: {localLockTime(nextWorldLock)} local time · 08:00 UTC.</>}
+            </p>
+            <div className="result-grid">
+              <div>
+                <span>Venue</span>
+                <strong>{resourceLockLabel}</strong>
+              </div>
+              <div>
+                <span>Committed talent</span>
+                <strong>{resourceLockLabel}</strong>
+              </div>
+              <div>
+                <span>Card submission</span>
+                <strong>{cardDeadlineLabel}</strong>
+              </div>
+              <div>
+                <span>World resolution</span>
+                <strong>{worldIsOpen ? `In ${worldLockCountdown}` : view.world.phase}</strong>
+              </div>
+            </div>
+            <p className="micro-copy">
+              Before Commitment Lock you can change show logistics and reserved talent. After it, venue and committed wrestlers are fixed, but matches, segments, order, winners, finishes, styles and other card details remain editable until World Lock.
+            </p>
           </section>
 
           <section className="panel week-panel">

@@ -1,12 +1,13 @@
 import type { ContractOffer, ContractTerms, Id, WorldState } from "../../domain/src/types.js";
 import { comparePpwDates } from "./clock.js";
-import { canAcceptContractTerms } from "./contracts.js";
+import { canAcceptContractTerms, contractOverlaps } from "./contracts.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 
 export type HumanContractOfferPlan = ContractTerms & {
   promotionId: Id;
   personId: Id;
+  sourceContractId?: Id | null;
 };
 
 function requireNonNegativeInteger(value: number, label: string): void {
@@ -63,7 +64,27 @@ export function submitHumanContractOffer(state: WorldState, plan: HumanContractO
     throw new Error(`${promotion.name} already has a pending offer for ${person.name}`);
   }
 
-  const capacity = canAcceptContractTerms(state, person, plan);
+  const sourceContractId = plan.sourceContractId ?? null;
+  const source = sourceContractId
+    ? state.contracts.find((contract) => contract.id === sourceContractId)
+    : null;
+  if (sourceContractId && (
+    !source
+    || source.promotionId !== promotion.id
+    || source.personId !== person.id
+    || source.status !== "SIGNED"
+  )) {
+    throw new Error("renewal source contract does not belong to this promotion/wrestler");
+  }
+  const replacingExhausted = Boolean(
+    source
+    && source.family !== "ONE_OFF"
+    && source.datesUsed >= source.dateEntitlement
+    && contractOverlaps(source, plan, state.ruleset.weeksPerYear)
+  );
+  const capacity = canAcceptContractTerms(state, person, plan, {
+    ignoreContractId: replacingExhausted ? source!.id : null,
+  });
   if (!capacity.ok) throw new Error(capacity.reason ?? "contract terms cannot be accepted");
 
   const priorRelationship = state.contracts.some(
@@ -79,6 +100,7 @@ export function submitHumanContractOffer(state: WorldState, plan: HumanContractO
     offerKind: priorRelationship ? "RENEWAL" : "RECRUITMENT",
     resolvedUtility: null,
     rejectionReason: null,
+    sourceContractId,
     family: plan.family,
     exclusivity: plan.exclusivity,
     roleExpectation: plan.roleExpectation,

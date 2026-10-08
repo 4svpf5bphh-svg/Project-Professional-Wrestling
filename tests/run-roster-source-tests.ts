@@ -1,6 +1,7 @@
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
+import { REAL_WORLD_ALPHA_RULESET } from "../packages/config/src/real-world-ruleset.js";
 import {
   REAL_ACTIVE_MENS_CALIBRATION_VERSION,
   calibratedRealActiveMensRosterSource,
@@ -10,6 +11,18 @@ import {
   REAL_ACTIVE_MENS_ROSTER_NAMES,
   realActiveMensRosterSource,
 } from "../packages/content/src/real-active-mens-roster.js";
+import {
+  REAL_ACTIVE_WOMENS_ROSTER_NAMES,
+  REAL_ACTIVE_WOMENS_ROSTER_REVIEWED_ON,
+} from "../packages/content/src/real-active-womens-roster.js";
+import {
+  REAL_ACTIVE_WOMENS_CALIBRATION_VERSION,
+  realWomensRosterValueBand,
+} from "../packages/content/src/real-active-womens-calibration.js";
+import {
+  REAL_ACTIVE_MIXED_ROSTER_SIZE,
+  calibratedRealActiveMixedRosterSource,
+} from "../packages/content/src/real-active-mixed-roster.js";
 import { marketWeeklyValue } from "../packages/sim-core/src/contracts.js";
 import {
   createWorld,
@@ -104,8 +117,8 @@ test("roster source rejects wrong counts and duplicate IDs before World genesis 
   );
 });
 
-test("real active men's identity pool contains exactly 400 unique starting wrestlers", () => {
-  ok(REAL_ACTIVE_MENS_ROSTER_NAMES.length === DEFAULT_RULESET.wrestlers, "real roster does not match the 400-person Alpha ruleset");
+test("real active men's identity pool preserves the deployed 400 while supporting future expansion", () => {
+  ok(REAL_ACTIVE_MENS_ROSTER_NAMES.length >= DEFAULT_RULESET.wrestlers, "real roster no longer covers the 400-person Alpha ruleset");
   ok(
     new Set(REAL_ACTIVE_MENS_ROSTER_NAMES.map((name) => name.toLocaleLowerCase("en"))).size === REAL_ACTIVE_MENS_ROSTER_NAMES.length,
     "real roster contains duplicate display identities",
@@ -123,6 +136,14 @@ test("real active men's identity pool contains exactly 400 unique starting wrest
     "Matt Riddle",
     "Jack Cartwheel",
     "Michael Oku",
+    "Yota Tsuji",
+    "Tomohiro Ishii",
+    "Yuya Uemura",
+    "Tetsuya Naito",
+    "Kento Miyahara",
+    "Mike Bailey",
+    "Neón",
+    "Soberano Jr.",
   ]) {
     ok(REAL_ACTIVE_MENS_ROSTER_NAMES.includes(expected), `real roster is missing ${expected}`);
   }
@@ -130,6 +151,98 @@ test("real active men's identity pool contains exactly 400 unique starting wrest
   for (const excluded of ["PAC", "Bryan Danielson", "Hiroshi Tanahashi", "Big E", "Mick Foley"]) {
     ok(!REAL_ACTIVE_MENS_ROSTER_NAMES.includes(excluded), `non-active/legend identity ${excluded} leaked into the starting roster`);
   }
+});
+
+test("reviewed women's identity pool is unique, substantial and separate from the men's pool", () => {
+  ok(REAL_ACTIVE_WOMENS_ROSTER_REVIEWED_ON === "2026-10-08", "women's roster review date is stale");
+  ok(REAL_ACTIVE_WOMENS_ROSTER_NAMES.length >= 150, "women's identity pool is too small for a living global World");
+  const women = new Set(REAL_ACTIVE_WOMENS_ROSTER_NAMES.map((name) => name.toLocaleLowerCase("en")));
+  ok(women.size === REAL_ACTIVE_WOMENS_ROSTER_NAMES.length, "women's identity pool contains duplicate names");
+  for (const man of REAL_ACTIVE_MENS_ROSTER_NAMES) {
+    ok(!women.has(man.toLocaleLowerCase("en")), `identity appears in both men's and women's pools: ${man}`);
+  }
+  for (const expected of [
+    "Rhea Ripley",
+    "IYO SKY",
+    "Mercedes Moné",
+    "Toni Storm",
+    "Athena",
+    "Xia Brookside",
+    "Persephone",
+    "Saya Kamitani",
+    "Starlight Kid",
+    "Matoi Hamabe",
+    "Tetsu Akira",
+    "Sareee",
+    "Mayu Iwatani",
+    "Miyu Yamashita",
+    "Billie Starkz",
+    "Tessa Blanchard",
+  ]) {
+    ok(REAL_ACTIVE_WOMENS_ROSTER_NAMES.includes(expected), `women's roster is missing ${expected}`);
+  }
+});
+
+test("expanded mixed roster source creates explicit men's and women's divisions without duplicate identities", () => {
+  ok(REAL_WORLD_ALPHA_RULESET.wrestlers === REAL_ACTIVE_MIXED_ROSTER_SIZE, "future real-world ruleset drifted from the reviewed mixed roster");
+  ok(REAL_ACTIVE_MIXED_ROSTER_SIZE === 643, "popular-wrestler audit roster size changed unexpectedly");
+  ok(REAL_WORLD_ALPHA_RULESET.promotions === 13, "future real-world ruleset lost reserved player takeover slots");
+  const ruleset = { ...DEFAULT_RULESET, wrestlers: REAL_ACTIVE_MIXED_ROSTER_SIZE };
+  const state = createWorld(77107, ruleset, "Mixed Identity Pool", calibratedRealActiveMixedRosterSource);
+  const men = state.people.filter((person) => (person.division ?? "MEN") === "MEN");
+  const women = state.people.filter((person) => person.division === "WOMEN");
+  ok(state.people.length === REAL_ACTIVE_MIXED_ROSTER_SIZE, "mixed source created the wrong wrestler count");
+  ok(men.length === REAL_ACTIVE_MENS_ROSTER_NAMES.length, "mixed source changed the men's pool size");
+  ok(women.length === REAL_ACTIVE_WOMENS_ROSTER_NAMES.length, "mixed source changed the women's pool size");
+  ok(new Set(state.people.map((person) => person.name.toLocaleLowerCase("en"))).size === state.people.length, "mixed source contains duplicate identities");
+  ok(women.some((person) => person.name === "Rhea Ripley"), "Rhea Ripley was not tagged in the women's division");
+  ok(men.some((person) => person.name === "Roman Reigns"), "Roman Reigns disappeared from the men's division");
+});
+
+test("calibrated mixed roster gives recognisable women sensible broad game bands", () => {
+  const state = createWorld(
+    77108,
+    REAL_WORLD_ALPHA_RULESET,
+    "Women's Calibration",
+    calibratedRealActiveMixedRosterSource,
+  );
+  const repeat = createWorld(
+    77108,
+    REAL_WORLD_ALPHA_RULESET,
+    "Women's Calibration",
+    calibratedRealActiveMixedRosterSource,
+  );
+  ok(REAL_ACTIVE_WOMENS_CALIBRATION_VERSION.length > 0, "women's calibration version must be declared");
+  ok(JSON.stringify(state.people) === JSON.stringify(repeat.people), "women's calibration is not deterministic");
+
+  const mercedes = requirePerson(state, "Mercedes Moné");
+  ok(realWomensRosterValueBand(mercedes.name) === "MEGASTAR", "Mercedes Moné is not in the megastar band");
+  ok(mercedes.popularity >= 90 && mercedes.recognition >= 91, "women's megastar fame calibration is too low");
+  ok(mercedes.skills.presentation >= 87, "Mercedes presentation calibration is too low");
+
+  const rhea = requirePerson(state, "Rhea Ripley");
+  ok(realWomensRosterValueBand(rhea.name) === "MEGASTAR", "Rhea Ripley is not in the megastar band");
+  ok(rhea.skills.inRingQuality >= 87 && rhea.skills.matchCraft >= 85, "Rhea workrate calibration is too low");
+
+  const saya = requirePerson(state, "Saya Kamitani");
+  ok(realWomensRosterValueBand(saya.name) === "HEADLINER", "Saya Kamitani is not in the headliner band");
+  ok(saya.skills.inRingQuality >= 87 && saya.skills.matchCraft >= 85, "Saya Kamitani workrate calibration is too low");
+
+  const chelsea = requirePerson(state, "Chelsea Green");
+  ok(realWomensRosterValueBand(chelsea.name) === "HEADLINER", "Chelsea Green is not in the headliner band");
+  ok(chelsea.skills.presentation >= 87, "Chelsea Green presentation calibration is too low");
+
+  const prospect = requirePerson(state, "Kendal Grey");
+  ok(realWomensRosterValueBand(prospect.name) === "PROSPECT", "Kendal Grey is not in the prospect value band");
+  ok(prospect.careerStage === "PROSPECT", "women's prospect career stage did not apply");
+  ok(prospect.biologicalAge <= 25.5 && prospect.developmentAptitude >= 72, "women's prospect development calibration is implausible");
+
+  const attraction = requirePerson(state, "AJ Lee");
+  ok(attraction.careerStage === "SPECIAL_ATTRACTION", "AJ Lee special-attraction career stage did not apply");
+  ok(attraction.skills.stamina <= 75, "women's special-attraction stamina cap did not apply");
+
+  const regular = requirePerson(state, "Lady Shani");
+  ok(marketWeeklyValue(mercedes) > marketWeeklyValue(regular) * 1.5, "women's star/regular contract value separation is too small");
 });
 
 test("raw real identity overlay preserves deterministic wrestler attributes and genesis contracts", () => {
@@ -187,18 +300,28 @@ test("calibrated real roster gives recognisable talent sensible broad game bands
   ok(marketWeeklyValue(cody) > marketWeeklyValue(developmental) * 1.6, "star/prospect contract value separation is too small");
 });
 
-test("player-facing Alpha World genesis uses the calibrated real active roster source", () => {
+test("player-facing Alpha World genesis uses the audited mixed real-world roster source", () => {
   const aggregate = createAlphaWorldAggregate({ seed: 77105, playerId: "real-roster-player" });
   const names = new Set(aggregate.state.people.map((person) => person.name));
-  ok(aggregate.state.people.length === 400, "Alpha World did not create the 400-person real roster");
-  ok(names.size === 400, "Alpha World real roster contains duplicate identities");
+  ok(
+    aggregate.state.people.length === REAL_WORLD_ALPHA_RULESET.wrestlers,
+    "Alpha World did not create the audited real-world roster",
+  );
+  ok(
+    names.size === REAL_WORLD_ALPHA_RULESET.wrestlers,
+    "Alpha World real-world roster contains duplicate identities",
+  );
   ok(names.has("Cody Rhodes"), "Alpha World did not use the real roster source");
-  ok(names.has("Swerve Strickland"), "Alpha World is missing a real active roster identity");
+  ok(names.has("Swerve Strickland"), "Alpha World is missing a real active men's roster identity");
+  ok(names.has("Rhea Ripley"), "Alpha World is missing a real active women's roster identity");
   ok(!names.has("PAC"), "Alpha World included a deliberately excluded non-active identity");
 
   const cody = aggregate.state.people.find((person) => person.name === "Cody Rhodes");
+  const rhea = aggregate.state.people.find((person) => person.name === "Rhea Ripley");
   const prospect = aggregate.state.people.find((person) => person.name === "Je'Von Evans");
-  ok(cody?.popularity !== undefined && cody.popularity >= 90, "Alpha World did not apply megastar calibration");
+  ok(cody?.popularity !== undefined && cody.popularity >= 90, "Alpha World did not apply men's megastar calibration");
+  ok(rhea?.popularity !== undefined && rhea.popularity >= 90, "Alpha World did not apply women's megastar calibration");
+  ok(rhea?.division === "WOMEN", "Alpha World did not preserve women's division data");
   ok(prospect?.careerStage === "PROSPECT", "Alpha World did not apply prospect career calibration");
 });
 

@@ -16,6 +16,8 @@ import {
 } from "../../sim-core/src/human-booking.js";
 import { bookHumanChampionshipMatch } from "../../sim-core/src/human-championships.js";
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
+import { defaultPlannedFinishForIntent } from "../../sim-core/src/match-finishes.js";
+import { assessMatchStyleReadiness } from "../../sim-core/src/match-style.js";
 import type {
   DetailedShowDraft,
   DetailedShowReservation,
@@ -32,7 +34,8 @@ export type ReservationRiskReason =
   | "WRESTLER_DOUBLE_BOOKED"
   | "SERVICE_CAPACITY_EXCEEDED"
   | "CONTRACT_UNAVAILABLE"
-  | "CONTRACT_DATE_EXHAUSTED";
+  | "CONTRACT_DATE_EXHAUSTED"
+  | "MATCH_STYLE_REFUSAL";
 
 export type ReservationAssessmentStatus = "NOT_DUE" | "READY" | "AT_RISK" | "EXPIRED";
 
@@ -216,6 +219,30 @@ export function assessDetailedShowReservation(
     if (committedDates >= contract.dateEntitlement) reasons.push("CONTRACT_DATE_EXHAUSTED");
   }
 
+  const draft = sourceDraft(planning, reservation);
+  if (draft) {
+    for (const match of draft.matches) {
+      if (match.style === undefined || match.plannedLengthMinutes === null) continue;
+      const ids = [...match.sideAIds, ...match.sideBIds];
+      for (const personId of ids) {
+        const person = state.people.find((candidate) => candidate.id === personId);
+        if (!person || person.status !== "ACTIVE") continue;
+        const readiness = assessMatchStyleReadiness(
+          match.style,
+          person.skills,
+          match.plannedLengthMinutes,
+          person.fatigue,
+          person.wear,
+        );
+        if (readiness.status === "REFUSES") {
+          reasons.push("MATCH_STYLE_REFUSAL");
+          break;
+        }
+      }
+      if (reasons.includes("MATCH_STYLE_REFUSAL")) break;
+    }
+  }
+
   const normalizedReasons = uniqueReasons(reasons);
   return {
     ...base,
@@ -244,7 +271,8 @@ function completeCardPlans(
 ): { plans: HumanMatchPlan[]; draftMatchIds: string[] } | null {
   if (!sameParticipantSet(draft, reservation) || draft.matches.length === 0) return null;
   const reservedIds = new Set(reservation.participants.map((participant) => participant.personId));
-  const used = new Set<Id>();
+  const usedInMatches = new Set<Id>();
+  const usedAnywhere = new Set<Id>();
   const plans: HumanMatchPlan[] = [];
   const draftMatchIds: string[] = [];
 
@@ -255,8 +283,9 @@ function completeCardPlans(
     const ids = [...match.sideAIds, ...match.sideBIds];
     if (new Set(ids).size !== ids.length) return null;
     for (const personId of ids) {
-      if (!reservedIds.has(personId) || used.has(personId)) return null;
-      used.add(personId);
+      if (!reservedIds.has(personId) || usedInMatches.has(personId)) return null;
+      usedInMatches.add(personId);
+      usedAnywhere.add(personId);
     }
     plans.push({
       type: match.type,
@@ -264,12 +293,26 @@ function completeCardPlans(
       sideBIds: [...match.sideBIds],
       intendedWinnerSide: match.intendedWinnerSide,
       intent: match.intent,
+      ...(match.style === undefined ? {} : { style: { ...match.style } }),
       plannedLengthMinutes: match.plannedLengthMinutes,
+      plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
     });
     draftMatchIds.push(match.draftMatchId);
   }
 
-  if (used.size !== reservedIds.size || [...reservedIds].some((personId) => !used.has(personId))) return null;
+  for (const segment of draft.segments ?? []) {
+    for (const personId of segment.participantIds) {
+      if (!reservedIds.has(personId)) return null;
+      usedAnywhere.add(personId);
+    }
+  }
+  for (const segment of draft.programmeSegments ?? []) {
+    for (const personId of segment.participantIds) {
+      if (!reservedIds.has(personId)) return null;
+      usedAnywhere.add(personId);
+    }
+  }
+  if (usedAnywhere.size !== reservedIds.size || [...reservedIds].some((personId) => !usedAnywhere.has(personId))) return null;
   return { plans, draftMatchIds };
 }
 
@@ -305,7 +348,7 @@ function materializeCardIfComplete(
 
   let matches: Match[];
   try {
-    matches = prepareHumanMatchCard(state, event.id, complete.plans);
+    matches = prepareHumanMatchCard(state, event.id, complete.plans, { allowSegmentOnlyCommitted: true });
   } catch {
     return { matches: [], championshipAssignmentsApplied: 0, championshipWarnings: [] };
   }
@@ -448,7 +491,7 @@ export function materializeCurrentWeekReservations(
   return { materialized, atRisk, expiredReservationIds };
 }
 
-export function closeCurrentWeekReservationsAtLock(
+export function closeCurrentWeekReservationsAtCommitmentLock(
   state: WorldState,
   planning: WorldPlanningState,
 ): ReservationLockClosure {
@@ -468,6 +511,17 @@ export function closeCurrentWeekReservationsAtLock(
     releasedAtRisk.push(assessment);
   }
   return { ...pass, releasedAtRisk };
+}
+
+/**
+ * Compatibility alias for older callers. The resource boundary is now the
+ * Show Commitment Lock; final World lock should only close player mutation.
+ */
+export function closeCurrentWeekReservationsAtLock(
+  state: WorldState,
+  planning: WorldPlanningState,
+): ReservationLockClosure {
+  return closeCurrentWeekReservationsAtCommitmentLock(state, planning);
 }
 
 export function reservationAssessmentForDraft(

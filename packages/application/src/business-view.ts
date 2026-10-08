@@ -188,7 +188,7 @@ export function buildPlayerBusinessView(
         talentReputation: standing.talentReputation,
       } : null,
       recentShows,
-      recentTransactions: ownTransactions.slice(0, 24).map((transaction) => ({
+      recentTransactions: ownTransactions.slice(0, 8).map((transaction) => ({
         transactionId: transaction.id,
         date: { ...transaction.date },
         category: transaction.category,

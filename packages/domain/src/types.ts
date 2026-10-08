@@ -1,8 +1,17 @@
+import type { Programme, ProgrammeActivity } from "./programmes.js";
+
 export type Id = string;
 
 export type PromotionTier = "GLOBAL" | "NATIONAL" | "RISING" | "INDEPENDENT" | "LOCAL";
 export type PromotionLifecycle = "FOUNDING" | "ACTIVE" | "DISTRESSED" | "STEWARDED" | "DORMANT" | "CLOSED";
 export type ControllerType = "AI" | "HUMAN";
+export type PromotionIdentityOrigin = "REAL_WORLD" | "FICTIONAL";
+export type OutsideBookingPolicy = "PROHIBITED" | "APPROVAL_REQUIRED" | "PERMITTED";
+export type PromotionPlayerTakeoverEligibility = "LOCKED" | "STANDARD";
+export type PromotionRosterMode = "CONTRACT_DERIVED" | "EXPLICIT";
+export type WrestlerPromotionAffiliationRole = "PRIMARY" | "SECONDARY";
+export type WrestlerPromotionAffiliationBasis = "CONTRACT" | "PARENT_COMPANY";
+export type WrestlerDivision = "MEN" | "WOMEN";
 export type CareerStage = "PROSPECT" | "PRIME" | "VETERAN" | "SPECIAL_ATTRACTION";
 export type PersonStatus = "ACTIVE" | "INJURED" | "RETIRED";
 export type LedgerSignificance = "ROUTINE" | "NOTABLE" | "MAJOR" | "HISTORIC";
@@ -32,12 +41,28 @@ export type WrestlingEventStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED";
 export type ScheduledAppearanceStatus = "COMMITTED" | "COMPLETED" | "CANCELLED";
 export type MatchType = "SINGLES" | "TAG";
 export type MatchIntent = "COMPETITIVE" | "SHOWCASE" | "DOMINANT" | "TECHNICAL" | "HIGH_RISK" | "STORY" | "PROTECTIVE" | "EPIC";
+
+export interface MatchStyleProfile {
+  competitiveness: number;
+  technical: number;
+  story: number;
+  intensity: number;
+  risk: number;
+  epic: number;
+}
+
 export type MatchStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED";
 export type MatchSide = "A" | "B";
 export type InjurySeverity = "MINOR" | "MODERATE" | "MAJOR" | "SEVERE";
 export type InjuryStatus = "ACTIVE" | "RECOVERED";
 export type ChemistryContext = "SINGLES" | "TAG";
 export type TeamStatus = "ACTIVE" | "DISBANDED";
+export type WrestlerRelationshipTag =
+  | "FAMILY"
+  | "TAG_PARTNERS"
+  | "FORMER_PARTNERS"
+  | "ALLY"
+  | "MENTOR";
 export type ChampionshipDivision = "SINGLES" | "TAG";
 export type ChampionshipStatus = "ACTIVE" | "INACTIVE";
 export type ChampionshipHolderType = "PERSON" | "TEAM";
@@ -122,11 +147,27 @@ export interface AiProfile {
   riskTolerance: number;
 }
 
+export interface PromotionIdentity {
+  origin: PromotionIdentityOrigin;
+  canonicalName: string;
+  parentPromotionId: Id | null;
+}
+
+export interface PromotionContractPolicy {
+  exclusiveContractChance: number;
+  starExclusiveBonus: number;
+  outsideBookingPolicy: OutsideBookingPolicy;
+}
+
 export interface Promotion {
   id: Id;
   worldId: Id;
   name: string;
   tier: PromotionTier;
+  identity?: PromotionIdentity;
+  contractPolicy?: PromotionContractPolicy;
+  playerTakeoverEligibility?: PromotionPlayerTakeoverEligibility;
+  rosterMode?: PromotionRosterMode;
   lifecycle: PromotionLifecycle;
   controllerType: ControllerType;
   homeMarketId: Id;
@@ -176,6 +217,14 @@ export interface PromotionMarketState {
   loyalty: number;
 }
 
+export interface WrestlerPromotionAffiliation {
+  worldId: Id;
+  personId: Id;
+  promotionId: Id;
+  role: WrestlerPromotionAffiliationRole;
+  basis: WrestlerPromotionAffiliationBasis;
+}
+
 export interface WrestlerSkills {
   inRingQuality: number;
   matchCraft: number;
@@ -205,6 +254,8 @@ export interface Person {
   developmentAptitude: number;
   debutDate: PpwDate;
   generatedTalent: boolean;
+  division?: WrestlerDivision;
+  rosterPromotionId?: Id;
   fatigue: number;
   wear: number;
   morale: number;
@@ -248,6 +299,7 @@ export interface ContractOffer extends ContractTerms {
   offerKind: "RECRUITMENT" | "RENEWAL";
   resolvedUtility: number | null;
   rejectionReason: string | null;
+  sourceContractId?: Id | null;
 }
 
 export interface WrestlingEvent {
@@ -294,6 +346,7 @@ export interface Match {
   type: MatchType;
   status: MatchStatus;
   intent: MatchIntent;
+  style?: MatchStyleProfile;
   plannedLengthMinutes: number;
   actualLengthMinutes: number;
   intendedWinnerSide: MatchSide;
@@ -336,6 +389,18 @@ export interface WorkingChemistry {
   compatibility: number;
   familiarity: number;
   matchesTogether: number;
+}
+
+export interface WrestlerRelationship {
+  id: Id;
+  worldId: Id;
+  personAId: Id;
+  personBId: Id;
+  affinity: number;
+  professionalTrust: number;
+  rivalryHeat: number;
+  familiarity: number;
+  tags: WrestlerRelationshipTag[];
 }
 
 export interface Team {
@@ -444,12 +509,16 @@ export interface WorldState {
   matchParticipants: MatchParticipant[];
   injuries: Injury[];
   workingChemistry: WorkingChemistry[];
+  wrestlerRelationships?: WrestlerRelationship[];
+  wrestlerPromotionAffiliations?: WrestlerPromotionAffiliation[];
   teams?: Team[];
   teamMemberships?: TeamMembership[];
   championships?: Championship[];
   championshipReigns?: ChampionshipReign[];
   championshipContests?: ChampionshipContest[];
   championshipMatchBookings?: ChampionshipMatchBooking[];
+  programmes?: Programme[];
+  programmeActivities?: ProgrammeActivity[];
   financialTransactions: FinancialTransaction[];
   ledger: LedgerEvent[];
 }

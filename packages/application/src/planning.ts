@@ -1,12 +1,18 @@
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type {
   Id,
   MatchIntent,
   MatchSide,
+  MatchStyleProfile,
   MatchType,
   PpwDate,
   TicketStrategy,
   WorldState,
 } from "../../domain/src/types.js";
+import { isWrestlerAlignment, wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
+import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
+import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
+import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
 
 export const DETAILED_PLANNING_HORIZON_WEEKS = 6 as const;
 
@@ -17,12 +23,44 @@ export interface DetailedMatchDraft {
   sideBIds: Id[];
   intendedWinnerSide: MatchSide | null;
   intent: MatchIntent | null;
+  style?: MatchStyleProfile;
   plannedLengthMinutes: number | null;
+  plannedFinish?: MatchFinish;
 }
 
 export interface ChampionshipDraftAssignment {
   draftMatchId: string;
   championshipId: Id;
+}
+
+export interface DetailedProgrammeSegmentDraft {
+  draftSegmentId: string;
+  programmeId: Id;
+  participantIds: Id[];
+}
+
+export type DetailedShowSegmentType =
+  | "PROMO"
+  | "INTERVIEW"
+  | "CONFRONTATION"
+  | "CHALLENGE"
+  | "ATTACK"
+  | "CELEBRATION"
+  | "TURN";
+
+export interface DetailedShowSegmentDraft {
+  draftSegmentId: string;
+  type: DetailedShowSegmentType;
+  participantIds: Id[];
+  programmeId: Id | null;
+  plannedLengthMinutes: number;
+  turnPersonId?: Id | null;
+  turnTargetAlignment?: WrestlerAlignment | null;
+}
+
+export interface DetailedShowSlotRef {
+  kind: "MATCH" | "SEGMENT";
+  refId: string;
 }
 
 export interface DetailedShowDraft {
@@ -35,6 +73,9 @@ export interface DetailedShowDraft {
   participantIds: Id[];
   matches: DetailedMatchDraft[];
   championshipAssignments: ChampionshipDraftAssignment[];
+  programmeSegments?: DetailedProgrammeSegmentDraft[];
+  segments?: DetailedShowSegmentDraft[];
+  runningOrder?: DetailedShowSlotRef[];
 }
 
 export interface ReservedShowParticipant {
@@ -81,6 +122,21 @@ const MATCH_INTENTS = new Set<MatchIntent>([
   "PROTECTIVE",
   "EPIC",
 ]);
+const BOOKABLE_MATCH_FINISHES = new Set<MatchFinish>([
+  "CLEAN_PIN",
+  "SUBMISSION",
+  "FLASH_PIN",
+  "PROTECTED_FINISH",
+]);
+const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
+  "PROMO",
+  "INTERVIEW",
+  "CONFRONTATION",
+  "CHALLENGE",
+  "ATTACK",
+  "CELEBRATION",
+  "TURN",
+]);
 
 function normalizedId(value: string, label: string, maxLength = 128): string {
   const normalized = value.trim();
@@ -101,6 +157,7 @@ function weekIndex(date: PpwDate, weeksPerYear: number): number {
 }
 
 function validateMatchDraft(
+  state: WorldState,
   draft: DetailedMatchDraft,
   participantIds: Set<Id>,
   usedParticipantIds: Set<Id>,
@@ -118,6 +175,12 @@ function validateMatchDraft(
 
   const sideIds = [...draft.sideAIds, ...draft.sideBIds];
   if (new Set(sideIds).size !== sideIds.length) throw new Error("one wrestler cannot occupy multiple positions in a draft match");
+  const sidePeople = sideIds.map((personId) => state.people.find((candidate) => candidate.id === personId));
+  if (sidePeople.some((person) => !person)) throw new Error("draft match references a missing wrestler");
+  requireSameWrestlerDivision(
+    sidePeople as NonNullable<(typeof sidePeople)[number]>[],
+    "draft matches cannot mix men's and women's divisions",
+  );
   for (const personId of sideIds) {
     if (!participantIds.has(personId)) throw new Error(`${personId} is not selected for this show draft`);
     if (usedParticipantIds.has(personId)) throw new Error(`${personId} is booked more than once on this draft card`);
@@ -136,6 +199,10 @@ function validateMatchDraft(
   ) {
     throw new Error("draft planned match length must be an integer from 3 to 60 minutes or null");
   }
+  if (draft.plannedFinish !== undefined && !BOOKABLE_MATCH_FINISHES.has(draft.plannedFinish)) {
+    throw new Error("draft planned match finish must be clean, submission, flash or protected");
+  }
+  const style = draft.style === undefined ? undefined : normalizeMatchStyle(draft.style);
 
   return {
     draftMatchId,
@@ -144,8 +211,147 @@ function validateMatchDraft(
     sideBIds: [...draft.sideBIds],
     intendedWinnerSide: draft.intendedWinnerSide,
     intent: draft.intent,
+    ...(style === undefined ? {} : { style }),
     plannedLengthMinutes: draft.plannedLengthMinutes,
+    ...(draft.plannedFinish === undefined ? {} : { plannedFinish: draft.plannedFinish }),
   };
+}
+
+function programmePersonIds(state: WorldState, programmeId: Id): Set<Id> {
+  const programme = (state.programmes ?? []).find((candidate) => candidate.id === programmeId);
+  if (!programme) return new Set();
+  const result = new Set<Id>();
+  for (const ref of [...programme.sideA, ...programme.sideB]) {
+    if (ref.kind === "PERSON") {
+      result.add(ref.entityId);
+      continue;
+    }
+    for (const membership of state.teamMemberships ?? []) {
+      if (membership.teamId === ref.entityId && membership.active) result.add(membership.personId);
+    }
+  }
+  return result;
+}
+
+function validateProgrammeSegmentDraft(
+  state: WorldState,
+  promotionId: Id,
+  draft: DetailedProgrammeSegmentDraft,
+  showParticipantIds: Set<Id>,
+): DetailedProgrammeSegmentDraft {
+  const draftSegmentId = normalizedId(draft.draftSegmentId, "draftSegmentId");
+  const programmeId = normalizedId(draft.programmeId, "programmeId");
+  const programme = (state.programmes ?? []).find((candidate) => candidate.id === programmeId);
+  if (!programme || programme.status !== "ACTIVE") throw new Error(`active Programme ${programmeId} was not found`);
+  if (programme.promotionId !== promotionId) throw new Error("Programme segment belongs to another promotion");
+  if (!Array.isArray(draft.participantIds) || draft.participantIds.length < 1 || draft.participantIds.length > 4) {
+    throw new Error("Programme segment requires one to four wrestlers");
+  }
+  if (new Set(draft.participantIds).size !== draft.participantIds.length) {
+    throw new Error("Programme segment cannot include the same wrestler twice");
+  }
+  const storyPeople = programmePersonIds(state, programmeId);
+  for (const personId of draft.participantIds) {
+    if (!showParticipantIds.has(personId)) throw new Error(`${personId} is not selected for this show draft`);
+    if (!storyPeople.has(personId)) throw new Error(`${personId} does not belong to Programme ${programmeId}`);
+  }
+  return { draftSegmentId, programmeId, participantIds: [...draft.participantIds] };
+}
+
+function validateShowSegmentDraft(
+  state: WorldState,
+  promotionId: Id,
+  draft: DetailedShowSegmentDraft,
+  showParticipantIds: Set<Id>,
+): DetailedShowSegmentDraft {
+  const draftSegmentId = normalizedId(draft.draftSegmentId, "draftSegmentId");
+  if (!SHOW_SEGMENT_TYPES.has(draft.type)) throw new Error(`unsupported show segment type ${String(draft.type)}`);
+  if (!Array.isArray(draft.participantIds) || draft.participantIds.length < 1 || draft.participantIds.length > 4) {
+    throw new Error("show segment requires one to four wrestlers");
+  }
+  if (new Set(draft.participantIds).size !== draft.participantIds.length) {
+    throw new Error("show segment cannot include the same wrestler twice");
+  }
+  if (["CONFRONTATION", "CHALLENGE", "ATTACK"].includes(draft.type) && draft.participantIds.length < 2) {
+    throw new Error(`${draft.type} segment requires at least two wrestlers`);
+  }
+  if (!Number.isInteger(draft.plannedLengthMinutes) || draft.plannedLengthMinutes < 2 || draft.plannedLengthMinutes > 20) {
+    throw new Error("show segment length must be an integer from 2 to 20 minutes");
+  }
+  for (const personId of draft.participantIds) {
+    if (!showParticipantIds.has(personId)) throw new Error(`${personId} is not selected for this show draft`);
+  }
+
+  const programmeId = draft.programmeId === null ? null : normalizedId(draft.programmeId, "programmeId");
+  const turnPersonId = draft.type === "TURN"
+    ? (draft.turnPersonId === null || draft.turnPersonId === undefined
+      ? null
+      : normalizedId(draft.turnPersonId, "turnPersonId"))
+    : null;
+  const turnTargetAlignment = draft.type === "TURN" ? (draft.turnTargetAlignment ?? null) : null;
+  if (draft.type === "TURN") {
+    if (!turnPersonId || !draft.participantIds.includes(turnPersonId)) {
+      throw new Error("TURN segment must identify one participating wrestler who turns");
+    }
+    if (!turnTargetAlignment || !isWrestlerAlignment(turnTargetAlignment)) {
+      throw new Error("TURN segment must choose face, heel or tweener as its target alignment");
+    }
+    if (wrestlerAlignmentForPromotion(state, promotionId, turnPersonId) === turnTargetAlignment) {
+      throw new Error("TURN segment target alignment must differ from the wrestler's current presentation");
+    }
+  }
+
+  if (programmeId !== null) {
+    const programme = (state.programmes ?? []).find((candidate) => candidate.id === programmeId);
+    if (!programme || programme.status !== "ACTIVE") throw new Error(`active Programme ${programmeId} was not found`);
+    if (programme.promotionId !== promotionId) throw new Error("show segment Programme belongs to another promotion");
+    const storyPeople = programmePersonIds(state, programmeId);
+    for (const personId of draft.participantIds) {
+      if (!storyPeople.has(personId)) throw new Error(`${personId} does not belong to Programme ${programmeId}`);
+    }
+  }
+
+  return {
+    draftSegmentId,
+    type: draft.type,
+    participantIds: [...draft.participantIds],
+    programmeId,
+    plannedLengthMinutes: draft.plannedLengthMinutes,
+    ...(draft.type === "TURN" ? { turnPersonId, turnTargetAlignment } : {}),
+  };
+}
+
+function validateRunningOrder(
+  raw: DetailedShowSlotRef[] | undefined,
+  matchIds: Set<string>,
+  segmentIds: Set<string>,
+): DetailedShowSlotRef[] | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) throw new Error("draft runningOrder must be an array");
+  const expectedCount = matchIds.size + segmentIds.size;
+  if (raw.length !== expectedCount) throw new Error("draft running order must contain every match and segment exactly once");
+  const seen = new Set<string>();
+  const normalized = raw.map((slot) => {
+    if (!slot || (slot.kind !== "MATCH" && slot.kind !== "SEGMENT")) throw new Error("draft running order has an invalid slot kind");
+    const refId = normalizedId(slot.refId, "running order refId");
+    const key = `${slot.kind}:${refId}`;
+    if (seen.has(key)) throw new Error("draft running order contains a duplicate slot");
+    seen.add(key);
+    if (slot.kind === "MATCH" && !matchIds.has(refId)) throw new Error(`running order references missing match ${refId}`);
+    if (slot.kind === "SEGMENT" && !segmentIds.has(refId)) throw new Error(`running order references missing segment ${refId}`);
+    return { kind: slot.kind, refId };
+  });
+  if (seen.size !== expectedCount) throw new Error("draft running order is incomplete");
+  return normalized;
+}
+
+export function detailedShowRunningOrder(draft: DetailedShowDraft): DetailedShowSlotRef[] {
+  if (draft.runningOrder) return structuredClone(draft.runningOrder);
+  return [
+    ...draft.matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ...(draft.segments ?? []).map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
+    ...(draft.programmeSegments ?? []).map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
+  ];
 }
 
 export function createWorldPlanningState(worldId: Id): WorldPlanningState {
@@ -207,7 +413,7 @@ export function validateWorldPlanningStateShape(state: WorldState, planning: Wor
     if (!venue || venue.marketId !== market.id) throw new Error("show reservation references invalid venue/market pair");
     if (!TICKET_STRATEGIES.has(reservation.ticketStrategy)) throw new Error("show reservation has invalid ticket strategy");
     if (!Number.isSafeInteger(reservation.reservedPlanVersion) || reservation.reservedPlanVersion < 0) {
-      throw new Error("show reservation has invalid source plan version");
+      throw new Error("planning workspace version is invalid");
     }
     const participantIds = new Set<Id>();
     for (const participant of reservation.participants) {
@@ -267,7 +473,7 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
   const usedParticipantIds = new Set<Id>();
   const draftMatchIds = new Set<string>();
   const matches = draft.matches.map((match) => {
-    const validated = validateMatchDraft(match, participantIds, usedParticipantIds);
+    const validated = validateMatchDraft(state, match, participantIds, usedParticipantIds);
     if (draftMatchIds.has(validated.draftMatchId)) throw new Error("draft card contains duplicate match IDs");
     draftMatchIds.add(validated.draftMatchId);
     return validated;
@@ -291,6 +497,35 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
     return { draftMatchId, championshipId: championship.id };
   });
 
+  const rawProgrammeSegments = draft.programmeSegments;
+  if (rawProgrammeSegments !== undefined && !Array.isArray(rawProgrammeSegments)) {
+    throw new Error("draft programmeSegments must be an array");
+  }
+  const draftSegmentIds = new Set<string>();
+  const segmentProgrammeIds = new Set<Id>();
+  const programmeSegments = (rawProgrammeSegments ?? []).map((segment) => {
+    const validated = validateProgrammeSegmentDraft(state, draft.promotionId, segment, participantIds);
+    if (draftSegmentIds.has(validated.draftSegmentId)) throw new Error("draft contains duplicate segment IDs");
+    if (segmentProgrammeIds.has(validated.programmeId)) throw new Error("one Programme can have only one segment on a show");
+    draftSegmentIds.add(validated.draftSegmentId);
+    segmentProgrammeIds.add(validated.programmeId);
+    return validated;
+  });
+
+  const rawSegments = draft.segments;
+  if (rawSegments !== undefined && !Array.isArray(rawSegments)) throw new Error("draft segments must be an array");
+  const segments = (rawSegments ?? []).map((segment) => {
+    const validated = validateShowSegmentDraft(state, draft.promotionId, segment, participantIds);
+    if (draftSegmentIds.has(validated.draftSegmentId)) throw new Error("draft contains duplicate segment IDs");
+    if (validated.programmeId && segmentProgrammeIds.has(validated.programmeId)) {
+      throw new Error("one Programme can have only one segment on a show");
+    }
+    draftSegmentIds.add(validated.draftSegmentId);
+    if (validated.programmeId) segmentProgrammeIds.add(validated.programmeId);
+    return validated;
+  });
+  const runningOrder = validateRunningOrder(draft.runningOrder, draftMatchIds, draftSegmentIds);
+
   return structuredClone({
     draftId,
     promotionId: draft.promotionId,
@@ -301,6 +536,9 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
     participantIds: [...draft.participantIds],
     matches,
     championshipAssignments,
+    ...(rawProgrammeSegments === undefined ? {} : { programmeSegments }),
+    ...(rawSegments === undefined ? {} : { segments }),
+    ...(runningOrder === undefined ? {} : { runningOrder }),
   });
 }
 

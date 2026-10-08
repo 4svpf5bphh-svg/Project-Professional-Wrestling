@@ -145,3 +145,64 @@
   .overview { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .detailGrid, .standingGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+
+.ledgerDisclosure {
+  margin-bottom: 14px;
+  border: 1px solid #202938;
+  border-radius: 16px;
+  background: rgba(14, 19, 27, .72);
+  overflow: hidden;
+}
+
+.ledgerDisclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.ledgerDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.ledgerDisclosure > summary strong {
+  display: block;
+  font-size: 14px;
+}
+
+.ledgerDisclosure > summary .eyebrow {
+  margin-bottom: 4px;
+}
+
+.ledgerHint {
+  flex: 0 0 auto;
+  color: #718092;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.ledgerBody {
+  border-top: 1px solid #202938;
+  padding: 0 16px 12px;
+}
+
+.ledgerIntro {
+  margin: 12px 0 2px;
+  color: #718092;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+@media (max-width: 520px) {
+  .ledgerDisclosure > summary {
+    align-items: flex-start;
+  }
+
+  .ledgerHint {
+    max-width: 95px;
+    text-align: right;
+  }
+}

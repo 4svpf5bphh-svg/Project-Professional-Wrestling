@@ -1,9 +1,20 @@
-import type { ContractOffer, Id, PpwDate, Promotion, WorldState } from "../../domain/src/types.js";
+import type { ContractOffer, Id, PpwDate, Promotion, Team, WorldState } from "../../domain/src/types.js";
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
+import type { Programme, ProgrammeParticipantRef } from "../../domain/src/programmes.js";
 import {
   submitHumanContractOffer,
   type HumanContractOfferPlan,
 } from "../../sim-core/src/human-contracts.js";
 import type { HumanPromotionClaimOptions } from "../../sim-core/src/human-control.js";
+import { createProgramme } from "../../sim-core/src/programmes.js";
+import { currentRosterPersonIds } from "../../sim-core/src/contracts.js";
+import { nextEntityId } from "../../sim-core/src/id-allocator.js";
+import { LedgerWriter } from "../../sim-core/src/ledger.js";
+import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
+import {
+  changePromotionWrestlerAlignment,
+  type PromotionAlignmentChangeResult,
+} from "../../sim-core/src/alignment.js";
 import {
   activeWorldMembership,
   claimIndependentPromotionForPlayer,
@@ -23,7 +34,10 @@ export type ApplicationCommandType =
   | "UPSERT_DETAILED_SHOW_DRAFT"
   | "REMOVE_DETAILED_SHOW_DRAFT"
   | "RESERVE_DETAILED_SHOW_DRAFT"
-  | "RELEASE_DETAILED_SHOW_RESERVATION";
+  | "RELEASE_DETAILED_SHOW_RESERVATION"
+  | "START_PROGRAMME"
+  | "SET_WRESTLER_ALIGNMENT"
+  | "CREATE_TAG_TEAM";
 
 export interface ApplicationCommandEnvelope<TPayload> {
   requestId: string;
@@ -52,6 +66,25 @@ export interface WorldCommandState {
 export interface ClaimIndependentPromotionPayload {
   promotionId: Id;
   options?: HumanPromotionClaimOptions;
+}
+
+export interface StartProgrammePayload {
+  promotionId: Id;
+  sideA: ProgrammeParticipantRef[];
+  sideB: ProgrammeParticipantRef[];
+  championshipId?: Id | null;
+}
+
+export interface SetWrestlerAlignmentPayload {
+  promotionId: Id;
+  personId: Id;
+  alignment: WrestlerAlignment;
+}
+
+export interface CreateTagTeamPayload {
+  promotionId: Id;
+  name: string;
+  personIds: [Id, Id];
 }
 
 function cloneDate(date: PpwDate): PpwDate {
@@ -199,5 +232,169 @@ export function submitContractOfferCommand(
       throw new Error(`${envelope.playerId} does not control ${envelope.payload.promotionId}`);
     }
     return submitHumanContractOffer(state, envelope.payload);
+  });
+}
+
+export function startProgrammeCommand(
+  state: WorldState,
+  ownership: WorldOwnershipState,
+  commandState: WorldCommandState,
+  runtime: WorldRuntimeState,
+  envelope: ApplicationCommandEnvelope<StartProgrammePayload>,
+): Programme {
+  if (envelope.commandType !== "START_PROGRAMME") {
+    throw new Error(`expected START_PROGRAMME command, received ${envelope.commandType}`);
+  }
+  if (envelope.worldId !== state.world.id || ownership.worldId !== state.world.id) {
+    throw new Error("Programme command ownership/World mismatch");
+  }
+
+  return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
+    if (!activeWorldMembership(ownership, envelope.playerId)) {
+      throw new Error(`${envelope.playerId} is not an active member of ${state.world.id}`);
+    }
+    if (!playerControlsPromotion(ownership, envelope.playerId, envelope.payload.promotionId)) {
+      throw new Error(`${envelope.playerId} does not control ${envelope.payload.promotionId}`);
+    }
+    return createProgramme(state, {
+      promotionId: envelope.payload.promotionId,
+      sideA: structuredClone(envelope.payload.sideA),
+      sideB: structuredClone(envelope.payload.sideB),
+      championshipId: envelope.payload.championshipId ?? null,
+    });
+  });
+}
+
+export function setWrestlerAlignmentCommand(
+  state: WorldState,
+  ownership: WorldOwnershipState,
+  commandState: WorldCommandState,
+  runtime: WorldRuntimeState,
+  envelope: ApplicationCommandEnvelope<SetWrestlerAlignmentPayload>,
+): PromotionAlignmentChangeResult {
+  if (envelope.commandType !== "SET_WRESTLER_ALIGNMENT") {
+    throw new Error(`expected SET_WRESTLER_ALIGNMENT command, received ${envelope.commandType}`);
+  }
+  if (envelope.worldId !== state.world.id || ownership.worldId !== state.world.id) {
+    throw new Error("alignment command ownership/World mismatch");
+  }
+
+  return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
+    if (!activeWorldMembership(ownership, envelope.playerId)) {
+      throw new Error(`${envelope.playerId} is not an active member of ${state.world.id}`);
+    }
+    if (!playerControlsPromotion(ownership, envelope.playerId, envelope.payload.promotionId)) {
+      throw new Error(`${envelope.playerId} does not control ${envelope.payload.promotionId}`);
+    }
+    if (!currentRosterPersonIds(state, envelope.payload.promotionId).includes(envelope.payload.personId)) {
+      throw new Error("only a wrestler on your current roster can have a promotion alignment");
+    }
+    return changePromotionWrestlerAlignment(
+      state,
+      envelope.payload.promotionId,
+      envelope.payload.personId,
+      envelope.payload.alignment,
+    );
+  });
+}
+
+
+export function createTagTeamCommand(
+  state: WorldState,
+  ownership: WorldOwnershipState,
+  commandState: WorldCommandState,
+  runtime: WorldRuntimeState,
+  envelope: ApplicationCommandEnvelope<CreateTagTeamPayload>,
+): Team {
+  if (envelope.commandType !== "CREATE_TAG_TEAM") {
+    throw new Error(`expected CREATE_TAG_TEAM command, received ${envelope.commandType}`);
+  }
+  if (envelope.worldId !== state.world.id || ownership.worldId !== state.world.id) {
+    throw new Error("tag-team command ownership/World mismatch");
+  }
+
+  return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
+    if (!activeWorldMembership(ownership, envelope.playerId)) {
+      throw new Error(`${envelope.playerId} is not an active member of ${state.world.id}`);
+    }
+    if (!playerControlsPromotion(ownership, envelope.playerId, envelope.payload.promotionId)) {
+      throw new Error(`${envelope.playerId} does not control ${envelope.payload.promotionId}`);
+    }
+
+    const name = normalizedBoundedText(envelope.payload.name, "team name", 60);
+    const personIds = [...envelope.payload.personIds].map((personId) => (
+      normalizedBoundedText(personId, "team wrestler", 128)
+    ));
+    if (personIds.length !== 2 || new Set(personIds).size !== 2) {
+      throw new Error("a tag team requires exactly two different wrestlers");
+    }
+
+    const rosterIds = new Set(currentRosterPersonIds(state, envelope.payload.promotionId));
+    const teamPeople = personIds.map((personId) => {
+      if (!rosterIds.has(personId)) throw new Error("both tag-team members must be on your current roster");
+      const person = state.people.find((candidate) => candidate.id === personId);
+      if (!person || person.status === "RETIRED") throw new Error("tag-team members must be active wrestlers");
+      return person;
+    });
+    requireSameWrestlerDivision(
+      teamPeople,
+      "tag teams cannot mix men's and women's divisions",
+    );
+
+    const normalizedName = name.toLocaleLowerCase("en-GB");
+    if ((state.teams ?? []).some((team) => (
+      team.status === "ACTIVE"
+      && team.name.trim().toLocaleLowerCase("en-GB") === normalizedName
+    ))) {
+      throw new Error("an active tag team already uses that name");
+    }
+
+    const pair = [...personIds].sort();
+    const duplicatePair = (state.teams ?? []).find((team) => {
+      if (team.status !== "ACTIVE") return false;
+      const members = (state.teamMemberships ?? [])
+        .filter((membership) => membership.teamId === team.id && membership.active && membership.leftDate === null)
+        .map((membership) => membership.personId)
+        .sort();
+      return members.length === 2 && members[0] === pair[0] && members[1] === pair[1];
+    });
+    if (duplicatePair) throw new Error(`these wrestlers already form the active team ${duplicatePair.name}`);
+
+    const team: Team = {
+      id: nextEntityId(state, "team"),
+      worldId: state.world.id,
+      name,
+      status: "ACTIVE",
+      formedDate: { ...state.world.currentDate },
+      disbandedDate: null,
+    };
+    state.teams ??= [];
+    state.teamMemberships ??= [];
+    state.teams.push(team);
+    for (const personId of personIds) {
+      state.teamMemberships.push({
+        id: nextEntityId(state, "teamMembership"),
+        worldId: state.world.id,
+        teamId: team.id,
+        personId,
+        joinedDate: { ...state.world.currentDate },
+        leftDate: null,
+        active: true,
+      });
+    }
+
+    new LedgerWriter(state.world.id, state.ledger).append({
+      date: state.world.currentDate,
+      type: "TEAM_FORMED",
+      significance: "ROUTINE",
+      entityIds: [team.id, envelope.payload.promotionId, ...personIds],
+      payload: {
+        name: team.name,
+        promotionId: envelope.payload.promotionId,
+        personIds: personIds.join(","),
+      },
+    });
+
+    return structuredClone(team);
   });
 }

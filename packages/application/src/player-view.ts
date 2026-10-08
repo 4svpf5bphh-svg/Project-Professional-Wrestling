@@ -8,13 +8,18 @@ import type {
   PromotionTier,
   TicketStrategy,
 } from "../../domain/src/types.js";
-import { humanWeekReadiness, type HumanWeekReadinessStatus } from "../../sim-core/src/human-routine.js";
+import type { HumanWeekReadinessStatus } from "../../sim-core/src/human-routine.js";
 import { buildPlayerAttention, type PlayerAttentionItem } from "./attention.js";
 import {
   activePromotionControlForPlayer,
   activeWorldMembership,
 } from "./ownership.js";
-import { playerShowPlanningStatus, type PlayerShowPlanningState } from "./planning-status.js";
+import {
+  playerCurrentWeekPreparation,
+  playerShowPlanningStatus,
+  type PlayerShowPlanningState,
+} from "./planning-status.js";
+import { currentWeekShowCommitmentsLocked } from "./runtime.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export interface AlphaRosterMemberView {
@@ -128,6 +133,7 @@ export interface AlphaPlayerWorldView {
     day: number;
     phase: ApplicationWorldAggregate["runtime"]["phase"];
     revision: number;
+    showCommitmentsLocked: boolean;
     lastResolvedPpwDate: PpwDate | null;
   };
   player: {
@@ -268,7 +274,12 @@ export function buildAlphaPlayerWorldView(
       const reservationCount = aggregate.planning.showReservations.filter(
         (reservation) => reservation.promotionId === promotion.id,
       ).length;
-      const readiness = humanWeekReadiness(aggregate.state, promotion.id);
+      const readiness = playerCurrentWeekPreparation(
+        aggregate.state,
+        aggregate.planning,
+        aggregate.runtime,
+        promotion.id,
+      );
       const currentDate = aggregate.state.world.currentDate;
       const draftId = currentWeekDraftId(promotion.id, currentDate);
       const currentDraft = workspace?.detailedShowDrafts.find((draft) => (
@@ -295,6 +306,10 @@ export function buildAlphaPlayerWorldView(
         }))
         .sort((a, b) => Number(b.isHomeMarket) - Number(a.isHomeMarket) || a.name.localeCompare(b.name));
 
+      const currentPlanEditable = currentStatus?.availableActions.some((action) => (
+        action === "EDIT_DRAFT" || action === "RESERVE" || action === "REFRESH_RESERVATION"
+      )) ?? false;
+
       return {
         promotionId: promotion.id,
         name: promotion.name,
@@ -312,18 +327,18 @@ export function buildAlphaPlayerWorldView(
         reservationCount,
         weekReadiness: {
           status: readiness.status,
-          readyToFinish: readiness.readyToAdvance,
+          readyToFinish: readiness.readyForLock,
           eventId: readiness.eventId,
-          staffHelpRequired: !readiness.readyToAdvance,
+          staffHelpRequired: !readiness.readyForLock,
         },
         showPlanning: {
           workspaceVersion: workspace?.version ?? 0,
           draftId,
           canPlanThisWeek: aggregate.runtime.phase === "OPEN"
-            && readiness.status === "SHOW_REQUIRED"
-            && (currentStatus === null || currentStatus.availableActions.some((action) => (
-              action === "EDIT_DRAFT" || action === "RESERVE" || action === "REFRESH_RESERVATION"
-            ))),
+            && (
+              (currentStatus === null && readiness.status === "SHOW_REQUIRED")
+              || currentPlanEditable
+            ),
           minParticipants: aggregate.state.ruleset.minEventParticipants,
           maxParticipants: maxShowParticipants(
             promotion.tier,
@@ -378,6 +393,7 @@ export function buildAlphaPlayerWorldView(
       day: date.day,
       phase: aggregate.runtime.phase,
       revision: aggregate.runtime.revision,
+      showCommitmentsLocked: currentWeekShowCommitmentsLocked(aggregate.runtime, aggregate.state),
       lastResolvedPpwDate: aggregate.runtime.lastResolvedPpwDate
         ? { ...aggregate.runtime.lastResolvedPpwDate }
         : null,

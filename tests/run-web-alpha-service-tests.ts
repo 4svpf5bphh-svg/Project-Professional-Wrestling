@@ -1,6 +1,9 @@
 declare const process: { exitCode?: number };
 
-import { lockPersistedWorldForResolution } from "../packages/application/src/index.js";
+import {
+  lockPersistedCurrentWeekShowCommitments,
+  lockPersistedWorldForResolution,
+} from "../packages/application/src/index.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
 import {
@@ -107,8 +110,41 @@ await test("Alpha web service bootstraps and exposes a player-safe promotion cho
   const view = await loadAlphaPlayerSession(repository, worldId, "alpha-player");
   ok(view.player.playerId === "alpha-player", "session exposed the wrong player");
   ok(view.player.promotionId === null, "fresh Alpha player unexpectedly controls a promotion");
+  ok(view.world.showCommitmentsLocked === false, "fresh Alpha World unexpectedly exposed current-week commitments as locked");
+  const aggregate = await repository.load(worldId);
+  ok(aggregate.state.people.length === 643, "Alpha did not bootstrap the audited 643-person roster");
+  ok(
+    aggregate.state.promotions.filter((promotion) => promotion.identity?.origin === "REAL_WORLD").length === 8,
+    "Alpha did not bootstrap the eight real promotions",
+  );
+  ok(
+    aggregate.state.promotions.filter((promotion) => promotion.playerTakeoverEligibility === "STANDARD").length === 5,
+    "Alpha did not bootstrap five takeover/rebrand companies",
+  );
+  ok((aggregate.state.teams?.length ?? 0) >= 12, "Alpha did not seed reviewed established teams");
+  ok((aggregate.state.wrestlerRelationships?.length ?? 0) >= 20, "Alpha did not seed reviewed wrestler relationships");
   ok(view.availableIndependentPromotions.length > 0, "no eligible Independent promotion choices were exposed");
   ok(view.promotion === null, "fresh Alpha session unexpectedly exposed a controlled promotion dashboard");
+});
+
+await test("Alpha session reflects persisted current-week show commitment state", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 61010, playerId: "alpha-player" });
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+
+  const before = await loadAlphaPlayerSession(repository, worldId, "alpha-player");
+  ok(before.world.showCommitmentsLocked === false, "fresh session unexpectedly showed commitments locked");
+
+  await lockPersistedCurrentWeekShowCommitments(
+    repository,
+    worldId,
+    before.world.revision,
+    "2026-10-04",
+  );
+  const after = await loadAlphaPlayerSession(repository, worldId, "alpha-player");
+  ok(after.world.showCommitmentsLocked === true, "session did not expose persisted commitment lock");
+  ok(after.world.phase === "OPEN", "commitment state projection incorrectly closed the World");
 });
 
 await test("Alpha claim travels through the transactional command path and survives reload", async () => {
@@ -195,8 +231,10 @@ await test("Alpha show planning atomically commits a current-week draft and scar
 await test("six-week planner reserves a future operating week transactionally and idempotently", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 61007, playerId: "alpha-player" });
-  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
-  ok(independent, "planner fixture has no Independent promotion");
+  const independent = aggregate.state.promotions.find((promotion) => (
+    promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE"
+  ));
+  ok(independent, "planner fixture has no takeover-eligible promotion");
   independent!.eventCadenceWeeks = 2;
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
@@ -228,8 +266,10 @@ await test("six-week planner reserves a future operating week transactionally an
 await test("future planner edits preserve an existing match card and refresh the reservation", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 61008, playerId: "alpha-player" });
-  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
-  ok(independent, "planner fixture has no Independent promotion");
+  const independent = aggregate.state.promotions.find((promotion) => (
+    promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE"
+  ));
+  ok(independent, "planner fixture has no takeover-eligible promotion");
   independent!.eventCadenceWeeks = 2;
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
@@ -278,8 +318,10 @@ await test("future planner edits preserve an existing match card and refresh the
 await test("future planner rejects non-owners and targets outside the six-week horizon", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 61009, playerId: "alpha-player" });
-  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
-  ok(independent, "planner fixture has no Independent promotion");
+  const independent = aggregate.state.promotions.find((promotion) => (
+    promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE"
+  ));
+  ok(independent, "planner fixture has no takeover-eligible promotion");
   independent!.eventCadenceWeeks = 1;
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
@@ -317,9 +359,9 @@ await test("Alpha week finish resolves exactly one World week and exposes the pr
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 61004, playerId: "alpha-player" });
   const independent = aggregate.state.promotions.find((promotion) => (
-    promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE"
+    promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE"
   ));
-  ok(independent, "test World had no Independent promotion");
+  ok(independent, "test World had no takeover-eligible promotion");
   independent!.eventCadenceWeeks = 1;
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;

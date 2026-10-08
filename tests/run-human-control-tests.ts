@@ -37,7 +37,10 @@ test("an active Independent promotion can become a human-controlled promotion", 
     .filter((contract) => contract.promotionId === promotion.id)
     .map((contract) => contract.id);
 
-  const claimed = claimIndependentPromotionForHuman(state, promotion.id, { name: "Player Wrestling" });
+  const claimed = claimIndependentPromotionForHuman(state, promotion.id, {
+    takeoverMode: "REBRAND",
+    name: "Player Wrestling",
+  });
 
   ok(claimed.controllerType === "HUMAN", "claimed promotion did not become human-controlled");
   ok(claimed.name === "Player Wrestling", "claimed promotion was not renamed");
@@ -50,6 +53,72 @@ test("an active Independent promotion can become a human-controlled promotion", 
   const ledgerEvent = state.ledger[state.ledger.length - 1]!;
   ok(ledgerEvent.type === "HUMAN_PROMOTION_CLAIMED", "human claim was not recorded in World history");
   ok(ledgerEvent.entityIds[0] === promotion.id, "human claim ledger event points at the wrong promotion");
+});
+
+test("continue takeover preserves the existing promotion identity and roster", () => {
+  const state = createWorld(10805, DEFAULT_RULESET);
+  const promotion = state.promotions.find(
+    (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+  )!;
+  const originalName = promotion.name;
+  const canonicalName = promotion.identity?.canonicalName;
+  const originalContractIds = state.contracts
+    .filter((contract) => contract.promotionId === promotion.id)
+    .map((contract) => contract.id);
+
+  claimIndependentPromotionForHuman(state, promotion.id, { takeoverMode: "CONTINUE" });
+
+  ok(promotion.name === originalName, "continue takeover renamed the promotion");
+  ok(promotion.identity?.canonicalName === canonicalName, "continue takeover rewrote canonical identity");
+  ok(
+    JSON.stringify(state.contracts.filter((contract) => contract.promotionId === promotion.id).map((contract) => contract.id))
+      === JSON.stringify(originalContractIds),
+    "continue takeover rewrote inherited roster contracts",
+  );
+  const ledgerEvent = state.ledger[state.ledger.length - 1]!;
+  ok(ledgerEvent.payload.takeoverMode === "CONTINUE", "continue takeover mode was not recorded in history");
+});
+
+test("explicit takeover modes reject ambiguous rename requests", () => {
+  const continueState = createWorld(10806, DEFAULT_RULESET);
+  const continuePromotion = continueState.promotions.find(
+    (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+  )!;
+  let continueRejected = false;
+  try {
+    claimIndependentPromotionForHuman(continueState, continuePromotion.id, {
+      takeoverMode: "CONTINUE",
+      name: "Should Not Rename",
+    });
+  } catch {
+    continueRejected = true;
+  }
+  ok(continueRejected, "continue takeover accepted a rebrand name");
+  ok(continuePromotion.controllerType === "AI", "rejected continue takeover mutated control");
+
+  const rebrandState = createWorld(10807, DEFAULT_RULESET);
+  const rebrandPromotion = rebrandState.promotions.find(
+    (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+  )!;
+  let rebrandRejected = false;
+  try {
+    claimIndependentPromotionForHuman(rebrandState, rebrandPromotion.id, { takeoverMode: "REBRAND" });
+  } catch {
+    rebrandRejected = true;
+  }
+  ok(rebrandRejected, "rebrand takeover succeeded without a new name");
+  ok(rebrandPromotion.controllerType === "AI", "rejected rebrand takeover mutated control");
+});
+
+test("legacy optional-name claims still infer rebrand for Alpha compatibility", () => {
+  const state = createWorld(10808, DEFAULT_RULESET);
+  const promotion = state.promotions.find(
+    (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+  )!;
+  claimIndependentPromotionForHuman(state, promotion.id, { name: "Legacy Rebrand" });
+  ok(promotion.name === "Legacy Rebrand", "legacy claim no longer infers rebrand from name");
+  const ledgerEvent = state.ledger[state.ledger.length - 1]!;
+  ok(ledgerEvent.payload.takeoverMode === "REBRAND", "legacy claim did not record inferred rebrand mode");
 });
 
 test("sim-core enforces promotion eligibility but does not own multiplayer seat policy", () => {
@@ -79,6 +148,30 @@ test("sim-core enforces promotion eligibility but does not own multiplayer seat 
     humanControlledPromotions(state).length === 2,
     "sim-core still imposed the temporary ALPHA-1A one-human World rule",
   );
+});
+
+test("explicit takeover eligibility is independent from simulation tier", () => {
+  const lockedState = createWorld(10809, DEFAULT_RULESET);
+  const lockedIndependent = lockedState.promotions.find(
+    (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+  )!;
+  lockedIndependent.playerTakeoverEligibility = "LOCKED";
+  let lockedRejected = false;
+  try {
+    claimIndependentPromotionForHuman(lockedState, lockedIndependent.id);
+  } catch {
+    lockedRejected = true;
+  }
+  ok(lockedRejected, "locked Independent promotion was claimable");
+  ok(lockedIndependent.controllerType === "AI", "locked takeover rejection mutated control");
+
+  const openState = createWorld(10810, DEFAULT_RULESET);
+  const openRising = openState.promotions.find(
+    (candidate) => candidate.tier === "RISING" && candidate.lifecycle === "ACTIVE",
+  )!;
+  openRising.playerTakeoverEligibility = "STANDARD";
+  claimIndependentPromotionForHuman(openState, openRising.id, { takeoverMode: "CONTINUE" });
+  ok(openRising.controllerType === "HUMAN", "explicitly open non-Independent promotion could not be claimed");
 });
 
 test("AI event planning leaves human promotions unbooked", () => {

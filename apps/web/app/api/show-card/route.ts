@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import type {
   MatchIntent,
   MatchSide,
+  MatchStyleProfile,
   MatchType,
 } from "../../../../../dist/packages/domain/src/types.js";
+import { normalizeMatchStyle } from "../../../../../dist/packages/sim-core/src/match-style.js";
 import {
   loadAlphaShowCard,
   saveAlphaShowCard,
   type AlphaCardMatchView,
+  type AlphaCardSegmentView,
+  type AlphaCardSlotView,
   type AlphaChampionshipAssignmentView,
 } from "../../../../../dist/packages/web-adapter/src/card-service.js";
 import { withAlphaServerContext } from "../../../../../dist/packages/web-adapter/src/server-world.js";
@@ -21,8 +25,12 @@ type ShowCardBody = {
   expectedPlanVersion?: unknown;
   draftId?: unknown;
   matches?: unknown;
+  segments?: unknown;
+  runningOrder?: unknown;
   championshipAssignments?: unknown;
 };
+
+type BookableFinish = NonNullable<AlphaCardMatchView["plannedFinish"]>;
 
 const MATCH_TYPES = new Set<MatchType>(["SINGLES", "TAG"]);
 const MATCH_SIDES = new Set<MatchSide>(["A", "B"]);
@@ -35,6 +43,12 @@ const MATCH_INTENTS = new Set<MatchIntent>([
   "STORY",
   "PROTECTIVE",
   "EPIC",
+]);
+const MATCH_FINISHES = new Set<BookableFinish>([
+  "CLEAN_PIN",
+  "SUBMISSION",
+  "FLASH_PIN",
+  "PROTECTED_FINISH",
 ]);
 
 function requiredText(value: unknown, label: string, maxLength: number): string {
@@ -69,6 +83,25 @@ function personIds(value: unknown, label: string): string[] {
   return value.map((entry, index) => requiredText(entry, `${label}[${index}]`, 128));
 }
 
+function matchStyle(value: unknown, label: string): MatchStyleProfile | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object") throw new Error(`${label} must be an object`);
+  const candidate = value as Record<string, unknown>;
+  const dimension = (key: keyof MatchStyleProfile): number => {
+    const entry = candidate[key];
+    if (typeof entry !== "number") throw new Error(`${label}.${key} must be a number`);
+    return entry;
+  };
+  return normalizeMatchStyle({
+    competitiveness: dimension("competitiveness"),
+    technical: dimension("technical"),
+    story: dimension("story"),
+    intensity: dimension("intensity"),
+    risk: dimension("risk"),
+    epic: dimension("epic"),
+  });
+}
+
 function matches(value: unknown): AlphaCardMatchView[] {
   if (!Array.isArray(value)) throw new Error("matches must be an array");
   return value.map((entry, index) => {
@@ -81,9 +114,15 @@ function matches(value: unknown): AlphaCardMatchView[] {
       8,
     ) as MatchSide;
     const intent = requiredText(candidate.intent, `matches[${index}].intent`, 32) as MatchIntent;
+    const plannedFinishText = optionalText(candidate.plannedFinish, `matches[${index}].plannedFinish`, 32);
+    const plannedFinish = plannedFinishText as BookableFinish | undefined;
+    const style = matchStyle(candidate.style, `matches[${index}].style`);
     if (!MATCH_TYPES.has(type)) throw new Error(`unsupported match type ${type}`);
     if (!MATCH_SIDES.has(intendedWinnerSide)) throw new Error("intended winner side must be A or B");
     if (!MATCH_INTENTS.has(intent)) throw new Error(`unsupported match intent ${intent}`);
+    if (plannedFinish !== undefined && !MATCH_FINISHES.has(plannedFinish)) {
+      throw new Error(`unsupported match finish ${plannedFinish}`);
+    }
 
     return {
       draftMatchId: requiredText(candidate.draftMatchId, `matches[${index}].draftMatchId`, 128),
@@ -92,8 +131,68 @@ function matches(value: unknown): AlphaCardMatchView[] {
       sideBIds: personIds(candidate.sideBIds, `matches[${index}].sideBIds`),
       intendedWinnerSide,
       intent,
+      ...(style === undefined ? {} : { style }),
       plannedLengthMinutes: plannedLength(candidate.plannedLengthMinutes, `matches[${index}].plannedLengthMinutes`),
+      ...(plannedFinish === undefined ? {} : { plannedFinish }),
     };
+  });
+}
+
+function segmentLength(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 2 || value > 20) {
+    throw new Error(`${label} must be an integer from 2 to 20`);
+  }
+  return value;
+}
+
+function segments(value: unknown): AlphaCardSegmentView[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error("segments must be an array");
+  const supported = new Set(["PROMO", "INTERVIEW", "CONFRONTATION", "CHALLENGE", "ATTACK", "CELEBRATION", "TURN"]);
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object") throw new Error(`segments[${index}] must be an object`);
+    const candidate = entry as Record<string, unknown>;
+    const type = requiredText(candidate.type, `segments[${index}].type`, 32);
+    if (!supported.has(type)) throw new Error(`unsupported segment type ${type}`);
+    const turnPersonId = candidate.turnPersonId === null || candidate.turnPersonId === undefined || candidate.turnPersonId === ""
+      ? null
+      : requiredText(candidate.turnPersonId, `segments[${index}].turnPersonId`, 128);
+    const turnTargetAlignment = candidate.turnTargetAlignment === null
+      || candidate.turnTargetAlignment === undefined
+      || candidate.turnTargetAlignment === ""
+      ? null
+      : requiredText(candidate.turnTargetAlignment, `segments[${index}].turnTargetAlignment`, 16);
+    if (turnTargetAlignment !== null && !["FACE", "HEEL", "TWEENER"].includes(turnTargetAlignment)) {
+      throw new Error(`segments[${index}].turnTargetAlignment must be FACE, HEEL or TWEENER`);
+    }
+    return {
+      draftSegmentId: requiredText(candidate.draftSegmentId, `segments[${index}].draftSegmentId`, 128),
+      type: type as AlphaCardSegmentView["type"],
+      participantIds: personIds(candidate.participantIds, `segments[${index}].participantIds`),
+      programmeId: candidate.programmeId === null || candidate.programmeId === undefined || candidate.programmeId === ""
+        ? null
+        : requiredText(candidate.programmeId, `segments[${index}].programmeId`, 128),
+      plannedLengthMinutes: segmentLength(candidate.plannedLengthMinutes, `segments[${index}].plannedLengthMinutes`),
+      turnPersonId: type === "TURN" ? turnPersonId : null,
+      turnTargetAlignment: type === "TURN"
+        ? turnTargetAlignment as AlphaCardSegmentView["turnTargetAlignment"]
+        : null,
+    };
+  });
+}
+
+function runningOrder(value: unknown): AlphaCardSlotView[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new Error("runningOrder must be an array");
+  return value.map((entry, index) => {
+    if (!entry || typeof entry !== "object") throw new Error(`runningOrder[${index}] must be an object`);
+    const candidate = entry as Record<string, unknown>;
+    const kind = requiredText(candidate.kind, `runningOrder[${index}].kind`, 16);
+    if (kind !== "MATCH" && kind !== "SEGMENT") throw new Error(`runningOrder[${index}] has an invalid kind`);
+    return {
+      kind,
+      refId: requiredText(candidate.refId, `runningOrder[${index}].refId`, 128),
+    } as AlphaCardSlotView;
   });
 }
 
@@ -147,6 +246,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         expectedPlanVersion: nonNegativeInteger(body.expectedPlanVersion, "expectedPlanVersion"),
         draftId: optionalText(body.draftId, "draftId", 128),
         matches: matches(body.matches),
+        segments: segments(body.segments),
+        runningOrder: runningOrder(body.runningOrder),
         championshipAssignments: championshipAssignments(body.championshipAssignments ?? []),
       })
     ));

@@ -119,6 +119,31 @@ WHERE worlds.world_id = 'world-20261002'
    );
 `,
   },
+  {
+    version: 6,
+    name: "persist show commitment lock runtime state",
+    sql: `
+ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS commitment_locked_ppw_date jsonb NULL;
+ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS commitment_locked_real_cycle_key text NULL;
+`,
+  },
+  {
+    version: 7,
+    name: "reset Alpha World for audited real-world ecosystem cutover",
+    sql: `
+DELETE FROM ppw_worlds AS worlds
+WHERE worlds.world_id = 'world-20261002'
+   OR (
+     worlds.world_state->'world'->>'name' = 'PPW Alpha World'
+     AND EXISTS (
+       SELECT 1
+       FROM ppw_world_memberships AS memberships
+       WHERE memberships.world_id = worlds.world_id
+         AND memberships.player_id = 'alpha-player-1'
+     )
+   );
+`,
+  },
 ] as const;
 
 export const POSTGRES_APPLICATION_SCHEMA_SQL = [
@@ -137,6 +162,8 @@ type WorldRow = {
   runtime_revision: string | number;
   locked_ppw_date: PpwDate | null;
   last_resolved_ppw_date: PpwDate | null;
+  commitment_locked_ppw_date: PpwDate | null;
+  commitment_locked_real_cycle_key: string | null;
   locked_real_cycle_key: string | null;
   last_resolved_real_cycle_key: string | null;
   human_seat_limit: number;
@@ -170,6 +197,7 @@ async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): P
   const lock = forUpdate ? " FOR UPDATE" : "";
   const worldRows = await sql.unsafe(
     `SELECT world_id, world_state, planning_state, engagement_state, runtime_phase, runtime_revision, locked_ppw_date, last_resolved_ppw_date,
+            commitment_locked_ppw_date, commitment_locked_real_cycle_key,
             locked_real_cycle_key, last_resolved_real_cycle_key, human_seat_limit
        FROM ppw_worlds WHERE world_id = $1${lock}`,
     [worldId],
@@ -236,6 +264,8 @@ async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): P
       revision: Number(row.runtime_revision),
       lockedPpwDate: row.locked_ppw_date,
       lastResolvedPpwDate: row.last_resolved_ppw_date,
+      commitmentLockedPpwDate: row.commitment_locked_ppw_date,
+      commitmentLockedRealCycleKey: row.commitment_locked_real_cycle_key,
       lockedRealCycleKey: row.locked_real_cycle_key,
       lastResolvedRealCycleKey: row.last_resolved_real_cycle_key,
     },
@@ -263,6 +293,8 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
       runtime_revision = ${snapshot.runtime.revision},
       locked_ppw_date = ${snapshot.runtime.lockedPpwDate ? sql.json(snapshot.runtime.lockedPpwDate as never) : null},
       last_resolved_ppw_date = ${snapshot.runtime.lastResolvedPpwDate ? sql.json(snapshot.runtime.lastResolvedPpwDate as never) : null},
+      commitment_locked_ppw_date = ${snapshot.runtime.commitmentLockedPpwDate ? sql.json(snapshot.runtime.commitmentLockedPpwDate as never) : null},
+      commitment_locked_real_cycle_key = ${snapshot.runtime.commitmentLockedRealCycleKey ?? null},
       locked_real_cycle_key = ${snapshot.runtime.lockedRealCycleKey ?? null},
       last_resolved_real_cycle_key = ${snapshot.runtime.lastResolvedRealCycleKey ?? null},
       human_seat_limit = ${snapshot.ownership.humanSeatLimit},
@@ -349,12 +381,12 @@ export class PostgresApplicationWorldRepository implements ApplicationWorldRepos
       const inserted = await tx`
         INSERT INTO ppw_worlds(
           world_id, state_schema_version, world_state, planning_state, engagement_state, runtime_phase, runtime_revision,
-          locked_ppw_date, last_resolved_ppw_date, locked_real_cycle_key, last_resolved_real_cycle_key,
-          human_seat_limit
+          locked_ppw_date, last_resolved_ppw_date, commitment_locked_ppw_date, commitment_locked_real_cycle_key,
+          locked_real_cycle_key, last_resolved_real_cycle_key, human_seat_limit
         ) VALUES (
           ${worldId}, ${CURRENT_WORLD_STATE_SCHEMA_VERSION}, ${tx.json(snapshot.world as never)}, ${tx.json(snapshot.planning as never)},
           ${tx.json(snapshot.engagement as never)}, ${snapshot.runtime.phase}, ${snapshot.runtime.revision},
-          ${null}, ${null}, ${null}, ${null}, ${snapshot.ownership.humanSeatLimit}
+          ${null}, ${null}, ${null}, ${null}, ${null}, ${null}, ${snapshot.ownership.humanSeatLimit}
         )
         ON CONFLICT (world_id) DO NOTHING
         RETURNING world_id

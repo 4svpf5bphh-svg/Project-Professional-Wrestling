@@ -1,7 +1,14 @@
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
-import { createWorld, resolveWorldWeeks } from "../packages/sim-core/src/index.js";
+import {
+  assessMatchStyleReadiness,
+  createWorld,
+  defaultMatchStyleForIntent,
+  evaluateMatchStyleLoad,
+  normalizeMatchStyle,
+  resolveWorldWeeks,
+} from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -69,6 +76,124 @@ function historicalTeamPairs(state: ReturnType<typeof createWorld>): Set<string>
   }
   return pairs;
 }
+
+test("legacy intents map into independent match-style dimensions without a 100% total cap", () => {
+  const competitive = defaultMatchStyleForIntent("COMPETITIVE");
+  const technical = defaultMatchStyleForIntent("TECHNICAL");
+  const highRisk = defaultMatchStyleForIntent("HIGH_RISK");
+  const story = defaultMatchStyleForIntent("STORY");
+  const epic = defaultMatchStyleForIntent("EPIC");
+
+  ok(competitive.competitiveness > competitive.risk, "competitive preset did not emphasize competitiveness");
+  ok(technical.technical > competitive.technical, "technical preset did not emphasize technical wrestling");
+  ok(highRisk.risk > epic.risk, "high-risk preset did not carry the strongest risk signal");
+  ok(story.story > competitive.story, "story preset did not emphasize narrative work");
+  ok(epic.epic > highRisk.epic, "epic preset did not carry the strongest epic signal");
+  ok(Object.values(epic).reduce((sum, value) => sum + value, 0) > 100, "style dimensions were accidentally constrained to a 100% total");
+});
+
+test("match-style load makes extreme combinations costly without forbidding them", () => {
+  const extreme = normalizeMatchStyle({
+    competitiveness: 100,
+    technical: 100,
+    story: 100,
+    intensity: 100,
+    risk: 100,
+    epic: 100,
+  });
+  const moderate = defaultMatchStyleForIntent("COMPETITIVE");
+  const extremeLoad = evaluateMatchStyleLoad(extreme, 30);
+  const moderateLoad = evaluateMatchStyleLoad(moderate, 15);
+
+  ok(extremeLoad.band === "EXTREME", `all-100 style should be extreme, received ${extremeLoad.band}`);
+  ok(extremeLoad.total > moderateLoad.total + 35, "extreme style did not create meaningful extra load");
+  ok(extremeLoad.physical > extremeLoad.creative, "extreme long match should carry especially high physical load");
+});
+
+test("match-style readiness distinguishes comfortable, concerned and refusal states", () => {
+  const style = defaultMatchStyleForIntent("COMPETITIVE");
+  const strong = {
+    inRingQuality: 78,
+    matchCraft: 80,
+    presentation: 68,
+    stamina: 82,
+    safety: 80,
+  };
+  const comfortable = assessMatchStyleReadiness(style, strong, 18, 20, 20);
+  ok(comfortable.status === "COMFORTABLE", `healthy capable wrestler was ${comfortable.status}`);
+
+  const concerned = assessMatchStyleReadiness(style, strong, 24, 70, 25);
+  ok(concerned.status === "CONCERNED", `fatigued wrestler should be concerned, received ${concerned.status}`);
+  ok(concerned.reasons.includes("FATIGUE"), "fatigue concern did not explain itself");
+
+  const unsafe = assessMatchStyleReadiness({
+    competitiveness: 90,
+    technical: 75,
+    story: 50,
+    intensity: 95,
+    risk: 100,
+    epic: 85,
+  }, {
+    inRingQuality: 52,
+    matchCraft: 50,
+    presentation: 55,
+    stamina: 42,
+    safety: 38,
+  }, 42, 68, 80);
+  ok(unsafe.status === "REFUSES", `unsafe style should be refused, received ${unsafe.status}`);
+  ok(
+    unsafe.reasons.includes("RISK_SAFETY") || unsafe.reasons.includes("ENDURANCE") || unsafe.reasons.includes("STYLE_STRETCH"),
+    "refusal did not expose a meaningful reason",
+  );
+});
+
+test("match-style validation rejects impossible slider values", () => {
+  let rejected = false;
+  try {
+    normalizeMatchStyle({
+      competitiveness: 101,
+      technical: 50,
+      story: 50,
+      intensity: 50,
+      risk: 50,
+      epic: 50,
+    });
+  } catch {
+    rejected = true;
+  }
+  ok(rejected, "out-of-range match style was accepted");
+});
+
+test("AI booking never creates mixed-division matches when a roster contains men and women", () => {
+  const state = createWorld(8999, DEFAULT_RULESET);
+  const promotion = state.promotions.find((candidate) => candidate.tier === "GLOBAL")!;
+  const contracted = state.contracts
+    .filter((contract) => contract.promotionId === promotion.id && contract.status === "SIGNED")
+    .map((contract) => state.people.find((person) => person.id === contract.personId)!)
+    .filter(Boolean);
+  ok(contracted.length >= 8, "mixed-division fixture lacks enough contracted wrestlers");
+  contracted.forEach((person, index) => {
+    person.division = index % 2 === 0 ? "MEN" : "WOMEN";
+  });
+
+  resolveWorldWeeks(state, 2);
+
+  const eventIds = new Set(
+    state.events
+      .filter((event) => event.promotionId === promotion.id && event.status === "COMPLETED")
+      .map((event) => event.id),
+  );
+  const matches = state.matches.filter((match) => eventIds.has(match.eventId) && match.status === "COMPLETED");
+  ok(matches.length > 0, "mixed-division AI fixture produced no completed matches");
+  for (const match of matches) {
+    const divisions = new Set(
+      state.matchParticipants
+        .filter((participant) => participant.matchId === match.id)
+        .map((participant) => state.people.find((person) => person.id === participant.personId)?.division ?? "MEN"),
+    );
+    ok(divisions.size === 1, `${match.id} mixed men's and women's divisions`);
+  }
+});
 
 test("tag booking reuses pairings instead of constantly reshuffling partners", () => {
   const state = createWorld(9001, DEFAULT_RULESET);

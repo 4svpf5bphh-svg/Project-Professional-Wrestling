@@ -1,7 +1,12 @@
-import type { Id, PersonStatus, PpwDate, PromotionTier, TicketStrategy } from "../../domain/src/types.js";
+import type { WrestlerAlignment } from "../../domain/src/alignment.js";
+import type { Id, MatchType, PersonStatus, PpwDate, PromotionTier, TicketStrategy } from "../../domain/src/types.js";
 import { addPpwWeeks, comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { activePromotionControlForPlayer, activeWorldMembership } from "./ownership.js";
-import { DETAILED_PLANNING_HORIZON_WEEKS, type DetailedShowDraft } from "./planning.js";
+import {
+  DETAILED_PLANNING_HORIZON_WEEKS,
+  type DetailedShowDraft,
+  type DetailedShowSegmentType,
+} from "./planning.js";
 import {
   playerShowPlanningStatus,
   type PlayerShowPlanningAction,
@@ -17,6 +22,30 @@ export interface PlayerPlannerParticipantView {
   name: string;
 }
 
+export interface PlayerPlannerMatchView {
+  draftMatchId: string;
+  order: number;
+  isMainEvent: boolean;
+  type: MatchType;
+  sideANames: string[];
+  sideBNames: string[];
+  plannedLengthMinutes: number | null;
+}
+
+export interface PlayerPlannerSegmentView {
+  draftSegmentId: string;
+  type: DetailedShowSegmentType;
+  participantNames: string[];
+  programmeId: Id | null;
+  plannedLengthMinutes: number;
+  turnPersonName: string | null;
+  turnTargetAlignment: WrestlerAlignment | null;
+}
+
+export type PlayerPlannerRunningOrderView =
+  | { kind: "MATCH"; refId: string; order: number; match: PlayerPlannerMatchView }
+  | { kind: "SEGMENT"; refId: string; order: number; segment: PlayerPlannerSegmentView };
+
 export interface PlayerPlannerTalentOptionView {
   personId: Id;
   name: string;
@@ -27,18 +56,43 @@ export interface PlayerPlannerTalentOptionView {
   datesRemaining: number;
 }
 
+export type PlayerPlannerMarketPresence = "STRONG" | "ESTABLISHED" | "DEVELOPING" | "LIGHT";
+
+export interface PlayerPlannerMarketRivalView {
+  promotionId: Id;
+  name: string;
+  tier: PromotionTier;
+  isHomePromotion: boolean;
+  presence: PlayerPlannerMarketPresence;
+}
+
 export interface PlayerPlannerVenueOptionView {
   venueId: Id;
   name: string;
   capacity: number;
   weeklyHireCost: number;
   prestige: number;
+  productionSuitability: number;
 }
 
 export interface PlayerPlannerMarketOptionView {
   marketId: Id;
   name: string;
   isHomeMarket: boolean;
+  audiencePotential: number;
+  wrestlingInterest: number;
+  spendingIndex: number;
+  maturity: number;
+  yourAwareness: number;
+  yourLiveStrength: number;
+  yourLoyalty: number;
+  yourPresence: PlayerPlannerMarketPresence;
+  homePromotions: Array<{
+    promotionId: Id;
+    name: string;
+    tier: PromotionTier;
+  }>;
+  strongestRivals: PlayerPlannerMarketRivalView[];
   venues: PlayerPlannerVenueOptionView[];
 }
 
@@ -53,8 +107,16 @@ export interface PlayerPlannerShowView {
   venueName: string | null;
   ticketStrategy: TicketStrategy | null;
   participants: PlayerPlannerParticipantView[];
+  matches: PlayerPlannerMatchView[];
+  segments: PlayerPlannerSegmentView[];
+  runningOrder: PlayerPlannerRunningOrderView[];
+  plannedMatchMinutes: number;
+  plannedSegmentMinutes: number;
+  plannedShowMinutes: number;
   reservedParticipantCount: number;
   matchCount: number;
+  segmentCount: number;
+  slotCount: number;
   reservationId: string | null;
   riskReasons: string[];
   workspaceChangedSinceReservation: boolean;
@@ -113,6 +175,17 @@ function showRequiredInWeek(
   if (!promotion || promotion.lifecycle === "DORMANT" || promotion.lifecycle === "CLOSED") return false;
   const weekIndex = ppwDateToWeekIndex(targetDate, aggregate.state.ruleset.weeksPerYear);
   return weekIndex % Math.max(1, promotion.eventCadenceWeeks) === 0;
+}
+
+function marketPresenceScore(awareness: number, liveStrength: number, loyalty: number): number {
+  return liveStrength * 0.5 + awareness * 0.3 + loyalty * 0.2;
+}
+
+function marketPresenceBand(score: number): PlayerPlannerMarketPresence {
+  if (score >= 70) return "STRONG";
+  if (score >= 45) return "ESTABLISHED";
+  if (score >= 25) return "DEVELOPING";
+  return "LIGHT";
 }
 
 function maxShowParticipants(
@@ -205,6 +278,60 @@ function showView(
   const reservation = aggregate.planning.showReservations.find((candidate) => (
     candidate.promotionId === promotionId && candidate.sourceDraftId === draft.draftId
   )) ?? null;
+  const lastMatchId = draft.runningOrder
+    ? [...draft.runningOrder].reverse().find((slot) => slot.kind === "MATCH")?.refId ?? draft.matches.at(-1)?.draftMatchId ?? null
+    : draft.matches.at(-1)?.draftMatchId ?? null;
+  const matches = draft.matches.map((match, index): PlayerPlannerMatchView => ({
+    draftMatchId: match.draftMatchId,
+    order: index + 1,
+    isMainEvent: match.draftMatchId === lastMatchId,
+    type: match.type,
+    sideANames: match.sideAIds.map((personId) => peopleById.get(personId)?.name ?? "Unknown wrestler"),
+    sideBNames: match.sideBIds.map((personId) => peopleById.get(personId)?.name ?? "Unknown wrestler"),
+    plannedLengthMinutes: match.plannedLengthMinutes,
+  }));
+  const segmentDrafts = [
+    ...(draft.segments ?? []),
+    ...(draft.programmeSegments ?? [])
+      .filter((legacy) => !(draft.segments ?? []).some((segment) => segment.draftSegmentId === legacy.draftSegmentId))
+      .map((legacy) => ({
+        draftSegmentId: legacy.draftSegmentId,
+        type: "PROMO" as const,
+        participantIds: [...legacy.participantIds],
+        programmeId: legacy.programmeId,
+        plannedLengthMinutes: 6,
+        turnPersonId: null,
+        turnTargetAlignment: null,
+      })),
+  ];
+  const segments = segmentDrafts.map((segment): PlayerPlannerSegmentView => ({
+    draftSegmentId: segment.draftSegmentId,
+    type: segment.type,
+    participantNames: segment.participantIds.map((personId) => peopleById.get(personId)?.name ?? "Unknown wrestler"),
+    programmeId: segment.programmeId,
+    plannedLengthMinutes: segment.plannedLengthMinutes,
+    turnPersonName: segment.type === "TURN" && segment.turnPersonId
+      ? peopleById.get(segment.turnPersonId)?.name ?? "Unknown wrestler"
+      : null,
+    turnTargetAlignment: segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
+  }));
+  const matchesById = new Map(matches.map((match) => [match.draftMatchId, match]));
+  const segmentsById = new Map(segments.map((segment) => [segment.draftSegmentId, segment]));
+  const defaultOrder = [
+    ...matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ...segments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
+  ];
+  const sourceOrder = draft.runningOrder ?? defaultOrder;
+  const runningOrder = sourceOrder.flatMap((slot, index): PlayerPlannerRunningOrderView[] => {
+    if (slot.kind === "MATCH") {
+      const match = matchesById.get(slot.refId);
+      return match ? [{ kind: "MATCH", refId: slot.refId, order: index + 1, match }] : [];
+    }
+    const segment = segmentsById.get(slot.refId);
+    return segment ? [{ kind: "SEGMENT", refId: slot.refId, order: index + 1, segment }] : [];
+  });
+  const plannedMatchMinutes = matches.reduce((sum, match) => sum + (match.plannedLengthMinutes ?? 0), 0);
+  const plannedSegmentMinutes = segments.reduce((sum, segment) => sum + segment.plannedLengthMinutes, 0);
 
   return {
     draftId: draft.draftId,
@@ -220,8 +347,16 @@ function showView(
       personId,
       name: peopleById.get(personId)?.name ?? "Unknown wrestler",
     })),
+    matches,
+    segments,
+    runningOrder,
+    plannedMatchMinutes,
+    plannedSegmentMinutes,
+    plannedShowMinutes: plannedMatchMinutes + plannedSegmentMinutes,
     reservedParticipantCount: reservation?.participants.length ?? 0,
-    matchCount: draft.matches.length,
+    matchCount: matches.length,
+    segmentCount: segments.length,
+    slotCount: runningOrder.length,
     reservationId: status.reservationId,
     riskReasons: status.riskReasons.map((reason) => String(reason)),
     workspaceChangedSinceReservation: status.workspaceChangedSinceReservation,
@@ -258,22 +393,82 @@ export function buildPlayerSixWeekPlannerView(
   const promotion = aggregate.state.promotions.find((candidate) => candidate.id === control.promotionId);
   if (!promotion) throw new Error(`controlled promotion ${control.promotionId} was not found`);
   const workspace = aggregate.planning.workspaces.find((candidate) => candidate.promotionId === promotion.id) ?? null;
+  const marketStateByKey = new Map(
+    aggregate.state.promotionMarketStates.map((entry) => [`${entry.promotionId}:${entry.marketId}`, entry]),
+  );
   const markets = aggregate.state.markets
-    .map((market) => ({
-      marketId: market.id,
-      name: market.name,
-      isHomeMarket: market.id === promotion.homeMarketId,
-      venues: aggregate.state.venues
-        .filter((venue) => venue.marketId === market.id)
-        .map((venue) => ({
-          venueId: venue.id,
-          name: venue.name,
-          capacity: venue.capacity,
-          weeklyHireCost: venue.weeklyHireCost,
-          prestige: venue.prestige,
-        }))
-        .sort((left, right) => left.weeklyHireCost - right.weeklyHireCost || left.name.localeCompare(right.name)),
-    }))
+    .map((market): PlayerPlannerMarketOptionView => {
+      const ownState = marketStateByKey.get(`${promotion.id}:${market.id}`);
+      const yourAwareness = ownState?.awareness ?? 0;
+      const yourLiveStrength = ownState?.liveStrength ?? 0;
+      const yourLoyalty = ownState?.loyalty ?? 0;
+      const activeRivals = aggregate.state.promotions
+        .filter((candidate) => (
+          candidate.id !== promotion.id
+          && candidate.lifecycle !== "DORMANT"
+          && candidate.lifecycle !== "CLOSED"
+        ))
+        .map((candidate) => {
+          const local = marketStateByKey.get(`${candidate.id}:${market.id}`);
+          const score = marketPresenceScore(
+            local?.awareness ?? 0,
+            local?.liveStrength ?? 0,
+            local?.loyalty ?? 0,
+          );
+          return {
+            promotionId: candidate.id,
+            name: candidate.name,
+            tier: candidate.tier,
+            isHomePromotion: candidate.homeMarketId === market.id,
+            presence: marketPresenceBand(score),
+            score,
+          };
+        })
+        .sort((left, right) => (
+          right.score - left.score
+          || Number(right.isHomePromotion) - Number(left.isHomePromotion)
+          || left.name.localeCompare(right.name)
+        ));
+
+      return {
+        marketId: market.id,
+        name: market.name,
+        isHomeMarket: market.id === promotion.homeMarketId,
+        audiencePotential: market.audiencePotential,
+        wrestlingInterest: market.wrestlingInterest,
+        spendingIndex: market.spendingIndex,
+        maturity: market.maturity,
+        yourAwareness,
+        yourLiveStrength,
+        yourLoyalty,
+        yourPresence: marketPresenceBand(marketPresenceScore(yourAwareness, yourLiveStrength, yourLoyalty)),
+        homePromotions: aggregate.state.promotions
+          .filter((candidate) => (
+            candidate.id !== promotion.id
+            && candidate.homeMarketId === market.id
+            && candidate.lifecycle !== "DORMANT"
+            && candidate.lifecycle !== "CLOSED"
+          ))
+          .map((candidate) => ({
+            promotionId: candidate.id,
+            name: candidate.name,
+            tier: candidate.tier,
+          }))
+          .sort((left, right) => left.name.localeCompare(right.name)),
+        strongestRivals: activeRivals.slice(0, 3).map(({ score: _score, ...rival }) => rival),
+        venues: aggregate.state.venues
+          .filter((venue) => venue.marketId === market.id)
+          .map((venue) => ({
+            venueId: venue.id,
+            name: venue.name,
+            capacity: venue.capacity,
+            weeklyHireCost: venue.weeklyHireCost,
+            prestige: venue.prestige,
+            productionSuitability: venue.productionSuitability,
+          }))
+          .sort((left, right) => left.weeklyHireCost - right.weeklyHireCost || left.name.localeCompare(right.name)),
+      };
+    })
     .sort((left, right) => Number(right.isHomeMarket) - Number(left.isHomeMarket) || left.name.localeCompare(right.name));
 
   const weeks: PlayerPlannerWeekView[] = Array.from(

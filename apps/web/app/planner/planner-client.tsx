@@ -15,10 +15,10 @@ type PlanForm = {
   marketId: string;
   venueId: string;
   ticketStrategy: TicketStrategy;
-  participantIds: string[];
 };
 
 const DAY_NAMES = ["", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+const SHOW_TIME_GUIDE_MINUTES = 120;
 
 function isErrorPayload(payload: PlayerSixWeekPlannerView | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
@@ -38,6 +38,20 @@ function money(value: number): string {
 
 function integer(value: number): string {
   return new Intl.NumberFormat("en-GB", { maximumFractionDigits: 0 }).format(value);
+}
+
+function presenceLabel(value: string): string {
+  if (value === "STRONG") return "Strong";
+  if (value === "ESTABLISHED") return "Established";
+  if (value === "DEVELOPING") return "Developing";
+  return "Light";
+}
+
+function indexLabel(value: number): string {
+  if (value >= 80) return "Very high";
+  if (value >= 65) return "High";
+  if (value >= 45) return "Moderate";
+  return "Low";
 }
 
 function statusClass(state: string): string {
@@ -60,13 +74,6 @@ function initialPlan(view: PlayerSixWeekPlannerView, week: WeekView): PlanForm |
   const venueId = existing?.venueId ?? market?.venues[0]?.venueId;
   if (!market || !venueId) return null;
 
-  let participantIds = existing?.participants.map((person) => person.personId) ?? [];
-  if (participantIds.length === 0) {
-    const minimum = week.minParticipants % 2 === 0 ? week.minParticipants : week.minParticipants + 1;
-    participantIds = week.eligibleParticipants.slice(0, Math.min(minimum, week.maxParticipants)).map((person) => person.personId);
-  }
-  if (participantIds.length % 2 !== 0) participantIds = participantIds.slice(0, -1);
-
   return {
     year: week.year,
     week: week.week,
@@ -74,7 +81,6 @@ function initialPlan(view: PlayerSixWeekPlannerView, week: WeekView): PlanForm |
     marketId: market.marketId,
     venueId,
     ticketStrategy: existing?.ticketStrategy ?? "STANDARD",
-    participantIds,
   };
 }
 
@@ -123,16 +129,6 @@ export default function PlannerClient(): React.JSX.Element {
     if (!view?.promotion || !form) return;
     const market = view.promotion.markets.find((candidate) => candidate.marketId === marketId);
     setForm({ ...form, marketId, venueId: market?.venues[0]?.venueId ?? "" });
-  }
-
-  function toggleParticipant(personId: string, week: WeekView): void {
-    if (!form) return;
-    if (form.participantIds.includes(personId)) {
-      setForm({ ...form, participantIds: form.participantIds.filter((id) => id !== personId) });
-      return;
-    }
-    if (form.participantIds.length >= week.maxParticipants) return;
-    setForm({ ...form, participantIds: [...form.participantIds, personId] });
   }
 
   async function savePlan(week: WeekView): Promise<void> {
@@ -224,15 +220,10 @@ export default function PlannerClient(): React.JSX.Element {
               const selectedVenue = selectedMarket && isEditing
                 ? selectedMarket.venues.find((venue) => venue.venueId === form!.venueId) ?? null
                 : null;
-              const selectedCount = isEditing ? form!.participantIds.length : 0;
-              const validRoster = isEditing
-                && selectedCount >= week.minParticipants
-                && selectedCount <= week.maxParticipants
-                && selectedCount % 2 === 0;
               const editableExisting = existing?.availableActions.includes("EDIT_DRAFT") ?? false;
               const canOpenEditor = week.canPlan && (existing === null || editableExisting) && week.shows.length <= 1;
               const canSave = Boolean(
-                isEditing && validRoster && form!.marketId && form!.venueId && view.world.phase === "OPEN" && !saving,
+                isEditing && form!.marketId && form!.venueId && view.world.phase === "OPEN" && !saving,
               );
 
               return (
@@ -250,44 +241,80 @@ export default function PlannerClient(): React.JSX.Element {
                       <strong>No show planned</strong>
                       <span>{week.showRequired ? "This operating week needs a reserved show before lock." : "No operating show is scheduled for this promotion in this week."}</span>
                     </div>
-                  ) : week.shows.map((show) => (
-                    <section className={styles.showCard} key={show.draftId}>
-                      <div className={styles.showTop}>
-                        <div>
-                          <span>{DAY_NAMES[show.targetDate.day] ?? `Day ${show.targetDate.day}`}</span>
-                          <strong>{show.venueName ?? "Venue not selected"}</strong>
-                          <small>{show.marketName ?? "Market not selected"}{show.ticketStrategy ? ` · ${label(show.ticketStrategy)}` : ""}</small>
+                  ) : week.shows.map((show) => {
+                    const timeRemaining = SHOW_TIME_GUIDE_MINUTES - show.plannedShowMinutes;
+                    return (
+                      <section className={styles.showCard} key={show.draftId}>
+                        <div className={styles.showTop}>
+                          <div>
+                            <span>{DAY_NAMES[show.targetDate.day] ?? `Day ${show.targetDate.day}`}</span>
+                            <strong>{show.venueName ?? "Venue not selected"}</strong>
+                            <small>{show.marketName ?? "Market not selected"}{show.ticketStrategy ? ` · ${label(show.ticketStrategy)}` : ""}</small>
+                          </div>
+                          <span className={`${styles.state} ${statusClass(show.state)}`}>{label(show.state)}</span>
                         </div>
-                        <span className={`${styles.state} ${statusClass(show.state)}`}>{label(show.state)}</span>
-                      </div>
-                      <div className={styles.metrics}>
-                        <div><span>Talent</span><strong>{show.participants.length}</strong></div>
-                        <div><span>Reserved</span><strong>{show.reservedParticipantCount}</strong></div>
-                        <div><span>Matches</span><strong>{show.matchCount}</strong></div>
-                        <div><span>Readiness</span><strong>{label(show.readiness)}</strong></div>
-                      </div>
-                      {show.participants.length > 0 ? (
-                        <div className={styles.people}>{show.participants.map((person) => <span key={person.personId}>{person.name}</span>)}</div>
-                      ) : <p className={styles.muted}>No wrestlers selected yet.</p>}
-                      {show.workspaceChangedSinceReservation ? <div className={styles.warning}>Plan changed since reservation — refresh it before relying on those commitments.</div> : null}
-                      {show.riskReasons.length > 0 ? <div className={styles.warning}>{show.riskReasons.map(label).join(" · ")}</div> : null}
-                      {show.reservationId && show.availableActions.includes("EDIT_DRAFT") ? (
-                        <a
-                          className={styles.editButton}
-                          style={{ display: "block", padding: "10px 14px", textAlign: "center", textDecoration: "none" }}
-                          href={`/card?draftId=${encodeURIComponent(show.draftId)}`}
-                        >
-                          {show.matchCount > 0 ? "Edit match card" : "Book match card"}
-                        </a>
-                      ) : null}
-                    </section>
-                  ))}
+                        <div className={styles.metrics}>
+                          <div><span>Talent</span><strong>{show.participants.length}</strong></div>
+                          <div><span>Reserved</span><strong>{show.reservedParticipantCount}</strong></div>
+                          <div><span>Matches</span><strong>{show.matchCount}</strong></div>
+                          <div><span>Segments</span><strong>{show.segmentCount}</strong></div>
+                          <div><span>Show time</span><strong>{show.plannedShowMinutes} min</strong></div>
+                          <div><span>Time left</span><strong className={timeRemaining < 0 ? styles.timeOver : undefined}>{timeRemaining >= 0 ? `${timeRemaining} min` : `${Math.abs(timeRemaining)} over`}</strong></div>
+                          <div><span>Readiness</span><strong>{label(show.readiness)}</strong></div>
+                        </div>
+                        {show.runningOrder.length > 0 ? (
+                          <div className={styles.runningOrder}>
+                            <div className={styles.runningOrderHeader}>
+                              <strong>Running order</strong>
+                              <span>{show.plannedShowMinutes} / {SHOW_TIME_GUIDE_MINUTES} min Alpha guide</span>
+                            </div>
+                            {show.runningOrder.map((slot) => slot.kind === "MATCH" ? (
+                              <div className={`${styles.matchRow} ${slot.match.isMainEvent ? styles.mainEventRow : ""}`} key={`MATCH:${slot.refId}`}>
+                                <span className={styles.matchNumber}>Slot {slot.order}</span>
+                                <div>
+                                  <strong>{slot.match.sideANames.join(" & ")} <span>vs</span> {slot.match.sideBNames.join(" & ")}</strong>
+                                  <small>{slot.match.type === "TAG" ? "Tag Team" : "Singles"}{slot.match.plannedLengthMinutes !== null ? ` · ${slot.match.plannedLengthMinutes} min` : ""}</small>
+                                </div>
+                                {slot.match.isMainEvent ? <b>MAIN EVENT</b> : null}
+                              </div>
+                            ) : (
+                              <div className={`${styles.matchRow} ${styles.segmentRow}`} key={`SEGMENT:${slot.refId}`}>
+                                <span className={styles.matchNumber}>Slot {slot.order}</span>
+                                <div>
+                                  <strong>
+                                    {slot.segment.type === "TURN" && slot.segment.turnPersonName && slot.segment.turnTargetAlignment
+                                      ? `Turn · ${slot.segment.turnPersonName} → ${label(slot.segment.turnTargetAlignment)}`
+                                      : `${label(slot.segment.type)} · ${slot.segment.participantNames.join(" & ")}`}
+                                  </strong>
+                                  <small>Segment · {slot.segment.plannedLengthMinutes} min{slot.segment.programmeId ? " · Programme attached" : ""}</small>
+                                </div>
+                                <b>SEGMENT</b>
+                              </div>
+                            ))}
+                          </div>
+                        ) : show.participants.length > 0 ? (
+                          <div className={styles.people}>{show.participants.map((person) => <span key={person.personId}>{person.name}</span>)}</div>
+                        ) : <p className={styles.muted}>No wrestlers selected yet.</p>}
+                        {show.workspaceChangedSinceReservation ? <div className={styles.warning}>Plan changed since reservation — refresh it before relying on those commitments.</div> : null}
+                        {show.riskReasons.length > 0 ? <div className={styles.warning}>{show.riskReasons.map(label).join(" · ")}</div> : null}
+                        {show.availableActions.includes("EDIT_DRAFT") || show.availableActions.includes("EDIT_CARD") ? (
+                          <a
+                            className={styles.editButton}
+                            style={{ display: "block", padding: "10px 14px", textAlign: "center", textDecoration: "none" }}
+                            href={`/card?draftId=${encodeURIComponent(show.draftId)}`}
+                          >
+                            {show.slotCount > 0 ? "Edit card" : "Book card"}
+                          </a>
+                        ) : null}
+                      </section>
+                    );
+                  })}
 
                   {week.shows.length > 1 ? <div className={styles.warning}>Multiple drafts exist in this week. Resolve them before using the Alpha planner editor.</div> : null}
 
                   {canOpenEditor && !isEditing ? (
                     <button className={styles.editButton} onClick={() => beginEdit(week)}>
-                      {existing ? (existing.reservationId ? "Edit & refresh reservation" : "Edit & reserve show") : "Plan & reserve show"}
+                      {existing ? "Edit show details" : "Plan show"}
                     </button>
                   ) : null}
 
@@ -300,27 +327,65 @@ export default function PlannerClient(): React.JSX.Element {
                         <label><span>Ticket strategy</span><select value={form!.ticketStrategy} onChange={(event) => setForm({ ...form!, ticketStrategy: event.target.value as TicketStrategy })}>{view.promotion!.ticketStrategies.map((strategy) => <option key={strategy} value={strategy}>{label(strategy)}</option>)}</select></label>
                       </div>
 
-                      {selectedVenue ? <div className={styles.venueSummary}>{selectedVenue.name} · {integer(selectedVenue.capacity)} cap · {money(selectedVenue.weeklyHireCost)} hire</div> : null}
+                      {selectedMarket ? (
+                        <section className={styles.marketContext}>
+                          <div className={styles.marketContextHeader}>
+                            <div>
+                              <span className={styles.eyebrow}>MARKET CONTEXT</span>
+                              <strong>{selectedMarket.name}</strong>
+                            </div>
+                            <span className={selectedMarket.isHomeMarket ? styles.homeMarketTag : styles.awayMarketTag}>
+                              {selectedMarket.isHomeMarket ? "HOME MARKET" : "AWAY MARKET"}
+                            </span>
+                          </div>
 
-                      <div className={styles.talentHeader}>
-                        <div><strong>Reserve talent</strong><span>Choose an even {week.minParticipants}–{week.maxParticipants} wrestlers.</span></div>
-                        <b className={validRoster ? styles.countGood : styles.countWarn}>{selectedCount}/{week.maxParticipants}</b>
-                      </div>
-                      <div className={styles.talentGrid}>
-                        {week.eligibleParticipants.map((person) => {
-                          const selected = form!.participantIds.includes(person.personId);
-                          const maxed = !selected && selectedCount >= week.maxParticipants;
-                          return (
-                            <button type="button" key={person.personId} className={`${styles.talentPick} ${selected ? styles.talentSelected : ""}`} disabled={maxed} onClick={() => toggleParticipant(person.personId, week)}>
-                              <span><strong>{person.name}</strong><small>{person.datesRemaining} dates · POP {person.popularity}</small></span><b>{selected ? "✓" : "+"}</b>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {existing && existing.matchCount > 0 ? <p className={styles.editorNote}>This show already has a card. Existing matches are preserved; wrestlers already used on that card must remain in the show roster.</p> : null}
+                          <div className={styles.marketContextGrid}>
+                            <div><span>Your presence</span><strong>{presenceLabel(selectedMarket.yourPresence)}</strong></div>
+                            <div><span>Awareness</span><strong>{Math.round(selectedMarket.yourAwareness)}</strong></div>
+                            <div><span>Live strength</span><strong>{Math.round(selectedMarket.yourLiveStrength)}</strong></div>
+                            <div><span>Loyalty</span><strong>{Math.round(selectedMarket.yourLoyalty)}</strong></div>
+                            <div><span>Audience potential</span><strong>{indexLabel(selectedMarket.audiencePotential)} · {Math.round(selectedMarket.audiencePotential)}</strong></div>
+                            <div><span>Wrestling interest</span><strong>{indexLabel(selectedMarket.wrestlingInterest)} · {Math.round(selectedMarket.wrestlingInterest)}</strong></div>
+                            <div><span>Spending index</span><strong>{Math.round(selectedMarket.spendingIndex)}</strong></div>
+                            <div><span>Market maturity</span><strong>{Math.round(selectedMarket.maturity)}</strong></div>
+                          </div>
+
+                          <div className={styles.territoryContext}>
+                            <div>
+                              <span>Promotions based here</span>
+                              {selectedMarket.homePromotions.length > 0 ? (
+                                <strong>{selectedMarket.homePromotions.map((promotion) => `${promotion.name} (${label(promotion.tier)})`).join(" · ")}</strong>
+                              ) : <strong>None</strong>}
+                            </div>
+                            <div>
+                              <span>Strongest rival presence</span>
+                              {selectedMarket.strongestRivals.length > 0 ? (
+                                <div className={styles.rivalPresenceList}>
+                                  {selectedMarket.strongestRivals.map((rival) => (
+                                    <span key={rival.promotionId}>
+                                      <b>{rival.name}</b>
+                                      <small>{rival.isHomePromotion ? "Home base · " : ""}{presenceLabel(rival.presence)}</small>
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : <strong>None</strong>}
+                            </div>
+                          </div>
+                        </section>
+                      ) : null}
+
+                      {selectedVenue ? (
+                        <div className={styles.venueSummary}>
+                          <strong>{selectedVenue.name}</strong>
+                          <span>{integer(selectedVenue.capacity)} capacity · {money(selectedVenue.weeklyHireCost)} hire</span>
+                          <span>Prestige {Math.round(selectedVenue.prestige)} · Production suitability {Math.round(selectedVenue.productionSuitability)}</span>
+                        </div>
+                      ) : null}
+
+                      <p className={styles.editorNote}>Market context is factual World information. Staff advice and interpretation can layer on later. Talent is booked on the show card, so there is no separate show-roster step.</p>
                       <div className={styles.editorActions}>
                         <button className={styles.button} disabled={saving} onClick={cancelEdit}>Cancel</button>
-                        <button className={styles.saveButton} disabled={!canSave} onClick={() => savePlan(week)}>{saving ? "Reserving…" : existing?.reservationId ? "Save & refresh reservation" : "Save & reserve"}</button>
+                        <button className={styles.saveButton} disabled={!canSave} onClick={() => savePlan(week)}>{saving ? "Saving…" : "Save show details"}</button>
                       </div>
                     </section>
                   ) : null}
@@ -329,7 +394,7 @@ export default function PlannerClient(): React.JSX.Element {
             })}
           </section>
 
-          <p className={styles.footerNote}>Reservations are shared-World commitments. The server rechecks venue, contract-date and wrestler Service Capacity when you save, so a rival action can make an otherwise valid-looking plan fail safely.</p>
+          <p className={styles.footerNote}>Show details are planning intent. Wrestler commitments become shared-World reservations from the booked card, where PPW rechecks contract dates and Service Capacity.</p>
         </>
       )}
     </main>

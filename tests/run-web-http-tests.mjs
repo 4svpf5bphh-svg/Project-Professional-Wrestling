@@ -1,7 +1,15 @@
 import { spawn } from "node:child_process";
+import { createAlphaWorldAggregate } from "../dist/packages/web-adapter/src/alpha-service.js";
 
 const port = 3100;
 const baseUrl = `http://127.0.0.1:${port}`;
+const fixtureAggregate = createAlphaWorldAggregate({
+  seed: Number(process.env.PPW_ALPHA_WORLD_SEED ?? 20261002),
+  playerId: (process.env.PPW_ALPHA_PLAYER_ID ?? "alpha-player-1").trim(),
+});
+const divisionByPersonId = new Map(
+  fixtureAggregate.state.people.map((person) => [person.id, person.division ?? "MEN"]),
+);
 let output = "";
 
 const server = spawn(
@@ -48,6 +56,15 @@ function weekKey(view) {
   return `${view.world.year}:${view.world.week}`;
 }
 
+function minimumServiceCapacity(entry) {
+  const stageBase = entry.careerStage === "PRIME" ? 1.9
+    : entry.careerStage === "PROSPECT" ? 1.55
+      : entry.careerStage === "VETERAN" ? 1.4
+        : 1.0;
+  const staminaFactor = 0.8 + entry.skills.stamina / 250;
+  return stageBase * staminaFactor * 0.65;
+}
+
 function showPlanBody(view) {
   const promotion = view.promotion;
   const planning = promotion?.showPlanning;
@@ -56,12 +73,22 @@ function showPlanBody(view) {
   const market = planning.markets[0];
   const venue = market?.venues[0];
   ok(market && venue, "HTTP planning view exposed no market/venue options");
-  let participantIds = promotion.roster
-    .filter((person) => person.status === "ACTIVE" && person.datesRemaining > 0)
-    .slice(0, planning.maxParticipants)
+  const reservable = promotion.roster
+    .filter((person) => person.status === "ACTIVE" && person.datesRemaining > 0);
+  const minimumEven = planning.minParticipants % 2 === 0
+    ? planning.minParticipants
+    : planning.minParticipants + 1;
+  const sameDivision = (["MEN", "WOMEN"])
+    .map((division) => reservable.filter((person) => divisionByPersonId.get(person.personId) === division))
+    .sort((left, right) => right.length - left.length)
+    .find((group) => group.length >= minimumEven);
+  ok(sameDivision, "HTTP planning view exposed no single division with enough reservable wrestlers");
+  let participantCount = Math.min(sameDivision.length, planning.maxParticipants);
+  if (participantCount % 2 !== 0) participantCount -= 1;
+  const participantIds = sameDivision
+    .slice(0, participantCount)
     .map((person) => person.personId);
-  if (participantIds.length % 2 !== 0) participantIds = participantIds.slice(0, -1);
-  ok(participantIds.length >= planning.minParticipants, "HTTP planning view exposed too few reservable wrestlers");
+  ok(participantIds.length >= minimumEven, "HTTP planning view exposed too few same-division wrestlers");
   return {
     requestId: "ci-http-show-plan-001",
     expectedRevision: view.world.revision,
@@ -72,6 +99,29 @@ function showPlanBody(view) {
     ticketStrategy: "STANDARD",
     participantIds,
   };
+}
+
+function completeSinglesCard(cardView) {
+  const ids = cardView.participants.map((participant) => participant.personId);
+  ok(ids.length >= 2 && ids.length % 2 === 0, "HTTP card view did not expose an even reserved roster");
+  const matches = [];
+  for (let index = 0; index < ids.length; index += 2) {
+    matches.push({
+      draftMatchId: `${cardView.draftId}:ci-match:${matches.length + 1}`,
+      type: "SINGLES",
+      sideAIds: [ids[index]],
+      sideBIds: [ids[index + 1]],
+      intendedWinnerSide: "A",
+      intent: "COMPETITIVE",
+      plannedLengthMinutes: 12,
+    });
+  }
+  return matches;
+}
+
+async function assertPage(path, label) {
+  const response = await fetch(`${baseUrl}${path}`, { cache: "no-store" });
+  ok(response.ok, `${label} page returned HTTP ${response.status}`);
 }
 
 try {
@@ -111,13 +161,105 @@ try {
   ok(afterClaim.promotion?.promotionId === promotionId, "HTTP reload lost promotion dashboard state");
   ok(afterClaim.world?.revision === 1, "HTTP reload returned the wrong persisted World revision");
 
-  const plan = showPlanBody(afterClaim);
+  const plannerBeforeDetails = await json(await fetch(`${baseUrl}/api/planner`, { cache: "no-store" }));
+  const currentPlannerWeek = plannerBeforeDetails.promotion?.weeks?.find((candidate) => candidate.isCurrentWeek);
+  const plannerMarket = plannerBeforeDetails.promotion?.markets?.[0];
+  const plannerVenue = plannerMarket?.venues?.[0];
+  ok(currentPlannerWeek && plannerMarket && plannerVenue, "HTTP planner did not expose current-week logistics");
+  const plannerDetails = await json(await fetch(`${baseUrl}/api/planner/plan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requestId: "ci-http-planner-details-001",
+      expectedRevision: plannerBeforeDetails.world.revision,
+      expectedPlanVersion: plannerBeforeDetails.promotion.workspaceVersion,
+      year: currentPlannerWeek.year,
+      week: currentPlannerWeek.week,
+      day: 6,
+      marketId: plannerMarket.marketId,
+      venueId: plannerVenue.venueId,
+      ticketStrategy: "STANDARD",
+    }),
+  }));
+  const savedDetailsWeek = plannerDetails.promotion?.weeks?.find((candidate) => candidate.isCurrentWeek);
+  ok(savedDetailsWeek?.shows?.length === 1, "HTTP planner details save did not create the current-week draft");
+  ok(savedDetailsWeek.shows[0]?.participants?.length === 0, "HTTP planner details save unexpectedly edited the show roster");
+  ok(savedDetailsWeek.shows[0]?.venueId === plannerVenue.venueId, "HTTP planner details save lost the selected venue");
+
+  const afterPlannerDetails = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
+  ok(afterPlannerDetails.world.revision === afterClaim.world.revision + 1, "HTTP planner details save did not advance World revision once");
+
+  const talent = await json(await fetch(`${baseUrl}/api/talent`, { cache: "no-store" }));
+  ok(talent.promotion?.promotionId === promotionId, "HTTP talent management lost controlled promotion");
+  ok(Array.isArray(talent.market) && talent.market.length > 0, "HTTP talent market exposed no available wrestlers");
+  ok(talent.roster?.length >= 2, "HTTP talent roster exposed fewer than two wrestlers for team creation");
+  const teamsBefore = await json(await fetch(`${baseUrl}/api/teams`, { cache: "no-store" }));
+  let createdTeamView = null;
+  for (let left = 0; left < talent.roster.length && !createdTeamView; left += 1) {
+    for (let right = left + 1; right < talent.roster.length && !createdTeamView; right += 1) {
+      const response = await fetch(`${baseUrl}/api/teams`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: `ci-http-team-${left + 1}-${right + 1}`,
+          expectedRevision: teamsBefore.world.revision,
+          name: "CI HTTP Tag Team",
+          personIds: [talent.roster[left].personId, talent.roster[right].personId],
+        }),
+      });
+      const payload = await response.json();
+      if (response.ok) {
+        createdTeamView = payload;
+        break;
+      }
+      if (response.status === 409 && payload?.error === "tag teams cannot mix men's and women's divisions") {
+        continue;
+      }
+      throw new Error(`HTTP ${response.status}: ${JSON.stringify(payload)}`);
+    }
+  }
+  ok(createdTeamView, "HTTP talent roster exposed no valid same-division pair for team creation");
+  const createdTeam = createdTeamView.teams?.find((team) => team.name === "CI HTTP Tag Team");
+  ok(createdTeam?.currentMembers?.length === 2, "HTTP team creation did not persist both members");
+  ok(createdTeam?.experience?.band === "UNTESTED", "HTTP team creation granted free experience");
+
+  const afterTeam = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
+  ok(afterTeam.world.revision === teamsBefore.world.revision + 1, "HTTP team creation did not advance revision exactly once");
+
+  const candidate = talent.market.find((entry) => (
+    entry.availability === "FREE_AGENT" && minimumServiceCapacity(entry) >= 1.001
+  ));
+  ok(candidate, "HTTP talent market exposed no free agent guaranteed to have one-date Service Capacity");
+  const talentOffer = {
+    requestId: "ci-http-talent-offer-001",
+    personId: candidate.personId,
+    family: "ONE_OFF",
+    roleExpectation: "REGULAR",
+    termWeeks: 1,
+    dateEntitlement: 1,
+    weeklyGuarantee: 0,
+    appearanceFee: Math.max(1_000, Math.round(candidate.estimatedWeeklyValue * 1.35)),
+    signingBonus: 0,
+  };
+  const offered = await json(await fetch(`${baseUrl}/api/talent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(talentOffer),
+  }));
+  ok(offered.offerId, "HTTP talent offer did not return an offer ID");
+  ok(offered.offerKind === "RECRUITMENT", "HTTP talent offer did not use the recruitment path");
+  ok(offered.view?.pendingOffers?.some((offer) => offer.offerId === offered.offerId), "HTTP talent offer was not persisted into pending offers");
+
+  const afterOffer = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
+  ok(afterOffer.world.revision > afterTeam.world.revision, "HTTP talent offer did not advance World revision");
+
+  const plan = showPlanBody(afterOffer);
   const planned = await json(await fetch(`${baseUrl}/api/show-plan`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(plan),
   }));
-  ok(planned.world.revision === afterClaim.world.revision + 2, "HTTP show plan did not commit draft and reservation revisions");
+  ok(planned.world.revision === afterOffer.world.revision + 2, "HTTP show plan did not commit draft and reservation revisions");
   ok(planned.promotion?.showPlanning?.currentPlan?.state === "RESERVED", "HTTP show plan did not return a reserved state");
   ok(planned.promotion?.showPlanning?.currentPlan?.venueId === plan.venueId, "HTTP show plan lost selected venue");
   ok(planned.promotion?.showPlanning?.currentPlan?.participantIds?.length === plan.participantIds.length, "HTTP show plan lost selected talent");
@@ -130,8 +272,64 @@ try {
   ok(planRetry.world.revision === planned.world.revision, "HTTP show-plan retry advanced revision twice");
   ok(planRetry.promotion?.showPlanning?.currentPlan?.state === "RESERVED", "HTTP show-plan retry lost reservation");
 
-  const weekBefore = weekKey(planned);
-  const revisionBeforeAdvance = planned.world.revision;
+  const draftId = planned.promotion.showPlanning.currentPlan.draftId;
+  const cardView = await json(await fetch(`${baseUrl}/api/show-card?draftId=${encodeURIComponent(draftId)}`, { cache: "no-store" }));
+  ok(cardView.draftId === draftId, "HTTP card editor opened the wrong reserved show");
+  ok(cardView.reservationId, "HTTP card editor did not load a real reservation");
+  ok(cardView.participants.length === plan.participantIds.length, "HTTP card editor lost reserved wrestlers");
+  const matches = completeSinglesCard(cardView);
+  const httpStyle = {
+    competitiveness: 84,
+    technical: 73,
+    story: 52,
+    intensity: 67,
+    risk: 31,
+    epic: 60,
+  };
+  matches[0] = { ...matches[0], style: httpStyle };
+  const turnPerson = cardView.participants[0];
+  ok(turnPerson, "HTTP card view exposed no wrestler for Turn regression");
+  const turnTargetAlignment = turnPerson.alignment === "HEEL" ? "FACE" : "HEEL";
+  const turnSegment = {
+    draftSegmentId: `${cardView.draftId}:ci-turn`,
+    type: "TURN",
+    participantIds: [turnPerson.personId],
+    programmeId: null,
+    plannedLengthMinutes: 5,
+    turnPersonId: turnPerson.personId,
+    turnTargetAlignment,
+  };
+  const savedCard = await json(await fetch(`${baseUrl}/api/show-card`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requestId: "ci-http-show-card-001",
+      expectedRevision: cardView.world.revision,
+      expectedPlanVersion: cardView.workspaceVersion,
+      draftId,
+      matches,
+      segments: [turnSegment],
+      runningOrder: [
+        ...matches.map((match) => ({ kind: "MATCH", refId: match.draftMatchId })),
+        { kind: "SEGMENT", refId: turnSegment.draftSegmentId },
+      ],
+      championshipAssignments: [],
+    }),
+  }));
+  ok(savedCard.matches.length === matches.length, "HTTP match card did not persist every booked match");
+  ok(savedCard.matches.every((match) => match.type === "SINGLES"), "HTTP match card changed booked match types");
+  ok(savedCard.matches[0]?.style?.competitiveness === 84, "HTTP show-card route dropped match style");
+  ok(savedCard.matches[0]?.style?.risk === 31, "HTTP show-card route changed match style dimensions");
+  ok(savedCard.segments?.length === 1 && savedCard.segments[0]?.type === "TURN", "HTTP show-card route rejected or dropped TURN");
+  ok(savedCard.segments[0]?.turnPersonId === turnPerson.personId, "HTTP show-card route dropped the turning wrestler");
+  ok(savedCard.segments[0]?.turnTargetAlignment === turnTargetAlignment, "HTTP show-card route dropped the target alignment");
+
+  const ready = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
+  ok(ready.promotion?.showPlanning?.currentPlan?.state === "RESERVED", "HTTP booked show lost its reserved planning state before lock");
+  ok(ready.promotion?.showPlanning?.currentPlan?.reservationId, "HTTP booked show lost its committed reservation before lock");
+
+  const weekBefore = weekKey(ready);
+  const revisionBeforeAdvance = ready.world.revision;
   const advanced = await json(await fetch(`${baseUrl}/api/advance-week`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -147,6 +345,37 @@ try {
     .find((venue) => venue.venueId === plan.venueId)?.name;
   ok(advanced.promotion.lastResolvedShow.venueName === selectedVenueName, "resolved show did not use the reserved venue");
 
+  const playerResults = await json(await fetch(`${baseUrl}/api/results`, { cache: "no-store" }));
+  const resolvedEventId = advanced.promotion.lastResolvedShow.eventId;
+  const playerShow = playerResults.shows?.find((show) => show.eventId === resolvedEventId);
+  ok(playerShow, "HTTP player results did not include the newly resolved show");
+  ok(playerShow.matches.length === matches.length, "HTTP player results did not preserve the booked card");
+  ok(playerShow.matches.every((match) => match.winnerNames.length > 0), "HTTP player results omitted match winners");
+  ok(playerShow.segments?.some((segment) => segment.type === "TURN"), "HTTP player results omitted the resolved Turn segment");
+
+  const worldResults = await json(await fetch(`${baseUrl}/api/world-results`, { cache: "no-store" }));
+  const worldShow = worldResults.shows?.find((show) => show.eventId === resolvedEventId);
+  ok(worldShow, "HTTP World results did not include the player's resolved show");
+  ok(worldShow.isPlayerPromotion === true, "HTTP World results did not identify the player's promotion");
+  ok(!("gateRevenue" in worldShow) && !("totalCost" in worldShow) && !("netResult" in worldShow), "HTTP World results leaked private show economics");
+
+  const industry = await json(await fetch(`${baseUrl}/api/industry`, { cache: "no-store" }));
+  ok(Array.isArray(industry.promotions) && industry.promotions.some((promotion) => promotion.promotionId === promotionId), "HTTP Industry view omitted the controlled promotion");
+  const championships = await json(await fetch(`${baseUrl}/api/championships`, { cache: "no-store" }));
+  ok(Array.isArray(championships.championships), "HTTP championship history did not return a title collection");
+  const teams = await json(await fetch(`${baseUrl}/api/teams`, { cache: "no-store" }));
+  ok(Array.isArray(teams.teams), "HTTP team history did not return a team collection");
+  const profilePersonId = plan.participantIds[0];
+  const profile = await json(await fetch(`${baseUrl}/api/talent/profile?personId=${encodeURIComponent(profilePersonId)}`, { cache: "no-store" }));
+  ok(profile.person?.personId === profilePersonId, "HTTP wrestler profile did not load the requested wrestler");
+  ok(profile.careerStats?.completedMatches >= 1, "HTTP wrestler profile did not reflect the resolved show");
+
+  await assertPage("/results", "Results");
+  await assertPage("/industry", "Industry");
+  await assertPage("/championships", "Championship history");
+  await assertPage("/teams", "Team history");
+  await assertPage(`/talent/profile?personId=${encodeURIComponent(profilePersonId)}`, "Wrestler profile");
+
   const staleResponse = await fetch(`${baseUrl}/api/advance-week`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -160,7 +389,7 @@ try {
   ok(weekKey(afterAdvance) === weekKey(advanced), "stale HTTP retry advanced the World a second time");
   ok(afterAdvance.world.revision === advanced.world.revision, "stale HTTP retry changed the persisted World revision");
 
-  console.log("PASS Alpha Next HTTP bootstrap, claim, show reservation, retry, week resolution and stale-retry safety");
+  console.log("PASS Alpha Next HTTP full player journey, public history views and stale-retry safety");
 } finally {
   if (server.exitCode === null) server.kill("SIGTERM");
   await new Promise((resolve) => {

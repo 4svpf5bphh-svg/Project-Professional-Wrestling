@@ -1,6 +1,51 @@
+import {
+  REAL_PROMOTION_TEMPLATES,
+  realPromotionEcosystemSource,
+} from "../packages/content/src/real-promotions.js";
+import {
+  REAL_ACTIVE_TAG_TEAM_TEMPLATES,
+  REAL_ACTIVE_TAG_TEAMS_REVIEWED_ON,
+  seedRealActiveTagTeams,
+} from "../packages/content/src/real-active-tag-teams.js";
+import {
+  REAL_WRESTLER_RELATIONSHIPS_REVIEWED_ON,
+  REAL_WRESTLER_RELATIONSHIP_TEMPLATES,
+  seedRealWrestlerRelationships,
+} from "../packages/content/src/real-wrestler-relationships.js";
+import {
+  calibratedRealActiveMensRosterSource,
+  realRosterValueBand,
+} from "../packages/content/src/real-active-mens-calibration.js";
+import { calibratedRealActiveMixedRosterSource } from "../packages/content/src/real-active-mixed-roster.js";
+import {
+  AEW_CMLL_DUAL_CONTRACT_SEEDS,
+  AEW_PRIMARY_ROSTER_NAMES,
+  AEW_FLEXIBLE_PRIMARY_ROSTER_NAMES,
+  CMLL_PRIMARY_ROSTER_NAMES,
+  AEW_ROH_CMLL_ROSTER_SEED_REVIEWED_ON,
+  AEW_ROH_SECONDARY_ROSTER_NAMES,
+  ROH_PRIMARY_ROSTER_NAMES,
+  realWorldInitialRosterAssignmentSource,
+} from "../packages/content/src/real-aew-roh-cmll-rosters.js";
+import {
+  NXT_INITIAL_ROSTER_NAMES,
+  WWE_INITIAL_ROSTER_NAMES,
+  WWE_NXT_ROSTER_SEED_REVIEWED_ON,
+  wweNxtInitialRosterAssignmentSource,
+} from "../packages/content/src/real-wwe-nxt-rosters.js";
+import {
+  TNA_PRIMARY_ROSTER_NAMES,
+  TNA_ROSTER_SEED_REVIEWED_ON,
+} from "../packages/content/src/real-tna-roster.js";
+import {
+  NJPW_PRIMARY_ROSTER_NAMES,
+  NJPW_STARDOM_ROSTER_SEED_REVIEWED_ON,
+  STARDOM_PRIMARY_ROSTER_NAMES,
+} from "../packages/content/src/real-njpw-stardom-rosters.js";
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
+import { REAL_WORLD_ALPHA_RULESET } from "../packages/config/src/real-world-ruleset.js";
 import {
   activeContractsForPerson,
   activeContractsForPromotion,
@@ -13,9 +58,17 @@ import {
   createSignedContract,
   createWorld,
   currentRosterPersonIds,
+  defaultPromotionContractPolicy,
   deterministicWorldHash,
   determineFinancialDistress,
   DeterministicRng,
+  buildContractTerms,
+  generatedFictionalPromotionSource,
+  generatedFictionalRosterSource,
+  type InitialRosterAssignmentSource,
+  type WorldPromotionSource,
+  upsertWrestlerRelationship,
+  wrestlerRelationshipBetween,
   recoverWrestlersForNewWeek,
   resolveWorldWeek,
   resolveWorldWeeks,
@@ -66,6 +119,762 @@ test("default Genesis creates expected entity counts", () => {
   equal(state.people.length, 400);
 });
 
+test("custom promotion sources plug into Genesis without bypassing validation", () => {
+  const source: WorldPromotionSource = (context) => generatedFictionalPromotionSource(context)
+    .map((promotion, index) => ({
+      ...promotion,
+      name: `Promotion Source ${index + 1}`,
+      identity: {
+        origin: "REAL_WORLD",
+        canonicalName: `Promotion Source ${index + 1}`,
+        parentPromotionId: null,
+      },
+    }));
+  const state = createWorld(
+    104,
+    DEFAULT_RULESET,
+    "Promotion Source Test",
+    generatedFictionalRosterSource,
+    source,
+  );
+  equal(state.promotions[0]!.name, "Promotion Source 1");
+  equal(state.promotions[0]!.identity?.origin, "REAL_WORLD");
+  equal(state.promotions.length, DEFAULT_RULESET.promotions);
+});
+
+test("promotion source validation rejects malformed ecosystems", () => {
+  const tooShort: WorldPromotionSource = (context) => generatedFictionalPromotionSource(context).slice(1);
+  let rejected = false;
+  try {
+    createWorld(
+      105,
+      DEFAULT_RULESET,
+      "Broken Promotion Source",
+      generatedFictionalRosterSource,
+      tooShort,
+    );
+  } catch (error) {
+    rejected = error instanceof Error && error.message.includes("promotion source returned");
+  }
+  ok(rejected, "promotion source with the wrong company count was accepted");
+});
+
+test("real promotion catalog preserves parent links and keeps real companies takeover-locked", () => {
+  const state = createWorld(
+    106,
+    REAL_WORLD_ALPHA_RULESET,
+    "Real Promotion Catalog",
+    generatedFictionalRosterSource,
+    realPromotionEcosystemSource,
+  );
+  equal(state.promotions.length, REAL_WORLD_ALPHA_RULESET.promotions);
+
+  const realPromotions = state.promotions.filter((promotion) => promotion.identity?.origin === "REAL_WORLD");
+  const takeoverPromotions = state.promotions.filter((promotion) => promotion.playerTakeoverEligibility === "STANDARD");
+  equal(realPromotions.length, REAL_PROMOTION_TEMPLATES.length);
+  equal(takeoverPromotions.length, 5);
+  ok(realPromotions.every((promotion) => promotion.playerTakeoverEligibility === "LOCKED"), "real promotion source exposed a standard player takeover");
+  ok(takeoverPromotions.every((promotion) => promotion.identity?.origin === "FICTIONAL"), "real promotion became a takeover slot");
+  ok(takeoverPromotions.every((promotion) => promotion.tier === "INDEPENDENT"), "player takeover slot is not Independent");
+  ok(takeoverPromotions.every((promotion) => promotion.cash >= 6_000_000), "player takeover slot lacks the intended startup reserve");
+
+  const wwe = state.promotions.find((promotion) => promotion.name === "WWE")!;
+  const nxt = state.promotions.find((promotion) => promotion.name === "NXT")!;
+  const aew = state.promotions.find((promotion) => promotion.name === "AEW")!;
+  const roh = state.promotions.find((promotion) => promotion.name === "ROH")!;
+  const stardom = state.promotions.find((promotion) => promotion.name === "STARDOM")!;
+  ok(!state.promotions.some((promotion) => promotion.name === "AAA"), "AAA remained a real World promotion");
+  ok(!state.promotions.some((promotion) => promotion.name === "Pro Wrestling NOAH"), "NOAH remained a real World promotion");
+  equal(nxt.identity?.parentPromotionId, wwe.id);
+  equal(roh.identity?.parentPromotionId, aew.id);
+  ok(stardom.identity?.origin === "REAL_WORLD", "STARDOM was not created as a real promotion");
+  ok(stardom.playerTakeoverEligibility === "LOCKED", "STARDOM was exposed as a player takeover");
+  equal(stardom.tier, "RISING");
+  ok(stardom.cash >= 5_000_000, "STARDOM did not receive a RISING financial baseline");
+  ok(wwe.contractPolicy!.exclusiveContractChance > aew.contractPolicy!.exclusiveContractChance, "WWE and AEW contract cultures were not differentiated");
+});
+
+test("wrestler relationships are canonical, multi-axis and distinct from match chemistry", () => {
+  const state = createWorld(107, DEFAULT_RULESET);
+  const [left, right] = state.people.slice(0, 2);
+  const chemistryBefore = state.workingChemistry.length;
+
+  const created = upsertWrestlerRelationship(state, {
+    personAId: right!.id,
+    personBId: left!.id,
+    affinity: 72,
+    professionalTrust: 88,
+    rivalryHeat: 35,
+    familiarity: 91,
+    tags: ["TAG_PARTNERS", "ALLY", "TAG_PARTNERS"],
+  });
+
+  ok(created.personAId < created.personBId, "relationship pair was not canonicalized");
+  equal(created.tags.join(","), "ALLY,TAG_PARTNERS");
+  equal(state.workingChemistry.length, chemistryBefore);
+
+  const updated = upsertWrestlerRelationship(state, {
+    personAId: left!.id,
+    personBId: right!.id,
+    affinity: 45,
+    rivalryHeat: 80,
+  });
+  equal(updated.id, created.id);
+  equal(updated.affinity, 45);
+  equal(updated.professionalTrust, 88);
+  equal(updated.rivalryHeat, 80);
+  equal(state.wrestlerRelationships?.length, 1);
+  equal(wrestlerRelationshipBetween(state, right!.id, left!.id)?.id, created.id);
+});
+
+test("wrestler relationship foundation rejects self-links and impossible values", () => {
+  const state = createWorld(108, DEFAULT_RULESET);
+  const [left, right] = state.people.slice(0, 2);
+  let selfRejected = false;
+  try {
+    upsertWrestlerRelationship(state, { personAId: left!.id, personBId: left!.id });
+  } catch {
+    selfRejected = true;
+  }
+  ok(selfRejected, "self relationship was accepted");
+
+  let rangeRejected = false;
+  try {
+    upsertWrestlerRelationship(state, {
+      personAId: left!.id,
+      personBId: right!.id,
+      rivalryHeat: 101,
+    });
+  } catch {
+    rangeRejected = true;
+  }
+  ok(rangeRejected, "out-of-range rivalry heat was accepted");
+});
+
+test("reviewed real tag teams seed as ordinary Team entities with partner relationships", () => {
+  const state = createWorld(
+    109,
+    REAL_WORLD_ALPHA_RULESET,
+    "Established Team Seed",
+    calibratedRealActiveMixedRosterSource,
+  );
+  const teamsBefore = state.teams?.length ?? 0;
+  const seededIds = seedRealActiveTagTeams(state);
+
+  equal(REAL_ACTIVE_TAG_TEAMS_REVIEWED_ON, "2026-10-08");
+  equal(seededIds.length, REAL_ACTIVE_TAG_TEAM_TEMPLATES.length);
+  equal((state.teams?.length ?? 0) - teamsBefore, REAL_ACTIVE_TAG_TEAM_TEMPLATES.length);
+
+  for (const template of REAL_ACTIVE_TAG_TEAM_TEMPLATES) {
+    const team = state.teams?.find((candidate) => candidate.name === template.name);
+    ok(team, `missing seeded team ${template.name}`);
+    const members = (state.teamMemberships ?? [])
+      .filter((membership) => membership.teamId === team!.id && membership.active)
+      .map((membership) => state.people.find((person) => person.id === membership.personId)?.name)
+      .sort();
+    equal(members.join("|"), [...template.members].sort().join("|"));
+
+    const [leftName, rightName] = template.members;
+    const left = state.people.find((person) => person.name === leftName)!;
+    const right = state.people.find((person) => person.name === rightName)!;
+    const relationship = wrestlerRelationshipBetween(state, left.id, right.id);
+    ok(relationship, `missing partner relationship for ${template.name}`);
+    ok(relationship!.tags.includes("TAG_PARTNERS"), `${template.name} relationship lacks TAG_PARTNERS`);
+    ok(relationship!.professionalTrust >= 70, `${template.name} seeded too little professional trust`);
+    ok(relationship!.familiarity >= 80, `${template.name} seeded too little familiarity`);
+    equal(state.workingChemistry.length, 0);
+  }
+
+  const ledgerCount = state.ledger.filter((entry) => entry.type === "TAG_TEAM_PRESENT_AT_GENESIS").length;
+  equal(ledgerCount, REAL_ACTIVE_TAG_TEAM_TEMPLATES.length);
+  ok(state.teams?.some((team) => team.name === "JetSpeed"), "JetSpeed was not seeded");
+  ok(state.teams?.some((team) => team.name === "The Elegance Brand"), "women's TNA team was not seeded");
+  ok(state.teams?.some((team) => team.name === "FWC"), "STARDOM team was not seeded");
+  const bellas = state.people.filter((person) => person.name === "Brie Bella" || person.name === "Nikki Bella");
+  const bellaRelationship = wrestlerRelationshipBetween(state, bellas[0]!.id, bellas[1]!.id);
+  ok(bellaRelationship?.tags.includes("FAMILY"), "Bella Twins relationship lacks FAMILY");
+});
+
+test("real tag-team seeding is idempotent and does not duplicate teams or genesis history", () => {
+  const state = createWorld(
+    110,
+    REAL_WORLD_ALPHA_RULESET,
+    "Established Team Idempotency",
+    calibratedRealActiveMixedRosterSource,
+  );
+  seedRealActiveTagTeams(state);
+  const teamCount = state.teams?.length ?? 0;
+  const ledgerCount = state.ledger.filter((entry) => entry.type === "TAG_TEAM_PRESENT_AT_GENESIS").length;
+  seedRealActiveTagTeams(state);
+  equal(state.teams?.length ?? 0, teamCount);
+  equal(state.ledger.filter((entry) => entry.type === "TAG_TEAM_PRESENT_AT_GENESIS").length, ledgerCount);
+});
+
+test("reviewed real wrestler relationships seed public wrestling-history context without creating chemistry", () => {
+  const state = createWorld(
+    127,
+    REAL_WORLD_ALPHA_RULESET,
+    "Real Relationship Seed",
+    calibratedRealActiveMixedRosterSource,
+  );
+  seedRealActiveTagTeams(state);
+  const chemistryBefore = state.workingChemistry.length;
+  const seeded = seedRealWrestlerRelationships(state);
+
+  equal(REAL_WRESTLER_RELATIONSHIPS_REVIEWED_ON, "2026-10-08");
+  equal(seeded, REAL_WRESTLER_RELATIONSHIP_TEMPLATES.length);
+  equal(state.workingChemistry.length, chemistryBefore);
+
+  const relationshipByNames = (leftName: string, rightName: string) => {
+    const left = state.people.find((person) => person.name === leftName)!;
+    const right = state.people.find((person) => person.name === rightName)!;
+    return wrestlerRelationshipBetween(state, left.id, right.id);
+  };
+
+  const reyDominik = relationshipByNames("Rey Mysterio", "Dominik Mysterio");
+  ok(reyDominik?.tags.includes("FAMILY"), "Rey/Dominik family relationship missing");
+  ok((reyDominik?.rivalryHeat ?? 0) >= 90, "Rey/Dominik rivalry history too low");
+
+  const owensZayn = relationshipByNames("Kevin Owens", "Sami Zayn");
+  ok(owensZayn?.tags.includes("FORMER_PARTNERS"), "Owens/Zayn former-partner history missing");
+  ok(owensZayn?.tags.includes("ALLY"), "Owens/Zayn alliance history missing");
+  ok((owensZayn?.rivalryHeat ?? 0) >= 90, "Owens/Zayn rivalry history too low");
+
+  const bayleyMercedes = relationshipByNames("Bayley", "Mercedes Moné");
+  ok(bayleyMercedes?.tags.includes("FORMER_PARTNERS"), "Bayley/Mercedes former-partner history missing");
+  ok((bayleyMercedes?.familiarity ?? 0) >= 95, "Bayley/Mercedes familiarity too low");
+
+  const sayaMomo = relationshipByNames("Saya Kamitani", "Momo Watanabe");
+  ok(sayaMomo?.tags.includes("ALLY"), "Saya/Momo stablemate relationship missing");
+  ok((sayaMomo?.rivalryHeat ?? 0) >= 75, "Saya/Momo competitive friction too low");
+
+  const bellas = relationshipByNames("Brie Bella", "Nikki Bella");
+  ok(bellas?.tags.includes("FAMILY"), "existing Bella family tag was lost when relationship seed ran");
+  ok(bellas?.tags.includes("TAG_PARTNERS"), "existing Bella tag-partner history was lost when relationship seed ran");
+});
+
+test("real wrestler relationship seeding is idempotent", () => {
+  const state = createWorld(
+    128,
+    REAL_WORLD_ALPHA_RULESET,
+    "Real Relationship Idempotency",
+    calibratedRealActiveMixedRosterSource,
+  );
+  seedRealActiveTagTeams(state);
+  seedRealWrestlerRelationships(state);
+  const snapshot = JSON.stringify(state.wrestlerRelationships);
+  seedRealWrestlerRelationships(state);
+  equal(JSON.stringify(state.wrestlerRelationships), snapshot);
+});
+
+test("initial roster assignment source pins wrestlers to promotions without changing default Genesis", () => {
+  const baseline = createWorld(111, DEFAULT_RULESET);
+  const explicitEmpty = createWorld(
+    111,
+    DEFAULT_RULESET,
+    "PPW Test World",
+    generatedFictionalRosterSource,
+    generatedFictionalPromotionSource,
+    () => [],
+  );
+  equal(deterministicWorldHash(explicitEmpty), deterministicWorldHash(baseline));
+
+  const source: InitialRosterAssignmentSource = ({ people, promotions }) => [
+    {
+      personId: people[0]!.id,
+      promotionId: promotions[0]!.id,
+      family: "EXCLUSIVE",
+    },
+  ];
+  const pinned = createWorld(
+    112,
+    DEFAULT_RULESET,
+    "Pinned Genesis",
+    generatedFictionalRosterSource,
+    generatedFictionalPromotionSource,
+    source,
+  );
+  const person = pinned.people[0]!;
+  const contracts = activeContractsForPerson(pinned, person.id);
+  equal(contracts.length, 1);
+  equal(contracts[0]!.promotionId, pinned.promotions[0]!.id);
+  equal(contracts[0]!.family, "EXCLUSIVE");
+  equal(contracts[0]!.exclusivity, "EXCLUSIVE");
+});
+
+test("explicit child roster can use a parent-company exclusive contract without merging parent and child rosters", () => {
+  const source: InitialRosterAssignmentSource = ({ people, promotions }) => {
+    const parent = promotions[0]!;
+    const child = promotions[4]!;
+    child.identity = { origin: "FICTIONAL", canonicalName: child.name, parentPromotionId: parent.id };
+    child.rosterMode = "EXPLICIT";
+    parent.rosterMode = "EXPLICIT";
+    return [
+      { personId: people[0]!.id, promotionId: parent.id, rosterPromotionId: parent.id, family: "EXCLUSIVE" },
+      { personId: people[1]!.id, promotionId: parent.id, rosterPromotionId: child.id, family: "EXCLUSIVE" },
+    ];
+  };
+
+  const state = createWorld(
+    113,
+    DEFAULT_RULESET,
+    "Parent Child Roster",
+    generatedFictionalRosterSource,
+    generatedFictionalPromotionSource,
+    source,
+  );
+  const parent = state.promotions[0]!;
+  const child = state.promotions[4]!;
+  const parentRoster = currentRosterPersonIds(state, parent.id);
+  const childRoster = currentRosterPersonIds(state, child.id);
+
+  equal(parentRoster.includes(state.people[0]!.id), true);
+  equal(parentRoster.includes(state.people[1]!.id), false);
+  equal(childRoster.includes(state.people[1]!.id), true);
+  equal(activeContractsForPerson(state, state.people[1]!.id)[0]!.promotionId, parent.id);
+});
+
+test("multi-promotion roster affiliations support primary and secondary contracted rosters", () => {
+  const source: InitialRosterAssignmentSource = ({ people, promotions }) => [
+    {
+      personId: people[0]!.id,
+      promotionId: promotions[1]!.id,
+      family: "LIMITED_NON_EXCLUSIVE",
+      rosterAffiliations: [{
+        promotionId: promotions[1]!.id,
+        role: "PRIMARY",
+        basis: "CONTRACT",
+      }],
+    },
+    {
+      personId: people[0]!.id,
+      promotionId: promotions[2]!.id,
+      family: "LIMITED_NON_EXCLUSIVE",
+      rosterAffiliations: [{
+        promotionId: promotions[2]!.id,
+        role: "SECONDARY",
+        basis: "CONTRACT",
+      }],
+    },
+  ];
+  const state = createWorld(
+    114,
+    DEFAULT_RULESET,
+    "Multi Affiliation Genesis",
+    generatedFictionalRosterSource,
+    generatedFictionalPromotionSource,
+    source,
+  );
+  state.promotions[1]!.rosterMode = "EXPLICIT";
+  state.promotions[2]!.rosterMode = "EXPLICIT";
+  const person = state.people[0]!;
+  equal(activeContractsForPerson(state, person.id).length, 2);
+  equal(state.wrestlerPromotionAffiliations?.filter((affiliation) => affiliation.personId === person.id).length, 2);
+  equal(currentRosterPersonIds(state, state.promotions[1]!.id).includes(person.id), true);
+  equal(currentRosterPersonIds(state, state.promotions[2]!.id).includes(person.id), true);
+});
+
+test("explicit rosters include future direct signings but respect existing explicit placement", () => {
+  const state = createWorld(120, DEFAULT_RULESET);
+  const promotion = state.promotions[1]!;
+  promotion.rosterMode = "EXPLICIT";
+  const person = state.people.find((candidate) => activeContractsForPerson(state, candidate.id).length === 0)!;
+  const terms = buildContractTerms(state, promotion, person, new DeterministicRng(120), state.world.currentDate, "EXCLUSIVE");
+  createSignedContract(state, person, promotion, { ...terms, signingBonus: 0 }, null, false);
+  equal(currentRosterPersonIds(state, promotion.id).includes(person.id), true);
+
+  const other = state.promotions[2]!;
+  other.rosterMode = "EXPLICIT";
+  state.wrestlerPromotionAffiliations ??= [];
+  state.wrestlerPromotionAffiliations.push({
+    worldId: state.world.id,
+    personId: person.id,
+    promotionId: other.id,
+    role: "PRIMARY",
+    basis: "CONTRACT",
+  });
+  equal(currentRosterPersonIds(state, promotion.id).includes(person.id), false);
+});
+
+test("parent-company roster affiliation grants child-brand access without a second contract", () => {
+  const source: InitialRosterAssignmentSource = ({ people, promotions }) => {
+    const parent = promotions[0]!;
+    const child = promotions[4]!;
+    child.identity = { origin: "FICTIONAL", canonicalName: child.name, parentPromotionId: parent.id };
+    child.rosterMode = "EXPLICIT";
+    return [{
+      personId: people[0]!.id,
+      promotionId: parent.id,
+      family: "EXCLUSIVE",
+      rosterAffiliations: [{
+        promotionId: child.id,
+        role: "PRIMARY",
+        basis: "PARENT_COMPANY",
+      }],
+    }];
+  };
+  const state = createWorld(
+    119,
+    DEFAULT_RULESET,
+    "Parent Affiliation Genesis",
+    generatedFictionalRosterSource,
+    generatedFictionalPromotionSource,
+    source,
+  );
+  const person = state.people[0]!;
+  const child = state.promotions[4]!;
+  equal(activeContractsForPerson(state, person.id).length, 1);
+  equal(currentRosterPersonIds(state, child.id).includes(person.id), true);
+});
+
+test("initial roster assignments support deliberate non-exclusive dual employment but reject exclusive overlap", () => {
+  const dualSource: InitialRosterAssignmentSource = ({ people, promotions }) => [
+    { personId: people[0]!.id, promotionId: promotions[1]!.id, family: "LIMITED_NON_EXCLUSIVE" },
+    { personId: people[0]!.id, promotionId: promotions[2]!.id, family: "LIMITED_NON_EXCLUSIVE" },
+  ];
+  const dual = createWorld(
+    115,
+    DEFAULT_RULESET,
+    "Dual Genesis",
+    generatedFictionalRosterSource,
+    generatedFictionalPromotionSource,
+    dualSource,
+  );
+  equal(activeContractsForPerson(dual, dual.people[0]!.id).length, 2);
+
+  const brokenSource: InitialRosterAssignmentSource = ({ people, promotions }) => [
+    { personId: people[0]!.id, promotionId: promotions[0]!.id, family: "EXCLUSIVE" },
+    { personId: people[0]!.id, promotionId: promotions[1]!.id, family: "LIMITED_NON_EXCLUSIVE" },
+  ];
+  let rejected = false;
+  try {
+    createWorld(
+      116,
+      DEFAULT_RULESET,
+      "Broken Genesis",
+      generatedFictionalRosterSource,
+      generatedFictionalPromotionSource,
+      brokenSource,
+    );
+  } catch (error) {
+    rejected = String(error).includes("overlapping exclusive employment");
+  }
+  ok(rejected, "exclusive initial employment overlapped another promotion");
+});
+
+test("first reviewed WWE/NXT seed separates WWE employment rights from NXT roster affiliation", () => {
+  const state = createWorld(
+    117,
+    REAL_WORLD_ALPHA_RULESET,
+    "WWE NXT Seed",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    wweNxtInitialRosterAssignmentSource,
+  );
+  equal(WWE_NXT_ROSTER_SEED_REVIEWED_ON, "2026-10-07");
+
+  const wwe = state.promotions.find((promotion) => promotion.name === "WWE")!;
+  const nxt = state.promotions.find((promotion) => promotion.name === "NXT")!;
+  equal(wwe.rosterMode, "EXPLICIT");
+  equal(nxt.rosterMode, "EXPLICIT");
+  equal(nxt.identity?.parentPromotionId, wwe.id);
+
+  const wweRosterNames = currentRosterPersonIds(state, wwe.id)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  const nxtRosterNames = currentRosterPersonIds(state, nxt.id)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+
+  equal(wweRosterNames.length, WWE_INITIAL_ROSTER_NAMES.length);
+  equal(nxtRosterNames.length, NXT_INITIAL_ROSTER_NAMES.length);
+  for (const name of WWE_INITIAL_ROSTER_NAMES) ok(wweRosterNames.includes(name), `WWE seed missing ${name}`);
+  for (const name of NXT_INITIAL_ROSTER_NAMES) ok(nxtRosterNames.includes(name), `NXT seed missing ${name}`);
+  ok(!wweRosterNames.includes("Myles Borne"), "NXT wrestler leaked into WWE main roster");
+  ok(!nxtRosterNames.includes("Roman Reigns"), "WWE main-roster wrestler leaked into NXT");
+  equal(activeContractsForPromotion(state, wwe.id).length, WWE_INITIAL_ROSTER_NAMES.length + NXT_INITIAL_ROSTER_NAMES.length);
+  equal(activeContractsForPromotion(state, nxt.id).length, 0);
+  const contractedPeople = new Set(
+    state.contracts
+      .filter((contract) => contract.status === "SIGNED")
+      .map((contract) => contract.personId),
+  ).size;
+  ok(
+    contractedPeople >= WWE_INITIAL_ROSTER_NAMES.length + NXT_INITIAL_ROSTER_NAMES.length,
+    "WWE/NXT seed lost explicitly assigned contracted wrestlers",
+  );
+  ok(
+    state.people.length - contractedPeople >= Math.floor(state.people.length * 0.2),
+    "partial real-world roster staging exhausted the free-agent market",
+  );
+
+  const roman = state.people.find((person) => person.name === "Roman Reigns")!;
+  const myles = state.people.find((person) => person.name === "Myles Borne")!;
+  const romanContracts = activeContractsForPerson(state, roman.id);
+  const mylesContracts = activeContractsForPerson(state, myles.id);
+  equal(romanContracts.length, 1);
+  equal(mylesContracts.length, 1);
+  equal(romanContracts[0]!.promotionId, wwe.id);
+  equal(mylesContracts[0]!.promotionId, wwe.id);
+  equal(romanContracts[0]!.exclusivity, "EXCLUSIVE");
+  equal(mylesContracts[0]!.exclusivity, "EXCLUSIVE");
+  equal(roman.rosterPromotionId, wwe.id);
+  equal(myles.rosterPromotionId, nxt.id);
+  ok(!state.contracts.some((contract) => contract.personId === myles.id && contract.promotionId === nxt.id), "Myles Borne received a fake standalone NXT employment contract");
+});
+
+test("reviewed WWE/NXT seed survives early World simulation without rogue NXT employment", () => {
+  const state = createWorld(
+    118,
+    REAL_WORLD_ALPHA_RULESET,
+    "WWE NXT Early Sim",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    wweNxtInitialRosterAssignmentSource,
+  );
+  const nxt = state.promotions.find((promotion) => promotion.name === "NXT")!;
+  resolveWorldWeeks(state, 8);
+  const invariantErrors = validateWorldInvariants(state);
+  equal(invariantErrors.length, 0, invariantErrors.join("\n"));
+  ok(
+    !activeContractsForPromotion(state, nxt.id).some((contract) => contract.status === "SIGNED"),
+    "NXT created standalone employment contracts during early simulation",
+  );
+});
+
+test("reviewed AEW/ROH/CMLL seed models parent rosters and confirmed dual contracts", () => {
+  const state = createWorld(
+    121,
+    REAL_WORLD_ALPHA_RULESET,
+    "AEW ROH CMLL Seed",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
+  );
+  equal(AEW_ROH_CMLL_ROSTER_SEED_REVIEWED_ON, "2026-10-07");
+
+  const aew = state.promotions.find((promotion) => promotion.name === "AEW")!;
+  const roh = state.promotions.find((promotion) => promotion.name === "ROH")!;
+  const cmll = state.promotions.find((promotion) => promotion.name === "CMLL")!;
+  equal(aew.rosterMode, "EXPLICIT");
+  equal(roh.rosterMode, "EXPLICIT");
+  equal(cmll.rosterMode, "EXPLICIT");
+  equal(roh.identity?.parentPromotionId, aew.id);
+
+  const rosterNames = (promotionId: string) => currentRosterPersonIds(state, promotionId)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  const aewNames = rosterNames(aew.id);
+  const rohNames = rosterNames(roh.id);
+  const cmllNames = rosterNames(cmll.id);
+
+  for (const name of AEW_PRIMARY_ROSTER_NAMES) ok(aewNames.includes(name), `AEW seed missing ${name}`);
+  for (const name of ROH_PRIMARY_ROSTER_NAMES) ok(rohNames.includes(name), `ROH seed missing ${name}`);
+  for (const name of CMLL_PRIMARY_ROSTER_NAMES) ok(cmllNames.includes(name), `CMLL seed missing ${name}`);
+  for (const name of AEW_ROH_SECONDARY_ROSTER_NAMES) ok(rohNames.includes(name), `ROH secondary seed missing ${name}`);
+  for (const seed of AEW_CMLL_DUAL_CONTRACT_SEEDS) {
+    ok(aewNames.includes(seed.name), `AEW dual-contract roster missing ${seed.name}`);
+    ok(cmllNames.includes(seed.name), `CMLL dual-contract roster missing ${seed.name}`);
+    if (seed.rohSecondary) ok(rohNames.includes(seed.name), `ROH secondary dual-contract roster missing ${seed.name}`);
+  }
+
+  const claudio = state.people.find((person) => person.name === "Claudio Castagnoli")!;
+  const claudioContracts = activeContractsForPerson(state, claudio.id);
+  equal(claudioContracts.length, 2);
+  equal(new Set(claudioContracts.map((contract) => contract.promotionId)).size, 2);
+  ok(claudioContracts.every((contract) => contract.family === "LIMITED_NON_EXCLUSIVE"), "Claudio dual contracts were not flexible");
+  equal(
+    state.wrestlerPromotionAffiliations?.filter((affiliation) => affiliation.personId === claudio.id).length,
+    2,
+  );
+
+  const mistico = state.people.find((person) => person.name === "Místico")!;
+  const misticoAffiliations = state.wrestlerPromotionAffiliations?.filter(
+    (affiliation) => affiliation.personId === mistico.id,
+  ) ?? [];
+  equal(activeContractsForPerson(state, mistico.id).length, 2);
+  equal(misticoAffiliations.length, 3);
+  equal(misticoAffiliations.filter((affiliation) => affiliation.role === "PRIMARY").length, 1);
+  ok(misticoAffiliations.some((affiliation) => affiliation.promotionId === roh.id && affiliation.basis === "PARENT_COMPANY"), "Místico lacks ROH parent-company affiliation");
+
+  const athena = state.people.find((person) => person.name === "Athena")!;
+  equal(activeContractsForPerson(state, athena.id).length, 1);
+  equal(activeContractsForPerson(state, athena.id)[0]!.promotionId, aew.id);
+  ok(rohNames.includes("Athena"), "Athena is missing from ROH");
+  ok(!aewNames.includes("Athena"), "ROH-primary Athena leaked into the AEW main roster");
+
+  for (const name of AEW_FLEXIBLE_PRIMARY_ROSTER_NAMES) {
+    const person = state.people.find((candidate) => candidate.name === name)!;
+    const contract = activeContractsForPerson(state, person.id).find((candidate) => candidate.promotionId === aew.id);
+    ok(contract, `missing AEW contract for flexible roster member ${name}`);
+    equal(contract!.family, "LIMITED_NON_EXCLUSIVE");
+  }
+
+  const marina = state.people.find((person) => person.name === "Marina Shafir")!;
+  equal(activeContractsForPerson(state, marina.id).length, 1);
+  ok(aewNames.includes("Marina Shafir") && rohNames.includes("Marina Shafir"), "Marina Shafir did not receive AEW primary + ROH secondary access");
+
+  const errors = validateWorldInvariants(state);
+  equal(errors.length, 0, errors.join("\n"));
+});
+
+test("combined real-world roster seed survives early simulation with multi-roster affiliations intact", () => {
+  const state = createWorld(
+    122,
+    REAL_WORLD_ALPHA_RULESET,
+    "Real World Multi Roster Early Sim",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
+  );
+  resolveWorldWeeks(state, 4);
+  const errors = validateWorldInvariants(state);
+  equal(errors.length, 0, errors.join("\n"));
+
+  const claudio = state.people.find((person) => person.name === "Claudio Castagnoli")!;
+  const aew = state.promotions.find((promotion) => promotion.name === "AEW")!;
+  const cmll = state.promotions.find((promotion) => promotion.name === "CMLL")!;
+  ok(currentRosterPersonIds(state, aew.id).includes(claudio.id), "Claudio fell off AEW roster during early sim");
+  ok(currentRosterPersonIds(state, cmll.id).includes(claudio.id), "Claudio fell off CMLL roster during early sim");
+});
+
+test("reviewed TNA seed creates an explicit flexible active-core roster", () => {
+  const state = createWorld(
+    123,
+    REAL_WORLD_ALPHA_RULESET,
+    "TNA Seed",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
+  );
+  equal(TNA_ROSTER_SEED_REVIEWED_ON, "2026-10-07");
+
+  const tna = state.promotions.find((promotion) => promotion.name === "TNA Wrestling")!;
+  const nxt = state.promotions.find((promotion) => promotion.name === "NXT")!;
+  equal(tna.rosterMode, "EXPLICIT");
+
+  const tnaRosterNames = currentRosterPersonIds(state, tna.id)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  equal(tnaRosterNames.length, TNA_PRIMARY_ROSTER_NAMES.length);
+  for (const name of TNA_PRIMARY_ROSTER_NAMES) {
+    ok(tnaRosterNames.includes(name), `TNA seed missing ${name}`);
+  }
+
+  const steveMaclin = state.people.find((candidate) => candidate.name === "Steve Maclin")!;
+  ok(!currentRosterPersonIds(state, tna.id).includes(steveMaclin.id), "released Steve Maclin was incorrectly restored to TNA");
+
+  for (const name of ["Nic Nemeth", "Xia Brookside", "Tasha Steelz", "Zoey Serrano"]) {
+    const person = state.people.find((candidate) => candidate.name === name)!;
+    const contracts = activeContractsForPerson(state, person.id);
+    equal(contracts.length, 1);
+    equal(contracts[0]!.promotionId, tna.id);
+    equal(contracts[0]!.family, "LIMITED_NON_EXCLUSIVE");
+    equal(person.rosterPromotionId, tna.id);
+    ok(!currentRosterPersonIds(state, nxt.id).includes(person.id), `${name} leaked into NXT roster from crossover activity`);
+  }
+
+  const errors = validateWorldInvariants(state);
+  equal(errors.length, 0, errors.join("\n"));
+});
+
+test("combined TNA roster survives early simulation without losing explicit membership", () => {
+  const state = createWorld(
+    124,
+    REAL_WORLD_ALPHA_RULESET,
+    "TNA Early Sim",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
+  );
+  const tna = state.promotions.find((promotion) => promotion.name === "TNA Wrestling")!;
+  resolveWorldWeeks(state, 4);
+  const errors = validateWorldInvariants(state);
+  equal(errors.length, 0, errors.join("\n"));
+  const rosterNames = currentRosterPersonIds(state, tna.id)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  for (const name of ["Matt Hardy", "Jeff Hardy", "Moose", "Xia Brookside", "Jody Threat"]) {
+    ok(rosterNames.includes(name), `TNA early sim lost ${name}`);
+  }
+});
+
+test("reviewed NJPW and STARDOM seeds create explicit current active-core rosters", () => {
+  const state = createWorld(
+    125,
+    REAL_WORLD_ALPHA_RULESET,
+    "NJPW STARDOM Seed",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
+  );
+  equal(NJPW_STARDOM_ROSTER_SEED_REVIEWED_ON, "2026-10-08");
+
+  const njpw = state.promotions.find((promotion) => promotion.name === "NJPW")!;
+  const stardom = state.promotions.find((promotion) => promotion.name === "STARDOM")!;
+  const aew = state.promotions.find((promotion) => promotion.name === "AEW")!;
+  equal(njpw.rosterMode, "EXPLICIT");
+  equal(stardom.rosterMode, "EXPLICIT");
+
+  const rosterNames = (promotionId: string) => currentRosterPersonIds(state, promotionId)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  const njpwNames = rosterNames(njpw.id);
+  const stardomNames = rosterNames(stardom.id);
+
+  equal(njpwNames.length, NJPW_PRIMARY_ROSTER_NAMES.length);
+  equal(stardomNames.length, STARDOM_PRIMARY_ROSTER_NAMES.length);
+  for (const name of NJPW_PRIMARY_ROSTER_NAMES) ok(njpwNames.includes(name), `NJPW seed missing ${name}`);
+  for (const name of STARDOM_PRIMARY_ROSTER_NAMES) ok(stardomNames.includes(name), `STARDOM seed missing ${name}`);
+
+  for (const name of ["Yota Tsuji", "Zack Sabre Jr.", "Aaron Wolf", "Tomohiro Ishii"]) {
+    const person = state.people.find((candidate) => candidate.name === name)!;
+    const contracts = activeContractsForPerson(state, person.id);
+    equal(contracts.length, 1);
+    equal(contracts[0]!.promotionId, njpw.id);
+    equal(contracts[0]!.family, "LIMITED_NON_EXCLUSIVE");
+  }
+  for (const name of ["Starlight Kid", "Saya Kamitani", "Maki Itoh", "Matoi Hamabe"]) {
+    const person = state.people.find((candidate) => candidate.name === name)!;
+    const contracts = activeContractsForPerson(state, person.id);
+    equal(contracts.length, 1);
+    equal(contracts[0]!.promotionId, stardom.id);
+    equal(contracts[0]!.family, "LIMITED_NON_EXCLUSIVE");
+    equal(person.division, "WOMEN");
+  }
+
+  for (const guest of ["Jon Moxley", "Konosuke Takeshita", "Will Ospreay", "Mercedes Moné", "Kevin Knight"]) {
+    const person = state.people.find((candidate) => candidate.name === guest)!;
+    ok(!njpwNames.includes(guest), `${guest} was incorrectly reassigned to NJPW from outside-company activity`);
+    ok(currentRosterPersonIds(state, aew.id).includes(person.id), `${guest} lost existing AEW affiliation`);
+  }
+
+  const yota = state.people.find((candidate) => candidate.name === "Yota Tsuji")!;
+  equal(realRosterValueBand(yota.name), "HEADLINER");
+  const errors = validateWorldInvariants(state);
+  equal(errors.length, 0, errors.join("\n"));
+});
+
+test("combined NJPW and STARDOM rosters survive early simulation", () => {
+  const state = createWorld(
+    126,
+    REAL_WORLD_ALPHA_RULESET,
+    "Japan Early Sim",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
+  );
+  const njpw = state.promotions.find((promotion) => promotion.name === "NJPW")!;
+  const stardom = state.promotions.find((promotion) => promotion.name === "STARDOM")!;
+  resolveWorldWeeks(state, 4);
+  const errors = validateWorldInvariants(state);
+  equal(errors.length, 0, errors.join("\n"));
+  const njpwNames = currentRosterPersonIds(state, njpw.id)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  const stardomNames = currentRosterPersonIds(state, stardom.id)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  for (const name of ["Yota Tsuji", "Shota Umino", "El Desperado", "Yuya Uemura"]) {
+    ok(njpwNames.includes(name), `NJPW early sim lost ${name}`);
+  }
+  for (const name of ["Starlight Kid", "AZM", "Saya Kamitani", "Maki Itoh"]) {
+    ok(stardomNames.includes(name), `STARDOM early sim lost ${name}`);
+  }
+});
+
 test("Genesis creates formal contracts while preserving free-agent supply", () => {
   const state = createWorld(101, DEFAULT_RULESET);
   const contractedPeople = state.people.filter((person) => activeContractsForPerson(state, person.id).length > 0);
@@ -86,6 +895,42 @@ test("Genesis roster distribution respects tier-scale targets instead of hoardin
 test("one Global promotion exists in default Genesis", () => {
   const state = createWorld(101, DEFAULT_RULESET);
   equal(state.promotions.filter((p) => p.tier === "GLOBAL").length, 1);
+});
+
+test("Genesis promotions carry persistent identity and contract culture", () => {
+  const state = createWorld(102, DEFAULT_RULESET);
+  for (const promotion of state.promotions) {
+    equal(promotion.identity?.origin, "FICTIONAL");
+    equal(promotion.identity?.canonicalName, promotion.name);
+    equal(promotion.identity?.parentPromotionId, null);
+    const policy = promotion.contractPolicy;
+    ok(policy, `${promotion.id} is missing contract policy`);
+    ok(policy!.exclusiveContractChance >= 0 && policy!.exclusiveContractChance <= 100, `${promotion.id} has invalid exclusive chance`);
+  }
+  equal(defaultPromotionContractPolicy("GLOBAL").exclusiveContractChance, 72);
+  equal(defaultPromotionContractPolicy("INDEPENDENT").outsideBookingPolicy, "PERMITTED");
+});
+
+test("promotion contract culture overrides tier when generating terms", () => {
+  const state = createWorld(103, DEFAULT_RULESET);
+  const promotion = state.promotions.find((candidate) => candidate.tier === "GLOBAL")!;
+  const person = state.people.find((candidate) => activeContractsForPerson(state, candidate.id).length === 0)!;
+
+  promotion.contractPolicy = {
+    exclusiveContractChance: 0,
+    starExclusiveBonus: 0,
+    outsideBookingPolicy: "PERMITTED",
+  };
+  const flexible = buildContractTerms(state, promotion, person, new DeterministicRng(1));
+  equal(flexible.family, "LIMITED_NON_EXCLUSIVE");
+
+  promotion.contractPolicy = {
+    exclusiveContractChance: 100,
+    starExclusiveBonus: 0,
+    outsideBookingPolicy: "PROHIBITED",
+  };
+  const lockdown = buildContractTerms(state, promotion, person, new DeterministicRng(1));
+  equal(lockdown.family, "EXCLUSIVE");
 });
 
 test("World advances across 52-week PPW Years", () => {

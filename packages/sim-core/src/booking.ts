@@ -7,7 +7,8 @@ import {
 } from "./competition-indexes.js";
 import { ppwDateToWeekIndex } from "./clock.js";
 import { lastContestForChampionship, participantsForMatch, workingChemistryForPair } from "./indexes.js";
-import { DeterministicRng } from "./rng.js";
+import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
+import { wrestlerDivision } from "./wrestler-division.js";
 
 export interface BookingCardMatch {
   type: MatchType;
@@ -227,7 +228,7 @@ function takeFreshSinglesCard(state: WorldState, event: WrestlingEvent, remainin
   return { type: "SINGLES", sideA: [pair[0]], sideB: [pair[1]] };
 }
 
-export function buildBookingCard(
+function buildSingleDivisionBookingCard(
   state: WorldState,
   event: WrestlingEvent,
   ranked: Person[],
@@ -271,5 +272,29 @@ export function buildBookingCard(
   if (programme) cards.push({ type: "SINGLES", sideA: programme.sideA, sideB: programme.sideB });
   if (tagTitle) cards.push(tagTitle);
   if (singlesTitle) cards.push(singlesTitle);
+  return cards;
+}
+
+export function buildBookingCard(
+  state: WorldState,
+  event: WrestlingEvent,
+  ranked: Person[],
+  rng: DeterministicRng,
+): BookingCardMatch[] {
+  const divisions = new Set(ranked.map((person) => wrestlerDivision(person)));
+  if (divisions.size <= 1) {
+    return buildSingleDivisionBookingCard(state, event, ranked, rng);
+  }
+
+  const cards: BookingCardMatch[] = [];
+  for (const division of ["MEN", "WOMEN"] as const) {
+    const divisionRoster = ranked.filter((person) => wrestlerDivision(person) === division);
+    if (divisionRoster.length < 2) continue;
+    const divisionRng = new DeterministicRng(
+      deterministicSeedFromText(`${state.world.seed}:${event.id}:division:${division}`),
+    );
+    cards.push(...buildSingleDivisionBookingCard(state, event, divisionRoster, divisionRng));
+  }
+  cards.sort((a, b) => cardPushScore(a) - cardPushScore(b));
   return cards;
 }

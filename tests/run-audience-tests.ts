@@ -1,11 +1,14 @@
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
+import type { WrestlingEvent } from "../packages/domain/src/types.js";
 import {
+  applyCurrentWeekShowFlowAudienceConsequences,
   createWorld,
   decayAudienceMarketHeat,
   planAndResolveWorldEvents,
   planWorldEvents,
+  showFlowAudienceStrengthDelta,
 } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
@@ -68,6 +71,173 @@ test("audience heat decays gradually toward durable loyalty", () => {
   decayAudienceMarketHeat(local);
   ok(local.liveStrength === 20.8, `expected cold market to recover to 20.8, got ${local.liveStrength}`);
   ok(local.liveStrength < local.loyalty, "heat should not snap immediately back to loyalty");
+});
+
+test("show-flow audience consequence is modest and hard-capped", () => {
+  ok(showFlowAudienceStrengthDelta(4.2) === 0.4, "positive show-flow adjustment scaled incorrectly");
+  ok(showFlowAudienceStrengthDelta(-3.4) === -0.3, "negative show-flow adjustment scaled incorrectly");
+  ok(showFlowAudienceStrengthDelta(99) === 0.5, "positive show-flow consequence exceeded its cap");
+  ok(showFlowAudienceStrengthDelta(-99) === -0.5, "negative show-flow consequence exceeded its cap");
+});
+
+test("frozen human show flow changes only local live strength and applies exactly once", () => {
+  const state = createWorld(10104, DEFAULT_RULESET);
+  const promotion = state.promotions[0]!;
+  promotion.controllerType = "HUMAN";
+  const local = state.promotionMarketStates.find((entry) => (
+    entry.promotionId === promotion.id && entry.marketId === promotion.homeMarketId
+  ))!;
+  const venue = state.venues.find((candidate) => candidate.marketId === promotion.homeMarketId)!;
+  local.liveStrength = 50;
+  local.loyalty = 37;
+  local.awareness = 61;
+  const event: WrestlingEvent = {
+    id: "audience-flow-event",
+    worldId: state.world.id,
+    promotionId: promotion.id,
+    marketId: promotion.homeMarketId,
+    venueId: venue.id,
+    date: { ...state.world.currentDate, day: 6 },
+    type: "REGULAR",
+    status: "COMPLETED",
+    ticketStrategy: "STANDARD",
+    expectedDemand: 500,
+    attendance: 450,
+    ticketYield: 40,
+    gateRevenue: 18000,
+    totalCost: 15000,
+    netResult: 3000,
+    eventImportance: 58,
+    matchCount: 3,
+    averageMatchRating: 3.2,
+    bestMatchRating: 3.8,
+    crowdResponse: 73,
+  };
+  state.events.push(event);
+  state.ledger.push({
+    id: "audience-flow-ledger",
+    worldId: state.world.id,
+    date: { ...event.date },
+    order: 999,
+    type: "EVENT_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: [event.id, promotion.id, event.marketId, event.venueId],
+    payload: {
+      crowdResponse: 73,
+      showFlowFrozen: true,
+      showFlowAdjustment: 4.2,
+    },
+  });
+
+  ok(applyCurrentWeekShowFlowAudienceConsequences(state) === 1, "frozen show-flow consequence was not applied");
+  ok(local.liveStrength === 50.4, `expected live strength 50.4, got ${local.liveStrength}`);
+  ok(local.loyalty === 37, "show flow incorrectly changed durable loyalty");
+  ok(local.awareness === 61, "show flow incorrectly changed awareness");
+  const ledger = state.ledger.at(-1)!;
+  ok(ledger.payload.showFlowAudienceApplied === true, "event history did not mark audience consequence as applied");
+  ok(ledger.payload.showFlowAudienceStrengthDelta === 0.4, "event history did not freeze the applied audience delta");
+  ok(ledger.payload.showFlowAudienceStrengthBefore === 50, "event history did not freeze pre-consequence local strength");
+  ok(ledger.payload.showFlowAudienceStrengthAfter === 50.4, "event history did not freeze post-consequence local strength");
+
+  ok(applyCurrentWeekShowFlowAudienceConsequences(state) === 0, "audience consequence applied twice on retry");
+  ok(local.liveStrength === 50.4, "retry changed local audience strength twice");
+});
+
+test("unfrozen or legacy human show history does not invent a show-flow audience consequence", () => {
+  const state = createWorld(10105, DEFAULT_RULESET);
+  const promotion = state.promotions[0]!;
+  promotion.controllerType = "HUMAN";
+  const local = state.promotionMarketStates.find((entry) => (
+    entry.promotionId === promotion.id && entry.marketId === promotion.homeMarketId
+  ))!;
+  const venue = state.venues.find((candidate) => candidate.marketId === promotion.homeMarketId)!;
+  const before = local.liveStrength;
+  const event: WrestlingEvent = {
+    id: "audience-legacy-event",
+    worldId: state.world.id,
+    promotionId: promotion.id,
+    marketId: promotion.homeMarketId,
+    venueId: venue.id,
+    date: { ...state.world.currentDate, day: 6 },
+    type: "REGULAR",
+    status: "COMPLETED",
+    ticketStrategy: "STANDARD",
+    expectedDemand: 500,
+    attendance: 450,
+    ticketYield: 40,
+    gateRevenue: 18000,
+    totalCost: 15000,
+    netResult: 3000,
+    eventImportance: 58,
+    matchCount: 3,
+    averageMatchRating: 3.2,
+    bestMatchRating: 3.8,
+    crowdResponse: 70,
+  };
+  state.events.push(event);
+  state.ledger.push({
+    id: "audience-legacy-ledger",
+    worldId: state.world.id,
+    date: { ...event.date },
+    order: 999,
+    type: "EVENT_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: [event.id, promotion.id, event.marketId, event.venueId],
+    payload: { crowdResponse: 70, showFlowAdjustment: 4 },
+  });
+
+  ok(applyCurrentWeekShowFlowAudienceConsequences(state) === 0, "legacy event received an invented show-flow consequence");
+  ok(local.liveStrength === before, "legacy event changed local audience strength");
+});
+
+test("AI promotions keep the established market path during the ALPHA consequence pass", () => {
+  const state = createWorld(10106, DEFAULT_RULESET);
+  const promotion = state.promotions[0]!;
+  const local = state.promotionMarketStates.find((entry) => (
+    entry.promotionId === promotion.id && entry.marketId === promotion.homeMarketId
+  ))!;
+  const venue = state.venues.find((candidate) => candidate.marketId === promotion.homeMarketId)!;
+  const before = local.liveStrength;
+  const event: WrestlingEvent = {
+    id: "audience-ai-flow-event",
+    worldId: state.world.id,
+    promotionId: promotion.id,
+    marketId: promotion.homeMarketId,
+    venueId: venue.id,
+    date: { ...state.world.currentDate, day: 6 },
+    type: "REGULAR",
+    status: "COMPLETED",
+    ticketStrategy: "STANDARD",
+    expectedDemand: 500,
+    attendance: 450,
+    ticketYield: 40,
+    gateRevenue: 18000,
+    totalCost: 15000,
+    netResult: 3000,
+    eventImportance: 58,
+    matchCount: 3,
+    averageMatchRating: 3.2,
+    bestMatchRating: 3.8,
+    crowdResponse: 73,
+  };
+  state.events.push(event);
+  state.ledger.push({
+    id: "audience-ai-flow-ledger",
+    worldId: state.world.id,
+    date: { ...event.date },
+    order: 999,
+    type: "EVENT_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: [event.id, promotion.id, event.marketId, event.venueId],
+    payload: { crowdResponse: 73, showFlowFrozen: true, showFlowAdjustment: 4.2 },
+  });
+
+  ok(promotion.controllerType === "AI", "fixture promotion unexpectedly stopped being AI-controlled");
+  ok(applyCurrentWeekShowFlowAudienceConsequences(state) === 0, "AI promotion received the ALPHA-only incremental consequence");
+  ok(local.liveStrength === before, "AI market path changed during the ALPHA consequence pass");
 });
 
 console.log(`\nAudience tests: ${passed} passed, ${failed} failed`);

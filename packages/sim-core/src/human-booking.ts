@@ -1,6 +1,7 @@
 import type {
   Match,
   MatchIntent,
+  MatchStyleProfile,
   MatchParticipant,
   MatchSide,
   MatchType,
@@ -8,6 +9,14 @@ import type {
 } from "../../domain/src/types.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
+import { normalizeMatchStyle } from "./match-style.js";
+import { requireSameWrestlerDivision } from "./wrestler-division.js";
+import {
+  defaultPlannedFinishForIntent,
+  isBookableMatchFinish,
+  setPlannedMatchFinish,
+  type MatchFinish,
+} from "./match-finishes.js";
 
 export interface HumanMatchPlan {
   type: MatchType;
@@ -15,7 +24,9 @@ export interface HumanMatchPlan {
   sideBIds: string[];
   intendedWinnerSide: MatchSide;
   intent: MatchIntent;
+  style?: MatchStyleProfile;
   plannedLengthMinutes: number;
+  plannedFinish?: MatchFinish;
 }
 
 function validateSideSize(type: MatchType, sideAIds: string[], sideBIds: string[]): void {
@@ -25,10 +36,39 @@ function validateSideSize(type: MatchType, sideAIds: string[], sideBIds: string[
   }
 }
 
+export function clearHumanMatchCard(state: WorldState, eventId: string): number {
+  const event = state.events.find((candidate) => candidate.id === eventId);
+  if (!event) throw new Error(`unknown event ${eventId}`);
+  if (event.status !== "SCHEDULED") throw new Error("match card can only be cleared for a scheduled event");
+
+  const promotion = state.promotions.find((candidate) => candidate.id === event.promotionId);
+  if (!promotion || promotion.controllerType !== "HUMAN") {
+    throw new Error("manual match-card clearing requires a human-controlled promotion");
+  }
+
+  const eventMatches = state.matches.filter((match) => match.eventId === event.id);
+  if (eventMatches.some((match) => match.status !== "SCHEDULED")) {
+    throw new Error("resolved or cancelled matches cannot be replaced");
+  }
+  if ((state.championshipMatchBookings ?? []).some((booking) => booking.eventId === event.id)) {
+    throw new Error("championship designations must be unbooked before replacing the card");
+  }
+
+  const matchIds = new Set(eventMatches.map((match) => match.id));
+  for (let index = state.matchParticipants.length - 1; index >= 0; index -= 1) {
+    if (matchIds.has(state.matchParticipants[index]!.matchId)) state.matchParticipants.splice(index, 1);
+  }
+  for (let index = state.matches.length - 1; index >= 0; index -= 1) {
+    if (matchIds.has(state.matches[index]!.id)) state.matches.splice(index, 1);
+  }
+  return eventMatches.length;
+}
+
 export function prepareHumanMatchCard(
   state: WorldState,
   eventId: string,
   plans: HumanMatchPlan[],
+  options: { allowSegmentOnlyCommitted?: boolean } = {},
 ): Match[] {
   const event = state.events.find((candidate) => candidate.id === eventId);
   if (!event) throw new Error(`unknown event ${eventId}`);
@@ -58,7 +98,17 @@ export function prepareHumanMatchCard(
     if (!Number.isInteger(plan.plannedLengthMinutes) || plan.plannedLengthMinutes < 3 || plan.plannedLengthMinutes > 60) {
       throw new Error("planned match length must be an integer from 3 to 60 minutes");
     }
+    if (plan.plannedFinish !== undefined && !isBookableMatchFinish(plan.plannedFinish)) {
+      throw new Error("planned match finish must be clean, submission, flash or protected");
+    }
+    if (plan.style !== undefined) normalizeMatchStyle(plan.style);
     const ids = [...plan.sideAIds, ...plan.sideBIds];
+    const people = ids.map((personId) => state.people.find((candidate) => candidate.id === personId));
+    if (people.some((person) => !person)) throw new Error("match references a missing wrestler");
+    requireSameWrestlerDivision(
+      people as NonNullable<(typeof people)[number]>[],
+      "manual matches cannot mix men's and women's divisions",
+    );
     for (const personId of ids) {
       if (!committedIds.has(personId)) throw new Error(`wrestler ${personId} is not committed to this event`);
       if (used.has(personId)) throw new Error(`wrestler ${personId} is booked more than once on the card`);
@@ -68,7 +118,10 @@ export function prepareHumanMatchCard(
     }
   }
 
-  if (used.size !== committedIds.size || [...committedIds].some((personId) => !used.has(personId))) {
+  if (
+    !options.allowSegmentOnlyCommitted
+    && (used.size !== committedIds.size || [...committedIds].some((personId) => !used.has(personId)))
+  ) {
     throw new Error("manual card must use every wrestler committed to the show exactly once");
   }
 
@@ -84,6 +137,7 @@ export function prepareHumanMatchCard(
       type: plan.type,
       status: "SCHEDULED",
       intent: plan.intent,
+      ...(plan.style === undefined ? {} : { style: normalizeMatchStyle(plan.style) }),
       plannedLengthMinutes: plan.plannedLengthMinutes,
       actualLengthMinutes: 0,
       intendedWinnerSide: plan.intendedWinnerSide,
@@ -93,6 +147,7 @@ export function prepareHumanMatchCard(
       criticalRatingStars: 0,
       crowdResponse: 0,
     };
+    setPlannedMatchFinish(match, plan.plannedFinish ?? defaultPlannedFinishForIntent(plan.intent));
     state.matches.push(match);
     matches.push(match);
 

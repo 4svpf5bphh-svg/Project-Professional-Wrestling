@@ -4,7 +4,6 @@ import {
   currentRosterPersonIds,
 } from "../../sim-core/src/contracts.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
-import { humanWeekReadiness } from "../../sim-core/src/human-routine.js";
 import { minimumViableRoster } from "../../sim-core/src/lifecycle.js";
 import {
   activityForPlayer,
@@ -13,7 +12,7 @@ import {
   type OpportunityCategory,
 } from "./engagement.js";
 import { activePromotionControlForPlayer } from "./ownership.js";
-import { playerShowPlanningStatus } from "./planning-status.js";
+import { playerCurrentWeekPreparation, playerShowPlanningStatus } from "./planning-status.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export type AttentionCategory = "ACTION_REQUIRED" | "IMPORTANT" | "OPPORTUNITY" | "WATCHING" | "WORLD_NEWS";
@@ -74,6 +73,23 @@ function contractFamilyLabel(family: string): string {
   return family.replaceAll("_", " ").toLowerCase();
 }
 
+function contractOfferRejectionSummary(reason: string | null): string {
+  switch (reason) {
+    case "offer utility below acceptance threshold":
+      return "The proposed terms did not meet the wrestler’s expectations.";
+    case "exclusive offer overlaps another signed contract":
+    case "existing exclusive contract blocks outside work":
+      return "An existing exclusive commitment prevented the deal.";
+    case "service capacity exceeded":
+      return "The wrestler’s existing schedule could not accommodate the proposed dates.";
+    case "stronger exclusive offer accepted":
+    case "overlaps accepted exclusive offer":
+      return "The wrestler accepted a conflicting exclusive offer elsewhere.";
+    default:
+      return "The wrestler declined the proposed terms.";
+  }
+}
+
 export function buildPlayerAttention(
   aggregate: ApplicationWorldAggregate,
   playerId: string,
@@ -87,7 +103,12 @@ export function buildPlayerAttention(
   const activity = aggregate.engagement ? activityForPlayer(aggregate.engagement, playerId) : null;
 
   if (promotion) {
-    const readiness = humanWeekReadiness(aggregate.state, promotion.id);
+    const readiness = playerCurrentWeekPreparation(
+      aggregate.state,
+      aggregate.planning,
+      aggregate.runtime,
+      promotion.id,
+    );
     if (readiness.status === "SHOW_REQUIRED") {
       items.push({
         attentionId: `required-show:${promotion.id}:Y${currentDate.year}:W${currentDate.week}`,
@@ -158,8 +179,45 @@ export function buildPlayerAttention(
       });
     }
 
+    const resolvedDate = aggregate.runtime.lastResolvedPpwDate;
+    if (resolvedDate) {
+      for (const offer of aggregate.state.contractOffers) {
+        if (offer.promotionId !== promotion.id || offer.status === "PENDING") continue;
+        if (!sameWeek(offer.submittedDate, resolvedDate)) continue;
+        const name = personName(aggregate, offer.personId);
+        const accepted = offer.status === "ACCEPTED";
+        pushIfVisible(aggregate, playerId, items, {
+          attentionId: `contract-offer-result:${offer.id}`,
+          category: "IMPORTANT",
+          title: accepted ? `${name} accepted your contract offer` : `${name} rejected your contract offer`,
+          summary: accepted
+            ? `${name} accepted your ${contractFamilyLabel(offer.family)} offer for ${offer.dateEntitlement} date${offer.dateEntitlement === 1 ? "" : "s"}. The contract is now signed.`
+            : contractOfferRejectionSummary(offer.rejectionReason),
+          deadline: null,
+          deepLink: "/business",
+          dismissible: true,
+          sourceOpportunityCategory: null,
+        });
+      }
+    }
+
     for (const contract of activeContracts) {
       if (contract.family === "ONE_OFF") continue;
+      const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
+      if (datesRemaining === 0) {
+        const name = personName(aggregate, contract.personId);
+        items.push({
+          attentionId: `contract-dates-exhausted:${contract.id}`,
+          category: "ACTION_REQUIRED",
+          title: `${name} has no contracted dates remaining`,
+          summary: `${name}'s calendar contract is still active, but every purchased appearance has been used. Renegotiate now to buy more dates; an accepted replacement takes effect immediately.`,
+          deadline: null,
+          deepLink: "/talent",
+          dismissible: false,
+          sourceOpportunityCategory: null,
+        });
+        continue;
+      }
       const weeksRemaining = weekIndex(aggregate, contract.endDate) - weekIndex(aggregate, currentDate);
       if (weeksRemaining < 0 || weeksRemaining > aggregate.state.ruleset.renewalWindowWeeks) continue;
       const urgent = weeksRemaining <= 1;

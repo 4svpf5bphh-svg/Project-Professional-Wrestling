@@ -19,7 +19,7 @@ export interface AlphaPlannerShowPlanRequest {
   marketId: string;
   venueId: string;
   ticketStrategy: TicketStrategy;
-  participantIds: string[];
+  participantIds?: string[];
 }
 
 const TICKET_STRATEGIES = new Set<TicketStrategy>(["ACCESSIBLE", "STANDARD", "PREMIUM", "PRESTIGE"]);
@@ -75,7 +75,9 @@ export async function saveAlphaPlannerShowPlan(
   const week = requirePositiveInteger(request.week, "week");
   const day = requireShowDay(request.day);
   if (!TICKET_STRATEGIES.has(request.ticketStrategy)) throw new Error("unsupported ticket strategy");
-  if (!Array.isArray(request.participantIds)) throw new Error("participantIds must be an array");
+  if (request.participantIds !== undefined && !Array.isArray(request.participantIds)) {
+    throw new Error("participantIds must be an array when supplied");
+  }
 
   const draftRequestId = `${requestId}:draft`;
   const reservationRequestId = `${requestId}:reserve`;
@@ -85,9 +87,7 @@ export async function saveAlphaPlannerShowPlan(
     if (!control) throw new Error("Alpha player must control a promotion before planning a show");
 
     const draftReceipt = aggregate.commands.receipts.find((receipt) => receipt.requestId === draftRequestId);
-    const reservationReceipt = aggregate.commands.receipts.find((receipt) => receipt.requestId === reservationRequestId);
-    const completeRetry = Boolean(draftReceipt && reservationReceipt);
-    if (!completeRetry && aggregate.runtime.revision !== expectedRevision) {
+    if (!draftReceipt && aggregate.runtime.revision !== expectedRevision) {
       throw new Error(
         `stale World revision for ${worldId}: expected ${expectedRevision}, current ${aggregate.runtime.revision}`,
       );
@@ -107,6 +107,25 @@ export async function saveAlphaPlannerShowPlan(
     }
     const existing = draftsInWeek[0] ?? null;
     const draftId = existing?.draftId ?? plannerDraftId(control.promotionId, year, week);
+    const participantIds = request.participantIds === undefined
+      ? [...(existing?.participantIds ?? [])]
+      : [...request.participantIds];
+    const selectedParticipantIds = new Set(participantIds);
+    const rosterWasExplicitlyEdited = request.participantIds !== undefined;
+    const matches = existing?.matches
+      .filter((match) => !rosterWasExplicitlyEdited || [...match.sideAIds, ...match.sideBIds].every((personId) => selectedParticipantIds.has(personId)))
+      .map((match) => ({
+        ...match,
+        sideAIds: [...match.sideAIds],
+        sideBIds: [...match.sideBIds],
+      })) ?? [];
+    const retainedMatchIds = new Set(matches.map((match) => match.draftMatchId));
+    const championshipAssignments = existing?.championshipAssignments
+      .filter((assignment) => retainedMatchIds.has(assignment.draftMatchId))
+      .map((assignment) => ({ ...assignment })) ?? [];
+    const programmeSegments = existing?.programmeSegments
+      ?.filter((segment) => !rosterWasExplicitlyEdited || segment.participantIds.every((personId) => selectedParticipantIds.has(personId)))
+      .map((segment) => ({ ...segment, participantIds: [...segment.participantIds] }));
     const draft: DetailedShowDraft = {
       draftId,
       promotionId: control.promotionId,
@@ -114,13 +133,10 @@ export async function saveAlphaPlannerShowPlan(
       marketId: request.marketId,
       venueId: request.venueId,
       ticketStrategy: request.ticketStrategy,
-      participantIds: [...request.participantIds],
-      matches: existing?.matches.map((match) => ({
-        ...match,
-        sideAIds: [...match.sideAIds],
-        sideBIds: [...match.sideBIds],
-      })) ?? [],
-      championshipAssignments: existing?.championshipAssignments.map((assignment) => ({ ...assignment })) ?? [],
+      participantIds,
+      matches,
+      championshipAssignments,
+      ...(programmeSegments === undefined ? {} : { programmeSegments }),
     };
 
     const workspace = upsertDetailedShowDraftCommand(
@@ -142,24 +158,26 @@ export async function saveAlphaPlannerShowPlan(
       },
     );
 
-    reserveDetailedShowDraftCommand(
-      aggregate.state,
-      aggregate.ownership,
-      aggregate.planning,
-      aggregate.commands,
-      aggregate.runtime,
-      {
-        requestId: reservationRequestId,
-        worldId,
-        playerId,
-        commandType: "RESERVE_DETAILED_SHOW_DRAFT",
-        payload: {
-          promotionId: control.promotionId,
-          expectedPlanVersion: workspace.version,
-          draftId,
+    if (participantIds.length >= aggregate.state.ruleset.minEventParticipants) {
+      reserveDetailedShowDraftCommand(
+        aggregate.state,
+        aggregate.ownership,
+        aggregate.planning,
+        aggregate.commands,
+        aggregate.runtime,
+        {
+          requestId: reservationRequestId,
+          worldId,
+          playerId,
+          commandType: "RESERVE_DETAILED_SHOW_DRAFT",
+          payload: {
+            promotionId: control.promotionId,
+            expectedPlanVersion: workspace.version,
+            draftId,
+          },
         },
-      },
-    );
+      );
+    }
   });
 
   return loadAlphaPlayerPlanner(repository, worldId, playerId);
