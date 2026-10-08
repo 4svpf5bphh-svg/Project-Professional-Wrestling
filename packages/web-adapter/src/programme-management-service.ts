@@ -15,6 +15,13 @@ export interface AlphaProgrammeRosterPersonView {
   popularity: number;
 }
 
+export interface AlphaProgrammeRosterTeamView {
+  teamId: Id;
+  name: string;
+  memberIds: Id[];
+  memberNames: string[];
+}
+
 export interface AlphaManagedProgrammeSideView {
   label: string;
   personIds: Id[];
@@ -48,6 +55,7 @@ export interface AlphaProgrammeManagementView {
   };
   canEdit: boolean;
   roster: AlphaProgrammeRosterPersonView[];
+  teams: AlphaProgrammeRosterTeamView[];
   championships: Array<{
     championshipId: Id;
     name: string;
@@ -59,8 +67,8 @@ export interface AlphaProgrammeManagementView {
 export interface AlphaManagedStartProgrammeRequest {
   requestId: string;
   expectedRevision: number;
-  sideAIds: Id[];
-  sideBIds: Id[];
+  sideA: ProgrammeParticipantRef[];
+  sideB: ProgrammeParticipantRef[];
   championshipId?: Id | null;
 }
 
@@ -129,6 +137,25 @@ export async function loadAlphaProgrammeManagement(
     } satisfies AlphaProgrammeRosterPersonView))
     .sort((left, right) => right.popularity - left.popularity || left.name.localeCompare(right.name));
 
+  const teams = (aggregate.state.teams ?? [])
+    .filter((team) => team.status === "ACTIVE")
+    .map((team): AlphaProgrammeRosterTeamView | null => {
+      const members = (aggregate.state.teamMemberships ?? [])
+        .filter((membership) => membership.teamId === team.id && membership.active)
+        .map((membership) => membership.personId);
+      if (members.length < 2 || !members.every((personId) => rosterIds.has(personId))) return null;
+      return {
+        teamId: team.id,
+        name: team.name,
+        memberIds: [...members].sort(),
+        memberNames: members
+          .map((personId) => aggregate.state.people.find((person) => person.id === personId)?.name ?? personId)
+          .sort((left, right) => left.localeCompare(right)),
+      };
+    })
+    .filter((team): team is AlphaProgrammeRosterTeamView => team !== null)
+    .sort((left, right) => left.name.localeCompare(right.name));
+
   const programmes = (aggregate.state.programmes ?? [])
     .filter((programme) => programme.promotionId === promotion.id && programme.status === "ACTIVE")
     .map((programme) => {
@@ -171,6 +198,7 @@ export async function loadAlphaProgrammeManagement(
     promotion: { promotionId: promotion.id, name: promotion.name },
     canEdit: aggregate.runtime.phase === "OPEN",
     roster,
+    teams,
     championships,
     programmes,
   };
@@ -184,7 +212,7 @@ export async function startAlphaManagedProgramme(
 ): Promise<AlphaProgrammeManagementView> {
   const requestId = requiredText(request.requestId, "requestId");
   requireRevision(request.expectedRevision);
-  if (!Array.isArray(request.sideAIds) || !Array.isArray(request.sideBIds)) {
+  if (!Array.isArray(request.sideA) || !Array.isArray(request.sideB)) {
     throw new Error("Programme sides must be arrays");
   }
 
@@ -207,8 +235,8 @@ export async function startAlphaManagedProgramme(
         commandType: "START_PROGRAMME",
         payload: {
           promotionId: control.promotionId,
-          sideA: request.sideAIds.map((entityId) => ({ kind: "PERSON", entityId })),
-          sideB: request.sideBIds.map((entityId) => ({ kind: "PERSON", entityId })),
+          sideA: structuredClone(request.sideA),
+          sideB: structuredClone(request.sideB),
           championshipId: request.championshipId ?? null,
         },
       },
