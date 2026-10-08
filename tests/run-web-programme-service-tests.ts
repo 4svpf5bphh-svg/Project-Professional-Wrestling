@@ -1,6 +1,7 @@
 declare const process: { exitCode?: number };
 
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
+import { activeContractsForPromotion } from "../packages/sim-core/src/index.js";
 import {
   claimAlphaPromotion,
   createAlphaWorldAggregate,
@@ -84,6 +85,31 @@ await test("standalone Programme management uses the full controlled roster with
   const aggregate = createAlphaWorldAggregate({ seed: 62001, playerId });
   const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
   if (!independent) throw new Error("Programme manager fixture has no takeover-eligible promotion");
+  const startupPeople = [...new Set(
+    activeContractsForPromotion(aggregate.state, independent.id).map((contract) => contract.personId),
+  )].slice(0, 3);
+  if (startupPeople.length < 3) throw new Error("Programme manager fixture needs three roster wrestlers");
+  aggregate.state.teams ??= [];
+  aggregate.state.teamMemberships ??= [];
+  aggregate.state.teams.push({
+    id: "programme-test-team",
+    worldId: aggregate.state.world.id,
+    name: "Programme Test Team",
+    status: "ACTIVE",
+    formedDate: { ...aggregate.state.world.currentDate },
+    disbandedDate: null,
+  });
+  for (const [index, personId] of startupPeople.slice(0, 2).entries()) {
+    aggregate.state.teamMemberships.push({
+      id: `programme-test-membership-${index + 1}`,
+      worldId: aggregate.state.world.id,
+      teamId: "programme-test-team",
+      personId,
+      joinedDate: { ...aggregate.state.world.currentDate },
+      leftDate: null,
+      active: true,
+    });
+  }
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
   await claimAlphaPromotion(repository, worldId, playerId, {
@@ -92,24 +118,30 @@ await test("standalone Programme management uses the full controlled roster with
   });
 
   const before = await loadAlphaProgrammeManagement(repository, worldId, playerId);
-  ok(before.roster.length >= 2, "standalone Programme management did not expose the controlled roster");
+  ok(before.roster.length >= 3, "standalone Programme management did not expose the controlled roster");
+  ok(before.teams.some((team) => team.teamId === "programme-test-team"), "Programme management did not expose the established roster team");
   ok(before.programmes.length === 0, "fresh Programme manager unexpectedly has an active Programme");
 
+  const opponentId = startupPeople[2]!;
   const started = await startAlphaManagedProgramme(repository, worldId, playerId, {
     requestId: "programme-manager-start",
     expectedRevision: before.world.revision,
-    sideAIds: [before.roster[0]!.personId],
-    sideBIds: [before.roster[1]!.personId],
+    sideA: [{ kind: "TEAM", entityId: "programme-test-team" }],
+    sideB: [{ kind: "PERSON", entityId: opponentId }],
     championshipId: null,
   });
   ok(started.programmes.length === 1, "standalone Programme start did not persist the story");
+  ok(started.programmes[0]?.sideA.label === "Programme Test Team", "Programme display lost the selected team identity");
   ok(started.world.revision === before.world.revision + 1, "standalone Programme start did not advance revision once");
+  const persisted = await repository.load(worldId);
+  ok(persisted.state.programmes?.[0]?.sideA[0]?.kind === "TEAM", "managed Programme flattened team selection to PERSON refs");
+  ok(persisted.state.programmes?.[0]?.sideA[0]?.entityId === "programme-test-team", "managed Programme changed the selected team identity");
 
   const retry = await startAlphaManagedProgramme(repository, worldId, playerId, {
     requestId: "programme-manager-start",
     expectedRevision: before.world.revision,
-    sideAIds: [before.roster[0]!.personId],
-    sideBIds: [before.roster[1]!.personId],
+    sideA: [{ kind: "TEAM", entityId: "programme-test-team" }],
+    sideB: [{ kind: "PERSON", entityId: opponentId }],
     championshipId: null,
   });
   ok(retry.programmes.length === 1, "standalone Programme retry duplicated the story");
