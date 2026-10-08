@@ -62,6 +62,10 @@ Current trap:
 
 Do not build detailed broadcast contracts before this layer exists.
 
+Audience expectation should be explicit rather than inferred only from size or cadence. Weekly series should be able to declare roles such as **A-show / flagship**, **B-show / secondary**, developmental or special-purpose programming. Premium/major events should likewise be able to carry an **event identity/tradition** such as the promotion's event of the year, battle-royal showcase, tournament final, cage/gimmick tradition or other signature match expectation.
+
+These identities should shape audience expectations, stakes, booking pressure and future media value. They must **not** act as arbitrary rating buffs; the promotion still has to deliver on the promise.
+
 ---
 
 ### Layer 2 — Talent expectations and consequences
