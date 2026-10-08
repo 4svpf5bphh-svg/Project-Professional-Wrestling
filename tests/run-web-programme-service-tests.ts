@@ -39,9 +39,9 @@ async function reservedShowFixture(seed: number) {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed, playerId: "alpha-player" });
   const independent = aggregate.state.promotions.find((promotion) => (
-    promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE"
+    promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE"
   ));
-  if (!independent) throw new Error("test World has no active Independent promotion");
+  if (!independent) throw new Error("test World has no active takeover-eligible promotion");
   independent.eventCadenceWeeks = 1;
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
@@ -82,8 +82,8 @@ await test("standalone Programme management uses the full controlled roster with
   const playerId = "programme-manager-player";
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 62001, playerId });
-  const independent = aggregate.state.promotions.find((promotion) => promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
-  if (!independent) throw new Error("Programme manager fixture has no Independent promotion");
+  const independent = aggregate.state.promotions.find((promotion) => promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("Programme manager fixture has no takeover-eligible promotion");
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
   await claimAlphaPromotion(repository, worldId, playerId, {
