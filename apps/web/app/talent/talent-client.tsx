@@ -20,6 +20,7 @@ type OfferFamily = AlphaTalentOfferRequest["family"];
 type OfferRole = AlphaTalentOfferRequest["roleExpectation"];
 type RosterSort = "POPULARITY" | "RECOGNITION" | "DATES_ASC" | "DATES_DESC" | "EXPIRY" | "NAME";
 type RosterContractFilter = "ALL" | "EXCLUSIVE" | "NON_EXCLUSIVE";
+type RosterDivisionFilter = "ALL" | "MEN" | "WOMEN";
 type MarketSort = "POPULARITY" | "RECOGNITION" | "VALUE_HIGH" | "VALUE_LOW" | "NAME";
 type MarketAvailabilityFilter = "ALL" | "FREE_AGENT" | "NON_EXCLUSIVE";
 type Alignment = PlayerRosterContractView["alignment"];
@@ -42,6 +43,15 @@ const ROLE_OPTIONS: OfferRole[] = [
   "UPPER_CARD",
   "MAIN_EVENT",
   "SPECIAL_ATTRACTION",
+];
+
+const ROSTER_ROLE_ORDER: OfferRole[] = [
+  "MAIN_EVENT",
+  "SPECIAL_ATTRACTION",
+  "UPPER_CARD",
+  "FEATURED",
+  "REGULAR",
+  "DEVELOPMENTAL",
 ];
 
 function isErrorPayload(payload: PlayerTalentManagementView | AlphaTalentOfferResult | AlphaRosterAlignmentResult | ErrorPayload): payload is ErrorPayload {
@@ -161,16 +171,17 @@ function RosterCard({
 }): React.JSX.Element {
   const contract = wrestler.contract;
   return (
-    <details className={styles.card}>
+    <details className={`${styles.card} ${styles.rosterCard}`}>
       <summary className={styles.summary}>
         <div>
           <div className={styles.nameLine}>
             <strong>{wrestler.name}</strong>
+            <span className={styles.divisionBadge}>{wrestler.division === "WOMEN" ? "Women" : "Men"}</span>
             <span className={styles.availability}>{label(wrestler.alignment)}</span>
             <InjuryBadge injury={wrestler.injury} />
             <span className={styles.availability}>{contract.exclusivity === "EXCLUSIVE" ? "Exclusive" : "Non-exclusive"}</span>
           </div>
-          <span>{label(wrestler.careerStage)} · {label(contract.roleExpectation)} · {label(contract.family)}</span>
+          <span>{label(wrestler.careerStage)} · {label(contract.family)} · {contract.exclusivity === "EXCLUSIVE" ? "Exclusive" : "Non-exclusive"}</span>
         </div>
         <div className={styles.scoreBlock}>
           <b>POP {Math.round(wrestler.popularity)}</b>
@@ -396,6 +407,8 @@ export default function TalentClient(): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [rosterSort, setRosterSort] = useState<RosterSort>("POPULARITY");
   const [rosterContractFilter, setRosterContractFilter] = useState<RosterContractFilter>("ALL");
+  const [rosterDivisionFilter, setRosterDivisionFilter] = useState<RosterDivisionFilter>("ALL");
+  const [collapsedRosterRoles, setCollapsedRosterRoles] = useState<Set<OfferRole>>(() => new Set());
   const [marketSort, setMarketSort] = useState<MarketSort>("VALUE_HIGH");
   const [marketAvailabilityFilter, setMarketAvailabilityFilter] = useState<MarketAvailabilityFilter>("ALL");
   const [loading, setLoading] = useState(false);
@@ -549,6 +562,7 @@ export default function TalentClient(): React.JSX.Element {
   const roster = useMemo(() => {
     const entries = (view?.roster ?? [])
       .filter((entry) => matchesQuery(entry.name, query))
+      .filter((entry) => rosterDivisionFilter === "ALL" || entry.division === rosterDivisionFilter)
       .filter((entry) => rosterContractFilter === "ALL" || entry.contract.exclusivity === rosterContractFilter);
     return [...entries].sort((left, right) => {
       if (rosterSort === "RECOGNITION") return right.recognition - left.recognition || left.name.localeCompare(right.name);
@@ -558,7 +572,16 @@ export default function TalentClient(): React.JSX.Element {
       if (rosterSort === "NAME") return left.name.localeCompare(right.name);
       return right.popularity - left.popularity || right.recognition - left.recognition || left.name.localeCompare(right.name);
     });
-  }, [view, query, rosterContractFilter, rosterSort]);
+  }, [view, query, rosterContractFilter, rosterDivisionFilter, rosterSort]);
+  const rosterGroups = useMemo(
+    () => ROSTER_ROLE_ORDER
+      .map((role) => ({
+        role,
+        entries: roster.filter((entry) => entry.contract.roleExpectation === role),
+      }))
+      .filter((group) => group.entries.length > 0),
+    [roster],
+  );
   const market = useMemo(() => {
     const entries = (view?.market ?? [])
       .filter((entry) => matchesQuery(entry.name, query))
@@ -576,6 +599,15 @@ export default function TalentClient(): React.JSX.Element {
     [view, query],
   );
   const pendingPeople = useMemo(() => new Set((view?.pendingOffers ?? []).map((offer) => offer.personId)), [view]);
+
+  function toggleRosterRole(role: OfferRole): void {
+    setCollapsedRosterRoles((current) => {
+      const next = new Set(current);
+      if (next.has(role)) next.delete(role);
+      else next.add(role);
+      return next;
+    });
+  }
 
   return (
     <main className={styles.shell}>
@@ -626,34 +658,52 @@ export default function TalentClient(): React.JSX.Element {
             ))}
           </div>
 
-          <label className={styles.search}>
-            <span>Search {tab === "ROSTER" ? "your roster" : tab === "MARKET" ? "available talent" : "pending offers"}</span>
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Wrestler name" />
-          </label>
-
           {tab === "ROSTER" ? (
-            <section className={`${styles.search} ${styles.formGrid}`} aria-label="Roster filters">
-              <label>
-                <span>Sort roster</span>
-                <select value={rosterSort} onChange={(event) => setRosterSort(event.target.value as RosterSort)}>
-                  <option value="POPULARITY">Most popular</option>
-                  <option value="RECOGNITION">Most recognised</option>
-                  <option value="DATES_ASC">Fewest dates remaining</option>
-                  <option value="DATES_DESC">Most dates remaining</option>
-                  <option value="EXPIRY">Contract expiring soonest</option>
-                  <option value="NAME">Name A–Z</option>
-                </select>
+            <section className={styles.rosterToolbar} aria-label="Roster search and filters">
+              <label className={styles.rosterSearch}>
+                <span>Search roster</span>
+                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find wrestler…" />
               </label>
-              <label>
-                <span>Contract status</span>
-                <select value={rosterContractFilter} onChange={(event) => setRosterContractFilter(event.target.value as RosterContractFilter)}>
-                  <option value="ALL">All contracts</option>
-                  <option value="EXCLUSIVE">Exclusive</option>
-                  <option value="NON_EXCLUSIVE">Non-exclusive</option>
-                </select>
-              </label>
+              <div className={styles.divisionToggle} role="group" aria-label="Roster division">
+                {(["ALL", "MEN", "WOMEN"] as const).map((division) => (
+                  <button
+                    key={division}
+                    type="button"
+                    className={rosterDivisionFilter === division ? styles.divisionButtonActive : styles.divisionButton}
+                    onClick={() => setRosterDivisionFilter(division)}
+                  >
+                    {division === "ALL" ? "All" : division === "MEN" ? "Men" : "Women"}
+                  </button>
+                ))}
+              </div>
+              <div className={styles.rosterSelects}>
+                <label>
+                  <span>Sort</span>
+                  <select value={rosterSort} onChange={(event) => setRosterSort(event.target.value as RosterSort)}>
+                    <option value="POPULARITY">Popularity</option>
+                    <option value="RECOGNITION">Recognition</option>
+                    <option value="DATES_ASC">Dates low</option>
+                    <option value="DATES_DESC">Dates high</option>
+                    <option value="EXPIRY">Expiry</option>
+                    <option value="NAME">Name</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Deal</span>
+                  <select value={rosterContractFilter} onChange={(event) => setRosterContractFilter(event.target.value as RosterContractFilter)}>
+                    <option value="ALL">All deals</option>
+                    <option value="EXCLUSIVE">Exclusive</option>
+                    <option value="NON_EXCLUSIVE">Non-exclusive</option>
+                  </select>
+                </label>
+              </div>
             </section>
-          ) : null}
+          ) : (
+            <label className={styles.search}>
+              <span>Search {tab === "MARKET" ? "available talent" : "pending offers"}</span>
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Wrestler name" />
+            </label>
+          )}
 
           {tab === "MARKET" ? (
             <section className={`${styles.search} ${styles.formGrid}`} aria-label="Talent market filters">
@@ -679,16 +729,40 @@ export default function TalentClient(): React.JSX.Element {
           ) : null}
 
           <section className={styles.list}>
-            {tab === "ROSTER" ? roster.map((entry) => (
-              <RosterCard
-                key={entry.contractId}
-                wrestler={entry}
-                pending={pendingPeople.has(entry.personId)}
-                alignmentSaving={alignmentSaving === entry.personId}
-                onAlignment={(alignment) => void changeAlignment(entry, alignment)}
-                onRenew={() => openRenewal(entry)}
-              />
-            )) : null}
+            {tab === "ROSTER" ? (
+              <div className={styles.rosterGroups}>
+                {rosterGroups.map((group) => {
+                  const collapsed = query.trim().length === 0 && collapsedRosterRoles.has(group.role);
+                  return (
+                    <section className={styles.rosterGroup} key={group.role}>
+                      <button
+                        className={styles.rosterGroupHeader}
+                        type="button"
+                        aria-expanded={!collapsed}
+                        onClick={() => toggleRosterRole(group.role)}
+                      >
+                        <span className={styles.rosterGroupTitle}>{label(group.role)}</span>
+                        <span className={styles.rosterGroupMeta}>{group.entries.length} {group.entries.length === 1 ? "wrestler" : "wrestlers"} · {collapsed ? "Show" : "Hide"}</span>
+                      </button>
+                      {!collapsed ? (
+                        <div className={styles.rosterGroupList}>
+                          {group.entries.map((entry) => (
+                            <RosterCard
+                              key={entry.contractId}
+                              wrestler={entry}
+                              pending={pendingPeople.has(entry.personId)}
+                              alignmentSaving={alignmentSaving === entry.personId}
+                              onAlignment={(alignment) => void changeAlignment(entry, alignment)}
+                              onRenew={() => openRenewal(entry)}
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                    </section>
+                  );
+                })}
+              </div>
+            ) : null}
             {tab === "MARKET" ? market.map((entry) => <MarketCard key={entry.personId} wrestler={entry} onOffer={() => openMarketOffer(entry)} />) : null}
             {tab === "OFFERS" ? offers.map((entry) => <OfferCard key={entry.offerId} offer={entry} />) : null}
             {(tab === "ROSTER" && roster.length === 0) || (tab === "MARKET" && market.length === 0) || (tab === "OFFERS" && offers.length === 0) ? (
