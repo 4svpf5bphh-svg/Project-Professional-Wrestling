@@ -8,6 +8,7 @@ import type {
   PersonStatus,
   PpwDate,
   RoleExpectation,
+  WrestlerDivision,
 } from "../../domain/src/types.js";
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import {
@@ -18,8 +19,10 @@ import {
   marketWeeklyValue,
   ppwDateToWeekIndex,
   promotionAlignmentChangeContext,
+  wrestlerAffiliationHasBookingRights,
   wrestlerAlignment,
   wrestlerAlignmentForPromotion,
+  wrestlerPromotionAffiliationsForPerson,
 } from "../../sim-core/src/index.js";
 import {
   activePromotionControlForPlayer,
@@ -40,20 +43,36 @@ export interface PlayerTalentSkillsView {
   presentation: number;
 }
 
-export interface PlayerRosterContractView {
-  contractId: Id;
+export interface PlayerPublicTalentPromotionView {
+  promotionId: Id;
+  promotionName: string;
+}
+
+export interface PlayerPublicTalentAffiliationView extends PlayerPublicTalentPromotionView {
+  role: "PRIMARY" | "SECONDARY";
+  basis: "CONTRACT" | "PARENT_COMPANY";
+}
+
+export interface PlayerPublicTalentIdentityView {
   personId: Id;
   name: string;
-  alignment: WrestlerAlignment;
-  alignmentChangeMode: "INITIAL_PRESENTATION" | "JUST_SIGNED" | "RETURNING" | "OFFSCREEN_SWITCH";
-  alignmentNaturalReset: boolean;
+  division: WrestlerDivision;
   careerStage: CareerStage;
   status: PersonStatus;
   biologicalAge: number;
   recognition: number;
   popularity: number;
-  morale: number;
   momentum: number;
+  rosterAffiliations: PlayerPublicTalentAffiliationView[];
+  employmentPromotions: PlayerPublicTalentPromotionView[];
+}
+
+export interface PlayerRosterContractView extends PlayerPublicTalentIdentityView {
+  contractId: Id;
+  alignment: WrestlerAlignment;
+  alignmentChangeMode: "INITIAL_PRESENTATION" | "JUST_SIGNED" | "RETURNING" | "OFFSCREEN_SWITCH";
+  alignmentNaturalReset: boolean;
+  morale: number;
   fatigue: number;
   wear: number;
   trust: number;
@@ -77,16 +96,8 @@ export interface PlayerRosterContractView {
   };
 }
 
-export interface PlayerTalentMarketView {
-  personId: Id;
-  name: string;
+export interface PlayerTalentMarketView extends PlayerPublicTalentIdentityView {
   alignment: WrestlerAlignment;
-  careerStage: CareerStage;
-  status: PersonStatus;
-  biologicalAge: number;
-  recognition: number;
-  popularity: number;
-  momentum: number;
   skills: PlayerTalentSkillsView;
   estimatedWeeklyValue: number;
   availability: "FREE_AGENT" | "NON_EXCLUSIVE";
@@ -154,6 +165,65 @@ function trustFor(
   return aggregate.state.promotionTalentTrust?.find((entry) => (
     entry.promotionId === promotionId && entry.personId === personId
   ))?.trust ?? 50;
+}
+
+function publicTalentIdentity(
+  aggregate: ApplicationWorldAggregate,
+  person: ApplicationWorldAggregate["state"]["people"][number],
+): PlayerPublicTalentIdentityView {
+  const promotionById = new Map(aggregate.state.promotions.map((promotion) => [promotion.id, promotion]));
+  const employmentPromotions = [...new Set(
+    activeContractsForPerson(aggregate.state, person.id)
+      .filter((contract) => contractIsActive(aggregate.state, contract))
+      .map((contract) => contract.promotionId),
+  )]
+    .map((promotionId) => promotionById.get(promotionId))
+    .filter((promotion): promotion is NonNullable<typeof promotion> => promotion !== undefined)
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((promotion) => ({
+      promotionId: promotion.id,
+      promotionName: promotion.name,
+    }));
+
+  const explicitAffiliations = wrestlerPromotionAffiliationsForPerson(aggregate.state, person.id)
+    .filter((affiliation) => wrestlerAffiliationHasBookingRights(aggregate.state, affiliation))
+    .map((affiliation) => {
+      const promotion = promotionById.get(affiliation.promotionId);
+      return promotion ? {
+        promotionId: promotion.id,
+        promotionName: promotion.name,
+        role: affiliation.role,
+        basis: affiliation.basis,
+      } satisfies PlayerPublicTalentAffiliationView : null;
+    })
+    .filter((affiliation): affiliation is PlayerPublicTalentAffiliationView => affiliation !== null);
+
+  const rosterAffiliations = explicitAffiliations.length > 0
+    ? explicitAffiliations
+    : employmentPromotions.map((promotion) => ({
+      ...promotion,
+      role: "PRIMARY" as const,
+      basis: "CONTRACT" as const,
+    }));
+
+  rosterAffiliations.sort((left, right) => (
+    (left.role === "PRIMARY" ? 0 : 1) - (right.role === "PRIMARY" ? 0 : 1)
+    || left.promotionName.localeCompare(right.promotionName)
+  ));
+
+  return {
+    personId: person.id,
+    name: person.name,
+    division: person.division ?? "MEN",
+    careerStage: person.careerStage,
+    status: person.status,
+    biologicalAge: person.biologicalAge,
+    recognition: person.recognition,
+    popularity: person.popularity,
+    momentum: person.momentum,
+    rosterAffiliations,
+    employmentPromotions,
+  };
 }
 
 function publicSkills(person: ApplicationWorldAggregate["state"]["people"][number]): PlayerTalentSkillsView {
@@ -229,19 +299,12 @@ export function buildPlayerTalentManagementView(
       const alignment = wrestlerAlignmentForPromotion(aggregate.state, promotion.id, person.id);
       const alignmentContext = promotionAlignmentChangeContext(aggregate.state, promotion.id, person.id);
       return {
+        ...publicTalentIdentity(aggregate, person),
         contractId: contract.id,
-        personId: person.id,
-        name: person.name,
         alignment,
         alignmentChangeMode: alignmentContext.method,
         alignmentNaturalReset: alignmentContext.naturalReset,
-        careerStage: person.careerStage,
-        status: person.status,
-        biologicalAge: person.biologicalAge,
-        recognition: person.recognition,
-        popularity: person.popularity,
         morale: person.morale,
-        momentum: person.momentum,
         fatigue: person.fatigue,
         wear: person.wear,
         trust: trustFor(aggregate, promotion.id, person.id),
@@ -282,15 +345,8 @@ export function buildPlayerTalentManagementView(
         .filter((contract) => contract.promotionId !== promotion.id && contractIsActive(aggregate.state, contract));
       const alignment = wrestlerAlignment(person, aggregate.state.world.seed);
       return {
-        personId: person.id,
-        name: person.name,
+        ...publicTalentIdentity(aggregate, person),
         alignment,
-        careerStage: person.careerStage,
-        status: person.status,
-        biologicalAge: person.biologicalAge,
-        recognition: person.recognition,
-        popularity: person.popularity,
-        momentum: person.momentum,
         skills: publicSkills(person),
         estimatedWeeklyValue: marketWeeklyValue(person),
         availability: activeOutside.length > 0 ? "NON_EXCLUSIVE" : "FREE_AGENT",
