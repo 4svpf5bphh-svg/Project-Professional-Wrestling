@@ -9,6 +9,10 @@ export interface WorldRuntimeState {
   revision: number;
   lockedPpwDate: PpwDate | null;
   lastResolvedPpwDate: PpwDate | null;
+  /** Current PPW week whose venue/talent commitments have become immutable. */
+  commitmentLockedPpwDate?: PpwDate | null;
+  /** Real scheduler cycle that applied the current commitment lock, when scheduled. */
+  commitmentLockedRealCycleKey?: string | null;
   lockedRealCycleKey?: string | null;
   lastResolvedRealCycleKey?: string | null;
 }
@@ -38,6 +42,8 @@ export function createWorldRuntimeState(worldId: Id): WorldRuntimeState {
     revision: 0,
     lockedPpwDate: null,
     lastResolvedPpwDate: null,
+    commitmentLockedPpwDate: null,
+    commitmentLockedRealCycleKey: null,
     lockedRealCycleKey: null,
     lastResolvedRealCycleKey: null,
   };
@@ -47,6 +53,44 @@ export function assertWorldOpenForPlayerMutation(runtime: WorldRuntimeState): vo
   if (runtime.phase !== "OPEN") {
     throw new Error(`World ${runtime.worldId} is ${runtime.phase.toLowerCase()} and cannot accept player mutations`);
   }
+}
+
+export function currentWeekShowCommitmentsLocked(
+  runtime: WorldRuntimeState,
+  state: WorldState,
+): boolean {
+  requireWorld(runtime, state);
+  const locked = runtime.commitmentLockedPpwDate ?? null;
+  if (!locked) return false;
+  const current = state.world.currentDate;
+  return locked.year === current.year && locked.week === current.week;
+}
+
+export function lockCurrentWeekShowCommitments(
+  runtime: WorldRuntimeState,
+  state: WorldState,
+  realCycleKey: string | null = null,
+): void {
+  requireWorld(runtime, state);
+  if (runtime.phase !== "OPEN") {
+    throw new Error(`World ${runtime.worldId} cannot lock show commitments from phase ${runtime.phase}`);
+  }
+
+  const current = state.world.currentDate;
+  const existing = runtime.commitmentLockedPpwDate ?? null;
+  const normalizedCycleKey = normalizedRealCycleKey(realCycleKey);
+  if (existing) {
+    if (existing.year !== current.year || existing.week !== current.week) {
+      throw new Error("stale show commitment lock belongs to a different PPW week");
+    }
+    if ((runtime.commitmentLockedRealCycleKey ?? null) === null && normalizedCycleKey !== null) {
+      runtime.commitmentLockedRealCycleKey = normalizedCycleKey;
+    }
+    return;
+  }
+
+  runtime.commitmentLockedPpwDate = cloneDate(current);
+  runtime.commitmentLockedRealCycleKey = normalizedCycleKey;
 }
 
 export function incrementWorldRevision(runtime: WorldRuntimeState): number {
@@ -105,6 +149,8 @@ export function resolveLockedWorldWeek(
 
   runtime.lastResolvedPpwDate = resolvedDate;
   if (resolvedRealCycleKey !== null) runtime.lastResolvedRealCycleKey = resolvedRealCycleKey;
+  runtime.commitmentLockedPpwDate = null;
+  runtime.commitmentLockedRealCycleKey = null;
   runtime.lockedPpwDate = null;
   runtime.lockedRealCycleKey = null;
   runtime.phase = "OPEN";
