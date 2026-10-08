@@ -107,6 +107,7 @@ await test("Alpha web service bootstraps and exposes a player-safe promotion cho
   const view = await loadAlphaPlayerSession(repository, worldId, "alpha-player");
   ok(view.player.playerId === "alpha-player", "session exposed the wrong player");
   ok(view.player.promotionId === null, "fresh Alpha player unexpectedly controls a promotion");
+  ok(view.world.showCommitmentsLocked === false, "fresh Alpha World unexpectedly exposed current-week commitments as locked");
   const aggregate = await repository.load(worldId);
   ok(aggregate.state.people.length === 643, "Alpha did not bootstrap the audited 643-person roster");
   ok(
