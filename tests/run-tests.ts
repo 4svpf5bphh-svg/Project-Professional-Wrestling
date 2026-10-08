@@ -7,7 +7,10 @@ import {
   REAL_ACTIVE_TAG_TEAMS_REVIEWED_ON,
   seedRealActiveTagTeams,
 } from "../packages/content/src/real-active-tag-teams.js";
-import { calibratedRealActiveMensRosterSource } from "../packages/content/src/real-active-mens-calibration.js";
+import {
+  calibratedRealActiveMensRosterSource,
+  realRosterValueBand,
+} from "../packages/content/src/real-active-mens-calibration.js";
 import { calibratedRealActiveMixedRosterSource } from "../packages/content/src/real-active-mixed-roster.js";
 import {
   AEW_CMLL_DUAL_CONTRACT_SEEDS,
