@@ -113,8 +113,8 @@ test("roster source rejects wrong counts and duplicate IDs before World genesis 
   );
 });
 
-test("real active men's identity pool contains exactly 400 unique starting wrestlers", () => {
-  ok(REAL_ACTIVE_MENS_ROSTER_NAMES.length === DEFAULT_RULESET.wrestlers, "real roster does not match the 400-person Alpha ruleset");
+test("real active men's identity pool preserves the deployed 400 while supporting future expansion", () => {
+  ok(REAL_ACTIVE_MENS_ROSTER_NAMES.length >= DEFAULT_RULESET.wrestlers, "real roster no longer covers the 400-person Alpha ruleset");
   ok(
     new Set(REAL_ACTIVE_MENS_ROSTER_NAMES.map((name) => name.toLocaleLowerCase("en"))).size === REAL_ACTIVE_MENS_ROSTER_NAMES.length,
     "real roster contains duplicate display identities",
@@ -132,6 +132,9 @@ test("real active men's identity pool contains exactly 400 unique starting wrest
     "Matt Riddle",
     "Jack Cartwheel",
     "Michael Oku",
+    "Yota Tsuji",
+    "Tomohiro Ishii",
+    "Yuya Uemura",
   ]) {
     ok(REAL_ACTIVE_MENS_ROSTER_NAMES.includes(expected), `real roster is missing ${expected}`);
   }
@@ -142,7 +145,7 @@ test("real active men's identity pool contains exactly 400 unique starting wrest
 });
 
 test("reviewed women's identity pool is unique, substantial and separate from the men's pool", () => {
-  ok(REAL_ACTIVE_WOMENS_ROSTER_REVIEWED_ON === "2026-10-07", "women's roster review date is stale");
+  ok(REAL_ACTIVE_WOMENS_ROSTER_REVIEWED_ON === "2026-10-08", "women's roster review date is stale");
   ok(REAL_ACTIVE_WOMENS_ROSTER_NAMES.length >= 150, "women's identity pool is too small for a living global World");
   const women = new Set(REAL_ACTIVE_WOMENS_ROSTER_NAMES.map((name) => name.toLocaleLowerCase("en")));
   ok(women.size === REAL_ACTIVE_WOMENS_ROSTER_NAMES.length, "women's identity pool contains duplicate names");
@@ -159,6 +162,8 @@ test("reviewed women's identity pool is unique, substantial and separate from th
     "Persephone",
     "Saya Kamitani",
     "Starlight Kid",
+    "Matoi Hamabe",
+    "Tetsu Akira",
   ]) {
     ok(REAL_ACTIVE_WOMENS_ROSTER_NAMES.includes(expected), `women's roster is missing ${expected}`);
   }

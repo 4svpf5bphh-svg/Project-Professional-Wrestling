@@ -10,6 +10,9 @@ import {
 import {
   tnaInitialRosterAssignmentSource,
 } from "./real-tna-roster.js";
+import {
+  njpwStardomInitialRosterAssignmentSource,
+} from "./real-njpw-stardom-rosters.js";
 import type {
   InitialRosterAssignment,
   InitialRosterAssignmentContext,
@@ -201,4 +204,5 @@ export const realWorldInitialRosterAssignmentSource: InitialRosterAssignmentSour
   ...wweNxtInitialRosterAssignmentSource(context),
   ...aewRohCmllInitialRosterAssignmentSource(context),
   ...tnaInitialRosterAssignmentSource(context),
+  ...njpwStardomInitialRosterAssignmentSource(context),
 ];

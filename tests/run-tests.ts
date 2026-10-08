@@ -27,6 +27,11 @@ import {
   TNA_PRIMARY_ROSTER_NAMES,
   TNA_ROSTER_SEED_REVIEWED_ON,
 } from "../packages/content/src/real-tna-roster.js";
+import {
+  NJPW_PRIMARY_ROSTER_NAMES,
+  NJPW_STARDOM_ROSTER_SEED_REVIEWED_ON,
+  STARDOM_PRIMARY_ROSTER_NAMES,
+} from "../packages/content/src/real-njpw-stardom-rosters.js";
 declare const process: { exitCode?: number };
 
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
@@ -697,6 +702,87 @@ test("combined TNA roster survives early simulation without losing explicit memb
     .map((personId) => state.people.find((person) => person.id === personId)!.name);
   for (const name of ["Matt Hardy", "Jeff Hardy", "Moose", "Xia Brookside", "Jody Threat"]) {
     ok(rosterNames.includes(name), `TNA early sim lost ${name}`);
+  }
+});
+
+test("reviewed NJPW and STARDOM seeds create explicit current active-core rosters", () => {
+  const state = createWorld(
+    125,
+    REAL_WORLD_ALPHA_RULESET,
+    "NJPW STARDOM Seed",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
+  );
+  equal(NJPW_STARDOM_ROSTER_SEED_REVIEWED_ON, "2026-10-08");
+
+  const njpw = state.promotions.find((promotion) => promotion.name === "NJPW")!;
+  const stardom = state.promotions.find((promotion) => promotion.name === "STARDOM")!;
+  const aew = state.promotions.find((promotion) => promotion.name === "AEW")!;
+  equal(njpw.rosterMode, "EXPLICIT");
+  equal(stardom.rosterMode, "EXPLICIT");
+
+  const rosterNames = (promotionId: string) => currentRosterPersonIds(state, promotionId)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  const njpwNames = rosterNames(njpw.id);
+  const stardomNames = rosterNames(stardom.id);
+
+  equal(njpwNames.length, NJPW_PRIMARY_ROSTER_NAMES.length);
+  equal(stardomNames.length, STARDOM_PRIMARY_ROSTER_NAMES.length);
+  for (const name of NJPW_PRIMARY_ROSTER_NAMES) ok(njpwNames.includes(name), `NJPW seed missing ${name}`);
+  for (const name of STARDOM_PRIMARY_ROSTER_NAMES) ok(stardomNames.includes(name), `STARDOM seed missing ${name}`);
+
+  for (const name of ["Yota Tsuji", "Zack Sabre Jr.", "Aaron Wolf", "Tomohiro Ishii"]) {
+    const person = state.people.find((candidate) => candidate.name === name)!;
+    const contracts = activeContractsForPerson(state, person.id);
+    equal(contracts.length, 1);
+    equal(contracts[0]!.promotionId, njpw.id);
+    equal(contracts[0]!.family, "LIMITED_NON_EXCLUSIVE");
+  }
+  for (const name of ["Starlight Kid", "Saya Kamitani", "Maki Itoh", "Matoi Hamabe"]) {
+    const person = state.people.find((candidate) => candidate.name === name)!;
+    const contracts = activeContractsForPerson(state, person.id);
+    equal(contracts.length, 1);
+    equal(contracts[0]!.promotionId, stardom.id);
+    equal(contracts[0]!.family, "LIMITED_NON_EXCLUSIVE");
+    equal(person.division, "WOMEN");
+  }
+
+  for (const guest of ["Jon Moxley", "Konosuke Takeshita", "Will Ospreay", "Mercedes Moné", "Kevin Knight"]) {
+    const person = state.people.find((candidate) => candidate.name === guest)!;
+    ok(!njpwNames.includes(guest), `${guest} was incorrectly reassigned to NJPW from outside-company activity`);
+    ok(currentRosterPersonIds(state, aew.id).includes(person.id), `${guest} lost existing AEW affiliation`);
+  }
+
+  const yota = state.people.find((candidate) => candidate.name === "Yota Tsuji")!;
+  equal(realRosterValueBand(yota.name), "HEADLINER");
+  const errors = validateWorldInvariants(state);
+  equal(errors.length, 0, errors.join("\n"));
+});
+
+test("combined NJPW and STARDOM rosters survive early simulation", () => {
+  const state = createWorld(
+    126,
+    REAL_WORLD_ALPHA_RULESET,
+    "Japan Early Sim",
+    calibratedRealActiveMixedRosterSource,
+    realPromotionEcosystemSource,
+    realWorldInitialRosterAssignmentSource,
+  );
+  const njpw = state.promotions.find((promotion) => promotion.name === "NJPW")!;
+  const stardom = state.promotions.find((promotion) => promotion.name === "STARDOM")!;
+  resolveWorldWeeks(state, 4);
+  const errors = validateWorldInvariants(state);
+  equal(errors.length, 0, errors.join("\n"));
+  const njpwNames = currentRosterPersonIds(state, njpw.id)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  const stardomNames = currentRosterPersonIds(state, stardom.id)
+    .map((personId) => state.people.find((person) => person.id === personId)!.name);
+  for (const name of ["Yota Tsuji", "Shota Umino", "El Desperado", "Yuya Uemura"]) {
+    ok(njpwNames.includes(name), `NJPW early sim lost ${name}`);
+  }
+  for (const name of ["Starlight Kid", "AZM", "Saya Kamitani", "Maki Itoh"]) {
+    ok(stardomNames.includes(name), `STARDOM early sim lost ${name}`);
   }
 });
 

@@ -14,7 +14,7 @@ import type { WorldRosterSource } from "../../sim-core/src/roster-source.js";
  * replaces display identity; a later calibration slice can tune real-world
  * profile data without coupling it to roster plumbing.
  */
-export const REAL_ACTIVE_MENS_ROSTER_REVIEWED_ON = "2026-10-04";
+export const REAL_ACTIVE_MENS_ROSTER_REVIEWED_ON = "2026-10-08";
 
 const REAL_ACTIVE_MENS_ROSTER_TEXT = `Aaron Rourke
 Akira Tozawa
@@ -415,7 +415,21 @@ Chazz "Starboy" Hall
 CJ Valor
 Elijah Holyfield
 Harlem Lewis
-Zack Sabre Jr.`;
+Zack Sabre Jr.
+Togi Makabe
+Tomoaki Honma
+Tomohiro Ishii
+Toru Yano
+YOH
+YOSHI-HASHI
+Yoshinobu Kanemaru
+Yota Tsuji
+Yuji Nagata
+Yujiro Takahashi
+Yushin Hatazawa
+Yuto-Ice
+Yuya Uemura
+Zane Jay`;
 
 export const REAL_ACTIVE_MENS_ROSTER_NAMES: readonly string[] = REAL_ACTIVE_MENS_ROSTER_TEXT.split("\n");
 

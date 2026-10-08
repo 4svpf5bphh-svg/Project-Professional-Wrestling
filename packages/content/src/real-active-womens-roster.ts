@@ -6,7 +6,7 @@
  * promotion assignments, contract terms and calibrated simulation attributes
  * are deliberately separate concerns.
  */
-export const REAL_ACTIVE_WOMENS_ROSTER_REVIEWED_ON = "2026-10-07";
+export const REAL_ACTIVE_WOMENS_ROSTER_REVIEWED_ON = "2026-10-08";
 
 const REAL_ACTIVE_WOMENS_ROSTER_TEXT = `AJ Lee
 Alexa Bliss
@@ -178,7 +178,9 @@ HANAKO
 Waka Tsukiyama
 Utami Hayashishita
 Fuwa-chan
-Akari`;
+Akari
+Matoi Hamabe
+Tetsu Akira`;
 
 export const REAL_ACTIVE_WOMENS_ROSTER_NAMES: readonly string[] =
   REAL_ACTIVE_WOMENS_ROSTER_TEXT.split("\n");

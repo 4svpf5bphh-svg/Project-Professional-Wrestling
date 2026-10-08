@@ -84,6 +84,7 @@ Hijo del Vikingo
 Psycho Clown
 Máscara Dorada
 Shingo Takagi
+Yota Tsuji
 David Finlay
 Gabe Kidd
 SANADA
@@ -171,6 +172,10 @@ SHO
 Shota Umino
 Taichi
 Taiji Ishimori
+Tomohiro Ishii
+YOH
+YOSHI-HASHI
+Yuya Uemura
 Templario
 AJ Francis
 Brian Myers
@@ -229,6 +234,9 @@ Masatora Yasuda
 Shoma Kato
 Taisei Nakahara
 Tatsuya Matsumoto
+Yushin Hatazawa
+Yuto-Ice
+Zane Jay
 Aaron Wolf
 Uriah Connors
 Braxton Cole
@@ -250,6 +258,8 @@ Dustin Rhodes
 Matt Hardy
 Jeff Hardy
 Hiroyoshi Tenzan
+Togi Makabe
+Yuji Nagata
 Satoshi Kojima
 TAKA Michinoku
 Super Crazy
@@ -276,6 +286,11 @@ Kota Ibushi
 Lance Archer
 Rocky Romero
 Hirooki Goto
+Tomohiro Ishii
+Tomoaki Honma
+Toru Yano
+Yoshinobu Kanemaru
+Yujiro Takahashi
 KENTA
 Taichi
 Taiji Ishimori
@@ -309,6 +324,8 @@ Bandido
 Místico
 Hijo del Vikingo
 Shingo Takagi
+Yota Tsuji
+Tomohiro Ishii
 KENTA
 El Desperado
 Claudio Castagnoli
