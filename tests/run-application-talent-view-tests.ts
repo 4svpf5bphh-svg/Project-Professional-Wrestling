@@ -100,10 +100,20 @@ test("talent view exposes full own roster contracts and remains source-agnostic"
   const person = aggregate.state.people.find((candidate) => candidate.id === ownContract!.personId);
   ok(person, "own contract wrestler is missing");
   person!.name = "Roster Source Replacement";
+  person!.division = "WOMEN";
 
   const view = buildPlayerTalentManagementView(aggregate, "player-a");
   const rosterEntry = view.roster.find((entry) => entry.contractId === ownContract!.id);
   ok(rosterEntry?.name === "Roster Source Replacement", "talent projection did not read the current Person source/name");
+  ok(rosterEntry?.division === "WOMEN", "talent projection did not expose wrestler division");
+  ok(
+    rosterEntry?.employmentPromotions.some((entry) => entry.promotionId === promotionAId),
+    "own roster entry did not expose public employment promotion",
+  );
+  ok(
+    rosterEntry?.rosterAffiliations.some((entry) => entry.promotionId === promotionAId && entry.role === "PRIMARY"),
+    "contract-derived roster entry did not expose public roster affiliation",
+  );
   ok(rosterEntry?.contract.weeklyGuarantee === 1_234_567, "player could not see their own contract money");
   ok(view.player.promotionId === promotionAId, "talent projection returned the wrong controlled promotion");
 });
@@ -118,10 +128,22 @@ test("talent market can expose non-exclusive availability without leaking rival 
   rivalContract!.exclusivity = "NON_EXCLUSIVE";
   rivalContract!.weeklyGuarantee = 987_654_321;
   rivalContract!.appearanceFee = 876_543_210;
+  const rivalPerson = aggregate.state.people.find((person) => person.id === rivalContract!.personId);
+  ok(rivalPerson, "rival contract wrestler is missing");
+  rivalPerson!.division = "WOMEN";
 
   const view = buildPlayerTalentManagementView(aggregate, "player-a");
   const marketEntry = view.market.find((entry) => entry.personId === rivalContract!.personId);
   ok(marketEntry?.availability === "NON_EXCLUSIVE", "non-exclusive rival talent was not represented as market-available");
+  ok(marketEntry?.division === "WOMEN", "market entry did not expose wrestler division");
+  ok(
+    marketEntry?.employmentPromotions.some((entry) => entry.promotionId === promotionBId),
+    "market entry did not expose the wrestler's public employment promotion",
+  );
+  ok(
+    marketEntry?.rosterAffiliations.some((entry) => entry.promotionId === promotionBId),
+    "market entry did not expose contract-derived public roster affiliation",
+  );
   const serialized = JSON.stringify(view);
   ok(!serialized.includes("987654321"), "rival weekly guarantee leaked into player talent view");
   ok(!serialized.includes("876543210"), "rival appearance fee leaked into player talent view");
