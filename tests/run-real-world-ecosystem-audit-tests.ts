@@ -166,6 +166,8 @@ const startErrors = validateWorldInvariants(start);
 ok(startErrors.length === 0, startErrors.join("\n"));
 
 const startSnapshot = snapshot(start);
+console.log("REAL_WORLD_ECOSYSTEM_AUDIT_PRECHECK");
+console.log(JSON.stringify(startSnapshot, null, 2));
 const wwe = start.promotions.find((promotion) => promotion.name === "WWE");
 const nxt = start.promotions.find((promotion) => promotion.name === "NXT");
 const roh = start.promotions.find((promotion) => promotion.name === "ROH");
