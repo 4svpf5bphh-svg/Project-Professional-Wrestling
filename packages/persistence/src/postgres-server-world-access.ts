@@ -34,6 +34,8 @@ type WorldReadRow = {
   runtime_revision: string | number;
   locked_ppw_date: PpwDate | null;
   last_resolved_ppw_date: PpwDate | null;
+  commitment_locked_ppw_date: PpwDate | null;
+  commitment_locked_real_cycle_key: string | null;
   locked_real_cycle_key: string | null;
   last_resolved_real_cycle_key: string | null;
   human_seat_limit: number;
@@ -82,8 +84,8 @@ async function readWorldWithoutCommandReceipts(
 ): Promise<ApplicationWorldAggregate> {
   const worldRows = await sql`
     SELECT world_id, world_state, planning_state, engagement_state, runtime_phase, runtime_revision,
-           locked_ppw_date, last_resolved_ppw_date, locked_real_cycle_key, last_resolved_real_cycle_key,
-           human_seat_limit
+           locked_ppw_date, last_resolved_ppw_date, commitment_locked_ppw_date, commitment_locked_real_cycle_key,
+           locked_real_cycle_key, last_resolved_real_cycle_key, human_seat_limit
     FROM ppw_worlds
     WHERE world_id = ${worldId}
   ` as unknown as WorldReadRow[];
@@ -136,6 +138,8 @@ async function readWorldWithoutCommandReceipts(
       revision: Number(row.runtime_revision),
       lockedPpwDate: row.locked_ppw_date,
       lastResolvedPpwDate: row.last_resolved_ppw_date,
+      commitmentLockedPpwDate: row.commitment_locked_ppw_date,
+      commitmentLockedRealCycleKey: row.commitment_locked_real_cycle_key,
       lockedRealCycleKey: row.locked_real_cycle_key,
       lastResolvedRealCycleKey: row.last_resolved_real_cycle_key,
     },
