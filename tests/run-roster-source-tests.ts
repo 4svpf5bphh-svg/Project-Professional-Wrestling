@@ -300,18 +300,28 @@ test("calibrated real roster gives recognisable talent sensible broad game bands
   ok(marketWeeklyValue(cody) > marketWeeklyValue(developmental) * 1.6, "star/prospect contract value separation is too small");
 });
 
-test("player-facing Alpha World genesis uses the calibrated real active roster source", () => {
+test("player-facing Alpha World genesis uses the audited mixed real-world roster source", () => {
   const aggregate = createAlphaWorldAggregate({ seed: 77105, playerId: "real-roster-player" });
   const names = new Set(aggregate.state.people.map((person) => person.name));
-  ok(aggregate.state.people.length === 400, "Alpha World did not create the 400-person real roster");
-  ok(names.size === 400, "Alpha World real roster contains duplicate identities");
+  ok(
+    aggregate.state.people.length === REAL_WORLD_ALPHA_RULESET.wrestlers,
+    "Alpha World did not create the audited real-world roster",
+  );
+  ok(
+    names.size === REAL_WORLD_ALPHA_RULESET.wrestlers,
+    "Alpha World real-world roster contains duplicate identities",
+  );
   ok(names.has("Cody Rhodes"), "Alpha World did not use the real roster source");
-  ok(names.has("Swerve Strickland"), "Alpha World is missing a real active roster identity");
+  ok(names.has("Swerve Strickland"), "Alpha World is missing a real active men's roster identity");
+  ok(names.has("Rhea Ripley"), "Alpha World is missing a real active women's roster identity");
   ok(!names.has("PAC"), "Alpha World included a deliberately excluded non-active identity");
 
   const cody = aggregate.state.people.find((person) => person.name === "Cody Rhodes");
+  const rhea = aggregate.state.people.find((person) => person.name === "Rhea Ripley");
   const prospect = aggregate.state.people.find((person) => person.name === "Je'Von Evans");
-  ok(cody?.popularity !== undefined && cody.popularity >= 90, "Alpha World did not apply megastar calibration");
+  ok(cody?.popularity !== undefined && cody.popularity >= 90, "Alpha World did not apply men's megastar calibration");
+  ok(rhea?.popularity !== undefined && rhea.popularity >= 90, "Alpha World did not apply women's megastar calibration");
+  ok(rhea?.division === "WOMEN", "Alpha World did not preserve women's division data");
   ok(prospect?.careerStage === "PROSPECT", "Alpha World did not apply prospect career calibration");
 });
 
