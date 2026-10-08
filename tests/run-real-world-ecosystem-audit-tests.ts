@@ -3,6 +3,10 @@ import { REAL_WORLD_ALPHA_RULESET } from "../packages/config/src/real-world-rule
 import { calibratedRealActiveMixedRosterSource } from "../packages/content/src/real-active-mixed-roster.js";
 import { realPromotionEcosystemSource } from "../packages/content/src/real-promotions.js";
 import { realWorldInitialRosterAssignmentSource } from "../packages/content/src/real-aew-roh-cmll-rosters.js";
+import {
+  NXT_INITIAL_ROSTER_NAMES,
+  WWE_INITIAL_ROSTER_NAMES,
+} from "../packages/content/src/real-wwe-nxt-rosters.js";
 import { seedRealActiveTagTeams } from "../packages/content/src/real-active-tag-teams.js";
 import { seedRealWrestlerRelationships } from "../packages/content/src/real-wrestler-relationships.js";
 import { realRosterValueBand } from "../packages/content/src/real-active-mens-calibration.js";
@@ -162,6 +166,44 @@ const startErrors = validateWorldInvariants(start);
 ok(startErrors.length === 0, startErrors.join("\n"));
 
 const startSnapshot = snapshot(start);
+const wwe = start.promotions.find((promotion) => promotion.name === "WWE");
+const nxt = start.promotions.find((promotion) => promotion.name === "NXT");
+const roh = start.promotions.find((promotion) => promotion.name === "ROH");
+ok(wwe && nxt && roh, "audit World is missing WWE, NXT or ROH");
+const peopleByName = new Map(start.people.map((person) => [person.name, person]));
+const takeoverIds = new Set(
+  start.promotions
+    .filter((promotion) => promotion.playerTakeoverEligibility === "STANDARD")
+    .map((promotion) => promotion.id),
+);
+for (const name of [...WWE_INITIAL_ROSTER_NAMES, ...NXT_INITIAL_ROSTER_NAMES]) {
+  const person = peopleByName.get(name);
+  ok(person, `protected WWE-system identity missing from World: ${name}`);
+  const contracts = activeContractsForPerson(start, person!.id);
+  ok(
+    contracts.length === 1
+      && contracts[0]!.promotionId === wwe!.id
+      && contracts[0]!.exclusivity === "EXCLUSIVE",
+    `WWE-system identity is not exclusively protected by WWE at Genesis: ${name}`,
+  );
+  for (const takeoverId of takeoverIds) {
+    ok(
+      !currentRosterPersonIds(start, takeoverId).includes(person!.id),
+      `WWE-system identity leaked onto takeover roster at Genesis: ${name}`,
+    );
+  }
+}
+const wweRosterIds = new Set(currentRosterPersonIds(start, wwe!.id));
+const nxtRosterIds = new Set(currentRosterPersonIds(start, nxt!.id));
+for (const name of WWE_INITIAL_ROSTER_NAMES) {
+  ok(wweRosterIds.has(peopleByName.get(name)!.id), `WWE roster affiliation missing ${name}`);
+}
+for (const name of NXT_INITIAL_ROSTER_NAMES) {
+  ok(nxtRosterIds.has(peopleByName.get(name)!.id), `NXT roster affiliation missing ${name}`);
+}
+ok(nxtRosterIds.size > 0, "NXT explicit roster is empty at Genesis");
+ok(currentRosterPersonIds(start, roh!.id).length > 0, "ROH explicit roster is empty at Genesis");
+
 ok(startSnapshot.wrestlers === REAL_WORLD_ALPHA_RULESET.wrestlers, "audit World roster size drifted");
 ok(startSnapshot.realPromotions === 8, "audit World no longer has eight real promotions");
 ok(startSnapshot.takeoverPromotions === 5, "audit World no longer has five takeover promotions");
