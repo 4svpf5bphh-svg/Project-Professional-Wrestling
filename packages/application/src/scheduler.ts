@@ -55,6 +55,7 @@ function requireUtcCycleKey(value: string): string {
 function retryableSchedulerConflict(message: string): boolean {
   return message.includes("stale World revision")
     || message.includes("cannot lock from phase")
+    || message.includes("cannot lock show commitments from phase")
     || message.includes("cannot accept player mutations")
     || message.includes("cannot begin resolution from phase")
     || message.includes("scheduled lock changed before recovery");
