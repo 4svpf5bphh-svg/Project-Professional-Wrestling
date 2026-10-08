@@ -1,5 +1,6 @@
 declare const process: { env: Record<string, string | undefined>; exitCode?: number };
 
+import { lockPersistedCurrentWeekShowCommitments } from "../packages/application/src/index.js";
 import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
 import { createPostgresServerWorldAccess } from "../packages/persistence/src/postgres-server-world-access.js";
 
@@ -50,6 +51,30 @@ await test("lightweight player activity persistence updates engagement without a
     ok(after.runtime.revision === before.runtime.revision, "activity write advanced the World revision");
     ok(after.state.world.currentDate.week === before.state.world.currentDate.week, "activity write advanced PPW time");
     ok(after.commands.receipts.length === 0, "server read path unexpectedly loaded command receipts");
+  } finally {
+    await access.close();
+  }
+});
+
+await test("server-world read path preserves persisted show commitment lock", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62023, playerId: "commitment-player" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+
+    await lockPersistedCurrentWeekShowCommitments(
+      access.repository,
+      worldId,
+      aggregate.runtime.revision,
+      "2026-10-07",
+    );
+
+    const loaded = await access.repository.load(worldId);
+    ok(loaded.runtime.phase === "OPEN", "server read treated commitment lock as World lock");
+    ok(loaded.runtime.commitmentLockedPpwDate?.week === aggregate.state.world.currentDate.week, "server read lost commitment PPW week");
+    ok(loaded.runtime.commitmentLockedRealCycleKey === "2026-10-07", "server read lost commitment real-cycle key");
   } finally {
     await access.close();
   }
