@@ -76,6 +76,16 @@ function participantBelongsToPromotion(
   return activeMembers.length >= 2 && activeMembers.every((personId) => rosterPersonIds.has(personId));
 }
 
+function participantPersonIds(
+  state: WorldState,
+  ref: ProgrammeParticipantRef,
+): string[] {
+  if (ref.kind === "PERSON") return [ref.entityId];
+  return (state.teamMemberships ?? [])
+    .filter((membership) => membership.teamId === ref.entityId && membership.active)
+    .map((membership) => membership.personId);
+}
+
 function validateSides(
   state: WorldState,
   promotionId: string,
@@ -88,6 +98,7 @@ function validateSides(
   }
 
   const seen = new Set<string>();
+  const seenPeople = new Set<string>();
   const rosterPersonIds = new Set(currentRosterPersonIds(state, promotionId));
   for (const ref of [...sideA, ...sideB]) {
     const key = `${ref.kind}:${ref.entityId}`;
@@ -96,6 +107,12 @@ function validateSides(
     if (!participantExists(state, ref)) throw new Error(`Programme participant ${ref.entityId} is not available in this World`);
     if (!participantBelongsToPromotion(state, promotionId, ref, rosterPersonIds)) {
       throw new Error(`Programme participant ${ref.entityId} is not on this promotion's current roster`);
+    }
+    for (const personId of participantPersonIds(state, ref)) {
+      if (seenPeople.has(personId)) {
+        throw new Error("Programme cannot include the same wrestler through multiple participant selections");
+      }
+      seenPeople.add(personId);
     }
   }
 }
