@@ -248,45 +248,86 @@ export const aewRohCmllInitialRosterAssignmentSource: InitialRosterAssignmentSou
   return assignments;
 };
 
-export const REAL_WORLD_TAKEOVER_STARTUP_ROSTER_SIZE = 18;
+export const REAL_WORLD_TAKEOVER_STARTUP_MEN = 12;
+export const REAL_WORLD_TAKEOVER_STARTUP_WOMEN = 6;
+export const REAL_WORLD_TAKEOVER_STARTUP_ROSTER_SIZE =
+  REAL_WORLD_TAKEOVER_STARTUP_MEN + REAL_WORLD_TAKEOVER_STARTUP_WOMEN;
+
+function startupTalentValue(
+  person: InitialRosterAssignmentContext["people"][number],
+): number {
+  return person.skills.inRingQuality + person.skills.matchCraft + person.skills.presentation
+    + person.recognition + person.popularity;
+}
+
+function startupDivisionAssignments(
+  context: InitialRosterAssignmentContext,
+  protectedPeople: Set<string>,
+  takeoverPromotionIds: string[],
+  division: "MEN" | "WOMEN",
+  perPromotion: number,
+): InitialRosterAssignment[] {
+  const required = takeoverPromotionIds.length * perPromotion;
+  const candidates = context.people
+    .filter((person) => !protectedPeople.has(person.id))
+    .filter((person) => (person.division ?? "MEN") === division)
+    .slice()
+    .sort((left, right) => (
+      startupTalentValue(right) - startupTalentValue(left)
+      || left.id.localeCompare(right.id)
+    ));
+
+  if (candidates.length < required) {
+    throw new Error(
+      `real-world takeover startup requires ${required} unassigned ${division.toLowerCase()} wrestlers; only ${candidates.length} are available`,
+    );
+  }
+
+  const assignments: InitialRosterAssignment[] = [];
+  for (let index = 0; index < required; index += 1) {
+    const cycle = Math.floor(index / takeoverPromotionIds.length);
+    const offset = index % takeoverPromotionIds.length;
+    const promotionIndex = cycle % 2 === 0
+      ? offset
+      : takeoverPromotionIds.length - 1 - offset;
+    const person = candidates[index]!;
+    protectedPeople.add(person.id);
+    assignments.push({
+      personId: person.id,
+      promotionId: takeoverPromotionIds[promotionIndex]!,
+      family: "LIMITED_NON_EXCLUSIVE",
+    });
+  }
+  return assignments;
+}
 
 function takeoverStartupAssignments(
   context: InitialRosterAssignmentContext,
   protectedAssignments: InitialRosterAssignment[],
 ): InitialRosterAssignment[] {
   const protectedPeople = new Set(protectedAssignments.map((assignment) => assignment.personId));
-  const takeoverPromotions = context.promotions
+  const takeoverPromotionIds = context.promotions
     .filter((promotion) => promotion.playerTakeoverEligibility === "STANDARD")
-    .sort((left, right) => left.id.localeCompare(right.id));
-  if (takeoverPromotions.length === 0) return [];
+    .sort((left, right) => left.id.localeCompare(right.id))
+    .map((promotion) => promotion.id);
+  if (takeoverPromotionIds.length === 0) return [];
 
-  const candidates = context.people
-    .filter((person) => !protectedPeople.has(person.id))
-    .slice()
-    .sort((left, right) => {
-      const leftValue = left.skills.inRingQuality + left.skills.matchCraft + left.skills.presentation
-        + left.recognition + left.popularity;
-      const rightValue = right.skills.inRingQuality + right.skills.matchCraft + right.skills.presentation
-        + right.recognition + right.popularity;
-      return rightValue - leftValue || left.id.localeCompare(right.id);
-    });
-
-  const required = takeoverPromotions.length * REAL_WORLD_TAKEOVER_STARTUP_ROSTER_SIZE;
-  if (candidates.length < required) {
-    throw new Error(
-      `real-world takeover startup requires ${required} unassigned wrestlers; only ${candidates.length} are available`,
-    );
-  }
-
-  const assignments: InitialRosterAssignment[] = [];
-  for (let index = 0; index < required; index += 1) {
-    assignments.push({
-      personId: candidates[index]!.id,
-      promotionId: takeoverPromotions[index % takeoverPromotions.length]!.id,
-      family: "LIMITED_NON_EXCLUSIVE",
-    });
-  }
-  return assignments;
+  return [
+    ...startupDivisionAssignments(
+      context,
+      protectedPeople,
+      takeoverPromotionIds,
+      "MEN",
+      REAL_WORLD_TAKEOVER_STARTUP_MEN,
+    ),
+    ...startupDivisionAssignments(
+      context,
+      protectedPeople,
+      takeoverPromotionIds,
+      "WOMEN",
+      REAL_WORLD_TAKEOVER_STARTUP_WOMEN,
+    ),
+  ];
 }
 
 export const realWorldInitialRosterAssignmentSource: InitialRosterAssignmentSource = (context) => {
