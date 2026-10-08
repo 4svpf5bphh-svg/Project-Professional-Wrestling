@@ -11,6 +11,7 @@ import type {
   WrestlerDivision,
 } from "../../domain/src/types.js";
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
+import type { RecruitmentInterestBand } from "../../sim-core/src/contracts.js";
 import {
   activeContractsForPerson,
   activeContractsForPromotion,
@@ -19,6 +20,7 @@ import {
   marketWeeklyValue,
   ppwDateToWeekIndex,
   promotionAlignmentChangeContext,
+  recruitmentInterestBand,
   wrestlerAffiliationHasBookingRights,
   wrestlerAlignment,
   wrestlerAlignmentForPromotion,
@@ -98,6 +100,7 @@ export interface PlayerRosterContractView extends PlayerPublicTalentIdentityView
 
 export interface PlayerTalentMarketView extends PlayerPublicTalentIdentityView {
   alignment: WrestlerAlignment;
+  interest: RecruitmentInterestBand;
   skills: PlayerTalentSkillsView;
   estimatedWeeklyValue: number;
   availability: "FREE_AGENT" | "NON_EXCLUSIVE";
@@ -347,6 +350,7 @@ export function buildPlayerTalentManagementView(
       return {
         ...publicTalentIdentity(aggregate, person),
         alignment,
+        interest: recruitmentInterestBand(aggregate.state, promotion, person),
         skills: publicSkills(person),
         estimatedWeeklyValue: marketWeeklyValue(person),
         availability: activeOutside.length > 0 ? "NON_EXCLUSIVE" : "FREE_AGENT",
