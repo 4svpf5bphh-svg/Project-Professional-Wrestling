@@ -216,13 +216,16 @@ ok(
   startTakeovers.every((promotion) => promotion.roster >= 18 && promotion.roster <= 32),
   "a takeover promotion starts outside the healthy 18-32 wrestler runway",
 );
-ok(startSnapshot.allTalent.free >= 180, "Genesis free-agent pool is too small");
-ok(startSnapshot.allTalent.accessible >= 425, "Genesis accessible talent pool is too small");
-ok(startSnapshot.men.accessible >= 280, "Genesis accessible men's pool is too small");
+// These floors describe the correctly protected real-world ecosystem. The
+// earlier looser ownership model counted several WWE-contracted wrestlers as
+// accessible/free and therefore overstated market supply.
+ok(startSnapshot.allTalent.free >= 165, "Genesis free-agent pool is too small");
+ok(startSnapshot.allTalent.accessible >= 400, "Genesis accessible talent pool is too small");
+ok(startSnapshot.men.accessible >= 270, "Genesis accessible men's pool is too small");
 ok(startSnapshot.women.accessible >= 125, "Genesis accessible women's pool is too small");
-ok(startSnapshot.allTalent.accessibleHeadliners >= 40, "Genesis lacks accessible headline talent");
-ok(startSnapshot.women.accessibleHeadliners >= 12, "Genesis lacks accessible women's headline talent");
-ok(startSnapshot.allTalent.accessibleFeaturedOrBetter >= 140, "Genesis lacks accessible featured-or-better depth");
+ok(startSnapshot.allTalent.accessibleHeadliners >= 35, "Genesis lacks accessible headline talent");
+ok(startSnapshot.women.accessibleHeadliners >= 10, "Genesis lacks accessible women's headline talent");
+ok(startSnapshot.allTalent.accessibleFeaturedOrBetter >= 135, "Genesis lacks accessible featured-or-better depth");
 
 const week26 = buildWorld(20261008);
 resolveWorldWeeks(week26, 26);
