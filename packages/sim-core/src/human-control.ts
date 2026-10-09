@@ -21,6 +21,19 @@ function normalizedPromotionName(name: string | undefined): string | null {
   return normalized;
 }
 
+function renameUntouchedGenericShowSeries(
+  state: WorldState,
+  promotionId: Id,
+  previousName: string,
+  nextName: string,
+): void {
+  for (const series of state.showSeries ?? []) {
+    if (series.promotionId !== promotionId) continue;
+    if (series.name === `${previousName} Flagship`) series.name = `${nextName} Flagship`;
+    if (series.name === `${previousName} Premium`) series.name = `${nextName} Premium`;
+  }
+}
+
 export function claimIndependentPromotionForHuman(
   state: WorldState,
   promotionId: Id,
@@ -53,6 +66,7 @@ export function claimIndependentPromotionForHuman(
     );
     if (duplicate) throw new Error(`promotion name already exists: ${requestedName}`);
     promotion.name = requestedName!;
+    renameUntouchedGenericShowSeries(state, promotion.id, previousName, promotion.name);
   }
   promotion.controllerType = "HUMAN";
 
