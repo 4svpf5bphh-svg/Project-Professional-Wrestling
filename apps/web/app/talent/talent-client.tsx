@@ -57,6 +57,8 @@ const INTEREST_RANK: Record<PlayerTalentMarketView["interest"], number> = {
   KEEN: 4,
 };
 
+const MARKET_MIN_OPTIONS = [0, 40, 50, 60, 70, 80, 90] as const;
+
 const ROSTER_ROLE_ORDER: OfferRole[] = [
   "MAIN_EVENT",
   "SPECIAL_ATTRACTION",
@@ -591,6 +593,13 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
   const [marketDivisionFilter, setMarketDivisionFilter] = useState<MarketDivisionFilter>("ALL");
   const [marketInterestFilter, setMarketInterestFilter] = useState<MarketInterestFilter>("ALL");
   const [marketWatchOnly, setMarketWatchOnly] = useState(false);
+  const [marketAdvancedOpen, setMarketAdvancedOpen] = useState(false);
+  const [marketMinPopularity, setMarketMinPopularity] = useState(0);
+  const [marketMinRecognition, setMarketMinRecognition] = useState(0);
+  const [marketMinMomentum, setMarketMinMomentum] = useState(0);
+  const [marketMinInRing, setMarketMinInRing] = useState(0);
+  const [marketMinCraft, setMarketMinCraft] = useState(0);
+  const [marketMinPresentation, setMarketMinPresentation] = useState(0);
   const [marketLimit, setMarketLimit] = useState(25);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -804,6 +813,12 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       .filter((entry) => marketDivisionFilter === "ALL" || entry.division === marketDivisionFilter)
       .filter((entry) => marketAvailabilityFilter === "ALL" || entry.availability === marketAvailabilityFilter)
       .filter((entry) => !marketWatchOnly || entry.watched)
+      .filter((entry) => entry.popularity >= marketMinPopularity)
+      .filter((entry) => entry.recognition >= marketMinRecognition)
+      .filter((entry) => entry.momentum >= marketMinMomentum)
+      .filter((entry) => entry.skills.inRingQuality >= marketMinInRing)
+      .filter((entry) => entry.skills.matchCraft >= marketMinCraft)
+      .filter((entry) => entry.skills.presentation >= marketMinPresentation)
       .filter((entry) => {
         if (marketInterestFilter === "INTERESTED_PLUS") return INTEREST_RANK[entry.interest] >= INTEREST_RANK.INTERESTED;
         if (marketInterestFilter === "OPEN_PLUS") return INTEREST_RANK[entry.interest] >= INTEREST_RANK.OPEN_TO_TALKS;
@@ -817,7 +832,21 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       if (marketSort === "NAME") return left.name.localeCompare(right.name);
       return right.estimatedWeeklyValue - left.estimatedWeeklyValue || right.popularity - left.popularity || left.name.localeCompare(right.name);
     });
-  }, [view, query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketWatchOnly, marketSort]);
+  }, [
+    view,
+    query,
+    marketAvailabilityFilter,
+    marketDivisionFilter,
+    marketInterestFilter,
+    marketWatchOnly,
+    marketMinPopularity,
+    marketMinRecognition,
+    marketMinMomentum,
+    marketMinInRing,
+    marketMinCraft,
+    marketMinPresentation,
+    marketSort,
+  ]);
   const visibleMarket = useMemo(() => market.slice(0, marketLimit), [market, marketLimit]);
   const offers = useMemo(
     () => (view?.pendingOffers ?? []).filter((entry) => matchesQuery(entry.personName, query)),
@@ -827,7 +856,20 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
 
   useEffect(() => {
     setMarketLimit(25);
-  }, [query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketWatchOnly, marketSort]);
+  }, [
+    query,
+    marketAvailabilityFilter,
+    marketDivisionFilter,
+    marketInterestFilter,
+    marketWatchOnly,
+    marketMinPopularity,
+    marketMinRecognition,
+    marketMinMomentum,
+    marketMinInRing,
+    marketMinCraft,
+    marketMinPresentation,
+    marketSort,
+  ]);
 
   function toggleRosterRole(role: OfferRole): void {
     setCollapsedRosterRoles((current) => {
@@ -836,6 +878,24 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       else next.add(role);
       return next;
     });
+  }
+
+  const marketAdvancedCount = [
+    marketMinPopularity,
+    marketMinRecognition,
+    marketMinMomentum,
+    marketMinInRing,
+    marketMinCraft,
+    marketMinPresentation,
+  ].filter((value) => value > 0).length;
+
+  function resetMarketAdvanced(): void {
+    setMarketMinPopularity(0);
+    setMarketMinRecognition(0);
+    setMarketMinMomentum(0);
+    setMarketMinInRing(0);
+    setMarketMinCraft(0);
+    setMarketMinPresentation(0);
   }
 
   const rosterMen = view?.roster.filter((entry) => entry.division === "MEN").length ?? 0;
@@ -980,6 +1040,14 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
                 >
                   ★ Watchlist
                 </button>
+                <button
+                  className={marketAdvancedOpen || marketAdvancedCount > 0 ? styles.advancedFilterActive : styles.advancedFilter}
+                  type="button"
+                  aria-expanded={marketAdvancedOpen}
+                  onClick={() => setMarketAdvancedOpen((current) => !current)}
+                >
+                  Advanced{marketAdvancedCount > 0 ? ` · ${marketAdvancedCount}` : ""}
+                </button>
               </div>
               <div className={styles.marketSelects}>
                 <label>
@@ -1010,6 +1078,36 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
                   </select>
                 </label>
               </div>
+              {marketAdvancedOpen ? (
+                <section className={styles.marketAdvanced} aria-label="Advanced talent market filters">
+                  <div className={styles.marketAdvancedHeading}>
+                    <div>
+                      <strong>Minimum attributes</strong>
+                      <span>Combine thresholds, then use Value low to find the cheapest wrestler who clears them.</span>
+                    </div>
+                    <button type="button" onClick={resetMarketAdvanced} disabled={marketAdvancedCount === 0}>Reset</button>
+                  </div>
+                  <div className={styles.marketAdvancedGrid}>
+                    {([
+                      ["Popularity", marketMinPopularity, setMarketMinPopularity],
+                      ["Recognition", marketMinRecognition, setMarketMinRecognition],
+                      ["Momentum", marketMinMomentum, setMarketMinMomentum],
+                      ["In-ring", marketMinInRing, setMarketMinInRing],
+                      ["Craft", marketMinCraft, setMarketMinCraft],
+                      ["Presentation", marketMinPresentation, setMarketMinPresentation],
+                    ] as const).map(([name, value, setter]) => (
+                      <label key={name}>
+                        <span>{name}</span>
+                        <select value={value} onChange={(event) => setter(Number(event.target.value))}>
+                          {MARKET_MIN_OPTIONS.map((minimum) => (
+                            <option key={minimum} value={minimum}>{minimum === 0 ? "Any" : `${minimum}+`}</option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
               <div className={styles.marketCount}>
                 Showing <b>{Math.min(marketLimit, market.length)}</b> of <b>{market.length}</b> matching wrestlers
               </div>
