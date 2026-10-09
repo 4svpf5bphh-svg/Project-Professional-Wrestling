@@ -7,6 +7,7 @@ import type {
   WorldState,
 } from "../../domain/src/types.js";
 import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { maxShowParticipantsForDate } from "./show-capacity.js";
 import { serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
 import {
@@ -27,12 +28,6 @@ function samePpwWeek(a: PpwDate, b: PpwDate): boolean {
 
 function reservationIdFor(promotionId: Id, draftId: string): string {
   return `show-reservation:${promotionId}:${draftId}`;
-}
-
-function promotionRunsAtDate(state: WorldState, promotion: Promotion, date: PpwDate): boolean {
-  if (promotion.lifecycle === "CLOSED" || promotion.lifecycle === "DORMANT") return false;
-  const weekIndex = ppwDateToWeekIndex(date, state.ruleset.weeksPerYear);
-  return weekIndex % Math.max(1, promotion.eventCadenceWeeks) === 0;
 }
 
 function contractCoversDate(state: WorldState, contract: Contract, date: PpwDate): boolean {
@@ -204,8 +199,12 @@ export function reserveDetailedShowDraft(
   if (!sourceDraft) throw new Error(`show draft ${draftId} was not found`);
   const draft = validateDetailedShowDraft(state, sourceDraft);
 
-  if (!promotionRunsAtDate(state, promotion, draft.targetDate)) {
-    throw new Error("promotion has no scheduled operating show in the draft target PPW week");
+  const dueSeries = promotionShowSeriesDueForDate(state, promotion.id, draft.targetDate);
+  const showSeries = draft.showSeriesId
+    ? dueSeries.find((series) => series.id === draft.showSeriesId) ?? null
+    : dueSeries[0] ?? null;
+  if (!showSeries) {
+    throw new Error("promotion has no scheduled show identity in the draft target PPW week");
   }
   if (draft.marketId === null || draft.venueId === null || draft.ticketStrategy === null) {
     throw new Error("show draft needs market, venue and ticket strategy before reservation");
@@ -232,6 +231,7 @@ export function reserveDetailedShowDraft(
     reservationId,
     sourceDraftId: draft.draftId,
     promotionId,
+    showSeriesId: showSeries.id,
     targetDate: { ...draft.targetDate },
     marketId: draft.marketId,
     venueId: draft.venueId,

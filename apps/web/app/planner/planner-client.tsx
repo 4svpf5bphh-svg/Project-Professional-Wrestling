@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { PlayerSixWeekPlannerView } from "../../../../dist/packages/application/src/planning-view.js";
 import styles from "./planner.module.css";
 
@@ -11,6 +12,7 @@ type WeekView = PromotionView["weeks"][number];
 type PlanForm = {
   year: number;
   week: number;
+  showSeriesId: string;
   day: number;
   marketId: string;
   venueId: string;
@@ -65,7 +67,11 @@ function weekKey(week: WeekView): string {
   return `${week.year}:${week.week}`;
 }
 
-function initialPlan(view: PlayerSixWeekPlannerView, week: WeekView): PlanForm | null {
+function initialPlan(
+  view: PlayerSixWeekPlannerView,
+  week: WeekView,
+  preferredShowSeriesId?: string | null,
+): PlanForm | null {
   const promotion = view.promotion;
   if (!promotion) return null;
   const existing = week.shows[0] ?? null;
@@ -74,9 +80,13 @@ function initialPlan(view: PlayerSixWeekPlannerView, week: WeekView): PlanForm |
   const venueId = existing?.venueId ?? market?.venues[0]?.venueId;
   if (!market || !venueId) return null;
 
+  const selectedSeries = preferredShowSeriesId
+    ? week.showSeriesOptions.find((series) => series.showSeriesId === preferredShowSeriesId) ?? null
+    : null;
   return {
     year: week.year,
     week: week.week,
+    showSeriesId: existing?.showSeriesId ?? selectedSeries?.showSeriesId ?? week.showSeries?.showSeriesId ?? "",
     day: existing?.targetDate.day ?? 6,
     marketId: market.marketId,
     venueId,
@@ -85,12 +95,20 @@ function initialPlan(view: PlayerSixWeekPlannerView, week: WeekView): PlanForm |
 }
 
 export default function PlannerClient(): React.JSX.Element {
+  const searchParams = useSearchParams();
+  const focusYear = Number(searchParams.get("year"));
+  const focusWeek = Number(searchParams.get("week"));
+  const focusShowSeriesId = searchParams.get("showSeriesId");
+  const focusedKey = Number.isSafeInteger(focusYear) && Number.isSafeInteger(focusWeek)
+    ? `${focusYear}:${focusWeek}`
+    : null;
   const [view, setView] = useState<PlayerSixWeekPlannerView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [form, setForm] = useState<PlanForm | null>(null);
   const [saving, setSaving] = useState(false);
   const requestIds = useRef(new Map<string, string>());
+  const deepLinkApplied = useRef(false);
 
   async function refresh(): Promise<void> {
     setError(null);
@@ -108,9 +126,9 @@ export default function PlannerClient(): React.JSX.Element {
     });
   }, []);
 
-  function beginEdit(week: WeekView): void {
+  function beginEdit(week: WeekView, preferredShowSeriesId?: string | null): void {
     if (!view) return;
-    const next = initialPlan(view, week);
+    const next = initialPlan(view, week, preferredShowSeriesId);
     if (!next) {
       setError("No valid market and venue are available for this show.");
       return;
@@ -119,6 +137,31 @@ export default function PlannerClient(): React.JSX.Element {
     setEditingKey(weekKey(week));
     setForm(next);
   }
+
+  useEffect(() => {
+    if (!view?.promotion || deepLinkApplied.current || !focusedKey) return;
+    const target = view.promotion.weeks.find((week) => weekKey(week) === focusedKey);
+    if (!target) {
+      deepLinkApplied.current = true;
+      setError("That calendar event is outside the current six-week planning window.");
+      return;
+    }
+    const selectedSeries = focusShowSeriesId
+      ? target.showSeriesOptions.find((series) => series.showSeriesId === focusShowSeriesId) ?? null
+      : null;
+    deepLinkApplied.current = true;
+    if (focusShowSeriesId && !selectedSeries) {
+      setError("That calendar event is not due in the selected PPW week.");
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      document.getElementById(`planner-week-${target.year}-${target.week}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+    if (target.canPlan && target.shows.length <= 1) beginEdit(target, focusShowSeriesId);
+  }, [view, focusedKey, focusShowSeriesId]);
 
   function cancelEdit(): void {
     setEditingKey(null);
@@ -226,8 +269,13 @@ export default function PlannerClient(): React.JSX.Element {
                 isEditing && form!.marketId && form!.venueId && view.world.phase === "OPEN" && !saving,
               );
 
+              const isFocused = focusedKey === weekKey(week);
               return (
-                <article className={`${styles.weekCard} ${week.isCurrentWeek ? styles.currentWeek : ""}`} key={`${week.year}-${week.week}`}>
+                <article
+                  id={`planner-week-${week.year}-${week.week}`}
+                  className={`${styles.weekCard} ${week.isCurrentWeek || isFocused ? styles.currentWeek : ""}`}
+                  key={`${week.year}-${week.week}`}
+                >
                   <div className={styles.weekHeader}>
                     <div>
                       <span className={styles.eyebrow}>{week.isCurrentWeek ? "CURRENT WEEK" : `+${week.offset} WEEK${week.offset === 1 ? "" : "S"}`}</span>
@@ -328,6 +376,19 @@ export default function PlannerClient(): React.JSX.Element {
                   {isEditing ? (
                     <section className={styles.editor}>
                       <div className={styles.editorGrid}>
+                        <label>
+                          <span>Show</span>
+                          <select
+                            value={form!.showSeriesId}
+                            onChange={(event) => setForm({ ...form!, showSeriesId: event.target.value })}
+                          >
+                            {week.showSeriesOptions.map((series) => (
+                              <option value={series.showSeriesId} key={series.showSeriesId}>
+                                {series.name} · {label(series.role)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                         <label><span>Show day</span><select value={form!.day} onChange={(event) => setForm({ ...form!, day: Number(event.target.value) })}>{DAY_NAMES.slice(1).map((name, index) => <option value={index + 1} key={name}>{name}</option>)}</select></label>
                         <label><span>Market</span><select value={form!.marketId} onChange={(event) => changeMarket(event.target.value)}>{view.promotion!.markets.map((market) => <option key={market.marketId} value={market.marketId}>{market.name}{market.isHomeMarket ? " · Home" : ""}</option>)}</select></label>
                         <label><span>Venue</span><select value={form!.venueId} onChange={(event) => setForm({ ...form!, venueId: event.target.value })}>{selectedMarket?.venues.map((venue) => <option key={venue.venueId} value={venue.venueId}>{venue.name} · {integer(venue.capacity)}</option>)}</select></label>

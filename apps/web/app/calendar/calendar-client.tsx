@@ -403,12 +403,16 @@ export default function CalendarClient(): React.JSX.Element {
                   </>
                 );
 
-                return entry.isPlayerPromotion ? (
-                  <a className={`${styles.eventCard} ${big ? styles.bigEvent : ""} ${styles.ownEvent}`} href="/planner" key={entry.occurrenceId}>
+                return entry.canPlanNow ? (
+                  <a
+                    className={`${styles.eventCard} ${big ? styles.bigEvent : ""} ${styles.ownEvent}`}
+                    href={`/planner?year=${entry.year}&week=${entry.week}&showSeriesId=${encodeURIComponent(entry.showSeriesId)}`}
+                    key={entry.occurrenceId}
+                  >
                     {content}
                   </a>
                 ) : (
-                  <article className={`${styles.eventCard} ${big ? styles.bigEvent : ""}`} key={entry.occurrenceId}>
+                  <article className={`${styles.eventCard} ${big ? styles.bigEvent : ""} ${entry.isPlayerPromotion ? styles.ownEvent : ""}`} key={entry.occurrenceId}>
                     {content}
                   </article>
                 );

@@ -19,6 +19,7 @@ export interface AlphaPlannerShowPlanRequest {
   marketId: string;
   venueId: string;
   ticketStrategy: TicketStrategy;
+  showSeriesId?: string;
   participantIds?: string[];
 }
 
@@ -129,6 +130,7 @@ export async function saveAlphaPlannerShowPlan(
     const draft: DetailedShowDraft = {
       draftId,
       promotionId: control.promotionId,
+      showSeriesId: request.showSeriesId ?? existing?.showSeriesId ?? null,
       targetDate,
       marketId: request.marketId,
       venueId: request.venueId,

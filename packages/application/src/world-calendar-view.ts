@@ -5,7 +5,9 @@ import type {
   PpwDate,
   WrestlingEventType,
 } from "../../domain/src/types.js";
+import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { promotionShowOccurrencesBetween } from "../../sim-core/src/show-calendar.js";
+import { DETAILED_PLANNING_HORIZON_WEEKS } from "./planning.js";
 import {
   activePromotionControlForPlayer,
   activeWorldMembership,
@@ -32,6 +34,7 @@ export interface PlayerWorldCalendarOccurrenceView {
   venueName: string | null;
   eventId: Id | null;
   status: "CALENDAR" | "SCHEDULED" | "COMPLETED" | "CANCELLED";
+  canPlanNow: boolean;
 }
 
 export interface PlayerWorldCalendarShowSeriesView {
@@ -112,12 +115,21 @@ export function buildPlayerWorldCalendarView(
   const marketsById = new Map(aggregate.state.markets.map((market) => [market.id, market]));
   const venuesById = new Map(aggregate.state.venues.map((venue) => [venue.id, venue]));
 
+  const currentWeekIndex = ppwDateToWeekIndex(
+    aggregate.state.world.currentDate,
+    aggregate.state.ruleset.weeksPerYear,
+  );
   const occurrences = promotionShowOccurrencesBetween(
     aggregate.state,
     aggregate.state.world.currentDate,
     horizonWeeks,
   ).map((occurrence): PlayerWorldCalendarOccurrenceView => {
     const promotion = promotionsById.get(occurrence.promotionId);
+    const occurrenceWeekIndex = ppwDateToWeekIndex(
+      { year: occurrence.year, week: occurrence.week, day: 1 },
+      aggregate.state.ruleset.weeksPerYear,
+    );
+    const planningOffset = occurrenceWeekIndex - currentWeekIndex;
     return {
       occurrenceId: occurrence.id,
       promotionId: occurrence.promotionId,
@@ -138,6 +150,10 @@ export function buildPlayerWorldCalendarView(
       venueName: occurrence.venueId ? venuesById.get(occurrence.venueId)?.name ?? "Unknown venue" : null,
       eventId: occurrence.eventId,
       status: occurrence.status,
+      canPlanNow: control?.promotionId === occurrence.promotionId
+        && occurrence.status === "CALENDAR"
+        && planningOffset >= 0
+        && planningOffset < DETAILED_PLANNING_HORIZON_WEEKS,
     };
   });
 

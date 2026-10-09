@@ -19,7 +19,11 @@ import { contractById, personById } from "./indexes.js";
 import { competitionDemandFactor } from "./market-competition.js";
 import { resolveEventCard } from "./matches.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
-import { primaryPromotionShowSeriesForDate, promotionShowOccurrenceId } from "./show-calendar.js";
+import {
+  primaryPromotionShowSeriesForDate,
+  promotionShowOccurrenceId,
+  promotionShowSeriesDueForDate,
+} from "./show-calendar.js";
 import { recordFinancialTransaction } from "./transactions.js";
 
 const ROLE_PRIORITY: Record<Contract["roleExpectation"], number> = {
@@ -309,6 +313,7 @@ export function shouldPromotionRunEvent(state: WorldState, promotion: Promotion)
 
 export interface HumanShowPlan {
   promotionId: string;
+  showSeriesId?: string;
   marketId: string;
   venueId: string;
   day: number;
@@ -334,8 +339,11 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
     throw new Error("human promotion already has a show prepared this PPW week");
   }
 
-  const showSeries = primaryPromotionShowSeriesForDate(state, promotion.id, state.world.currentDate);
-  if (!showSeries) throw new Error("human promotion has no show identity due this PPW week");
+  const dueSeries = promotionShowSeriesDueForDate(state, promotion.id, state.world.currentDate);
+  const showSeries = plan.showSeriesId
+    ? dueSeries.find((series) => series.id === plan.showSeriesId) ?? null
+    : dueSeries[0] ?? null;
+  if (!showSeries) throw new Error("selected human show identity is not due this PPW week");
   const type: WrestlingEventType = showSeries.eventType;
   const market = state.markets.find((candidate) => candidate.id === plan.marketId);
   if (!market) throw new Error(`unknown market ${plan.marketId}`);

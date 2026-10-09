@@ -13,7 +13,7 @@ import {
   type DetailedShowDraft,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
-import { createWorld } from "../packages/sim-core/src/index.js";
+import { createWorld, promotionShowSeriesDueForDate } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -245,6 +245,18 @@ test("removing a draft advances only the planning/application state", () => {
   ok(result.version === 2, "draft removal did not advance plan version");
   ok(result.detailedShowDrafts.length === 0, "draft removal left the draft behind");
   ok(f.state.events.length === eventsBefore, "draft removal mutated simulation events");
+});
+
+
+
+test("show drafts retain an exact due calendar identity", () => {
+  const f = fixture(12021);
+  const dueNow = promotionShowSeriesDueForDate(f.state, f.promotion.id, f.state.world.currentDate);
+  ok(dueNow.length > 0, "planning fixture has no due show identity");
+  const draft = emptyDraft(f, "calendar-bound-draft");
+  draft.showSeriesId = dueNow[0]!.id;
+  const saved = upsert(f, "calendar-bound-upsert", 0, draft);
+  ok(saved.detailedShowDrafts[0]?.showSeriesId === dueNow[0]!.id, "draft lost its selected show identity");
 });
 
 console.log(`\nApplication planning tests: ${passed} passed, ${failed} failed`);

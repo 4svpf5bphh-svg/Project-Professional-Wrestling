@@ -10,7 +10,10 @@ import type {
   WrestlingEventType,
 } from "../../domain/src/types.js";
 import { addPpwWeeks, comparePpwDates } from "../../sim-core/src/clock.js";
-import { primaryPromotionShowSeriesForDate } from "../../sim-core/src/show-calendar.js";
+import {
+  primaryPromotionShowSeriesForDate,
+  promotionShowSeriesDueForDate,
+} from "../../sim-core/src/show-calendar.js";
 import { activePromotionControlForPlayer, activeWorldMembership } from "./ownership.js";
 import {
   DETAILED_PLANNING_HORIZON_WEEKS,
@@ -109,6 +112,8 @@ export interface PlayerPlannerMarketOptionView {
 
 export interface PlayerPlannerShowView {
   draftId: string;
+  showSeriesId: Id | null;
+  showSeriesName: string | null;
   targetDate: PpwDate;
   state: PlayerPlannerShowState;
   readiness: PlayerShowReadiness;
@@ -147,6 +152,13 @@ export interface PlayerPlannerWeekView {
     eventType: WrestlingEventType;
     eventImportance: number;
   };
+  showSeriesOptions: Array<{
+    showSeriesId: Id;
+    name: string;
+    role: PromotionShowSeriesRole;
+    eventType: WrestlingEventType;
+    eventImportance: number;
+  }>;
   canPlan: boolean;
   minParticipants: number;
   maxParticipants: number;
@@ -257,6 +269,9 @@ function showView(
     draft.draftId,
   );
   const peopleById = new Map(aggregate.state.people.map((person) => [person.id, person]));
+  const draftSeries = draft.showSeriesId
+    ? aggregate.state.showSeries?.find((series) => series.id === draft.showSeriesId) ?? null
+    : null;
   const market = draft.marketId
     ? aggregate.state.markets.find((candidate) => candidate.id === draft.marketId) ?? null
     : null;
@@ -323,6 +338,8 @@ function showView(
 
   return {
     draftId: draft.draftId,
+    showSeriesId: draft.showSeriesId ?? null,
+    showSeriesName: draftSeries?.name ?? null,
     targetDate: { ...draft.targetDate },
     state: status.state,
     readiness: status.readiness,
@@ -467,10 +484,11 @@ export function buildPlayerSixWeekPlannerView(
         offset,
         aggregate.state.ruleset.weeksPerYear,
       );
-      const showSeries = promotion.lifecycle === "DORMANT" || promotion.lifecycle === "CLOSED"
-        ? null
-        : primaryPromotionShowSeriesForDate(aggregate.state, promotion.id, targetDate);
-      const required = showSeries !== null;
+      const showSeriesOptions = promotion.lifecycle === "DORMANT" || promotion.lifecycle === "CLOSED"
+        ? []
+        : promotionShowSeriesDueForDate(aggregate.state, promotion.id, targetDate);
+      const showSeries = showSeriesOptions[0] ?? null;
+      const required = showSeriesOptions.length > 0;
       const shows = (workspace?.detailedShowDrafts ?? [])
         .filter((draft) => sameWeek(draft.targetDate, targetDate))
         .sort((left, right) => left.targetDate.day - right.targetDate.day || left.draftId.localeCompare(right.draftId))
@@ -488,6 +506,13 @@ export function buildPlayerSixWeekPlannerView(
           eventType: showSeries.eventType,
           eventImportance: showSeries.eventImportance,
         } : null,
+        showSeriesOptions: showSeriesOptions.map((series) => ({
+          showSeriesId: series.id,
+          name: series.name,
+          role: series.role,
+          eventType: series.eventType,
+          eventImportance: series.eventImportance,
+        })),
         canPlan: required && aggregate.runtime.phase === "OPEN",
         minParticipants: aggregate.state.ruleset.minEventParticipants,
         maxParticipants: maxShowParticipantsForDate(
