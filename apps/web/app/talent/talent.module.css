@@ -8,6 +8,7 @@
 .header,
 .overview,
 .tabs,
+.rosterModes,
 .search,
 .rosterToolbar,
 .marketToolbar,
@@ -265,6 +266,57 @@
   border-color: rgba(93, 233, 206, .7);
   background: rgba(93, 233, 206, .12);
   color: #72ead3;
+}
+
+.rosterModes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.rosterMode,
+.rosterModeActive,
+.rosterModeDisabled {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgba(129, 187, 181, .16);
+  border-radius: 12px;
+  background: rgba(12, 24, 28, .8);
+  color: #9eb4b2;
+  padding: 9px 10px;
+  text-decoration: none;
+}
+
+.rosterMode strong,
+.rosterModeActive strong,
+.rosterModeDisabled strong {
+  color: #d7e5e2;
+  font-size: 11px;
+}
+
+.rosterMode span,
+.rosterModeActive span,
+.rosterModeDisabled span {
+  overflow: hidden;
+  color: #819894;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rosterModeActive {
+  border-color: rgba(93, 233, 206, .52);
+  background: rgba(93, 233, 206, .1);
+}
+
+.rosterModeActive strong {
+  color: #8ff5df;
+}
+
+.rosterModeDisabled {
+  opacity: .5;
 }
 
 .search {
@@ -914,6 +966,19 @@
 }
 
 @media (max-width: 620px) {
+  .rosterModes {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .rosterMode,
+  .rosterModeActive,
+  .rosterModeDisabled {
+    flex: 0 0 auto;
+    min-width: 112px;
+  }
+
   .marketToolbar,
   .rosterToolbar,
   .marketToolbar {
