@@ -196,7 +196,7 @@ export function canAcceptContractTerms(
   return { ok: true, reason: null };
 }
 
-function roleForPerson(person: Person): RoleExpectation {
+export function contractRoleExpectationForPerson(person: Person): RoleExpectation {
   const starScore = (person.recognition + person.popularity + person.skills.presentation) / 3;
   if (person.careerStage === "SPECIAL_ATTRACTION") return "SPECIAL_ATTRACTION";
   if (starScore >= 78) return "MAIN_EVENT";
@@ -228,7 +228,7 @@ export function buildContractTerms(
   const family = forcedFamily ?? familyForPromotion(promotion, person, rng);
   const market = marketWeeklyValue(person);
   const generosity = 0.88 + (100 - promotion.aiProfile.financialCaution) / 300 + promotion.aiProfile.riskTolerance / 600;
-  const roleExpectation = roleForPerson(person);
+  const roleExpectation = contractRoleExpectationForPerson(person);
 
   if (family === "EXCLUSIVE") {
     const termWeeks = rng.chance(0.55) ? 52 : 26;
@@ -264,7 +264,7 @@ export function buildOneOffTerms(state: WorldState, promotion: Promotion, person
   return {
     family: "ONE_OFF",
     exclusivity: "OPEN",
-    roleExpectation: roleForPerson(person),
+    roleExpectation: contractRoleExpectationForPerson(person),
     startDate: { ...startDate },
     endDate: { ...startDate },
     dateEntitlement: 1,
@@ -571,7 +571,7 @@ export function recruitmentInterestBand(
     rejectionReason: null,
     family: "LIMITED_NON_EXCLUSIVE",
     exclusivity: "NON_EXCLUSIVE",
-    roleExpectation: roleForPerson(person),
+    roleExpectation: contractRoleExpectationForPerson(person),
     startDate: { ...state.world.currentDate },
     endDate: addPpwWeeks(state.world.currentDate, 12, state.ruleset.weeksPerYear),
     dateEntitlement: 5,

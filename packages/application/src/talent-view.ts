@@ -17,6 +17,7 @@ import {
   activeContractsForPromotion,
   comparePpwDates,
   contractIsActive,
+  contractRoleExpectationForPerson,
   currentRosterPersonIds,
   marketWeeklyValue,
   ppwDateToWeekIndex,
@@ -81,6 +82,8 @@ export interface PlayerRosterContractView extends PlayerPublicTalentIdentityView
   wear: number;
   trust: number;
   skills: PlayerTalentSkillsView;
+  estimatedWeeklyValue: number;
+  suggestedRoleExpectation: RoleExpectation;
   injury: PlayerTalentInjuryView | null;
   contract: {
     family: ContractFamily;
@@ -106,6 +109,7 @@ export interface PlayerTalentMarketView extends PlayerPublicTalentIdentityView {
   watched: boolean;
   skills: PlayerTalentSkillsView;
   estimatedWeeklyValue: number;
+  suggestedRoleExpectation: RoleExpectation;
   availability: "FREE_AGENT" | "NON_EXCLUSIVE";
   injury: PlayerTalentInjuryView | null;
   hasOurPendingOffer: boolean;
@@ -394,6 +398,8 @@ export function buildPlayerTalentManagementView(
         wear: person.wear,
         trust: trustFor(aggregate, promotion.id, person.id),
         skills: publicSkills(person),
+        estimatedWeeklyValue: marketWeeklyValue(person),
+        suggestedRoleExpectation: contractRoleExpectationForPerson(person),
         injury: activeInjuryForPerson(aggregate, person.id),
         contract: {
           family: contract.family,
@@ -436,6 +442,7 @@ export function buildPlayerTalentManagementView(
         watched: talentIsWatched(aggregate.engagement, playerId, person.id),
         skills: publicSkills(person),
         estimatedWeeklyValue: marketWeeklyValue(person),
+        suggestedRoleExpectation: contractRoleExpectationForPerson(person),
         availability: activeOutside.length > 0 ? "NON_EXCLUSIVE" : "FREE_AGENT",
         injury: activeInjuryForPerson(aggregate, person.id),
         hasOurPendingOffer: pendingPersonIds.has(person.id),
