@@ -1,29 +1,16 @@
 import type { PpwDate, Promotion, WorldState, WrestlingEventType } from "../../domain/src/types.js";
 import { primaryPromotionShowSeriesForDate } from "../../sim-core/src/show-calendar.js";
+import { showParticipantCapacityForEventType } from "../../sim-core/src/show-capacity.js";
 
 /**
- * Authoritative maximum unique-wrestler capacity for a planned show.
- *
- * The STANDARD takeover-company override is an Alpha Reality Check affordance,
- * not the final show-capacity design. Show/Calendar architecture will replace
- * the tier-only model with show identity/importance expectations.
+ * Application-facing alias for the sim-core capacity rule.
+ * Keep planning/UI and event materialisation on the same authority.
  */
 export function maxShowParticipantsForEventType(
   promotion: Promotion,
   eventType: WrestlingEventType,
 ): number {
-  const regular = promotion.playerTakeoverEligibility === "STANDARD"
-    ? 20
-    : promotion.tier === "GLOBAL"
-      ? 16
-      : promotion.tier === "NATIONAL"
-        ? 14
-        : promotion.tier === "RISING"
-          ? 12
-          : promotion.tier === "INDEPENDENT"
-            ? 10
-            : 8;
-  return eventType === "MAJOR" ? regular + 2 : regular;
+  return showParticipantCapacityForEventType(promotion, eventType);
 }
 
 export function maxShowParticipantsForDate(

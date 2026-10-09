@@ -26,6 +26,7 @@ import {
   promotionShowSeriesSlot,
   type PromotionShowSlot,
 } from "./show-calendar.js";
+import { showParticipantCapacityForEventType } from "./show-capacity.js";
 import { recordFinancialTransaction } from "./transactions.js";
 
 const ROLE_PRIORITY: Record<Contract["roleExpectation"], number> = {
@@ -50,19 +51,6 @@ function samePpwDate(
   b: { year: number; week: number; day: number },
 ): boolean {
   return samePpwWeek(a, b) && a.day === b.day;
-}
-
-function eventRosterTarget(promotion: Promotion, type: WrestlingEventType): number {
-  const regular = promotion.tier === "GLOBAL"
-    ? 16
-    : promotion.tier === "NATIONAL"
-      ? 14
-      : promotion.tier === "RISING"
-        ? 12
-        : promotion.tier === "INDEPENDENT"
-          ? 10
-          : 8;
-  return type === "MAJOR" ? regular + 2 : regular;
 }
 
 function productionCost(promotion: Promotion, type: WrestlingEventType): number {
@@ -179,7 +167,7 @@ function selectAppearances(
   }
 
   candidates.sort((a, b) => b.score - a.score || a.person.id.localeCompare(b.person.id));
-  const target = eventRosterTarget(promotion, type);
+  const target = showParticipantCapacityForEventType(promotion, type);
   const selected = candidates.slice(0, target);
   const developmentSlots = type === "REGULAR"
     ? (promotion.aiProfile.developmentPreference >= 75 ? 2 : promotion.aiProfile.developmentPreference >= 45 ? 1 : 0)
@@ -383,7 +371,7 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
   if (participantIds.length < state.ruleset.minEventParticipants) {
     throw new Error(`show roster requires at least ${state.ruleset.minEventParticipants} wrestlers`);
   }
-  const rosterTarget = eventRosterTarget(promotion, type);
+  const rosterTarget = showParticipantCapacityForEventType(promotion, type);
   if (participantIds.length > rosterTarget) {
     throw new Error(`show roster exceeds ${type.toLowerCase()} event target of ${rosterTarget}`);
   }

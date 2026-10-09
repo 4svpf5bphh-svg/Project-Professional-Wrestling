@@ -6,6 +6,7 @@ import type {
   PlayerWorldCalendarShowSeriesView,
   PlayerWorldCalendarView,
 } from "../../../../dist/packages/application/src/world-calendar-view.js";
+import { calendarCadenceLabel, calendarCadenceOptions } from "./calendar-cadence";
 import styles from "./calendar.module.css";
 
 type ErrorPayload = { error?: string };
@@ -21,8 +22,6 @@ type SeriesForm = {
   anchorWeek: number;
   eventImportance: number;
 };
-
-const CADENCE_OPTIONS = [1, 2, 4, 13, 52];
 
 function isErrorPayload(payload: PlayerWorldCalendarView | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
@@ -71,13 +70,6 @@ function editSeriesForm(series: PlayerWorldCalendarShowSeriesView): SeriesForm {
     anchorWeek: series.anchorWeek,
     eventImportance: series.eventImportance,
   };
-}
-
-function cadenceLabel(value: number): string {
-  if (value === 1) return "Every week";
-  if (value === 52) return "Every PPW year";
-  if (value === 13) return "Every 13 weeks";
-  return `Every ${value} weeks`;
 }
 
 export default function CalendarClient(): React.JSX.Element {
@@ -245,7 +237,7 @@ export default function CalendarClient(): React.JSX.Element {
               <article className={styles.seriesRow} key={series.showSeriesId}>
                 <div>
                   <strong>{series.name}</strong>
-                  <span>{label(series.role)} · {cadenceLabel(series.cadenceWeeks)} · {label(series.eventType)}</span>
+                  <span>{label(series.role)} · {calendarCadenceLabel(series.cadenceWeeks)} · {label(series.eventType)}</span>
                 </div>
                 <div className={styles.seriesActions}>
                   <button disabled={!view.player.canEdit || saving} onClick={() => setForm(editSeriesForm(series))}>Edit</button>
@@ -317,7 +309,9 @@ export default function CalendarClient(): React.JSX.Element {
                       });
                     }}
                   >
-                    {CADENCE_OPTIONS.map((weeks) => <option value={weeks} key={weeks}>{cadenceLabel(weeks)}</option>)}
+                    {calendarCadenceOptions(form.cadenceWeeks).map((weeks) => (
+                      <option value={weeks} key={weeks}>{calendarCadenceLabel(weeks)}</option>
+                    ))}
                   </select>
                 </label>
 
