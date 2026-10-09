@@ -16,6 +16,7 @@ type PlannerPlanBody = {
   marketId?: unknown;
   venueId?: unknown;
   ticketStrategy?: unknown;
+  showSeriesId?: unknown;
   participantIds?: unknown;
 };
 
@@ -71,6 +72,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         marketId: requiredText(body.marketId, "marketId", 128),
         venueId: requiredText(body.venueId, "venueId", 128),
         ticketStrategy,
+        ...(body.showSeriesId === undefined || body.showSeriesId === null || body.showSeriesId === ""
+          ? {}
+          : { showSeriesId: requiredText(body.showSeriesId, "showSeriesId", 180) }),
         ...(body.participantIds === undefined ? {} : { participantIds: participantIds(body.participantIds) }),
       })
     ));

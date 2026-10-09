@@ -4,6 +4,7 @@ import {
   type HumanWeekReadinessStatus,
 } from "../../sim-core/src/human-routine.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import {
   reservationAssessmentForDraft,
   type ReservationAssessment,
@@ -289,17 +290,35 @@ export function playerCurrentWeekPreparation(
     };
   }
 
+  const dueSeries = promotionShowSeriesDueForDate(state, promotionId, state.world.currentDate);
   const workspace = planning.workspaces.find((candidate) => candidate.promotionId === promotionId);
   const currentDrafts = (workspace?.detailedShowDrafts ?? [])
     .filter((draft) => samePpwWeek(draft.targetDate, state.world.currentDate));
-  const statuses = currentDrafts.map((draft) => (
-    playerShowPlanningStatus(state, planning, runtime, promotionId, draft.draftId)
-  ));
+  const statusBySeries = new Map<Id, PlayerShowPlanningStatus>();
+  const unboundDrafts = currentDrafts.filter((draft) => !draft.showSeriesId);
+  for (const draft of currentDrafts) {
+    const reservation = reservationForDraft(planning, promotionId, draft.draftId);
+    const showSeriesId = draft.showSeriesId
+      ?? reservation?.showSeriesId
+      ?? (unboundDrafts.length === 1 ? dueSeries[0]?.id ?? null : null);
+    if (!showSeriesId) continue;
+    statusBySeries.set(
+      showSeriesId,
+      playerShowPlanningStatus(state, planning, runtime, promotionId, draft.draftId),
+    );
+  }
 
-  if (statuses.some((status) => status.reservationId !== null && status.readiness === "READY_TO_LOCK")) {
+  const dueStatuses = dueSeries.map((series) => statusBySeries.get(series.id) ?? null);
+  if (dueStatuses.length > 0 && dueStatuses.every((status) => (
+    status?.reservationId !== null && status?.readiness === "READY_TO_LOCK"
+  ))) {
     return { status: "READY", readyForLock: true, eventId: null };
   }
-  if (statuses.some((status) => status.reservationId !== null && status.readiness === "CARD_REQUIRED")) {
+  if (dueStatuses.some((status) => (
+    status !== null
+    && status.reservationId !== null
+    && status.readiness !== "READY_TO_LOCK"
+  ))) {
     return { status: "CARD_REQUIRED", readyForLock: false, eventId: null };
   }
   return { status: "SHOW_REQUIRED", readyForLock: false, eventId: null };

@@ -2,18 +2,21 @@ declare const process: { exitCode?: number };
 
 import {
   buildPlayerSixWeekPlannerView,
+  buildPlayerWorldCalendarView,
   claimIndependentPromotionForPlayer,
   createWorldCommandState,
   createWorldOwnershipState,
   createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  lockCurrentWeekShowCommitments,
   upsertDetailedShowDraft,
   type ApplicationWorldAggregate,
   type DetailedShowDraft,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { addPpwWeeks, createWorld } from "../packages/sim-core/src/index.js";
+import { plannerFocusedWeekKey } from "../apps/web/app/planner/planner-focus.js";
 
 let passed = 0;
 let failed = 0;
@@ -131,6 +134,13 @@ test("six-week planner returns the complete current plus five future week horizo
   ok(view.promotion?.weeks.length === 6, "planner did not expose six PPW weeks");
   ok(view.promotion?.weeks[0]?.isCurrentWeek === true, "first planner week is not the current week");
   ok(view.promotion?.weeks[5]?.offset === 5, "planner did not expose the fifth future week");
+  const dueWeeks = view.promotion?.weeks.filter((week) => week.showRequired) ?? [];
+  ok(dueWeeks.length > 0, "planner did not expose any required show weeks");
+  ok(dueWeeks.every((week) => week.showSeries !== null), "required planner week did not expose its promotion-owned show identity");
+  ok(
+    dueWeeks.every((week) => week.showSeries?.eventType === "REGULAR" || week.showSeries?.eventType === "MAJOR"),
+    "planner show identity exposed an invalid event type",
+  );
   const planned = view.promotion?.weeks[2]?.shows[0];
   ok(planned?.draftId === "planner-a-week-3", "player draft did not appear in its future week");
   ok(planned?.participants.length === 2, "planner did not expose selected wrestler names");
@@ -146,6 +156,14 @@ test("six-week planner returns the complete current plus five future week horizo
   ok(planned?.plannedSegmentMinutes === 6, "planner did not total segment minutes");
   ok(planned?.plannedShowMinutes === 23, "planner did not total complete show minutes");
   ok(planned?.matchCount === 1 && planned.segmentCount === 1 && planned.slotCount === 2, "planner slot counts are incorrect");
+});
+
+
+test("planner deep-link parser ignores absent or invalid week parameters", () => {
+  ok(plannerFocusedWeekKey(null, null) === null, "plain /planner was treated as a Year 0 / Week 0 deep link");
+  ok(plannerFocusedWeekKey("2", "11") === "2:11", "valid planner deep link was not preserved");
+  ok(plannerFocusedWeekKey("", "11") === null, "empty year parameter was accepted");
+  ok(plannerFocusedWeekKey("2", "0") === null, "invalid zero week parameter was accepted");
 });
 
 test("six-week planner remains scoped to each player's controlled promotion", () => {
@@ -204,6 +222,75 @@ test("six-week planner crosses PPW year boundaries correctly", () => {
   const view = buildPlayerSixWeekPlannerView(aggregate, "player-a");
   ok(view.promotion?.weeks[0]?.year === 1 && view.promotion.weeks[0]?.week === 50, "planner lost current week at year end");
   ok(view.promotion?.weeks[3]?.year === 2 && view.promotion.weeks[3]?.week === 1, "planner did not roll into the next PPW year");
+});
+
+
+
+test("shared World calendar exposes public show identities without leaking rival private planning", () => {
+  const { aggregate, promotionAId, promotionBId } = twoPlayerFixture(73006);
+  const view = buildPlayerWorldCalendarView(aggregate, "player-a", 6);
+
+  ok(view.horizonWeeks === 6, "World calendar did not preserve its requested horizon");
+  ok(view.occurrences.some((entry) => entry.promotionId === promotionAId && entry.isPlayerPromotion), "World calendar lost the player's own promotion");
+  ok(view.occurrences.some((entry) => entry.promotionId === promotionBId && !entry.isPlayerPromotion), "World calendar did not expose another human promotion's public show identity");
+
+  const rivalOccurrence = view.occurrences.find((entry) => entry.promotionId === promotionBId);
+  ok(rivalOccurrence !== undefined, "fixture has no rival occurrence in the shared calendar");
+  ok(rivalOccurrence?.eventId === null && rivalOccurrence.marketId === null && rivalOccurrence.venueId === null, "rival private planner logistics leaked into the public calendar");
+
+  const ownOccurrence = view.occurrences.find((entry) => entry.promotionId === promotionAId);
+  if (!ownOccurrence) throw new Error("fixture has no own occurrence in the shared calendar");
+  const market = aggregate.state.markets.find((candidate) => candidate.id === aggregate.state.promotions.find((candidate) => candidate.id === promotionAId)!.homeMarketId)!;
+  const venue = aggregate.state.venues.find((candidate) => candidate.marketId === market.id)!;
+  const eventId = "calendar-public-event";
+  aggregate.state.events.push({
+    id: eventId,
+    worldId: aggregate.state.world.id,
+    promotionId: promotionAId,
+    showSeriesId: ownOccurrence.showSeriesId,
+    showOccurrenceId: ownOccurrence.occurrenceId,
+    marketId: market.id,
+    venueId: venue.id,
+    date: { year: ownOccurrence.year, week: ownOccurrence.week, day: 6 },
+    type: ownOccurrence.eventType,
+    status: "SCHEDULED",
+    ticketStrategy: "STANDARD",
+    expectedDemand: 1000,
+    attendance: 0,
+    ticketYield: 20,
+    gateRevenue: 0,
+    totalCost: 0,
+    netResult: 0,
+    eventImportance: ownOccurrence.eventImportance,
+    matchCount: 0,
+    averageMatchRating: 0,
+    bestMatchRating: 0,
+    crowdResponse: 0,
+  });
+
+  const refreshed = buildPlayerWorldCalendarView(aggregate, "player-a", 6);
+  const publicBooked = refreshed.occurrences.find((entry) => entry.occurrenceId === ownOccurrence.occurrenceId);
+  ok(publicBooked?.eventId === eventId && publicBooked.status === "SCHEDULED", "canonical scheduled event did not appear on the World calendar");
+  ok(publicBooked?.day === 6 && publicBooked.marketName === market.name && publicBooked.venueName === venue.name, "public booked occurrence did not expose its announced date/location");
+});
+
+
+test("World calendar disables current-week planning and calendar edits after commitment lock", () => {
+  const { aggregate, promotionAId } = twoPlayerFixture(73007);
+  const before = buildPlayerWorldCalendarView(aggregate, "player-a", 6);
+  const currentOwn = before.occurrences.find((entry) => (
+    entry.promotionId === promotionAId
+    && entry.year === aggregate.state.world.currentDate.year
+    && entry.week === aggregate.state.world.currentDate.week
+  ));
+  ok(before.player.canEdit, "calendar unexpectedly started read-only before commitment lock");
+  ok(currentOwn?.canPlanNow === true, "current own occurrence was not plannable before commitment lock");
+
+  lockCurrentWeekShowCommitments(aggregate.runtime, aggregate.state, "2026-10-09");
+  const locked = buildPlayerWorldCalendarView(aggregate, "player-a", 6);
+  const lockedCurrent = locked.occurrences.find((entry) => entry.occurrenceId === currentOwn?.occurrenceId);
+  ok(locked.player.canEdit === false, "calendar remained editable after commitment lock");
+  ok(lockedCurrent?.canPlanNow === false, "current-week occurrence remained plannable after commitment lock");
 });
 
 test("non-members cannot read a World planning horizon", () => {

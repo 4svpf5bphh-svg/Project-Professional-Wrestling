@@ -14,6 +14,7 @@ import {
   setProgrammeSignals,
   validateProgrammeState,
 } from "../packages/sim-core/src/index.js";
+import { selectFreshSinglesPair } from "../packages/sim-core/src/booking-programmes.js";
 
 let passed = 0;
 let failed = 0;
@@ -179,6 +180,102 @@ test("Programme state survives persistence and schema restore", () => {
   ok(restoredProgramme?.heat === 58 && restoredProgramme.repetition === 7, "Programme signals changed during persistence round-trip");
   ok(restored.programmeActivities?.length === 1, "Programme activity history disappeared during persistence round-trip");
   ok(validateProgrammeState(restored).length === 0, "restored Programme state failed validation");
+});
+
+
+test("fresh singles fallback favours healthy spaced continuity without forcing immediate rematches", () => {
+  const { state, promotion, personIds } = programmeFixture(9100);
+  state.world.currentDate = { ...state.world.currentDate, week: 8, day: 1 };
+  const people = personIds.map((id) => state.people.find((person) => person.id === id)!);
+  const market = state.markets.find((candidate) => candidate.id === promotion.homeMarketId)!;
+  const venue = state.venues.find((candidate) => candidate.marketId === market.id)!;
+  const [a, b, c, d] = people;
+
+  const addRecentMatch = (suffix: string, leftId: string, rightId: string, day: number): void => {
+    const eventId = `fresh-history-event-${suffix}`;
+    const matchId = `fresh-history-match-${suffix}`;
+    state.events.push({
+      id: eventId,
+      worldId: state.world.id,
+      promotionId: promotion.id,
+      marketId: market.id,
+      venueId: venue.id,
+      date: { ...state.world.currentDate, day },
+      type: "REGULAR",
+      status: "COMPLETED",
+      ticketStrategy: "STANDARD",
+      expectedDemand: 1000,
+      attendance: 900,
+      ticketYield: 20,
+      gateRevenue: 18000,
+      totalCost: 10000,
+      netResult: 8000,
+      eventImportance: 58,
+      matchCount: 1,
+      averageMatchRating: 3,
+      bestMatchRating: 3,
+      crowdResponse: 60,
+    });
+    state.matches.push({
+      id: matchId,
+      worldId: state.world.id,
+      eventId,
+      promotionId: promotion.id,
+      order: 1,
+      type: "SINGLES",
+      status: "COMPLETED",
+      intent: "COMPETITIVE",
+      plannedLengthMinutes: 12,
+      actualLengthMinutes: 12,
+      intendedWinnerSide: "A",
+      actualWinnerSide: "A",
+      finishChangedDueToInjury: false,
+      executionQuality: 60,
+      criticalRatingStars: 3,
+      crowdResponse: 60,
+    });
+    state.matchParticipants.push(
+      { id: `fresh-history-participant-${suffix}-a`, worldId: state.world.id, matchId, eventId, personId: leftId, side: "A", won: true },
+      { id: `fresh-history-participant-${suffix}-b`, worldId: state.world.id, matchId, eventId, personId: rightId, side: "B", won: false },
+    );
+  };
+
+  addRecentMatch("ab", a!.id, b!.id, 1);
+  addRecentMatch("ac", a!.id, c!.id, 2);
+  addRecentMatch("ad", a!.id, d!.id, 3);
+  state.events.find((event) => event.id === "fresh-history-event-ab")!.date.week = 4;
+
+  const targetEvent = {
+    id: "fresh-target-event",
+    worldId: state.world.id,
+    promotionId: promotion.id,
+    marketId: market.id,
+    venueId: venue.id,
+    date: { ...state.world.currentDate, day: 7 },
+    type: "REGULAR" as const,
+    status: "SCHEDULED" as const,
+    ticketStrategy: "STANDARD" as const,
+    expectedDemand: 1000,
+    attendance: 0,
+    ticketYield: 20,
+    gateRevenue: 0,
+    totalCost: 0,
+    netResult: 0,
+    eventImportance: 58,
+    matchCount: 0,
+    averageMatchRating: 0,
+    bestMatchRating: 0,
+    crowdResponse: 0,
+  };
+
+  const selected = selectFreshSinglesPair(state, targetEvent, people);
+  ok(Boolean(selected), "fresh singles selector returned no pairing");
+  const selectedKey = pairKey(selected![0].id, selected![1].id);
+  ok(selectedKey !== pairKey(a!.id, c!.id), "fresh singles fallback forced an immediate rematch");
+  ok(
+    selectedKey === pairKey(a!.id, b!.id),
+    "fresh singles fallback ignored a healthy spaced continuation in favour of unrelated novelty",
+  );
 });
 
 test("non-title singles programmes recur with spacing instead of immediate endless rematches", () => {

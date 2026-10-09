@@ -190,6 +190,65 @@ test("standalone segments become factual show history without inventing Programm
   ok(programmeActivities(setup.state, setup.programme.id).length === 0, "standalone segment invented Programme activity");
 });
 
+test("segment fatigue is neutral at ordinary levels and only hurts genuinely tired wrestlers", () => {
+  const rested = fixture(9155);
+  const restedPersonId = rested.rosterIds[2]!;
+  const restedPerson = rested.state.people.find((person) => person.id === restedPersonId)!;
+  restedPerson.fatigue = 24;
+  upsertDetailedShowDraft(rested.state, rested.planning, rested.promotion.id, 0, {
+    draftId: "rested-segment-show",
+    promotionId: rested.promotion.id,
+    targetDate: rested.targetDate,
+    marketId: null,
+    venueId: null,
+    ticketStrategy: null,
+    participantIds: rested.rosterIds.slice(0, 4),
+    matches: [],
+    championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "rested-segment",
+      type: "INTERVIEW",
+      participantIds: [restedPersonId],
+      programmeId: null,
+      plannedLengthMinutes: 5,
+    }],
+    runningOrder: [{ kind: "SEGMENT", refId: "rested-segment" }],
+  });
+  rested.state.events.push(completedEvent(rested));
+  recordResolvedShowSegments(rested.state, rested.planning);
+  const restedOutcome = resolvedShowSegmentsForEvent(rested.state, rested.state.events[0]!.id)[0]!;
+  ok(restedOutcome.fatigueModifier === 0, "ordinary fatigue still produced a negative segment-delivery modifier");
+
+  const tired = fixture(9156);
+  const tiredPersonId = tired.rosterIds[2]!;
+  const tiredPerson = tired.state.people.find((person) => person.id === tiredPersonId)!;
+  tiredPerson.fatigue = 70;
+  upsertDetailedShowDraft(tired.state, tired.planning, tired.promotion.id, 0, {
+    draftId: "tired-segment-show",
+    promotionId: tired.promotion.id,
+    targetDate: tired.targetDate,
+    marketId: null,
+    venueId: null,
+    ticketStrategy: null,
+    participantIds: tired.rosterIds.slice(0, 4),
+    matches: [],
+    championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "tired-segment",
+      type: "INTERVIEW",
+      participantIds: [tiredPersonId],
+      programmeId: null,
+      plannedLengthMinutes: 5,
+    }],
+    runningOrder: [{ kind: "SEGMENT", refId: "tired-segment" }],
+  });
+  tired.state.events.push(completedEvent(tired));
+  recordResolvedShowSegments(tired.state, tired.planning);
+  const tiredOutcome = resolvedShowSegmentsForEvent(tired.state, tired.state.events[0]!.id)[0]!;
+  ok(tiredOutcome.fatigueModifier < 0, "high fatigue did not hurt segment delivery");
+});
+
+
 test("TURN segment freezes its intent and changes promotion alignment only after explicit application", () => {
   const setup = fixture(9152);
   const personId = setup.rosterIds[0]!;

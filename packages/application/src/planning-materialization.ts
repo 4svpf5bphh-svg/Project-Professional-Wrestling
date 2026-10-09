@@ -18,6 +18,12 @@ import { bookHumanChampionshipMatch } from "../../sim-core/src/human-championshi
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
 import { defaultPlannedFinishForIntent } from "../../sim-core/src/match-finishes.js";
 import { assessMatchStyleReadiness } from "../../sim-core/src/match-style.js";
+import {
+  promotionShowSeriesById,
+  promotionShowSeriesDueForDate,
+  promotionShowSeriesSlot,
+  type PromotionShowSlot,
+} from "../../sim-core/src/show-calendar.js";
 import type {
   DetailedShowDraft,
   DetailedShowReservation,
@@ -91,9 +97,29 @@ function currentWeekIndex(state: WorldState): number {
   return ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
 }
 
-function promotionRunsAtDate(state: WorldState, promotion: Promotion, date: PpwDate): boolean {
+function promotionRunsAtDate(
+  state: WorldState,
+  promotion: Promotion,
+  date: PpwDate,
+  showSeriesId?: Id | null,
+): boolean {
   if (promotion.lifecycle === "CLOSED" || promotion.lifecycle === "DORMANT") return false;
-  return targetWeekIndex(state, date) % Math.max(1, promotion.eventCadenceWeeks) === 0;
+  const dueSeries = promotionShowSeriesDueForDate(state, promotion.id, date);
+  return showSeriesId ? dueSeries.some((series) => series.id === showSeriesId) : dueSeries.length > 0;
+}
+
+function reservationSlot(state: WorldState, reservation: DetailedShowReservation): PromotionShowSlot {
+  if (!reservation.showSeriesId) return "REGULAR";
+  const series = promotionShowSeriesById(state, reservation.showSeriesId);
+  return series ? promotionShowSeriesSlot(series) : "REGULAR";
+}
+
+function eventSlot(state: WorldState, event: WrestlingEvent): PromotionShowSlot {
+  if (event.showSeriesId) {
+    const series = promotionShowSeriesById(state, event.showSeriesId);
+    if (series) return promotionShowSeriesSlot(series);
+  }
+  return event.type === "MAJOR" ? "SPECIAL" : "REGULAR";
 }
 
 function contractCoversDate(state: WorldState, contract: Contract, date: PpwDate): boolean {
@@ -148,14 +174,21 @@ export function assessDetailedShowReservation(
   if (!promotion || promotion.controllerType !== "HUMAN") {
     reasons.push("PROMOTION_NOT_HUMAN_CONTROLLED");
   }
-  if (!promotion || !promotionRunsAtDate(state, promotion, reservation.targetDate)) {
+  if (!promotion || !promotionRunsAtDate(state, promotion, reservation.targetDate, reservation.showSeriesId)) {
     reasons.push("PROMOTION_NOT_OPERATING");
   }
 
   if (state.events.some((event) => (
     event.promotionId === reservation.promotionId
     && event.status !== "CANCELLED"
+    && samePpwDate(event.date, reservation.targetDate)
+  ))) {
+    reasons.push("PROMOTION_SHOW_ALREADY_EXISTS");
+  } else if (state.events.some((event) => (
+    event.promotionId === reservation.promotionId
+    && event.status !== "CANCELLED"
     && samePpwWeek(event.date, reservation.targetDate)
+    && eventSlot(state, event) === reservationSlot(state, reservation)
   ))) {
     reasons.push("PROMOTION_SHOW_ALREADY_EXISTS");
   }
@@ -429,6 +462,7 @@ function materializeReadyReservation(
 ): MaterializedShowReservation {
   const event = prepareHumanShow(state, {
     promotionId: reservation.promotionId,
+    showSeriesId: reservation.showSeriesId ?? undefined,
     marketId: reservation.marketId,
     venueId: reservation.venueId,
     day: reservation.targetDate.day,

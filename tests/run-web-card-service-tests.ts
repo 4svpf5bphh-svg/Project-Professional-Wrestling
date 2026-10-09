@@ -68,7 +68,12 @@ async function reservedShowFixture(seed: number) {
     promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE"
   ));
   if (!independent) throw new Error("test World has no active takeover-eligible promotion");
-  independent.eventCadenceWeeks = 1;
+  const flagship = aggregate.state.showSeries?.find((series) => (
+    series.promotionId === independent.id && series.role === "FLAGSHIP"
+  ));
+  if (!flagship) throw new Error("card fixture is missing its Flagship show identity");
+  flagship.cadenceWeeks = 1;
+  flagship.anchorWeek = 0;
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
 
@@ -364,7 +369,12 @@ await test("a logistics-only show draft opens in the builder and the first valid
     promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE"
   ));
   if (!independent) throw new Error("slot-builder fixture has no takeover-eligible promotion");
-  independent.eventCadenceWeeks = 1;
+  const flagship = aggregate.state.showSeries?.find((series) => (
+    series.promotionId === independent.id && series.role === "FLAGSHIP"
+  ));
+  if (!flagship) throw new Error("card fixture is missing its Flagship show identity");
+  flagship.cadenceWeeks = 1;
+  flagship.anchorWeek = 0;
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
 
@@ -400,6 +410,13 @@ await test("a logistics-only show draft opens in the builder and the first valid
   ok(builder.availableParticipants.length >= builder.minParticipants, "builder did not expose enough contracted talent");
 
   const persistedForBuilder = await repository.load(worldId);
+  const firstPickerPerson = builder.availableParticipants[0];
+  if (!firstPickerPerson) throw new Error("builder did not expose a wrestler for picker division coverage");
+  const firstPickerStatePerson = persistedForBuilder.state.people.find((person) => person.id === firstPickerPerson.personId);
+  ok(
+    firstPickerPerson.division === (firstPickerStatePerson?.division ?? null),
+    "card picker projection did not expose the wrestler division",
+  );
   const selectedIds = sameDivisionParticipantIds(
     persistedForBuilder.state,
     builder.availableParticipants,

@@ -7,7 +7,13 @@ import type {
   WorldState,
 } from "../../domain/src/types.js";
 import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
-import { maxShowParticipantsForDate } from "./show-capacity.js";
+import {
+  promotionShowSeriesById,
+  promotionShowSeriesDueForDate,
+  promotionShowSeriesSlot,
+  type PromotionShowSlot,
+} from "../../sim-core/src/show-calendar.js";
+import { maxShowParticipantsForEventType } from "./show-capacity.js";
 import { serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
 import {
   validateDetailedShowDraft,
@@ -27,12 +33,6 @@ function samePpwWeek(a: PpwDate, b: PpwDate): boolean {
 
 function reservationIdFor(promotionId: Id, draftId: string): string {
   return `show-reservation:${promotionId}:${draftId}`;
-}
-
-function promotionRunsAtDate(state: WorldState, promotion: Promotion, date: PpwDate): boolean {
-  if (promotion.lifecycle === "CLOSED" || promotion.lifecycle === "DORMANT") return false;
-  const weekIndex = ppwDateToWeekIndex(date, state.ruleset.weeksPerYear);
-  return weekIndex % Math.max(1, promotion.eventCadenceWeeks) === 0;
 }
 
 function contractCoversDate(state: WorldState, contract: Contract, date: PpwDate): boolean {
@@ -100,11 +100,26 @@ function requireWorkspace(
   return workspace;
 }
 
+function reservationSlot(state: WorldState, showSeriesId?: Id | null): PromotionShowSlot {
+  if (!showSeriesId) return "REGULAR";
+  const series = promotionShowSeriesById(state, showSeriesId);
+  return series ? promotionShowSeriesSlot(series) : "REGULAR";
+}
+
+function eventSlot(state: WorldState, event: WorldState["events"][number]): PromotionShowSlot {
+  if (event.showSeriesId) {
+    const series = promotionShowSeriesById(state, event.showSeriesId);
+    if (series) return promotionShowSeriesSlot(series);
+  }
+  return event.type === "MAJOR" ? "SPECIAL" : "REGULAR";
+}
+
 function validateScarceResources(
   state: WorldState,
   planning: WorldPlanningState,
   promotion: Promotion,
   reservationId: string,
+  showSeriesId: Id,
   date: PpwDate,
   venueId: Id,
   participantIds: Id[],
@@ -123,19 +138,36 @@ function validateScarceResources(
   ))) {
     throw new Error("selected venue is already reserved on that PPW day");
   }
+  const targetSlot = reservationSlot(state, showSeriesId);
+  if (planning.showReservations.some((reservation) => (
+    reservation.reservationId !== reservationId
+    && reservation.promotionId === promotion.id
+    && samePpwDate(reservation.targetDate, date)
+  ))) {
+    throw new Error("promotion already has another show reserved on that PPW day");
+  }
+  if (state.events.some((event) => (
+    event.status !== "CANCELLED"
+    && event.promotionId === promotion.id
+    && samePpwDate(event.date, date)
+  ))) {
+    throw new Error("promotion already has another committed show on that PPW day");
+  }
   if (planning.showReservations.some((reservation) => (
     reservation.reservationId !== reservationId
     && reservation.promotionId === promotion.id
     && samePpwWeek(reservation.targetDate, date)
+    && reservationSlot(state, reservation.showSeriesId) === targetSlot
   ))) {
-    throw new Error("promotion already has a reserved show in that PPW week");
+    throw new Error(`promotion already has a ${targetSlot.toLowerCase()} show reserved in that PPW week`);
   }
   if (state.events.some((event) => (
     event.status !== "CANCELLED"
     && event.promotionId === promotion.id
     && samePpwWeek(event.date, date)
+    && eventSlot(state, event) === targetSlot
   ))) {
-    throw new Error("promotion already has a committed show in that PPW week");
+    throw new Error(`promotion already has a ${targetSlot.toLowerCase()} show committed in that PPW week`);
   }
 
   const selected: ReservedShowParticipant[] = [];
@@ -204,8 +236,12 @@ export function reserveDetailedShowDraft(
   if (!sourceDraft) throw new Error(`show draft ${draftId} was not found`);
   const draft = validateDetailedShowDraft(state, sourceDraft);
 
-  if (!promotionRunsAtDate(state, promotion, draft.targetDate)) {
-    throw new Error("promotion has no scheduled operating show in the draft target PPW week");
+  const dueSeries = promotionShowSeriesDueForDate(state, promotion.id, draft.targetDate);
+  const showSeries = draft.showSeriesId
+    ? dueSeries.find((series) => series.id === draft.showSeriesId) ?? null
+    : dueSeries[0] ?? null;
+  if (!showSeries) {
+    throw new Error("promotion has no scheduled show identity in the draft target PPW week");
   }
   if (draft.marketId === null || draft.venueId === null || draft.ticketStrategy === null) {
     throw new Error("show draft needs market, venue and ticket strategy before reservation");
@@ -213,7 +249,7 @@ export function reserveDetailedShowDraft(
   if (draft.participantIds.length < state.ruleset.minEventParticipants) {
     throw new Error(`reserved show roster must contain at least ${state.ruleset.minEventParticipants} wrestlers`);
   }
-  const rosterTarget = maxShowParticipantsForDate(state, promotion, draft.targetDate);
+  const rosterTarget = maxShowParticipantsForEventType(promotion, showSeries.eventType);
   if (draft.participantIds.length > rosterTarget) {
     throw new Error(`reserved show roster exceeds event target of ${rosterTarget}`);
   }
@@ -224,6 +260,7 @@ export function reserveDetailedShowDraft(
     planning,
     promotion,
     reservationId,
+    showSeries.id,
     draft.targetDate,
     draft.venueId,
     draft.participantIds,
@@ -232,6 +269,7 @@ export function reserveDetailedShowDraft(
     reservationId,
     sourceDraftId: draft.draftId,
     promotionId,
+    showSeriesId: showSeries.id,
     targetDate: { ...draft.targetDate },
     marketId: draft.marketId,
     venueId: draft.venueId,

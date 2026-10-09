@@ -1,5 +1,6 @@
 import type { Contract, WorldState } from "../../domain/src/types.js";
 import { contractOverlaps } from "./contracts.js";
+import { validatePromotionShowSeriesState } from "./show-calendar.js";
 
 function samePpwWeek(a: { year: number; week: number }, b: { year: number; week: number }): boolean {
   return a.year === b.year && a.week === b.week;
@@ -16,6 +17,9 @@ export function validateWorldInvariants(state: WorldState): string[] {
   const marketIds = new Set(state.markets.map((m) => m.id));
   const venueIds = new Set<string>();
   const venueById = new Map(state.venues.map((venue) => [venue.id, venue]));
+
+  errors.push(...validatePromotionShowSeriesState(state));
+  const showSeriesById = new Map((state.showSeries ?? []).map((series) => [series.id, series]));
 
   for (const venue of state.venues) {
     if (venueIds.has(venue.id)) errors.push(`duplicate venue id: ${venue.id}`);
@@ -90,6 +94,10 @@ export function validateWorldInvariants(state: WorldState): string[] {
     if (eventIds.has(event.id)) errors.push(`duplicate event id: ${event.id}`); eventIds.add(event.id);
     if (event.worldId !== state.world.id) errors.push(`event ${event.id} crosses world boundary`);
     if (!promotionIds.has(event.promotionId)) errors.push(`event ${event.id} references missing promotion`);
+    if (event.showSeriesId) {
+      const series = showSeriesById.get(event.showSeriesId);
+      if (!series || series.promotionId !== event.promotionId) errors.push(`event ${event.id} references invalid show series`);
+    }
     if (!marketIds.has(event.marketId)) errors.push(`event ${event.id} references missing market`);
     if (!venueIds.has(event.venueId)) errors.push(`event ${event.id} references missing venue`);
     const venue = venueById.get(event.venueId);

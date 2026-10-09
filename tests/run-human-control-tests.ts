@@ -44,6 +44,14 @@ test("an active Independent promotion can become a human-controlled promotion", 
 
   ok(claimed.controllerType === "HUMAN", "claimed promotion did not become human-controlled");
   ok(claimed.name === "Player Wrestling", "claimed promotion was not renamed");
+  ok(
+    state.showSeries?.some((series) => series.promotionId === promotion.id && series.name === "Player Wrestling Flagship"),
+    "untouched generic flagship did not follow promotion rebrand",
+  );
+  ok(
+    state.showSeries?.some((series) => series.promotionId === promotion.id && series.name === "Player Wrestling Premium"),
+    "untouched generic premium show did not follow promotion rebrand",
+  );
   ok(humanControlledPromotions(state).length === 1, "World did not expose exactly one human promotion");
   ok(
     JSON.stringify(state.contracts.filter((contract) => contract.promotionId === promotion.id).map((contract) => contract.id))
@@ -53,6 +61,26 @@ test("an active Independent promotion can become a human-controlled promotion", 
   const ledgerEvent = state.ledger[state.ledger.length - 1]!;
   ok(ledgerEvent.type === "HUMAN_PROMOTION_CLAIMED", "human claim was not recorded in World history");
   ok(ledgerEvent.entityIds[0] === promotion.id, "human claim ledger event points at the wrong promotion");
+});
+
+
+test("rebrand preserves customised show identity names", () => {
+  const state = createWorld(10811, DEFAULT_RULESET);
+  const promotion = state.promotions.find(
+    (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+  )!;
+  const flagship = state.showSeries?.find(
+    (series) => series.promotionId === promotion.id && series.role === "FLAGSHIP",
+  );
+  if (!flagship) throw new Error("rebrand custom-name fixture has no flagship");
+  flagship.name = "Saturday Riot";
+
+  claimIndependentPromotionForHuman(state, promotion.id, {
+    takeoverMode: "REBRAND",
+    name: "Player Wrestling",
+  });
+
+  ok(flagship.name === "Saturday Riot", "promotion rebrand overwrote a customised show identity");
 });
 
 test("continue takeover preserves the existing promotion identity and roster", () => {

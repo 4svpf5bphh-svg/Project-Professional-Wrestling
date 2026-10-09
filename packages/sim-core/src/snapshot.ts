@@ -89,6 +89,7 @@ export function deterministicWorldHash(state: WorldState): string {
     ["venues", state.venues],
     ["promotions", state.promotions],
     ["promotionMarketStates", state.promotionMarketStates],
+    ["showSeries", state.showSeries ?? []],
     ["promotionStandings", state.promotionStandings ?? []],
     ["promotionTalentTrust", state.promotionTalentTrust ?? []],
     ["promotionSurvivalStates", state.promotionSurvivalStates ?? []],

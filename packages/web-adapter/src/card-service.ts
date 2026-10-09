@@ -7,11 +7,13 @@ import type {
   MatchStyleProfile,
   MatchType,
   PpwDate,
+  WrestlerDivision,
   WorldState,
 } from "../../domain/src/types.js";
 import {
   activePromotionControlForPlayer,
   alphaCurrentWeekShowDraftId,
+  maxShowParticipantsForEventType,
   playerShowPlanningStatus,
   reservationForDraft,
   reserveDetailedShowDraftCommand,
@@ -50,6 +52,7 @@ import {
 export interface AlphaCardParticipantView {
   personId: Id;
   name: string;
+  division: WrestlerDivision | null;
   alignment: "FACE" | "HEEL" | "TWEENER";
   popularity: number;
   momentum: number;
@@ -635,24 +638,6 @@ function weekIndex(date: PpwDate, weeksPerYear: number): number {
   return ((date.year - 1) * weeksPerYear) + (date.week - 1);
 }
 
-function maxShowParticipants(
-  tier: WorldState["promotions"][number]["tier"],
-  date: PpwDate,
-  weeksPerYear: number,
-  majorEventIntervalWeeks: number,
-): number {
-  const regular = tier === "GLOBAL"
-    ? 16
-    : tier === "NATIONAL"
-      ? 14
-      : tier === "RISING"
-        ? 12
-        : tier === "INDEPENDENT"
-          ? 10
-          : 8;
-  return (ppwDateToWeekIndex(date, weeksPerYear) + 1) % majorEventIntervalWeeks === 0 ? regular + 2 : regular;
-}
-
 function contractCoversDate(
   state: WorldState,
   contract: WorldState["contracts"][number],
@@ -685,6 +670,7 @@ function availableCardParticipants(
     result.push({
       personId,
       name: person.name,
+      division: person.division ?? null,
       alignment: wrestlerAlignmentForPromotion(state, promotionId, person.id),
       popularity: person.popularity,
       momentum: person.momentum,
@@ -845,6 +831,7 @@ export async function loadAlphaShowCard(
     return {
       personId,
       name: person.name,
+      division: person.division ?? null,
       alignment: wrestlerAlignmentForPromotion(aggregate.state, promotion.id, person.id),
       popularity: person.popularity,
       momentum: person.momentum,
@@ -930,11 +917,11 @@ export async function loadAlphaShowCard(
     canEdit: aggregate.runtime.phase === "OPEN"
       && (status.availableActions.includes("EDIT_DRAFT") || status.availableActions.includes("EDIT_CARD")),
     minParticipants: aggregate.state.ruleset.minEventParticipants,
-    maxParticipants: maxShowParticipants(
-      promotion.tier,
-      draft.targetDate,
-      aggregate.state.ruleset.weeksPerYear,
-      aggregate.state.ruleset.majorEventIntervalWeeks,
+    maxParticipants: maxShowParticipantsForEventType(
+      promotion,
+      draft.showSeriesId
+        ? aggregate.state.showSeries?.find((series) => series.id === draft.showSeriesId)?.eventType ?? "REGULAR"
+        : "REGULAR",
     ),
     marketName: market?.name ?? draft.marketId ?? "Market not selected",
     venueName: venue?.name ?? draft.venueId ?? "Venue not selected",

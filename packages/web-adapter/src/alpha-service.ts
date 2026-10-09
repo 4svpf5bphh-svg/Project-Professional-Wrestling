@@ -1,10 +1,11 @@
 import { REAL_WORLD_ALPHA_RULESET } from "../../config/src/real-world-ruleset.js";
 import { calibratedRealActiveMixedRosterSource } from "../../content/src/real-active-mixed-roster.js";
 import { realPromotionEcosystemSource } from "../../content/src/real-promotions.js";
+import { realPromotionShowSeriesSource } from "../../content/src/real-show-series.js";
 import { realWorldInitialRosterAssignmentSource } from "../../content/src/real-aew-roh-cmll-rosters.js";
 import { seedRealActiveTagTeams } from "../../content/src/real-active-tag-teams.js";
 import { seedRealWrestlerRelationships } from "../../content/src/real-wrestler-relationships.js";
-import type { TicketStrategy } from "../../domain/src/types.js";
+import type { Promotion, PromotionShowSeries, TicketStrategy } from "../../domain/src/types.js";
 import {
   activePromotionControlForPlayer,
   alphaCurrentWeekShowDraftId,
@@ -19,6 +20,7 @@ import {
   createWorldRuntimeState,
   dismissAttention,
   joinPlayerToWorld,
+  incrementWorldRevision,
   lockPersistedWorldForResolution,
   materializePersistedCurrentWeekReservations,
   reserveDetailedShowDraftCommand,
@@ -32,6 +34,10 @@ import {
 } from "../../application/src/index.js";
 import { ensureWorldChampionships } from "../../sim-core/src/competition.js";
 import { createWorld } from "../../sim-core/src/genesis.js";
+import {
+  defaultPromotionShowSeries,
+  primaryPromotionShowSeriesForDate,
+} from "../../sim-core/src/show-calendar.js";
 
 export interface AlphaWorldBootstrapOptions {
   seed: number;
@@ -109,6 +115,109 @@ export function alphaWorldId(seed: number): string {
   return `world-${normalizedSeed(seed)}`;
 }
 
+
+function sameSeries(left: PromotionShowSeries, right: PromotionShowSeries): boolean {
+  return left.id === right.id
+    && left.worldId === right.worldId
+    && left.promotionId === right.promotionId
+    && left.name === right.name
+    && left.role === right.role
+    && left.eventType === right.eventType
+    && left.cadenceWeeks === right.cadenceWeeks
+    && left.anchorWeek === right.anchorWeek
+    && left.eventImportance === right.eventImportance
+    && left.active === right.active;
+}
+
+function hasExactUntouchedGenericCalendar(
+  aggregate: ApplicationWorldAggregate,
+  promotion: Promotion,
+): boolean {
+  const current = (aggregate.state.showSeries ?? [])
+    .filter((series) => series.promotionId === promotion.id)
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const expected = defaultPromotionShowSeries(
+    aggregate.state.world.id,
+    promotion,
+    aggregate.state.ruleset,
+  ).sort((left, right) => left.id.localeCompare(right.id));
+  return current.length === expected.length
+    && current.every((series, index) => sameSeries(series, expected[index]!));
+}
+
+function hasLiveLegacyCalendarDependency(
+  aggregate: ApplicationWorldAggregate,
+  promotionId: string,
+): boolean {
+  if (aggregate.state.events.some((event) => (
+    event.promotionId === promotionId && event.status === "SCHEDULED"
+  ))) return true;
+
+  if (aggregate.planning.showReservations.some((reservation) => (
+    reservation.promotionId === promotionId
+  ))) return true;
+
+  return aggregate.planning.workspaces.some((workspace) => (
+    workspace.promotionId === promotionId && workspace.detailedShowDrafts.length > 0
+  ));
+}
+
+/**
+ * Safely upgrades only untouched generic calendars belonging to real-world
+ * promotions. Existing generic identities are archived rather than replaced,
+ * preserving completed-event lineage. Any edit or live planning dependency
+ * causes that promotion to be skipped entirely.
+ */
+export function upgradeLegacyRealPromotionCalendarsSafely(
+  aggregate: ApplicationWorldAggregate,
+): string[] {
+  const upgraded: string[] = [];
+  const curated = realPromotionShowSeriesSource(
+    aggregate.state.world.id,
+    aggregate.state.promotions,
+    aggregate.state.ruleset,
+  );
+
+  for (const promotion of aggregate.state.promotions) {
+    if (promotion.identity?.origin !== "REAL_WORLD") continue;
+    if (!hasExactUntouchedGenericCalendar(aggregate, promotion)) continue;
+    if (hasLiveLegacyCalendarDependency(aggregate, promotion.id)) continue;
+
+    const legacy = (aggregate.state.showSeries ?? [])
+      .filter((series) => series.promotionId === promotion.id)
+      .map((series) => ({ ...series, active: false }));
+    const replacement = curated.filter((series) => series.promotionId === promotion.id);
+    if (replacement.length === 0) continue;
+
+    aggregate.state.showSeries = [
+      ...(aggregate.state.showSeries ?? []).filter((series) => series.promotionId !== promotion.id),
+      ...legacy,
+      ...replacement,
+    ];
+    upgraded.push(promotion.id);
+  }
+
+  return upgraded;
+}
+
+async function upgradePersistedLegacyRealPromotionCalendars(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+): Promise<void> {
+  const aggregate = await repository.load(worldId);
+  const hasCandidate = aggregate.state.promotions.some((promotion) => (
+    promotion.identity?.origin === "REAL_WORLD"
+    && hasExactUntouchedGenericCalendar(aggregate, promotion)
+    && !hasLiveLegacyCalendarDependency(aggregate, promotion.id)
+  ));
+  if (!hasCandidate) return;
+
+  await repository.transact(worldId, null, (current) => {
+    const upgraded = upgradeLegacyRealPromotionCalendarsSafely(current);
+    if (upgraded.length > 0) incrementWorldRevision(current.runtime);
+  });
+}
+
 export function createAlphaWorldAggregate(options: AlphaWorldBootstrapOptions): ApplicationWorldAggregate {
   const seed = normalizedSeed(options.seed);
   const state = createWorld(
@@ -118,6 +227,7 @@ export function createAlphaWorldAggregate(options: AlphaWorldBootstrapOptions): 
     calibratedRealActiveMixedRosterSource,
     realPromotionEcosystemSource,
     realWorldInitialRosterAssignmentSource,
+    realPromotionShowSeriesSource,
   );
   seedRealActiveTagTeams(state);
   seedRealWrestlerRelationships(state);
@@ -140,6 +250,7 @@ export async function ensureAlphaWorld(
   const worldId = alphaWorldId(options.seed);
   try {
     await repository.load(worldId);
+    await upgradePersistedLegacyRealPromotionCalendars(repository, worldId);
     return worldId;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -256,10 +367,17 @@ export async function saveAlphaCurrentWeekShowPlan(
     }
 
     const currentDate = aggregate.state.world.currentDate;
+    const showSeries = primaryPromotionShowSeriesForDate(
+      aggregate.state,
+      control.promotionId,
+      currentDate,
+    );
+    if (!showSeries) throw new Error("controlled promotion has no show identity due this PPW week");
     const draftId = alphaCurrentWeekShowDraftId(control.promotionId, currentDate);
     const draft: DetailedShowDraft = {
       draftId,
       promotionId: control.promotionId,
+      showSeriesId: showSeries.id,
       targetDate: { year: currentDate.year, week: currentDate.week, day },
       marketId: request.marketId,
       venueId: request.venueId,

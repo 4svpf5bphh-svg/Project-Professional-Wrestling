@@ -13,7 +13,11 @@ import {
   type DetailedShowDraft,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
-import { createWorld } from "../packages/sim-core/src/index.js";
+import {
+  createWorld,
+  promotionShowSeriesDueForDate,
+  promotionShowSeriesSlot,
+} from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -245,6 +249,48 @@ test("removing a draft advances only the planning/application state", () => {
   ok(result.version === 2, "draft removal did not advance plan version");
   ok(result.detailedShowDrafts.length === 0, "draft removal left the draft behind");
   ok(f.state.events.length === eventsBefore, "draft removal mutated simulation events");
+});
+
+
+
+test("show drafts retain an exact due calendar identity", () => {
+  const f = fixture(12021);
+  const dueNow = promotionShowSeriesDueForDate(f.state, f.promotion.id, f.state.world.currentDate);
+  ok(dueNow.length > 0, "planning fixture has no due show identity");
+  const draft = emptyDraft(f, "calendar-bound-draft");
+  draft.showSeriesId = dueNow[0]!.id;
+  const saved = upsert(f, "calendar-bound-upsert", 0, draft);
+  ok(saved.detailedShowDrafts[0]?.showSeriesId === dueNow[0]!.id, "draft lost its selected show identity");
+});
+
+
+
+test("planning allows one regular and one special draft in the same PPW week", () => {
+  const f = fixture(12022);
+  const specialIndex = f.state.showSeries!.findIndex((series) => (
+    series.promotionId === f.promotion.id && promotionShowSeriesSlot(series) === "SPECIAL"
+  ));
+  const special = f.state.showSeries![specialIndex]!;
+  f.state.showSeries![specialIndex] = { ...special, cadenceWeeks: 52, anchorWeek: 0 };
+
+  const due = promotionShowSeriesDueForDate(f.state, f.promotion.id, f.state.world.currentDate);
+  const regular = due.find((series) => promotionShowSeriesSlot(series) === "REGULAR")!;
+  const specialDue = due.find((series) => promotionShowSeriesSlot(series) === "SPECIAL")!;
+  ok(Boolean(regular) && Boolean(specialDue), "fixture did not expose both weekly show slots");
+
+  const regularDraft = emptyDraft(f, "regular-slot-draft");
+  regularDraft.showSeriesId = regular.id;
+  const first = upsert(f, "regular-slot-upsert", 0, regularDraft);
+
+  const specialDraft = emptyDraft(f, "special-slot-draft");
+  specialDraft.showSeriesId = specialDue.id;
+  const second = upsert(f, "special-slot-upsert", first.version, specialDraft);
+
+  ok(second.detailedShowDrafts.length === 2, "planner rejected the legal regular + special draft pair");
+  ok(
+    new Set(second.detailedShowDrafts.map((draft) => draft.showSeriesId)).size === 2,
+    "planner collapsed the two weekly show identities into one draft",
+  );
 });
 
 console.log(`\nApplication planning tests: ${passed} passed, ${failed} failed`);

@@ -1,4 +1,5 @@
 import type { TicketStrategy } from "../../domain/src/types.js";
+import { primaryPromotionShowSeriesForDate } from "../../sim-core/src/show-calendar.js";
 import {
   activePromotionControlForPlayer,
   buildPlayerSixWeekPlannerView,
@@ -19,6 +20,7 @@ export interface AlphaPlannerShowPlanRequest {
   marketId: string;
   venueId: string;
   ticketStrategy: TicketStrategy;
+  showSeriesId?: string;
   participantIds?: string[];
 }
 
@@ -50,8 +52,9 @@ function sameWeek(left: { year: number; week: number }, right: { year: number; w
   return left.year === right.year && left.week === right.week;
 }
 
-function plannerDraftId(promotionId: string, year: number, week: number): string {
-  return `alpha-show:${promotionId}:Y${year}:W${week}`;
+function plannerDraftId(promotionId: string, year: number, week: number, showSeriesId?: string | null): string {
+  const suffix = showSeriesId ? `:${showSeriesId}` : "";
+  return `alpha-show:${promotionId}:Y${year}:W${week}${suffix}`;
 }
 
 export async function loadAlphaPlayerPlanner(
@@ -102,11 +105,22 @@ export async function saveAlphaPlannerShowPlan(
       (candidate) => candidate.promotionId === control.promotionId,
     ) ?? null;
     const draftsInWeek = (workspaceBefore?.detailedShowDrafts ?? []).filter((draft) => sameWeek(draft.targetDate, targetDate));
-    if (draftsInWeek.length > 1) {
-      throw new Error("planner cannot edit a week containing multiple show drafts");
+    const selectedShowSeriesId = request.showSeriesId
+      ?? primaryPromotionShowSeriesForDate(aggregate.state, control.promotionId, targetDate)?.id
+      ?? null;
+    const existing = selectedShowSeriesId
+      ? draftsInWeek.find((draft) => draft.showSeriesId === selectedShowSeriesId)
+        ?? (draftsInWeek.length === 1 && !draftsInWeek[0]!.showSeriesId ? draftsInWeek[0]! : null)
+      : draftsInWeek.length === 1 ? draftsInWeek[0]! : null;
+    if (!selectedShowSeriesId && draftsInWeek.length > 1 && !existing) {
+      throw new Error("choose which scheduled show identity you want to edit");
     }
-    const existing = draftsInWeek[0] ?? null;
-    const draftId = existing?.draftId ?? plannerDraftId(control.promotionId, year, week);
+    const draftId = existing?.draftId ?? plannerDraftId(
+      control.promotionId,
+      year,
+      week,
+      draftsInWeek.length === 0 ? null : selectedShowSeriesId,
+    );
     const participantIds = request.participantIds === undefined
       ? [...(existing?.participantIds ?? [])]
       : [...request.participantIds];
@@ -129,6 +143,7 @@ export async function saveAlphaPlannerShowPlan(
     const draft: DetailedShowDraft = {
       draftId,
       promotionId: control.promotionId,
+      showSeriesId: selectedShowSeriesId ?? existing?.showSeriesId ?? null,
       targetDate,
       marketId: request.marketId,
       venueId: request.venueId,

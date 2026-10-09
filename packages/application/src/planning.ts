@@ -12,6 +12,7 @@ import type {
 import { isWrestlerAlignment, wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
 import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
+import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
 
 export const DETAILED_PLANNING_HORIZON_WEEKS = 6 as const;
@@ -66,6 +67,7 @@ export interface DetailedShowSlotRef {
 export interface DetailedShowDraft {
   draftId: string;
   promotionId: Id;
+  showSeriesId?: Id | null;
   targetDate: PpwDate;
   marketId: Id | null;
   venueId: Id | null;
@@ -88,6 +90,7 @@ export interface DetailedShowReservation {
   reservationId: string;
   sourceDraftId: string;
   promotionId: Id;
+  showSeriesId?: Id | null;
   targetDate: PpwDate;
   marketId: Id;
   venueId: Id;
@@ -407,6 +410,12 @@ export function validateWorldPlanningStateShape(state: WorldState, planning: Wor
     normalizedId(reservation.sourceDraftId, "reservation sourceDraftId");
     if (!promotionIds.has(reservation.promotionId)) throw new Error("show reservation references missing promotion");
     weekIndex(reservation.targetDate, state.ruleset.weeksPerYear);
+    if (reservation.showSeriesId) {
+      const dueSeries = promotionShowSeriesDueForDate(state, reservation.promotionId, reservation.targetDate);
+      if (!dueSeries.some((series) => series.id === reservation.showSeriesId)) {
+        throw new Error("show reservation references a show identity that is not due in its target PPW week");
+      }
+    }
     const market = state.markets.find((candidate) => candidate.id === reservation.marketId);
     if (!market) throw new Error("show reservation references missing market");
     const venue = state.venues.find((candidate) => candidate.id === reservation.venueId);
@@ -445,6 +454,13 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
   }
 
   const draftId = normalizedId(draft.draftId, "draftId");
+  const showSeriesId = draft.showSeriesId ?? null;
+  if (showSeriesId !== null) {
+    const dueSeries = promotionShowSeriesDueForDate(state, draft.promotionId, draft.targetDate);
+    if (!dueSeries.some((series) => series.id === showSeriesId)) {
+      throw new Error("selected show identity is not due for this promotion in the draft target PPW week");
+    }
+  }
   if (draft.ticketStrategy !== null && !TICKET_STRATEGIES.has(draft.ticketStrategy)) {
     throw new Error(`unsupported ticket strategy ${String(draft.ticketStrategy)}`);
   }
@@ -529,6 +545,7 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
   return structuredClone({
     draftId,
     promotionId: draft.promotionId,
+    showSeriesId,
     targetDate: draft.targetDate,
     marketId: draft.marketId,
     venueId: draft.venueId,
@@ -568,6 +585,16 @@ export function upsertDetailedShowDraft(
   if (!workspace) {
     workspace = { worldId: state.world.id, promotionId, version: 0, detailedShowDrafts: [] };
     planning.workspaces.push(workspace);
+  }
+
+  const conflictingDraft = workspace.detailedShowDrafts.find((candidate) => (
+    candidate.draftId !== validatedDraft.draftId
+    && candidate.showSeriesId === validatedDraft.showSeriesId
+    && candidate.targetDate.year === validatedDraft.targetDate.year
+    && candidate.targetDate.week === validatedDraft.targetDate.week
+  ));
+  if (conflictingDraft) {
+    throw new Error("show identity already has a draft in that PPW week");
   }
 
   const existingIndex = workspace.detailedShowDrafts.findIndex((candidate) => candidate.draftId === validatedDraft.draftId);

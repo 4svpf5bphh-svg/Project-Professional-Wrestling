@@ -325,5 +325,56 @@ asyncTest("week lock releases unresolved at-risk reservation and Routine Continu
 });
 
 await Promise.all(pending);
+
+
+test("materialized planned show preserves its reserved calendar identity", () => {
+  const f = fixture(74021);
+  const due = f.state.showSeries?.find((series) => (
+    series.promotionId === f.promotionId
+    && series.active
+    && series.anchorWeek === 0
+  ));
+  if (!due) throw new Error("materialization fixture has no current-week show identity");
+
+  const contracts = f.state.contracts
+    .filter((contract) => contract.promotionId === f.promotionId && contract.status === "SIGNED")
+    .slice(0, f.state.ruleset.minEventParticipants);
+  const participantIds = contracts.map((contract) => contract.personId);
+  const promotion = f.state.promotions.find((candidate) => candidate.id === f.promotionId)!;
+  const market = f.state.markets.find((candidate) => candidate.id === promotion.homeMarketId)!;
+  const venue = f.state.venues.find((candidate) => candidate.marketId === market.id)!;
+  const draft: DetailedShowDraft = {
+    draftId: "calendar-materialize",
+    promotionId: f.promotionId,
+    showSeriesId: due.id,
+    targetDate: { ...f.state.world.currentDate, day: 6 },
+    marketId: market.id,
+    venueId: venue.id,
+    ticketStrategy: "STANDARD",
+    participantIds,
+    matches: [],
+    championshipAssignments: [],
+  };
+  upsertDetailedShowDraftCommand(f.state, f.ownership, f.planning, f.commands, f.runtime, {
+    requestId: "calendar-materialize-draft",
+    worldId: f.state.world.id,
+    playerId: f.playerId,
+    commandType: "UPSERT_DETAILED_SHOW_DRAFT",
+    payload: { promotionId: f.promotionId, expectedPlanVersion: 0, draft },
+  });
+  const workspace = f.planning.workspaces.find((entry) => entry.promotionId === f.promotionId)!;
+  const reservation = reserveDetailedShowDraftCommand(f.state, f.ownership, f.planning, f.commands, f.runtime, {
+    requestId: "calendar-materialize-reserve",
+    worldId: f.state.world.id,
+    playerId: f.playerId,
+    commandType: "RESERVE_DETAILED_SHOW_DRAFT",
+    payload: { promotionId: f.promotionId, expectedPlanVersion: workspace.version, draftId: draft.draftId },
+  });
+  ok(reservation.showSeriesId === due.id, "reservation lost its selected show identity");
+  const pass = materializeCurrentWeekReservations(f.state, f.planning);
+  const event = f.state.events.find((candidate) => candidate.id === pass.materialized[0]?.eventId);
+  ok(event?.showSeriesId === due.id, "materialized event used a different show identity");
+});
+
 console.log(`\nApplication materialization tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;

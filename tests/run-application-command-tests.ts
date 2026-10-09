@@ -7,7 +7,10 @@ import {
   createWorldOwnershipState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  lockCurrentWeekShowCommitments,
   submitContractOfferCommand,
+  upsertPromotionShowSeriesCommand,
+  archivePromotionShowSeriesCommand,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import {
@@ -350,6 +353,175 @@ test("contract command authorization is tied to the player-owned promotion", () 
   ok(rejected, "player could submit a contract offer for another player's promotion");
   ok(!commands.receipts.some((receipt) => receipt.requestId === "unauthorized-offer"), "unauthorized command was committed");
   ok(runtime.revision === 1, "unauthorized command advanced World revision");
+});
+
+
+
+test("show identities are editable only by their promotion owner and custom identities can be archived", () => {
+  const { state, ownership, commands, runtime } = fixture(12008);
+  joinPlayerToWorld(ownership, "player-a", state.world.currentDate);
+  joinPlayerToWorld(ownership, "player-b", state.world.currentDate);
+  const promotion = state.promotions.find(
+    (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+  )!;
+  claimIndependentPromotionCommand(state, ownership, commands, runtime, {
+    requestId: "claim-for-calendar",
+    worldId: state.world.id,
+    playerId: "player-a",
+    commandType: "CLAIM_INDEPENDENT_PROMOTION",
+    payload: { promotionId: promotion.id },
+  });
+
+  const flagship = state.showSeries?.find((series) => series.promotionId === promotion.id && series.role === "FLAGSHIP");
+  if (!flagship) throw new Error("calendar fixture is missing a flagship identity");
+
+  const renamed = upsertPromotionShowSeriesCommand(state, ownership, commands, runtime, {
+    requestId: "rename-flagship",
+    worldId: state.world.id,
+    playerId: "player-a",
+    commandType: "UPSERT_PROMOTION_SHOW_SERIES",
+    payload: {
+      promotionId: promotion.id,
+      showSeriesId: flagship.id,
+      name: "Friday Fight Night",
+      role: "FLAGSHIP",
+      eventType: "REGULAR",
+      cadenceWeeks: 1,
+      anchorWeek: 0,
+      eventImportance: 62,
+    },
+  });
+  ok(renamed.name === "Friday Fight Night", "owner could not rename the flagship show identity");
+
+  const created = upsertPromotionShowSeriesCommand(state, ownership, commands, runtime, {
+    requestId: "create-special",
+    worldId: state.world.id,
+    playerId: "player-a",
+    commandType: "UPSERT_PROMOTION_SHOW_SERIES",
+    payload: {
+      promotionId: promotion.id,
+      name: "Final Reckoning",
+      role: "SPECIAL",
+      eventType: "MAJOR",
+      cadenceWeeks: state.ruleset.weeksPerYear,
+      anchorWeek: 12,
+      eventImportance: 88,
+    },
+  });
+  const retried = upsertPromotionShowSeriesCommand(state, ownership, commands, runtime, {
+    requestId: "create-special",
+    worldId: state.world.id,
+    playerId: "player-a",
+    commandType: "UPSERT_PROMOTION_SHOW_SERIES",
+    payload: {
+      promotionId: promotion.id,
+      name: "Final Reckoning",
+      role: "SPECIAL",
+      eventType: "MAJOR",
+      cadenceWeeks: state.ruleset.weeksPerYear,
+      anchorWeek: 12,
+      eventImportance: 88,
+    },
+  });
+  ok(created.id === retried.id, "show-series command retry created a second identity");
+  ok(state.showSeries?.filter((series) => series.id === created.id).length === 1, "custom show identity duplicated");
+
+  let foreignEditRejected = false;
+  try {
+    upsertPromotionShowSeriesCommand(state, ownership, commands, runtime, {
+      requestId: "foreign-calendar-edit",
+      worldId: state.world.id,
+      playerId: "player-b",
+      commandType: "UPSERT_PROMOTION_SHOW_SERIES",
+      payload: {
+        promotionId: promotion.id,
+        showSeriesId: created.id,
+        name: "Stolen Event",
+        role: "SPECIAL",
+        eventType: "MAJOR",
+        cadenceWeeks: state.ruleset.weeksPerYear,
+        anchorWeek: 12,
+        eventImportance: 88,
+      },
+    });
+  } catch {
+    foreignEditRejected = true;
+  }
+  ok(foreignEditRejected, "another player could edit a promotion's show calendar");
+
+  const archived = archivePromotionShowSeriesCommand(state, ownership, commands, runtime, {
+    requestId: "archive-special",
+    worldId: state.world.id,
+    playerId: "player-a",
+    commandType: "ARCHIVE_PROMOTION_SHOW_SERIES",
+    payload: { promotionId: promotion.id, showSeriesId: created.id },
+  });
+  ok(archived.active === false, "custom show identity was not archived");
+
+  let flagshipArchiveRejected = false;
+  try {
+    archivePromotionShowSeriesCommand(state, ownership, commands, runtime, {
+      requestId: "archive-flagship",
+      worldId: state.world.id,
+      playerId: "player-a",
+      commandType: "ARCHIVE_PROMOTION_SHOW_SERIES",
+      payload: { promotionId: promotion.id, showSeriesId: flagship.id },
+    });
+  } catch {
+    flagshipArchiveRejected = true;
+  }
+  ok(flagshipArchiveRejected, "mandatory flagship identity could be archived");
+});
+
+
+test("show-calendar commands reject new mutations after current-week commitment lock", () => {
+  const { state, ownership, commands, runtime } = fixture(12009);
+  joinPlayerToWorld(ownership, "player-a", state.world.currentDate);
+  const promotion = state.promotions.find(
+    (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+  )!;
+  claimIndependentPromotionCommand(state, ownership, commands, runtime, {
+    requestId: "claim-calendar-lock",
+    worldId: state.world.id,
+    playerId: "player-a",
+    commandType: "CLAIM_INDEPENDENT_PROMOTION",
+    payload: { promotionId: promotion.id },
+  });
+  const flagship = state.showSeries?.find((series) => series.promotionId === promotion.id && series.role === "FLAGSHIP");
+  if (!flagship) throw new Error("calendar lock fixture is missing flagship");
+
+  lockCurrentWeekShowCommitments(runtime, state, "2026-10-09");
+  const beforeName = flagship.name;
+  const revisionBefore = runtime.revision;
+  let rejected = false;
+  try {
+    upsertPromotionShowSeriesCommand(state, ownership, commands, runtime, {
+      requestId: "late-calendar-edit",
+      worldId: state.world.id,
+      playerId: "player-a",
+      commandType: "UPSERT_PROMOTION_SHOW_SERIES",
+      payload: {
+        promotionId: promotion.id,
+        showSeriesId: flagship.id,
+        name: "Too Late Fight Night",
+        role: "FLAGSHIP",
+        eventType: "REGULAR",
+        cadenceWeeks: flagship.cadenceWeeks,
+        anchorWeek: flagship.anchorWeek,
+        eventImportance: flagship.eventImportance,
+      },
+    });
+  } catch (error) {
+    rejected = String(error).includes("commitments are locked");
+  }
+
+  ok(rejected, "calendar mutation was accepted after show commitments locked");
+  ok(
+    state.showSeries?.find((series) => series.id === flagship.id)?.name === beforeName,
+    "rejected late calendar mutation changed show identity",
+  );
+  ok(!commands.receipts.some((receipt) => receipt.requestId === "late-calendar-edit"), "rejected late calendar mutation wrote a command receipt");
+  ok(runtime.revision === revisionBefore, "rejected late calendar mutation advanced World revision");
 });
 
 console.log(`\nApplication command tests: ${passed} passed, ${failed} failed`);
