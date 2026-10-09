@@ -13,6 +13,7 @@ import type {
   AlphaTalentOfferResult,
   AlphaTalentWatchResult,
 } from "../../../../dist/packages/web-adapter/src/talent-service.js";
+import RosterNav from "./roster-nav";
 import styles from "./talent.module.css";
 
 type ErrorPayload = { error?: string };
@@ -640,6 +641,11 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
   }
 
   useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    setTab(initialTab);
+    setQuery("");
+    setMarketLimit(25);
+  }, [initialTab]);
 
   function openMarketOffer(wrestler: PlayerTalentMarketView): void {
     const next: OfferTarget = {
@@ -759,6 +765,9 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       setDraft(null);
       setTab("OFFERS");
       setQuery("");
+      if (typeof window !== "undefined") {
+        window.history.replaceState(window.history.state, "", "/talent?view=offers");
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to submit contract offer");
     } finally {
@@ -820,18 +829,6 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
     setMarketLimit(25);
   }, [query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketWatchOnly, marketSort]);
 
-  function selectTab(nextTab: TalentTab): void {
-    setTab(nextTab);
-    setQuery("");
-    setMarketLimit(25);
-    if (typeof window !== "undefined") {
-      const url = nextTab === "ROSTER"
-        ? "/talent"
-        : `/talent?view=${nextTab.toLowerCase()}`;
-      window.history.replaceState(window.history.state, "", url);
-    }
-  }
-
   function toggleRosterRole(role: OfferRole): void {
     setCollapsedRosterRoles((current) => {
       const next = new Set(current);
@@ -841,14 +838,30 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
     });
   }
 
+  const rosterMen = view?.roster.filter((entry) => entry.division === "MEN").length ?? 0;
+  const rosterWomen = view?.roster.filter((entry) => entry.division === "WOMEN").length ?? 0;
+  const watchedMarket = view?.market.filter((entry) => entry.watched).length ?? 0;
+  const recruitmentOffers = view?.pendingOffers.filter((offer) => offer.offerKind === "RECRUITMENT").length ?? 0;
+  const renewalOffers = view?.pendingOffers.filter((offer) => offer.offerKind === "RENEWAL").length ?? 0;
+  const pageEyebrow = tab === "ROSTER" ? "YOUR ROSTER" : tab === "MARKET" ? "TALENT MARKET" : "CONTRACT OFFERS";
+  const pageTitle = tab === "ROSTER"
+    ? view?.promotion?.name ?? "Your roster"
+    : tab === "MARKET"
+      ? "Find talent"
+      : "Pending offers";
+  const pageDescription = tab === "ROSTER"
+    ? "Your contracted wrestlers and roster structure."
+    : tab === "MARKET"
+      ? "Search wrestlers currently available to approach."
+      : "Recruitment and renewal offers awaiting resolution.";
+
   return (
     <main className={styles.shell}>
-      <a className={styles.backLink} href="/">← Promotion home</a>
       <header className={styles.header}>
         <div>
-          <span className={styles.eyebrow}>ROSTER & TALENT MARKET</span>
-          <h1>{view?.promotion?.name ?? "Talent management"}</h1>
-          <p>{view ? `${view.world.name} · ${ppwDate(view.world.currentDate)}` : "Loading your World…"}</p>
+          <span className={styles.eyebrow}>{pageEyebrow}</span>
+          <h1>{pageTitle}</h1>
+          <p>{view ? `${view.world.name} · ${ppwDate(view.world.currentDate)} · ${pageDescription}` : "Loading your World…"}</p>
         </div>
         <button className={styles.button} disabled={loading || submitting} onClick={() => void refresh()}>{loading ? "Loading…" : "Refresh"}</button>
       </header>
@@ -870,25 +883,28 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
 
       {view?.promotion ? (
         <>
-          <section className={styles.overview}>
-            <div><span>Roster contracts</span><strong>{view.roster.length}</strong></div>
-            <div><span>Available talent</span><strong>{view.market.length}</strong></div>
-            <div><span>Pending offers</span><strong>{view.pendingOffers.length}</strong></div>
-          </section>
-
-          <div className={styles.tabs} role="tablist" aria-label="Talent management views">
-            {(["ROSTER", "MARKET", "OFFERS"] as const).map((candidate) => (
-              <button
-                key={candidate}
-                role="tab"
-                aria-selected={tab === candidate}
-                className={tab === candidate ? styles.activeTab : styles.tab}
-                onClick={() => selectTab(candidate)}
-              >
-                {candidate === "MARKET" ? "Talent market" : candidate[0] + candidate.slice(1).toLowerCase()}
-              </button>
-            ))}
-          </div>
+          {tab === "ROSTER" ? (
+            <>
+              <section className={styles.overview}>
+                <div><span>Roster contracts</span><strong>{view.roster.length}</strong></div>
+                <div><span>Men</span><strong>{rosterMen}</strong></div>
+                <div><span>Women</span><strong>{rosterWomen}</strong></div>
+              </section>
+              <RosterNav active="SINGLES" />
+            </>
+          ) : tab === "MARKET" ? (
+            <section className={styles.overview}>
+              <div><span>Available talent</span><strong>{view.market.length}</strong></div>
+              <div><span>Watching</span><strong>{watchedMarket}</strong></div>
+              <div><span>Pending offers</span><strong>{view.pendingOffers.length}</strong></div>
+            </section>
+          ) : (
+            <section className={styles.overview}>
+              <div><span>Pending offers</span><strong>{view.pendingOffers.length}</strong></div>
+              <div><span>Recruitment</span><strong>{recruitmentOffers}</strong></div>
+              <div><span>Renewals</span><strong>{renewalOffers}</strong></div>
+            </section>
+          )}
 
           {tab === "ROSTER" ? (
             <section className={styles.rosterToolbar} aria-label="Roster search and filters">
