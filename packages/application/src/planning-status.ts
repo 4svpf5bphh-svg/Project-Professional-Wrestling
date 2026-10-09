@@ -295,10 +295,15 @@ export function playerCurrentWeekPreparation(
   const currentDrafts = (workspace?.detailedShowDrafts ?? [])
     .filter((draft) => samePpwWeek(draft.targetDate, state.world.currentDate));
   const statusBySeries = new Map<Id, PlayerShowPlanningStatus>();
+  const unboundDrafts = currentDrafts.filter((draft) => !draft.showSeriesId);
   for (const draft of currentDrafts) {
-    if (!draft.showSeriesId) continue;
+    const reservation = reservationForDraft(planning, promotionId, draft.draftId);
+    const showSeriesId = draft.showSeriesId
+      ?? reservation?.showSeriesId
+      ?? (unboundDrafts.length === 1 ? dueSeries[0]?.id ?? null : null);
+    if (!showSeriesId) continue;
     statusBySeries.set(
-      draft.showSeriesId,
+      showSeriesId,
       playerShowPlanningStatus(state, planning, runtime, promotionId, draft.draftId),
     );
   }

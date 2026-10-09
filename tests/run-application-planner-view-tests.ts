@@ -9,12 +9,14 @@ import {
   createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  lockCurrentWeekShowCommitments,
   upsertDetailedShowDraft,
   type ApplicationWorldAggregate,
   type DetailedShowDraft,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { addPpwWeeks, createWorld } from "../packages/sim-core/src/index.js";
+import { plannerFocusedWeekKey } from "../apps/web/app/planner/planner-focus.js";
 
 let passed = 0;
 let failed = 0;
@@ -156,6 +158,14 @@ test("six-week planner returns the complete current plus five future week horizo
   ok(planned?.matchCount === 1 && planned.segmentCount === 1 && planned.slotCount === 2, "planner slot counts are incorrect");
 });
 
+
+test("planner deep-link parser ignores absent or invalid week parameters", () => {
+  ok(plannerFocusedWeekKey(null, null) === null, "plain /planner was treated as a Year 0 / Week 0 deep link");
+  ok(plannerFocusedWeekKey("2", "11") === "2:11", "valid planner deep link was not preserved");
+  ok(plannerFocusedWeekKey("", "11") === null, "empty year parameter was accepted");
+  ok(plannerFocusedWeekKey("2", "0") === null, "invalid zero week parameter was accepted");
+});
+
 test("six-week planner remains scoped to each player's controlled promotion", () => {
   const { aggregate, promotionAId, promotionBId } = twoPlayerFixture(73002);
   const playerA = buildPlayerSixWeekPlannerView(aggregate, "player-a");
@@ -262,6 +272,25 @@ test("shared World calendar exposes public show identities without leaking rival
   const publicBooked = refreshed.occurrences.find((entry) => entry.occurrenceId === ownOccurrence.occurrenceId);
   ok(publicBooked?.eventId === eventId && publicBooked.status === "SCHEDULED", "canonical scheduled event did not appear on the World calendar");
   ok(publicBooked?.day === 6 && publicBooked.marketName === market.name && publicBooked.venueName === venue.name, "public booked occurrence did not expose its announced date/location");
+});
+
+
+test("World calendar disables current-week planning and calendar edits after commitment lock", () => {
+  const { aggregate, promotionAId } = twoPlayerFixture(73007);
+  const before = buildPlayerWorldCalendarView(aggregate, "player-a", 6);
+  const currentOwn = before.occurrences.find((entry) => (
+    entry.promotionId === promotionAId
+    && entry.year === aggregate.state.world.currentDate.year
+    && entry.week === aggregate.state.world.currentDate.week
+  ));
+  ok(before.player.canEdit, "calendar unexpectedly started read-only before commitment lock");
+  ok(currentOwn?.canPlanNow === true, "current own occurrence was not plannable before commitment lock");
+
+  lockCurrentWeekShowCommitments(aggregate.runtime, aggregate.state, "2026-10-09");
+  const locked = buildPlayerWorldCalendarView(aggregate, "player-a", 6);
+  const lockedCurrent = locked.occurrences.find((entry) => entry.occurrenceId === currentOwn?.occurrenceId);
+  ok(locked.player.canEdit === false, "calendar remained editable after commitment lock");
+  ok(lockedCurrent?.canPlanNow === false, "current-week occurrence remained plannable after commitment lock");
 });
 
 test("non-members cannot read a World planning horizon", () => {

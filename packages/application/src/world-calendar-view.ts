@@ -12,6 +12,7 @@ import {
   activePromotionControlForPlayer,
   activeWorldMembership,
 } from "./ownership.js";
+import { currentWeekShowCommitmentsLocked } from "./runtime.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export interface PlayerWorldCalendarOccurrenceView {
@@ -119,6 +120,7 @@ export function buildPlayerWorldCalendarView(
     aggregate.state.world.currentDate,
     aggregate.state.ruleset.weeksPerYear,
   );
+  const commitmentsLocked = currentWeekShowCommitmentsLocked(aggregate.runtime, aggregate.state);
   const occurrences = promotionShowOccurrencesBetween(
     aggregate.state,
     aggregate.state.world.currentDate,
@@ -153,7 +155,8 @@ export function buildPlayerWorldCalendarView(
       canPlanNow: control?.promotionId === occurrence.promotionId
         && occurrence.status === "CALENDAR"
         && planningOffset >= 0
-        && planningOffset < DETAILED_PLANNING_HORIZON_WEEKS,
+        && planningOffset < DETAILED_PLANNING_HORIZON_WEEKS
+        && (planningOffset > 0 || !commitmentsLocked),
     };
   });
 
@@ -168,7 +171,7 @@ export function buildPlayerWorldCalendarView(
       playerId,
       promotionId: control?.promotionId ?? null,
       promotionName: controlledPromotion?.name ?? null,
-      canEdit: aggregate.runtime.phase === "OPEN",
+      canEdit: aggregate.runtime.phase === "OPEN" && !commitmentsLocked,
     },
     horizonWeeks,
     myShowSeries,

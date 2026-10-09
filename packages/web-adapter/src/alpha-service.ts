@@ -20,6 +20,7 @@ import {
   createWorldRuntimeState,
   dismissAttention,
   joinPlayerToWorld,
+  incrementWorldRevision,
   lockPersistedWorldForResolution,
   materializePersistedCurrentWeekReservations,
   reserveDetailedShowDraftCommand,
@@ -33,7 +34,10 @@ import {
 } from "../../application/src/index.js";
 import { ensureWorldChampionships } from "../../sim-core/src/competition.js";
 import { createWorld } from "../../sim-core/src/genesis.js";
-import { defaultPromotionShowSeries } from "../../sim-core/src/show-calendar.js";
+import {
+  defaultPromotionShowSeries,
+  primaryPromotionShowSeriesForDate,
+} from "../../sim-core/src/show-calendar.js";
 
 export interface AlphaWorldBootstrapOptions {
   seed: number;
@@ -209,7 +213,8 @@ async function upgradePersistedLegacyRealPromotionCalendars(
   if (!hasCandidate) return;
 
   await repository.transact(worldId, null, (current) => {
-    upgradeLegacyRealPromotionCalendarsSafely(current);
+    const upgraded = upgradeLegacyRealPromotionCalendarsSafely(current);
+    if (upgraded.length > 0) incrementWorldRevision(current.runtime);
   });
 }
 
@@ -362,10 +367,17 @@ export async function saveAlphaCurrentWeekShowPlan(
     }
 
     const currentDate = aggregate.state.world.currentDate;
+    const showSeries = primaryPromotionShowSeriesForDate(
+      aggregate.state,
+      control.promotionId,
+      currentDate,
+    );
+    if (!showSeries) throw new Error("controlled promotion has no show identity due this PPW week");
     const draftId = alphaCurrentWeekShowDraftId(control.promotionId, currentDate);
     const draft: DetailedShowDraft = {
       draftId,
       promotionId: control.promotionId,
+      showSeriesId: showSeries.id,
       targetDate: { year: currentDate.year, week: currentDate.week, day },
       marketId: request.marketId,
       venueId: request.venueId,

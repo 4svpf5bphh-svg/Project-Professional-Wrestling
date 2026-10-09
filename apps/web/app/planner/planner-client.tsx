@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { PlayerSixWeekPlannerView } from "../../../../dist/packages/application/src/planning-view.js";
+import { plannerFocusedWeekKey } from "./planner-focus";
 import styles from "./planner.module.css";
 
 type ErrorPayload = { error?: string };
@@ -105,12 +106,11 @@ function initialPlan(
 
 export default function PlannerClient(): React.JSX.Element {
   const searchParams = useSearchParams();
-  const focusYear = Number(searchParams.get("year"));
-  const focusWeek = Number(searchParams.get("week"));
   const focusShowSeriesId = searchParams.get("showSeriesId");
-  const focusedKey = Number.isSafeInteger(focusYear) && Number.isSafeInteger(focusWeek)
-    ? `${focusYear}:${focusWeek}`
-    : null;
+  const focusedKey = plannerFocusedWeekKey(
+    searchParams.get("year"),
+    searchParams.get("week"),
+  );
   const [view, setView] = useState<PlayerSixWeekPlannerView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editingKey, setEditingKey] = useState<string | null>(null);

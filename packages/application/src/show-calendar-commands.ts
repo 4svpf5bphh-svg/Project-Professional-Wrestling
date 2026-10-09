@@ -17,7 +17,10 @@ import {
   playerControlsPromotion,
   type WorldOwnershipState,
 } from "./ownership.js";
-import type { WorldRuntimeState } from "./runtime.js";
+import {
+  currentWeekShowCommitmentsLocked,
+  type WorldRuntimeState,
+} from "./runtime.js";
 
 export interface UpsertPromotionShowSeriesPayload {
   promotionId: Id;
@@ -96,6 +99,12 @@ function assertCalendarValid(state: WorldState, nextSeries: PromotionShowSeries[
   if (errors.length > 0) throw new Error(errors[0]);
 }
 
+function assertCalendarMutationWindow(state: WorldState, runtime: WorldRuntimeState): void {
+  if (currentWeekShowCommitmentsLocked(runtime, state)) {
+    throw new Error("show calendar cannot be edited after current-week show commitments are locked");
+  }
+}
+
 export function upsertPromotionShowSeriesCommand(
   state: WorldState,
   ownership: WorldOwnershipState,
@@ -108,6 +117,7 @@ export function upsertPromotionShowSeriesCommand(
   }
 
   return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
+    assertCalendarMutationWindow(state, runtime);
     authorize(state, ownership, envelope.playerId, envelope.payload.promotionId);
     const promotion = state.promotions.find((candidate) => candidate.id === envelope.payload.promotionId);
     if (!promotion) throw new Error(`unknown promotion ${envelope.payload.promotionId}`);
@@ -187,6 +197,7 @@ export function archivePromotionShowSeriesCommand(
   }
 
   return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
+    assertCalendarMutationWindow(state, runtime);
     authorize(state, ownership, envelope.playerId, envelope.payload.promotionId);
     const series = ensureShowSeries(state);
     const existing = series.find((candidate) => candidate.id === envelope.payload.showSeriesId);

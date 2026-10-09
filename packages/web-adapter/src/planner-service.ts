@@ -1,4 +1,5 @@
 import type { TicketStrategy } from "../../domain/src/types.js";
+import { primaryPromotionShowSeriesForDate } from "../../sim-core/src/show-calendar.js";
 import {
   activePromotionControlForPlayer,
   buildPlayerSixWeekPlannerView,
@@ -104,7 +105,9 @@ export async function saveAlphaPlannerShowPlan(
       (candidate) => candidate.promotionId === control.promotionId,
     ) ?? null;
     const draftsInWeek = (workspaceBefore?.detailedShowDrafts ?? []).filter((draft) => sameWeek(draft.targetDate, targetDate));
-    const selectedShowSeriesId = request.showSeriesId ?? null;
+    const selectedShowSeriesId = request.showSeriesId
+      ?? primaryPromotionShowSeriesForDate(aggregate.state, control.promotionId, targetDate)?.id
+      ?? null;
     const existing = selectedShowSeriesId
       ? draftsInWeek.find((draft) => draft.showSeriesId === selectedShowSeriesId)
         ?? (draftsInWeek.length === 1 && !draftsInWeek[0]!.showSeriesId ? draftsInWeek[0]! : null)

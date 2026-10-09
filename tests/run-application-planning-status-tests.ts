@@ -12,6 +12,7 @@ import {
   lockCurrentWeekShowCommitments,
   lockWorldForResolution,
   materializeCurrentWeekReservations,
+  playerCurrentWeekPreparation,
   playerShowPlanningStatus,
   removeDetailedShowDraftCommand,
   reserveDetailedShowDraftCommand,
@@ -303,6 +304,23 @@ test("unresolved due commitment becomes STAFF_OWNED once the World locks", () =>
   ok(status.state === "STAFF_OWNED", "locked unresolved plan did not expose STAFF_OWNED status");
   ok(status.readiness === "STAFF_OWNED", "staff ownership readiness is inconsistent");
   ok(status.availableActions.length === 0, "staff-owned plan still exposes player mutations");
+});
+
+
+test("current-week readiness maps one legacy null-identity draft onto its reserved show identity", () => {
+  const f = fixture(17110);
+  const draft = baseDraft(f, "legacy-null-identity");
+  ok(draft.showSeriesId == null, "legacy compatibility fixture unexpectedly started identity-bound");
+  saveDraft(f, draft);
+  reserveDraft(f, draft.draftId);
+
+  const persistedDraft = f.planning.workspaces[0]!.detailedShowDrafts[0]!;
+  ok(persistedDraft.showSeriesId == null, "reservation unexpectedly rewrote the legacy source draft");
+  ok(Boolean(f.planning.showReservations[0]?.showSeriesId), "reservation did not infer a show identity");
+
+  const preparation = playerCurrentWeekPreparation(f.state, f.planning, f.runtime, f.promotionId);
+  ok(preparation.status === "CARD_REQUIRED", "legacy reserved draft was incorrectly reported as SHOW_REQUIRED");
+  ok(preparation.readyForLock === false, "incomplete legacy card was incorrectly ready for lock");
 });
 
 console.log(`\nApplication planning status tests: ${passed} passed, ${failed} failed`);

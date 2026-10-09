@@ -192,6 +192,37 @@ await test("legacy real calendars upgrade only when untouched and preserve histo
   );
 });
 
+
+await test("persisted legacy calendar upgrade advances World revision exactly once", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 61023, playerId: "alpha-player" });
+  aggregate.state.showSeries = seedWorldPromotionShowSeries(
+    aggregate.state.world.id,
+    aggregate.state.promotions,
+    aggregate.state.ruleset,
+  );
+  await repository.initialize(aggregate);
+  const before = await repository.load(aggregate.state.world.id);
+
+  await ensureAlphaWorld(repository, { seed: 61023, playerId: "alpha-player" });
+  const upgraded = await repository.load(aggregate.state.world.id);
+  ok(
+    upgraded.runtime.revision === before.runtime.revision + 1,
+    "calendar bootstrap mutation did not advance World revision exactly once",
+  );
+  ok(
+    upgraded.state.showSeries?.some((series) => series.id.includes(":real:") && series.active),
+    "persisted calendar bootstrap did not install curated identities",
+  );
+
+  await ensureAlphaWorld(repository, { seed: 61023, playerId: "alpha-player" });
+  const retried = await repository.load(aggregate.state.world.id);
+  ok(
+    retried.runtime.revision === upgraded.runtime.revision,
+    "idempotent calendar bootstrap advanced World revision again",
+  );
+});
+
 await test("calendar safety guard never overwrites an edited real promotion calendar", async () => {
   const aggregate = createAlphaWorldAggregate({ seed: 61021, playerId: "alpha-player" });
   aggregate.state.showSeries = seedWorldPromotionShowSeries(
@@ -348,7 +379,13 @@ await test("Alpha show planning atomically commits a current-week draft and scar
   const persisted = await repository.load(worldId);
   ok(persisted.state.events.length === 0, "show reservation created simulation event before materialization");
   ok(persisted.planning.workspaces[0]?.detailedShowDrafts.length === 1, "show draft was not persisted exactly once");
+  const persistedDraft = persisted.planning.workspaces[0]?.detailedShowDrafts[0];
+  ok(Boolean(persistedDraft?.showSeriesId), "legacy Current Booking saved a draft without a show identity");
   ok(persisted.planning.showReservations.length === 1, "show reservation was not persisted exactly once");
+  ok(
+    persisted.planning.showReservations[0]?.showSeriesId === persistedDraft?.showSeriesId,
+    "Current Booking draft and reservation resolved to different show identities",
+  );
   ok(persisted.commands.receipts.length === 3, "claim plus planning did not persist exactly three command receipts");
 
   const retry = await saveAlphaCurrentWeekShowPlan(repository, worldId, "alpha-player", request);
@@ -390,6 +427,14 @@ await test("six-week planner reserves a future operating week transactionally an
     && reservation.targetDate.week === week.week
   ));
   ok(matchingReservations.length === 1, "future planner retry duplicated the reservation");
+  const matchingDraft = persisted.planning.workspaces
+    .find((workspace) => workspace.promotionId === independent!.id)
+    ?.detailedShowDrafts.find((draft) => draft.targetDate.year === week.year && draft.targetDate.week === week.week);
+  ok(Boolean(matchingDraft?.showSeriesId), "planner compatibility save left the draft without a show identity");
+  ok(
+    matchingReservations[0]?.showSeriesId === matchingDraft?.showSeriesId,
+    "planner draft and reservation resolved to different show identities",
+  );
 });
 
 await test("future planner edits preserve an existing match card and refresh the reservation", async () => {

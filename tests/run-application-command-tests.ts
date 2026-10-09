@@ -7,6 +7,7 @@ import {
   createWorldOwnershipState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  lockCurrentWeekShowCommitments,
   submitContractOfferCommand,
   upsertPromotionShowSeriesCommand,
   archivePromotionShowSeriesCommand,
@@ -470,6 +471,57 @@ test("show identities are editable only by their promotion owner and custom iden
     flagshipArchiveRejected = true;
   }
   ok(flagshipArchiveRejected, "mandatory flagship identity could be archived");
+});
+
+
+test("show-calendar commands reject new mutations after current-week commitment lock", () => {
+  const { state, ownership, commands, runtime } = fixture(12009);
+  joinPlayerToWorld(ownership, "player-a", state.world.currentDate);
+  const promotion = state.promotions.find(
+    (candidate) => candidate.tier === "INDEPENDENT" && candidate.lifecycle === "ACTIVE",
+  )!;
+  claimIndependentPromotionCommand(state, ownership, commands, runtime, {
+    requestId: "claim-calendar-lock",
+    worldId: state.world.id,
+    playerId: "player-a",
+    commandType: "CLAIM_INDEPENDENT_PROMOTION",
+    payload: { promotionId: promotion.id },
+  });
+  const flagship = state.showSeries?.find((series) => series.promotionId === promotion.id && series.role === "FLAGSHIP");
+  if (!flagship) throw new Error("calendar lock fixture is missing flagship");
+
+  lockCurrentWeekShowCommitments(runtime, state, "2026-10-09");
+  const beforeName = flagship.name;
+  const revisionBefore = runtime.revision;
+  let rejected = false;
+  try {
+    upsertPromotionShowSeriesCommand(state, ownership, commands, runtime, {
+      requestId: "late-calendar-edit",
+      worldId: state.world.id,
+      playerId: "player-a",
+      commandType: "UPSERT_PROMOTION_SHOW_SERIES",
+      payload: {
+        promotionId: promotion.id,
+        showSeriesId: flagship.id,
+        name: "Too Late Fight Night",
+        role: "FLAGSHIP",
+        eventType: "REGULAR",
+        cadenceWeeks: flagship.cadenceWeeks,
+        anchorWeek: flagship.anchorWeek,
+        eventImportance: flagship.eventImportance,
+      },
+    });
+  } catch (error) {
+    rejected = String(error).includes("commitments are locked");
+  }
+
+  ok(rejected, "calendar mutation was accepted after show commitments locked");
+  ok(
+    state.showSeries?.find((series) => series.id === flagship.id)?.name === beforeName,
+    "rejected late calendar mutation changed show identity",
+  );
+  ok(!commands.receipts.some((receipt) => receipt.requestId === "late-calendar-edit"), "rejected late calendar mutation wrote a command receipt");
+  ok(runtime.revision === revisionBefore, "rejected late calendar mutation advanced World revision");
 });
 
 console.log(`\nApplication command tests: ${passed} passed, ${failed} failed`);
