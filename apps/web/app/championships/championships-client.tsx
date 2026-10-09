@@ -67,7 +67,6 @@ export default function ChampionshipsClient(): React.JSX.Element {
   if (!view) {
     return (
       <main className={styles.shell}>
-        <a className={styles.backLink} href="/industry">← Industry</a>
         <section className={styles.panel}>
           <p>{error ?? "Loading championship history…"}</p>
           {error ? <button className={styles.button} onClick={() => refresh().catch(() => undefined)}>Retry</button> : null}
@@ -83,7 +82,6 @@ export default function ChampionshipsClient(): React.JSX.Element {
     <main className={styles.shell}>
       <header className={styles.header}>
         <div>
-          <a className={styles.backLink} href="/industry">← Industry</a>
           <div className={styles.eyebrow}>WORLD HISTORY</div>
           <h1>Championship lineage</h1>
           <p>{view.world.name} · Year {view.world.currentDate.year}, Week {view.world.currentDate.week}</p>
