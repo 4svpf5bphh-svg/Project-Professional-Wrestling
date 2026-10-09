@@ -232,14 +232,21 @@ export default function PlannerClient(): React.JSX.Element {
                     <div>
                       <span className={styles.eyebrow}>{week.isCurrentWeek ? "CURRENT WEEK" : `+${week.offset} WEEK${week.offset === 1 ? "" : "S"}`}</span>
                       <h2>Year {week.year} · Week {week.week}</h2>
+                      {week.showSeries ? (
+                        <small className={styles.showIdentity}>
+                          {week.showSeries.name} · {label(week.showSeries.role)}
+                        </small>
+                      ) : null}
                     </div>
-                    <span className={week.showRequired ? styles.required : styles.optional}>{week.showRequired ? "SHOW DUE" : "OPTIONAL"}</span>
+                    <span className={week.showRequired ? styles.required : styles.optional}>
+                      {week.showRequired && week.showSeries ? `${label(week.showSeries.role)} DUE` : "OPTIONAL"}
+                    </span>
                   </div>
 
                   {week.shows.length === 0 ? (
                     <div className={styles.emptyShow}>
-                      <strong>No show planned</strong>
-                      <span>{week.showRequired ? "This operating week needs a reserved show before lock." : "No operating show is scheduled for this promotion in this week."}</span>
+                      <strong>{week.showSeries ? `${week.showSeries.name} not planned` : "No show planned"}</strong>
+                      <span>{week.showRequired ? "This show identity needs a reserved show before lock." : "No operating show is scheduled for this promotion in this week."}</span>
                     </div>
                   ) : week.shows.map((show) => {
                     const timeRemaining = SHOW_TIME_GUIDE_MINUTES - show.plannedShowMinutes;

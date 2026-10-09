@@ -1,5 +1,5 @@
 import type { PpwDate, Promotion, WorldState } from "../../domain/src/types.js";
-import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { primaryPromotionShowSeriesForDate } from "../../sim-core/src/show-calendar.js";
 
 /**
  * Authoritative maximum unique-wrestler capacity for a planned show.
@@ -24,8 +24,6 @@ export function maxShowParticipantsForDate(
           : promotion.tier === "INDEPENDENT"
             ? 10
             : 8;
-  const weekIndex = ppwDateToWeekIndex(date, state.ruleset.weeksPerYear);
-  return (weekIndex + 1) % state.ruleset.majorEventIntervalWeeks === 0
-    ? regular + 2
-    : regular;
+  const showSeries = primaryPromotionShowSeriesForDate(state, promotion.id, date);
+  return showSeries?.eventType === "MAJOR" ? regular + 2 : regular;
 }

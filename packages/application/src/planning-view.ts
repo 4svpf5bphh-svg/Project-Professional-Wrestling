@@ -1,6 +1,16 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
-import type { Id, MatchType, PersonStatus, PpwDate, PromotionTier, TicketStrategy } from "../../domain/src/types.js";
-import { addPpwWeeks, comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import type {
+  Id,
+  MatchType,
+  PersonStatus,
+  PpwDate,
+  PromotionShowSeriesRole,
+  PromotionTier,
+  TicketStrategy,
+  WrestlingEventType,
+} from "../../domain/src/types.js";
+import { addPpwWeeks, comparePpwDates } from "../../sim-core/src/clock.js";
+import { primaryPromotionShowSeriesForDate } from "../../sim-core/src/show-calendar.js";
 import { activePromotionControlForPlayer, activeWorldMembership } from "./ownership.js";
 import {
   DETAILED_PLANNING_HORIZON_WEEKS,
@@ -130,6 +140,13 @@ export interface PlayerPlannerWeekView {
   week: number;
   isCurrentWeek: boolean;
   showRequired: boolean;
+  showSeries: null | {
+    showSeriesId: Id;
+    name: string;
+    role: PromotionShowSeriesRole;
+    eventType: WrestlingEventType;
+    eventImportance: number;
+  };
   canPlan: boolean;
   minParticipants: number;
   maxParticipants: number;
@@ -165,17 +182,6 @@ const PLANNER_TICKET_STRATEGIES: TicketStrategy[] = ["ACCESSIBLE", "STANDARD", "
 
 function sameWeek(left: PpwDate, right: PpwDate): boolean {
   return left.year === right.year && left.week === right.week;
-}
-
-function showRequiredInWeek(
-  aggregate: ApplicationWorldAggregate,
-  promotionId: Id,
-  targetDate: PpwDate,
-): boolean {
-  const promotion = aggregate.state.promotions.find((candidate) => candidate.id === promotionId);
-  if (!promotion || promotion.lifecycle === "DORMANT" || promotion.lifecycle === "CLOSED") return false;
-  const weekIndex = ppwDateToWeekIndex(targetDate, aggregate.state.ruleset.weeksPerYear);
-  return weekIndex % Math.max(1, promotion.eventCadenceWeeks) === 0;
 }
 
 function marketPresenceScore(awareness: number, liveStrength: number, loyalty: number): number {
@@ -461,7 +467,10 @@ export function buildPlayerSixWeekPlannerView(
         offset,
         aggregate.state.ruleset.weeksPerYear,
       );
-      const required = showRequiredInWeek(aggregate, promotion.id, targetDate);
+      const showSeries = promotion.lifecycle === "DORMANT" || promotion.lifecycle === "CLOSED"
+        ? null
+        : primaryPromotionShowSeriesForDate(aggregate.state, promotion.id, targetDate);
+      const required = showSeries !== null;
       const shows = (workspace?.detailedShowDrafts ?? [])
         .filter((draft) => sameWeek(draft.targetDate, targetDate))
         .sort((left, right) => left.targetDate.day - right.targetDate.day || left.draftId.localeCompare(right.draftId))
@@ -472,6 +481,13 @@ export function buildPlayerSixWeekPlannerView(
         week: targetDate.week,
         isCurrentWeek: offset === 0,
         showRequired: required,
+        showSeries: showSeries ? {
+          showSeriesId: showSeries.id,
+          name: showSeries.name,
+          role: showSeries.role,
+          eventType: showSeries.eventType,
+          eventImportance: showSeries.eventImportance,
+        } : null,
         canPlan: required && aggregate.runtime.phase === "OPEN",
         minParticipants: aggregate.state.ruleset.minEventParticipants,
         maxParticipants: maxShowParticipantsForDate(

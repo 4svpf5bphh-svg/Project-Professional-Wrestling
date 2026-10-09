@@ -131,6 +131,13 @@ test("six-week planner returns the complete current plus five future week horizo
   ok(view.promotion?.weeks.length === 6, "planner did not expose six PPW weeks");
   ok(view.promotion?.weeks[0]?.isCurrentWeek === true, "first planner week is not the current week");
   ok(view.promotion?.weeks[5]?.offset === 5, "planner did not expose the fifth future week");
+  const dueWeeks = view.promotion?.weeks.filter((week) => week.showRequired) ?? [];
+  ok(dueWeeks.length > 0, "planner did not expose any required show weeks");
+  ok(dueWeeks.every((week) => week.showSeries !== null), "required planner week did not expose its promotion-owned show identity");
+  ok(
+    dueWeeks.every((week) => week.showSeries?.eventType === "REGULAR" || week.showSeries?.eventType === "MAJOR"),
+    "planner show identity exposed an invalid event type",
+  );
   const planned = view.promotion?.weeks[2]?.shows[0];
   ok(planned?.draftId === "planner-a-week-3", "player draft did not appear in its future week");
   ok(planned?.participants.length === 2, "planner did not expose selected wrestler names");
