@@ -55,16 +55,30 @@ function participantIds(state: WorldState, matchId: string): string[] {
   return participantsForMatch(state, matchId).map((participant) => participant.personId);
 }
 
-function recentSinglesPairKeys(state: WorldState, event: WrestlingEvent, windowWeeks: number): Set<string> {
+interface RecentSinglesPairHistory {
+  meetings: number;
+  lastWeek: number;
+}
+
+function recentSinglesPairHistory(
+  state: WorldState,
+  event: WrestlingEvent,
+  windowWeeks: number,
+): Map<string, RecentSinglesPairHistory> {
   const currentWeek = ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear);
   const cutoffWeek = Math.max(0, currentWeek - windowWeeks);
   const eventWeeks = recentEventWeeks(state, event.promotionId, currentWeek, cutoffWeek);
-  const result = new Set<string>();
-  for (const eventId of eventWeeks.keys()) {
+  const result = new Map<string, RecentSinglesPairHistory>();
+  for (const [eventId, week] of eventWeeks) {
     for (const match of matchesForEvent(state, eventId)) {
       if (match.status !== "COMPLETED" || match.type !== "SINGLES") continue;
       const ids = participantIds(state, match.id);
-      if (ids.length === 2) result.add(pairKey(ids[0]!, ids[1]!));
+      if (ids.length !== 2) continue;
+      const key = pairKey(ids[0]!, ids[1]!);
+      const existing = result.get(key) ?? { meetings: 0, lastWeek: -1 };
+      existing.meetings += 1;
+      existing.lastWeek = Math.max(existing.lastWeek, week);
+      result.set(key, existing);
     }
   }
   return result;
@@ -97,10 +111,46 @@ function buildRecentHistories(state: WorldState, event: WrestlingEvent, eligible
 
 export function selectFreshSinglesPair(state: WorldState, event: WrestlingEvent, remaining: Person[]): [Person, Person] | null {
   if (remaining.length < 2) return null;
-  const first = remaining[0]!;
-  const recentPairs = recentSinglesPairKeys(state, event, 2);
-  const opponent = remaining.slice(1).find((candidate) => !recentPairs.has(pairKey(first.id, candidate.id))) ?? remaining[1]!;
-  return [first, opponent];
+  const currentWeek = ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear);
+  const histories = recentSinglesPairHistory(state, event, 16);
+  const candidates: {
+    a: Person;
+    b: Person;
+    recent: boolean;
+    meetings: number;
+    gap: number;
+    star: number;
+    key: string;
+  }[] = [];
+
+  for (let left = 0; left < remaining.length - 1; left += 1) {
+    for (let right = left + 1; right < remaining.length; right += 1) {
+      const a = remaining[left]!;
+      const b = remaining[right]!;
+      const key = pairKey(a.id, b.id);
+      const history = histories.get(key);
+      const gap = history ? currentWeek - history.lastWeek : 1_000_000;
+      candidates.push({
+        a,
+        b,
+        recent: gap <= 2,
+        meetings: history?.meetings ?? 0,
+        gap,
+        star: pushScore(a) + pushScore(b),
+        key,
+      });
+    }
+  }
+
+  candidates.sort((left, right) => (
+    Number(left.recent) - Number(right.recent)
+    || left.meetings - right.meetings
+    || right.gap - left.gap
+    || right.star - left.star
+    || left.key.localeCompare(right.key)
+  ));
+  const best = candidates[0];
+  return best ? [best.a, best.b] : null;
 }
 
 export function selectNonTitleProgramme(
