@@ -37,7 +37,9 @@ export type ApplicationCommandType =
   | "RELEASE_DETAILED_SHOW_RESERVATION"
   | "START_PROGRAMME"
   | "SET_WRESTLER_ALIGNMENT"
-  | "CREATE_TAG_TEAM";
+  | "CREATE_TAG_TEAM"
+  | "UPSERT_PROMOTION_SHOW_SERIES"
+  | "ARCHIVE_PROMOTION_SHOW_SERIES";
 
 export interface ApplicationCommandEnvelope<TPayload> {
   requestId: string;

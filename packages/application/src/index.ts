@@ -18,6 +18,7 @@ export * from "./reservation-commands.js";
 export * from "./results-view.js";
 export * from "./runtime.js";
 export * from "./scheduler.js";
+export * from "./show-calendar-commands.js";
 export * from "./stewardship.js";
 export * from "./stewardship-ai-buyouts.js";
 export * from "./stewardship-auto-release.js";
