@@ -11,10 +11,10 @@ import {
   recordProgrammeActivity,
   resolveWorldWeeks,
   restorePersistedWorldState,
-  selectFreshSinglesPair,
   setProgrammeSignals,
   validateProgrammeState,
 } from "../packages/sim-core/src/index.js";
+import { selectFreshSinglesPair } from "../packages/sim-core/src/booking-programmes.js";
 
 let passed = 0;
 let failed = 0;
