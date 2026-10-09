@@ -1288,7 +1288,8 @@ export default function CardClient(): React.JSX.Element {
                       {segment.programmeId ? <small>Limited to this Programme</small> : <small>Any contracted wrestler</small>}
                     </div>
                     {segment.participantIds.map((personId, personIndex) => (
-                      <div className={styles.segmentPersonRow} key={personIndex}>
+                      <div className={segment.type === "ATTACK" && personIndex < 2 ? styles.attackFixedPersonRow : styles.segmentPersonRow} key={personIndex}>
+                        <div className={styles.segmentPersonCell}>
                         {segment.type === "ATTACK" ? (
                           <span className={styles.sideLabel}>{personIndex === 0 ? "Attacker" : personIndex === 1 ? "Victim" : "Also involved"}</span>
                         ) : null}
@@ -1305,6 +1306,7 @@ export default function CardClient(): React.JSX.Element {
                               : `${pretty(segment.type)} · Wrestler ${personIndex + 1}`,
                           })}
                         />
+                        </div>
                         {segment.type === "ATTACK" && personIndex < 2 ? null : (
                           <button type="button" className={styles.smallRemove} disabled={!view.canEdit || segment.participantIds.length <= segmentMinimum(segment.type)} onClick={() => removeSegmentParticipant(segment.draftSegmentId, personIndex)}>×</button>
                         )}
