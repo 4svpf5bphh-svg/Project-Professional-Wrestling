@@ -314,7 +314,11 @@ export function playerCurrentWeekPreparation(
   ))) {
     return { status: "READY", readyForLock: true, eventId: null };
   }
-  if (dueStatuses.some((status) => status?.reservationId !== null && status?.readiness !== "READY_TO_LOCK")) {
+  if (dueStatuses.some((status) => (
+    status !== null
+    && status.reservationId !== null
+    && status.readiness !== "READY_TO_LOCK"
+  ))) {
     return { status: "CARD_REQUIRED", readyForLock: false, eventId: null };
   }
   return { status: "SHOW_REQUIRED", readyForLock: false, eventId: null };
