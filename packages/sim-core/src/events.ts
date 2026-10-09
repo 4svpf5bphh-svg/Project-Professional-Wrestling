@@ -522,6 +522,12 @@ export function planWorldEvents(state: WorldState, execution: WorldEventExecutio
     if (!shouldPromotionRunEvent(state, promotion)) continue;
 
     const dueSeries = promotionShowSeriesDueForDate(state, promotion.id, state.world.currentDate);
+    const planningSeries = [...dueSeries].sort((left, right) => {
+      const leftSlot = promotionShowSeriesSlot(left);
+      const rightSlot = promotionShowSeriesSlot(right);
+      if (leftSlot === rightSlot) return 0;
+      return leftSlot === "SPECIAL" ? -1 : 1;
+    });
     const occupiedEvents = state.events.filter((event) => (
       event.promotionId === promotion.id
       && event.status !== "CANCELLED"
@@ -531,7 +537,7 @@ export function planWorldEvents(state: WorldState, execution: WorldEventExecutio
     const occupiedSlots = new Set(occupiedEvents.map((event) => eventSlot(state, event)));
     const hasSpecial = dueSeries.some((series) => promotionShowSeriesSlot(series) === "SPECIAL");
 
-    for (const showSeries of dueSeries) {
+    for (const showSeries of planningSeries) {
       const slot = promotionShowSeriesSlot(showSeries);
       if (occupiedSlots.has(slot)) continue;
 

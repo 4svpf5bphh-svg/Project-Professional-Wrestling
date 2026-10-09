@@ -323,5 +323,47 @@ test("AI scheduling creates at most one event per weekly slot even when planning
   ok(second.length === 2, "AI planning retry flooded the week with duplicate shows");
 });
 
+
+
+test("AI protects a capacity-one headliner for the Special show in a two-show week", () => {
+  const state = createWorld(10917, DEFAULT_RULESET);
+  const promotion = state.promotions.find((candidate) => candidate.controllerType === "AI" && candidate.lifecycle === "ACTIVE")!;
+  const specialIndex = state.showSeries!.findIndex((series) => series.promotionId === promotion.id && promotionShowSeriesSlot(series) === "SPECIAL");
+  const special = state.showSeries![specialIndex]!;
+  state.showSeries![specialIndex] = { ...special, cadenceWeeks: 52, anchorWeek: 0 };
+
+  const rosterIds = [...new Set(
+    activeContractsForPromotion(state, promotion.id)
+      .map((contract) => contract.personId)
+      .filter((personId) => state.people.find((person) => person.id === personId)?.status === "ACTIVE"),
+  )];
+  const headliner = state.people.find((person) => person.id === rosterIds[0]);
+  if (!headliner) throw new Error("AI priority fixture has no active contracted wrestler");
+  headliner.careerStage = "SPECIAL_ATTRACTION";
+  headliner.recognition = 100;
+  headliner.popularity = 100;
+  headliner.momentum = 100;
+  headliner.skills.inRingQuality = 100;
+  headliner.skills.matchCraft = 100;
+  headliner.skills.presentation = 100;
+  headliner.skills.stamina = 50;
+  headliner.fatigue = 0;
+
+  planWorldEvents(state);
+  const events = state.events.filter((event) => event.promotionId === promotion.id && event.status !== "CANCELLED");
+  const major = events.find((event) => event.type === "MAJOR");
+  const regular = events.find((event) => event.type === "REGULAR");
+  if (!major || !regular) throw new Error("AI priority fixture did not create both weekly slots");
+  const majorIds = new Set(
+    state.scheduledAppearances.filter((appearance) => appearance.eventId === major.id).map((appearance) => appearance.personId),
+  );
+  const regularIds = new Set(
+    state.scheduledAppearances.filter((appearance) => appearance.eventId === regular.id).map((appearance) => appearance.personId),
+  );
+
+  ok(majorIds.has(headliner.id), "Special show did not receive the capacity-one headliner");
+  ok(!regularIds.has(headliner.id), "Regular show consumed the capacity-one headliner before the Special show");
+});
+
 console.log(`\nHuman show tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
