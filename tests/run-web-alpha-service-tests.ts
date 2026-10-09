@@ -6,6 +6,7 @@ import {
 } from "../packages/application/src/index.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
+import { seedWorldPromotionShowSeries } from "../packages/sim-core/src/show-calendar.js";
 import {
   advanceAlphaWorldWeek,
   claimAlphaPromotion,
@@ -13,6 +14,7 @@ import {
   ensureAlphaWorld,
   loadAlphaPlayerSession,
   saveAlphaCurrentWeekShowPlan,
+  upgradeLegacyRealPromotionCalendarsSafely,
 } from "../packages/web-adapter/src/alpha-service.js";
 import {
   loadAlphaPlayerPlanner,
@@ -131,6 +133,121 @@ await test("Alpha web service bootstraps and exposes a player-safe promotion cho
   ok(visibleChoiceIds.length === 5, "Alpha did not expose exactly five takeover/rebrand choices");
   ok(JSON.stringify(visibleChoiceIds) === JSON.stringify(eligibleIds), "Alpha choice screen leaked a promotion that is not takeover-eligible");
   ok(view.promotion === null, "fresh Alpha session unexpectedly exposed a controlled promotion dashboard");
+});
+
+
+await test("legacy real calendars upgrade only when untouched and preserve historical lineage", async () => {
+  const aggregate = createAlphaWorldAggregate({ seed: 61020, playerId: "alpha-player" });
+  aggregate.state.showSeries = seedWorldPromotionShowSeries(
+    aggregate.state.world.id,
+    aggregate.state.promotions,
+    aggregate.state.ruleset,
+  );
+  const wwe = aggregate.state.promotions.find((promotion) => promotion.name === "WWE")!;
+  const legacyFlagship = aggregate.state.showSeries.find((series) => (
+    series.promotionId === wwe.id && series.role === "FLAGSHIP"
+  ))!;
+  const venue = aggregate.state.venues.find((candidate) => candidate.marketId === wwe.homeMarketId)!;
+  aggregate.state.events.push({
+    id: "legacy-completed-event",
+    worldId: aggregate.state.world.id,
+    promotionId: wwe.id,
+    showSeriesId: legacyFlagship.id,
+    marketId: wwe.homeMarketId,
+    venueId: venue.id,
+    date: { ...aggregate.state.world.currentDate, day: 6 },
+    type: "REGULAR",
+    status: "COMPLETED",
+    ticketStrategy: "STANDARD",
+    expectedDemand: 1000,
+    attendance: 900,
+    ticketYield: 20,
+    gateRevenue: 18000,
+    totalCost: 10000,
+    netResult: 8000,
+    eventImportance: 58,
+    matchCount: 0,
+    averageMatchRating: 0,
+    bestMatchRating: 0,
+    crowdResponse: 50,
+  });
+
+  const upgraded = upgradeLegacyRealPromotionCalendarsSafely(aggregate);
+  ok(upgraded.includes(wwe.id), "untouched WWE generic calendar was not safely upgraded");
+  const wweSeries = aggregate.state.showSeries.filter((series) => series.promotionId === wwe.id);
+  ok(wweSeries.some((series) => series.name === "Monday Night Raw" && series.active), "safe upgrade did not add Raw");
+  ok(wweSeries.some((series) => series.name === "Friday Night SmackDown" && series.active), "safe upgrade did not add SmackDown");
+  ok(wweSeries.some((series) => series.name === "WrestleMania" && series.active), "safe upgrade did not add WrestleMania");
+  ok(
+    wweSeries.some((series) => series.id === legacyFlagship.id && !series.active),
+    "legacy flagship identity was not retained as archived history",
+  );
+  ok(
+    aggregate.state.events.find((event) => event.id === "legacy-completed-event")?.showSeriesId === legacyFlagship.id,
+    "completed event lineage was rewritten during calendar upgrade",
+  );
+  ok(
+    upgradeLegacyRealPromotionCalendarsSafely(aggregate).length === 0,
+    "safe calendar upgrade was not idempotent",
+  );
+});
+
+await test("calendar safety guard never overwrites an edited real promotion calendar", async () => {
+  const aggregate = createAlphaWorldAggregate({ seed: 61021, playerId: "alpha-player" });
+  aggregate.state.showSeries = seedWorldPromotionShowSeries(
+    aggregate.state.world.id,
+    aggregate.state.promotions,
+    aggregate.state.ruleset,
+  );
+  const wwe = aggregate.state.promotions.find((promotion) => promotion.name === "WWE")!;
+  const flagship = aggregate.state.showSeries.find((series) => series.promotionId === wwe.id && series.role === "FLAGSHIP")!;
+  flagship.name = "Player Edited WWE Show";
+
+  const upgraded = upgradeLegacyRealPromotionCalendarsSafely(aggregate);
+  ok(!upgraded.includes(wwe.id), "edited WWE calendar was overwritten by automatic upgrade");
+  ok(
+    aggregate.state.showSeries.some((series) => series.id === flagship.id && series.name === "Player Edited WWE Show" && series.active),
+    "edited calendar identity was mutated",
+  );
+  ok(
+    !aggregate.state.showSeries.some((series) => series.promotionId === wwe.id && series.id.includes(":real:")),
+    "curated series were injected beside an edited calendar",
+  );
+});
+
+await test("calendar safety guard waits while a promotion has live planning dependencies", async () => {
+  const aggregate = createAlphaWorldAggregate({ seed: 61022, playerId: "alpha-player" });
+  aggregate.state.showSeries = seedWorldPromotionShowSeries(
+    aggregate.state.world.id,
+    aggregate.state.promotions,
+    aggregate.state.ruleset,
+  );
+  const wwe = aggregate.state.promotions.find((promotion) => promotion.name === "WWE")!;
+  const flagship = aggregate.state.showSeries.find((series) => series.promotionId === wwe.id && series.role === "FLAGSHIP")!;
+  aggregate.planning.workspaces.push({
+    worldId: aggregate.state.world.id,
+    promotionId: wwe.id,
+    version: 1,
+    detailedShowDrafts: [{
+      draftId: "legacy-live-draft",
+      promotionId: wwe.id,
+      showSeriesId: flagship.id,
+      targetDate: { ...aggregate.state.world.currentDate, day: 6 },
+      marketId: null,
+      venueId: null,
+      ticketStrategy: null,
+      participantIds: [],
+      matches: [],
+      championshipAssignments: [],
+    }],
+  });
+
+  const upgraded = upgradeLegacyRealPromotionCalendarsSafely(aggregate);
+  ok(!upgraded.includes(wwe.id), "calendar with live draft was auto-upgraded");
+  ok(
+    aggregate.state.showSeries.filter((series) => series.promotionId === wwe.id && series.active).length === 2,
+    "dependency guard changed the active WWE calendar",
+  );
 });
 
 await test("Alpha session reflects persisted current-week show commitment state", async () => {

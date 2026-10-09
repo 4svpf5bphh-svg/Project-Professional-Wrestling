@@ -111,7 +111,7 @@ function series(
   eventImportance: number,
 ): PromotionShowSeries {
   return {
-    id: `show-series:${promotion.id}:${suffix}`,
+    id: `show-series:${promotion.id}:real:${suffix}`,
     worldId,
     promotionId: promotion.id,
     name,
