@@ -13,6 +13,7 @@ import {
   promotionShowOccurrencesBetween,
   promotionShowSeriesSlot,
   resolveWorldWeek,
+  showParticipantCapacityForEventType,
   validatePromotionShowSeriesState,
 } from "../packages/sim-core/src/index.js";
 
@@ -63,6 +64,24 @@ function fixture(seed: number): {
 
   return { state, promotionId: promotion.id, participantIds, marketId, venueId };
 }
+
+
+test("human STANDARD takeover capacity stays aligned between planning and event materialisation", () => {
+  const state = createWorld(10918, DEFAULT_RULESET);
+  const promotion = state.promotions.find(
+    (candidate) => (
+      candidate.playerTakeoverEligibility === "STANDARD"
+      && candidate.tier === "INDEPENDENT"
+      && candidate.lifecycle === "ACTIVE"
+    ),
+  )!;
+  ok(showParticipantCapacityForEventType(promotion, "REGULAR") === 10, "AI takeover candidate unexpectedly received the human capacity override");
+
+  claimIndependentPromotionForHuman(state, promotion.id, { name: "Player Wrestling" });
+  ok(promotion.controllerType === "HUMAN", "capacity fixture did not become human-controlled");
+  ok(showParticipantCapacityForEventType(promotion, "REGULAR") === 20, "human STANDARD takeover did not retain its 20-person regular-show capacity");
+  ok(showParticipantCapacityForEventType(promotion, "MAJOR") === 22, "human STANDARD takeover did not retain its major-show capacity");
+});
 
 test("human promoter can prepare a current-week show from real roster and venue choices", () => {
   const { state, promotionId, participantIds, marketId, venueId } = fixture(10901);

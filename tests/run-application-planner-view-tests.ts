@@ -17,6 +17,7 @@ import {
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { addPpwWeeks, createWorld } from "../packages/sim-core/src/index.js";
 import { plannerFocusedWeekKey } from "../apps/web/app/planner/planner-focus.js";
+import { calendarCadenceLabel, calendarCadenceOptions } from "../apps/web/app/calendar/calendar-cadence.js";
 
 let passed = 0;
 let failed = 0;
@@ -158,6 +159,18 @@ test("six-week planner returns the complete current plus five future week horizo
   ok(planned?.matchCount === 1 && planned.segmentCount === 1 && planned.slotCount === 2, "planner slot counts are incorrect");
 });
 
+
+
+test("calendar cadence editor represents 26-week and existing custom schedules truthfully", () => {
+  const premiumOptions = calendarCadenceOptions(26);
+  ok(premiumOptions.includes(26), "26-week premium cadence was missing from the editor");
+  ok(calendarCadenceLabel(26) === "Every 26 weeks", "26-week premium cadence had the wrong label");
+  ok(calendarCadenceLabel(52) === "Every PPW year", "annual cadence lost its PPW-year label");
+
+  const customOptions = calendarCadenceOptions(8);
+  ok(customOptions.includes(8), "existing custom cadence was not preserved by the editor");
+  ok(customOptions[0] === 1 && customOptions.at(-1) === 52, "calendar cadence options were not kept in stable order");
+});
 
 test("planner deep-link parser ignores absent or invalid week parameters", () => {
   ok(plannerFocusedWeekKey(null, null) === null, "plain /planner was treated as a Year 0 / Week 0 deep link");
