@@ -19,7 +19,7 @@ import { contractById, personById } from "./indexes.js";
 import { competitionDemandFactor } from "./market-competition.js";
 import { resolveEventCard } from "./matches.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
-import { primaryPromotionShowSeriesForDate } from "./show-calendar.js";
+import { primaryPromotionShowSeriesForDate, promotionShowOccurrenceId } from "./show-calendar.js";
 import { recordFinancialTransaction } from "./transactions.js";
 
 const ROLE_PRIORITY: Record<Contract["roleExpectation"], number> = {
@@ -410,6 +410,7 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
     worldId: state.world.id,
     promotionId: promotion.id,
     showSeriesId: showSeries.id,
+    showOccurrenceId: promotionShowOccurrenceId(showSeries.id, eventDate),
     marketId: market.id,
     venueId: venue.id,
     date: eventDate,
@@ -508,6 +509,7 @@ export function planWorldEvents(state: WorldState, execution: WorldEventExecutio
       worldId: state.world.id,
       promotionId: promotion.id,
       showSeriesId: showSeries.id,
+      showOccurrenceId: promotionShowOccurrenceId(showSeries.id, eventDate),
       marketId: market.id,
       venueId: venue.id,
       date: eventDate,

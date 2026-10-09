@@ -8,6 +8,7 @@ import {
   createWorld,
   prepareHumanMatchCard,
   prepareHumanShow,
+  promotionShowOccurrencesBetween,
   resolveWorldWeek,
 } from "../packages/sim-core/src/index.js";
 
@@ -81,6 +82,12 @@ test("human promoter can prepare a current-week show from real roster and venue 
   ok(showSeries?.promotionId === promotionId, "prepared show references another promotion's show identity");
   ok(event.type === showSeries?.eventType, "prepared show type did not come from its show identity");
   ok(event.eventImportance === showSeries?.eventImportance, "prepared show importance did not come from its show identity");
+  ok(Boolean(event.showOccurrenceId), "prepared show did not retain its dated calendar occurrence identity");
+  const occurrence = promotionShowOccurrencesBetween(state, state.world.currentDate, 1, promotionId)
+    .find((candidate) => candidate.id === event.showOccurrenceId);
+  ok(occurrence?.eventId === event.id, "calendar occurrence did not link back to the scheduled event");
+  ok(occurrence?.day === 5 && occurrence.marketId === marketId && occurrence.venueId === venueId, "calendar occurrence did not pick up booked location/date");
+  ok(occurrence?.status === "SCHEDULED", "calendar occurrence did not expose scheduled event status");
   ok(event.expectedDemand > 0 && event.ticketYield > 0, "prepared show has no economic preview");
 
   const appearances = state.scheduledAppearances.filter((appearance) => appearance.eventId === event.id);

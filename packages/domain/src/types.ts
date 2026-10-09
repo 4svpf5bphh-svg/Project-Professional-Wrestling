@@ -198,6 +198,26 @@ export interface PromotionShowSeries {
   active: boolean;
 }
 
+export type PromotionShowOccurrenceStatus = "CALENDAR" | WrestlingEventStatus;
+
+export interface PromotionShowOccurrence {
+  id: Id;
+  worldId: Id;
+  promotionId: Id;
+  showSeriesId: Id;
+  name: string;
+  role: PromotionShowSeriesRole;
+  eventType: WrestlingEventType;
+  eventImportance: number;
+  year: number;
+  week: number;
+  day: number | null;
+  marketId: Id | null;
+  venueId: Id | null;
+  eventId: Id | null;
+  status: PromotionShowOccurrenceStatus;
+}
+
 export interface PromotionStanding {
   worldId: Id;
   promotionId: Id;
@@ -321,6 +341,7 @@ export interface WrestlingEvent {
   worldId: Id;
   promotionId: Id;
   showSeriesId?: Id;
+  showOccurrenceId?: Id;
   marketId: Id;
   venueId: Id;
   date: PpwDate;

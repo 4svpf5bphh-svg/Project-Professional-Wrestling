@@ -2,12 +2,13 @@ import type {
   Id,
   PpwDate,
   Promotion,
+  PromotionShowOccurrence,
   PromotionShowSeries,
   PromotionShowSeriesRole,
   Ruleset,
   WorldState,
 } from "../../domain/src/types.js";
-import { ppwDateToWeekIndex } from "./clock.js";
+import { addPpwWeeks, ppwDateToWeekIndex } from "./clock.js";
 
 function seriesId(promotionId: Id, role: "FLAGSHIP" | "PREMIUM"): Id {
   return `show-series:${promotionId}:${role.toLowerCase()}`;
@@ -102,6 +103,93 @@ export function primaryPromotionShowSeriesForDate(
   date: PpwDate,
 ): PromotionShowSeries | null {
   return promotionShowSeriesDueForDate(state, promotionId, date)[0] ?? null;
+}
+
+
+export function promotionShowOccurrenceId(
+  showSeriesId: Id,
+  date: Pick<PpwDate, "year" | "week">,
+): Id {
+  return `show-occurrence:${showSeriesId}:Y${date.year}:W${date.week}`;
+}
+
+function sameWeek(
+  left: Pick<PpwDate, "year" | "week">,
+  right: Pick<PpwDate, "year" | "week">,
+): boolean {
+  return left.year === right.year && left.week === right.week;
+}
+
+/**
+ * Project the shared World calendar without duplicating recurrence data.
+ * A due Show Series creates a stable occurrence identity for that PPW week.
+ * Once a canonical WrestlingEvent exists, the occurrence picks up its actual
+ * day, market, venue and status.
+ */
+export function promotionShowOccurrencesBetween(
+  state: Pick<WorldState, "world" | "ruleset" | "promotions" | "showSeries" | "events">,
+  startDate: PpwDate,
+  weeks: number,
+  promotionId?: Id,
+): PromotionShowOccurrence[] {
+  if (!Number.isSafeInteger(weeks) || weeks < 1 || weeks > 260) {
+    throw new Error("calendar occurrence horizon must be from 1 to 260 PPW weeks");
+  }
+
+  const promotionIds = promotionId
+    ? [promotionId]
+    : state.promotions
+      .filter((promotion) => promotion.lifecycle !== "CLOSED" && promotion.lifecycle !== "DORMANT")
+      .map((promotion) => promotion.id);
+
+  const occurrences: PromotionShowOccurrence[] = [];
+  for (let offset = 0; offset < weeks; offset += 1) {
+    const weekDate = addPpwWeeks(
+      { year: startDate.year, week: startDate.week, day: 1 },
+      offset,
+      state.ruleset.weeksPerYear,
+    );
+    for (const candidatePromotionId of promotionIds) {
+      for (const series of promotionShowSeriesDueForDate(state, candidatePromotionId, weekDate)) {
+        const event = state.events.find((candidate) => (
+          candidate.promotionId === candidatePromotionId
+          && candidate.showSeriesId === series.id
+          && sameWeek(candidate.date, weekDate)
+          && candidate.status !== "CANCELLED"
+        )) ?? state.events.find((candidate) => (
+          candidate.promotionId === candidatePromotionId
+          && candidate.showSeriesId === series.id
+          && sameWeek(candidate.date, weekDate)
+        )) ?? null;
+
+        occurrences.push({
+          id: promotionShowOccurrenceId(series.id, weekDate),
+          worldId: state.world.id,
+          promotionId: candidatePromotionId,
+          showSeriesId: series.id,
+          name: series.name,
+          role: series.role,
+          eventType: series.eventType,
+          eventImportance: series.eventImportance,
+          year: weekDate.year,
+          week: weekDate.week,
+          day: event?.date.day ?? null,
+          marketId: event?.marketId ?? null,
+          venueId: event?.venueId ?? null,
+          eventId: event?.id ?? null,
+          status: event?.status ?? "CALENDAR",
+        });
+      }
+    }
+  }
+
+  return occurrences.sort((left, right) => (
+    left.year - right.year
+    || left.week - right.week
+    || (left.day ?? 8) - (right.day ?? 8)
+    || right.eventImportance - left.eventImportance
+    || left.name.localeCompare(right.name)
+  ));
 }
 
 export function promotionShowSeriesById(
