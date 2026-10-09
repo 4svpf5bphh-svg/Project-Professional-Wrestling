@@ -91,7 +91,12 @@ function currentWeekDraft(
   completeCard: boolean,
 ): DetailedShowDraft {
   const promotion = f.aggregate.state.promotions.find((candidate) => candidate.id === f.promotionId)!;
-  promotion.eventCadenceWeeks = 1;
+  const flagship = f.aggregate.state.showSeries?.find((series) => (
+    series.promotionId === promotion.id && series.role === "FLAGSHIP"
+  ));
+  if (!flagship) throw new Error("attention fixture is missing its Flagship show identity");
+  flagship.cadenceWeeks = 1;
+  flagship.anchorWeek = 0;
   const market = f.aggregate.state.markets.find((candidate) => candidate.id === promotion.homeMarketId)
     ?? f.aggregate.state.markets[0]!;
   const venue = f.aggregate.state.venues.find((candidate) => candidate.marketId === market.id)
@@ -282,7 +287,12 @@ await test("Attention flags a human roster below the minimum viable floor", () =
 await test("Alpha player home view carries the same player-scoped Attention with playable destinations", () => {
   const f = fixture(18505);
   const promotion = f.aggregate.state.promotions.find((candidate) => candidate.id === f.promotionId)!;
-  promotion.eventCadenceWeeks = 1;
+  const flagship = f.aggregate.state.showSeries?.find((series) => (
+    series.promotionId === promotion.id && series.role === "FLAGSHIP"
+  ));
+  if (!flagship) throw new Error("attention fixture is missing its Flagship show identity");
+  flagship.cadenceWeeks = 1;
+  flagship.anchorWeek = 0;
   const contract = f.aggregate.state.contracts.find((candidate) => candidate.id === f.contractId)!;
   contract.endDate = addPpwWeeks(f.aggregate.state.world.currentDate, 2, f.aggregate.state.ruleset.weeksPerYear);
 
