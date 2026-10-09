@@ -349,6 +349,8 @@ await test("Card requires attack roles and preserves them on reload", async () =
     plannedLengthMinutes: 6,
     attackerPersonId: attacker,
     victimPersonId: victim,
+    attackPresentation: "BEATDOWN",
+    attackObjective: "BUILD_SYMPATHY",
   };
   const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
     requestId: "web-card-attack-roles",
@@ -360,8 +362,11 @@ await test("Card requires attack roles and preserves them on reload", async () =
   });
   ok(saved.segments[0]?.attackerPersonId === attacker, "Card lost the attacker role");
   ok(saved.segments[0]?.victimPersonId === victim, "Card lost the victim role");
+  ok(saved.segments[0]?.attackPresentation === "BEATDOWN", "Card lost the attack format");
+  ok(saved.segments[0]?.attackObjective === "BUILD_SYMPATHY", "Card lost private booking objective");
   const loaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
   ok(loaded.segments[0]?.attackerPersonId === attacker && loaded.segments[0]?.victimPersonId === victim, "attack roles did not survive reload");
+  ok(loaded.segments[0]?.attackPresentation === "BEATDOWN" && loaded.segments[0]?.attackObjective === "BUILD_SYMPATHY", "attack format/objective did not survive reload");
 });
 
 await test("Alpha browser card booking derives the reservation from the wrestlers actually booked", async () => {

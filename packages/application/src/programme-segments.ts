@@ -9,6 +9,7 @@ import {
   changePromotionWrestlerAlignment,
   isWrestlerAlignment,
   recentAlignmentVolatilityPenalty,
+  wrestlerAlignmentForPromotion,
 } from "../../sim-core/src/alignment.js";
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
 import type {
@@ -16,6 +17,8 @@ import type {
   DetailedShowDraft,
   DetailedShowSegmentDraft,
   DetailedShowSegmentType,
+  AttackPresentation,
+  AttackObjective,
   WorldPlanningState,
 } from "./planning.js";
 
@@ -45,6 +48,8 @@ export interface ResolvedShowSegment {
   plannedLengthMinutes: number;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
+  attackPresentation: AttackPresentation | null;
+  attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
   executionQuality: number | null;
@@ -55,6 +60,7 @@ export interface ResolvedShowSegment {
   fatigueModifier: number;
   moraleModifier: number;
   alignmentVolatilityModifier: number;
+  angleFitModifier: number;
 }
 
 interface NormalizedDraftSegment {
@@ -65,6 +71,8 @@ interface NormalizedDraftSegment {
   plannedLengthMinutes: number;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
+  attackPresentation: AttackPresentation | null;
+  attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
 }
@@ -127,6 +135,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     plannedLengthMinutes: segment.plannedLengthMinutes,
     attackerPersonId: segment.type === "ATTACK" ? (segment.attackerPersonId ?? null) : null,
     victimPersonId: segment.type === "ATTACK" ? (segment.victimPersonId ?? null) : null,
+    attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? null) : null,
+    attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? null) : null,
     turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
     turnTargetAlignment: segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
   }));
@@ -141,6 +151,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       plannedLengthMinutes: 6,
       attackerPersonId: null,
       victimPersonId: null,
+      attackPresentation: null,
+      attackObjective: null,
       turnPersonId: null,
       turnTargetAlignment: null,
     }));
@@ -160,6 +172,7 @@ function segmentOutcome(
   fatigueModifier: number;
   moraleModifier: number;
   alignmentVolatilityModifier: number;
+  angleFitModifier: number;
 } {
   const people = segment.participantIds
     .map((personId) => state.people.find((person) => person.id === personId))
@@ -196,6 +209,29 @@ function segmentOutcome(
     : clamp((programme.heat - 50) / 10, -4, 4);
   const repetitionPenalty = programme ? Math.min(4, programme.repetition / 20) : 0;
   const programmeModifier = round1(heatEffect - repetitionPenalty);
+  // A format's appeal depends on character roles and rivalry context.
+  // An angle never invents an injury or changes a finish.
+  let angleFitModifier = 0;
+  if (segment.type === "ATTACK" && segment.attackerPersonId && segment.victimPersonId
+    && segment.attackPresentation && segment.attackObjective) {
+    const attacker = people.find((person) => person.id === segment.attackerPersonId);
+    const victim = people.find((person) => person.id === segment.victimPersonId);
+    if (attacker && victim) {
+      const attackerAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, attacker.id);
+      const victimAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, victim.id);
+      const formatFit = segment.attackPresentation === "BLINDSIDE"
+        ? (attackerAlignment === "HEEL" ? 1.5 : attackerAlignment === "FACE" ? -1.5 : 0)
+        : segment.attackPresentation === "BEATDOWN"
+          ? clamp(((attacker.skills.presentation + attacker.skills.safety) / 2 - 50) / 17, -3, 3)
+          : programme ? clamp(((programme.heat ?? 50) - 50) / 12, -3, 3) : -2.5;
+      const objectiveFit = segment.attackObjective === "GENERATE_HEAT"
+        ? (attackerAlignment === "HEEL" && victimAlignment === "FACE" ? 2.5 : -1.5)
+        : segment.attackObjective === "BUILD_SYMPATHY"
+          ? (victimAlignment === "FACE" && attackerAlignment !== "FACE" ? 2.5 : -1.5)
+          : programme ? 1.5 : -2.5;
+      angleFitModifier = round1(clamp(formatFit + objectiveFit, -5, 5));
+    }
+  }
   const alignmentVolatilityModifier = segment.type === "TURN" && segment.turnPersonId
     ? round1(recentAlignmentVolatilityPenalty(state, event.promotionId, [segment.turnPersonId]))
     : 0;
@@ -204,7 +240,8 @@ function segmentOutcome(
       + moraleModifier
       + fatigueModifier
       + programmeModifier * 0.25
-      + alignmentVolatilityModifier * 0.5,
+      + alignmentVolatilityModifier * 0.5
+      + angleFitModifier * 0.35,
     0,
     100,
   ));
@@ -213,7 +250,8 @@ function segmentOutcome(
       + starPower * 0.34
       + event.eventImportance * 0.18
       + programmeModifier
-      + alignmentVolatilityModifier,
+      + alignmentVolatilityModifier
+      + angleFitModifier,
     0,
     100,
   ));
@@ -231,6 +269,7 @@ function segmentOutcome(
     fatigueModifier,
     moraleModifier,
     alignmentVolatilityModifier,
+    angleFitModifier,
   };
 }
 
@@ -247,6 +286,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const plannedLengthMinutes = entry.payload.plannedLengthMinutes;
   const attackerPersonId = entry.payload.attackerPersonId ?? null;
   const victimPersonId = entry.payload.victimPersonId ?? null;
+  const attackPresentation = entry.payload.attackPresentation ?? null;
+  const attackObjective = entry.payload.attackObjective ?? null;
   const turnPersonId = entry.payload.turnPersonId === undefined ? null : entry.payload.turnPersonId;
   const turnTargetAlignment = entry.payload.turnTargetAlignment === undefined ? null : entry.payload.turnTargetAlignment;
   const executionQuality = typeof entry.payload.segmentExecutionQuality === "number" ? entry.payload.segmentExecutionQuality : null;
@@ -259,6 +300,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const alignmentVolatilityModifier = typeof entry.payload.segmentAlignmentVolatilityModifier === "number"
     ? entry.payload.segmentAlignmentVolatilityModifier
     : 0;
+  const angleFitModifier = typeof entry.payload.segmentAngleFitModifier === "number"
+    ? entry.payload.segmentAngleFitModifier : 0;
   if (
     typeof eventId !== "string"
     || typeof promotionId !== "string"
@@ -275,6 +318,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || !Number.isInteger(plannedLengthMinutes)
     || (attackerPersonId !== null && typeof attackerPersonId !== "string")
     || (victimPersonId !== null && typeof victimPersonId !== "string")
+    || (attackPresentation !== null && !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(String(attackPresentation)))
+    || (attackObjective !== null && !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(String(attackObjective)))
     || (turnPersonId !== null && typeof turnPersonId !== "string")
     || (turnTargetAlignment !== null && !isWrestlerAlignment(turnTargetAlignment))
     || (outcome !== null && !["POOR", "FLAT", "SOLID", "STRONG", "HOT"].includes(outcome))
@@ -293,6 +338,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     plannedLengthMinutes,
     attackerPersonId: attackerPersonId as Id | null,
     victimPersonId: victimPersonId as Id | null,
+    attackPresentation: attackPresentation as AttackPresentation | null,
+    attackObjective: attackObjective as AttackObjective | null,
     turnPersonId,
     turnTargetAlignment: turnTargetAlignment as WrestlerAlignment | null,
     executionQuality,
@@ -303,6 +350,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     fatigueModifier,
     moraleModifier,
     alignmentVolatilityModifier,
+    angleFitModifier,
   };
 }
 
@@ -369,6 +417,8 @@ export function recordResolvedShowSegments(
             plannedLengthMinutes: segment.plannedLengthMinutes,
             attackerPersonId: segment.attackerPersonId,
             victimPersonId: segment.victimPersonId,
+            attackPresentation: segment.attackPresentation,
+            attackObjective: segment.attackObjective,
             turnPersonId: segment.turnPersonId,
             turnTargetAlignment: segment.turnTargetAlignment,
             segmentExecutionQuality: outcome.executionQuality,
@@ -379,6 +429,7 @@ export function recordResolvedShowSegments(
             segmentFatigueModifier: outcome.fatigueModifier,
             segmentMoraleModifier: outcome.moraleModifier,
             segmentAlignmentVolatilityModifier: outcome.alignmentVolatilityModifier,
+            segmentAngleFitModifier: outcome.angleFitModifier,
           },
         });
         existing.add(segment.draftSegmentId);

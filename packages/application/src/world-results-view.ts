@@ -16,7 +16,7 @@ import {
   resolvedShowSegmentsForEvent,
   type ResolvedSegmentOutcomeBand,
 } from "./programme-segments.js";
-import type { DetailedShowSegmentType } from "./planning.js";
+import type { DetailedShowSegmentType, AttackPresentation } from "./planning.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const WORLD_RESULTS_HISTORY_LIMIT = 30;
@@ -65,6 +65,7 @@ export interface PlayerWorldResultSegmentView {
   participants: Array<{ personId: Id; name: string }>;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
+  attackPresentation: AttackPresentation | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
   crowdResponse: number | null;
@@ -285,6 +286,7 @@ export function buildPlayerWorldResultsView(
         })),
         attackerPersonId: segment.attackerPersonId,
         victimPersonId: segment.victimPersonId,
+        attackPresentation: segment.attackPresentation,
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,
         crowdResponse: segment.crowdResponse,

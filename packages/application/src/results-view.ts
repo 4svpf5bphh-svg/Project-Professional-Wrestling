@@ -16,7 +16,7 @@ import {
   resolvedShowSegmentsForEvent,
   type ResolvedSegmentOutcomeBand,
 } from "./programme-segments.js";
-import type { DetailedShowSegmentType } from "./planning.js";
+import type { DetailedShowSegmentType, AttackPresentation, AttackObjective } from "./planning.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const PLAYER_SHOW_HISTORY_LIMIT = 12;
@@ -137,6 +137,8 @@ export interface PlayerShowSegmentView {
   programmeId: Id | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
+  attackPresentation: AttackPresentation | null;
+  attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
   executionQuality: number | null;
@@ -347,6 +349,12 @@ function segmentFactors(segment: ReturnType<typeof resolvedShowSegmentsForEvent>
   }
   if (segment.fatigueModifier <= -0.45) {
     factors.push({ label: "Fatigue hurt the delivery", impact: segment.fatigueModifier });
+  }
+  if (Math.abs(segment.angleFitModifier) >= 0.45) {
+    factors.push({
+      label: segment.angleFitModifier > 0 ? "Attack angle connected with the crowd" : "Attack angle struggled to land",
+      impact: segment.angleFitModifier,
+    });
   }
   if (segment.alignmentVolatilityModifier <= -0.45) {
     factors.push({ label: "Recent alignment changes hurt credibility", impact: segment.alignmentVolatilityModifier });
@@ -563,6 +571,8 @@ export function buildPlayerShowHistory(
         programmeId: segment.programmeId,
         attackerPersonId: segment.attackerPersonId,
         victimPersonId: segment.victimPersonId,
+        attackPresentation: segment.attackPresentation,
+        attackObjective: segment.attackObjective,
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,
         executionQuality: segment.executionQuality,

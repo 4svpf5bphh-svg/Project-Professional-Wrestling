@@ -183,19 +183,67 @@ test("ATTACK records explicit attacker and victim into immutable show history", 
     plannedLengthMinutes: 5,
     attackerPersonId: attacker!,
     victimPersonId: victim!,
+    attackPresentation: "BLINDSIDE" as const,
+    attackObjective: "GENERATE_HEAT" as const,
   };
+  setPromotionWrestlerAlignment(setup.state, setup.promotion.id, attacker!, "HEEL");
+  setPromotionWrestlerAlignment(setup.state, setup.promotion.id, victim!, "FACE");
   throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
     ...base, segments: [{ ...attack, victimPersonId: attacker! }],
   }), "distinct attacker and victim");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base,
+    segments: [{ ...attack, attackPresentation: "TOTALLY_UNKNOWN" as typeof attack.attackPresentation }],
+  }), "unsupported presentation or objective");
   upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
     ...base, segments: [attack],
   });
   const saved = setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!;
   ok(saved.attackerPersonId === attacker && saved.victimPersonId === victim, "attack roles were not saved");
+  ok(saved.attackPresentation === "BLINDSIDE" && saved.attackObjective === "GENERATE_HEAT", "attack format/objective lost before resolution");
   setup.state.events.push(completedEvent(setup));
   ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "attack did not resolve");
   const recorded = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
   ok(recorded.attackerPersonId === attacker && recorded.victimPersonId === victim, "attack direction was lost from the ledger");
+  ok(recorded.attackPresentation === "BLINDSIDE" && recorded.attackObjective === "GENERATE_HEAT", "attack authored format/objective lost from ledger");
+  ok(recorded.angleFitModifier > 0, "heel blindside of a babyface should generate some extra heat");
+});
+
+test("an established feud gives a pull-apart brawl a stronger reception than a cold one", () => {
+  const run = (heat: number) => {
+    const setup = fixture(9159);
+    setup.programme.heat = heat;
+    const [attacker, victim] = setup.rosterIds;
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      draftId: "brawl-show",
+      promotionId: setup.promotion.id,
+      targetDate: setup.targetDate,
+      marketId: null,
+      venueId: null,
+      ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4),
+      matches: [],
+      championshipAssignments: [],
+      segments: [{
+        draftSegmentId: "brawl",
+        type: "ATTACK",
+        participantIds: [attacker!, victim!],
+        attackerPersonId: attacker!,
+        victimPersonId: victim!,
+        attackPresentation: "PULL_APART_BRAWL",
+        attackObjective: "ESCALATE_RIVALRY",
+        programmeId: setup.programme.id,
+        plannedLengthMinutes: 6,
+      }],
+    });
+    setup.state.events.push(completedEvent(setup));
+    recordResolvedShowSegments(setup.state, setup.planning);
+    return resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  };
+  const cold = run(20);
+  const hot = run(85);
+  ok(hot.angleFitModifier > cold.angleFitModifier, "brawl angle fit failed to acknowledge rivalry heat");
+  ok(hot.crowdResponse! > cold.crowdResponse!, "hot rivalry failed to improve brawl response");
 });
 
 test("standalone segments become factual show history without inventing Programme activity", () => {

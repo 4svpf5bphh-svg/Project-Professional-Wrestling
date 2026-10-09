@@ -23,6 +23,8 @@ import {
   type DetailedMatchDraft,
   type DetailedShowSegmentDraft,
   type DetailedShowSegmentType,
+  type AttackPresentation,
+  type AttackObjective,
   type DetailedShowSlotRef,
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
@@ -106,6 +108,8 @@ export interface AlphaCardSegmentView {
   plannedLengthMinutes: number;
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
+  attackPresentation?: AttackPresentation | null;
+  attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
   turnTargetAlignment?: WrestlerAlignment | null;
 }
@@ -428,6 +432,12 @@ function normalizeSegments(
     if (segment.type === "ATTACK" && (
       attackerPersonId === victimPersonId || !people.includes(attackerPersonId!) || !people.includes(victimPersonId!)
     )) throw new Error("ATTACK segment requires distinct attacker and victim among its participants");
+    const attackPresentation = segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null;
+    const attackObjective = segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null;
+    if (segment.type === "ATTACK" && (
+      !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(attackPresentation!)
+      || !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(attackObjective!)
+    )) throw new Error("ATTACK segment has an unsupported presentation or objective");
     if (segment.type === "TURN") {
       if (!people.includes(turnPersonId!)) throw new Error("TURN segment wrestler must be one of the segment participants");
       if (!turnTargetAlignment || !["FACE", "HEEL", "TWEENER"].includes(turnTargetAlignment)) {
@@ -457,7 +467,7 @@ function normalizeSegments(
       participantIds: people,
       programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
-      ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId } : {}),
+      ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
       ...(segment.type === "TURN" ? { turnPersonId, turnTargetAlignment } : {}),
     } satisfies DetailedShowSegmentDraft;
   });
@@ -871,6 +881,8 @@ export async function loadAlphaShowCard(
       plannedLengthMinutes: segment.plannedLengthMinutes,
       attackerPersonId: segment.type === "ATTACK" ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: segment.type === "ATTACK" ? (segment.victimPersonId ?? null) : null,
+      attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
+      attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null,
       turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
       turnTargetAlignment: segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
     })),

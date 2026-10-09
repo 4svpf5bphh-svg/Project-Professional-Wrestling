@@ -49,6 +49,9 @@ export type DetailedShowSegmentType =
   | "CELEBRATION"
   | "TURN";
 
+export type AttackPresentation = "BLINDSIDE" | "BEATDOWN" | "PULL_APART_BRAWL";
+export type AttackObjective = "GENERATE_HEAT" | "BUILD_SYMPATHY" | "ESCALATE_RIVALRY";
+
 export interface DetailedShowSegmentDraft {
   draftSegmentId: string;
   type: DetailedShowSegmentType;
@@ -58,6 +61,8 @@ export interface DetailedShowSegmentDraft {
   // Roles are authored intent; participants alone must not invent attack direction.
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
+  attackPresentation?: AttackPresentation | null;
+  attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
   turnTargetAlignment?: WrestlerAlignment | null;
 }
@@ -304,6 +309,12 @@ function validateShowSegmentDraft(
     || !draft.participantIds.includes(attackerPersonId)
     || !draft.participantIds.includes(victimPersonId)
   )) throw new Error("ATTACK segment requires distinct attacker and victim among its participants");
+  const attackPresentation = draft.type === "ATTACK" ? (draft.attackPresentation ?? "BLINDSIDE") : null;
+  const attackObjective = draft.type === "ATTACK" ? (draft.attackObjective ?? "GENERATE_HEAT") : null;
+  if (draft.type === "ATTACK" && (
+    !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(attackPresentation!)
+    || !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(attackObjective!)
+  )) throw new Error("ATTACK segment has an unsupported presentation or objective");
   if (draft.type === "TURN") {
     if (!turnPersonId || !draft.participantIds.includes(turnPersonId)) {
       throw new Error("TURN segment must identify one participating wrestler who turns");
@@ -332,7 +343,7 @@ function validateShowSegmentDraft(
     participantIds: [...draft.participantIds],
     programmeId,
     plannedLengthMinutes: draft.plannedLengthMinutes,
-    ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId } : {}),
+    ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
     ...(draft.type === "TURN" ? { turnPersonId, turnTargetAlignment } : {}),
   };
 }

@@ -240,7 +240,7 @@ export default function ResultsClient(): React.JSX.Element {
                           return (
                             <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
                               <div className={styles.matchTop}>
-                                <span>SLOT {slot.order} · SEGMENT · {label(slot.segment.type)}</span>
+                                <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : label(slot.segment.type)}</span>
                                 <strong>
                                   {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
                                     ? `${slot.segment.plannedLengthMinutes} min`
@@ -259,6 +259,9 @@ export default function ResultsClient(): React.JSX.Element {
                               ) : null}
                               <div className={styles.matchMeta}>
                                 <span>{slot.segment.programmeId ? "Programme attached" : "Standalone segment"}</span>
+                                {slot.segment.type === "ATTACK" && slot.segment.attackObjective ? (
+                                  <span>Booking objective: {label(slot.segment.attackObjective)}</span>
+                                ) : null}
                                 {slot.segment.executionQuality !== null ? <span>Execution {decimal(slot.segment.executionQuality)}</span> : null}
                                 {slot.segment.type === "TURN" && slot.segment.turnTargetAlignment ? (
                                   <span>
@@ -428,7 +431,7 @@ export default function ResultsClient(): React.JSX.Element {
                               return (
                                 <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
                                   <div className={styles.matchTop}>
-                                    <span>SLOT {slot.order} · SEGMENT · {label(slot.segment.type)}</span>
+                                    <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : label(slot.segment.type)}</span>
                                     <strong>
                                       {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
                                         ? "SEGMENT"

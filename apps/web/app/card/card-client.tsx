@@ -40,6 +40,8 @@ const MATCH_FINISHES: BookableFinish[] = ["CLEAN_PIN", "SUBMISSION", "FLASH_PIN"
 const SEGMENT_TYPES: AlphaCardSegmentView["type"][] = [
   "PROMO", "INTERVIEW", "CONFRONTATION", "CHALLENGE", "ATTACK", "CELEBRATION", "TURN",
 ];
+const ATTACK_FORMATS = ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"] as const;
+const ATTACK_OBJECTIVES = ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"] as const;
 const SHOW_TIME_GUIDE_MINUTES = 120;
 const STYLE_DIMENSIONS = [
   ["competitiveness", "Competitive"],
@@ -466,6 +468,8 @@ export default function CardClient(): React.JSX.Element {
       plannedLengthMinutes: 6,
       attackerPersonId: null,
       victimPersonId: null,
+      attackPresentation: type === "ATTACK" ? "BLINDSIDE" : null,
+      attackObjective: type === "ATTACK" ? "GENERATE_HEAT" : null,
       turnPersonId: null,
       turnTargetAlignment: null,
     }]);
@@ -616,6 +620,8 @@ export default function CardClient(): React.JSX.Element {
         ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: type === "ATTACK" && segment.type === "ATTACK" && participantIds.includes(segment.victimPersonId ?? "")
         ? (segment.victimPersonId ?? null) : null,
+      attackPresentation: type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
+      attackObjective: type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null,
       turnPersonId: type === "TURN"
         ? (segment.turnPersonId && participantIds.includes(segment.turnPersonId) ? segment.turnPersonId : participantIds.find(Boolean) ?? null)
         : null,
@@ -842,7 +848,8 @@ export default function CardClient(): React.JSX.Element {
     if (segment.type === "ATTACK") {
       const attacker = segment.attackerPersonId ? personName(segment.attackerPersonId) : "Choose attacker";
       const victim = segment.victimPersonId ? personName(segment.victimPersonId) : "Choose victim";
-      return `Attack · ${attacker} attacks ${victim} · ${segment.plannedLengthMinutes} min`;
+      const format = segment.attackPresentation ? pretty(segment.attackPresentation) : "Attack";
+      return `${format} · ${attacker} attacks ${victim} · ${segment.plannedLengthMinutes} min`;
     }
     return `${pretty(segment.type)} · ${people} · ${segment.plannedLengthMinutes} min`;
   }
@@ -1210,6 +1217,40 @@ export default function CardClient(): React.JSX.Element {
                     <MinuteField value={segment.plannedLengthMinutes} min={2} max={20} disabled={!view.canEdit} onCommit={(plannedLengthMinutes) => updateSegment(segment.draftSegmentId, { plannedLengthMinutes })} />
                   </div>
                 </div>
+
+                {segment.type === "ATTACK" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Attack format</span>
+                      <small>The angle the audience sees</small>
+                    </div>
+                    <div className={styles.slotTypeRow}>
+                      {ATTACK_FORMATS.map((format) => (
+                        <button type="button" key={format}
+                          className={(segment.attackPresentation ?? "BLINDSIDE") === format ? styles.typeActive : styles.secondaryButton}
+                          disabled={!view.canEdit}
+                          onClick={() => updateSegment(segment.draftSegmentId, { attackPresentation: format })}>
+                          {pretty(format)}
+                        </button>
+                      ))}
+                    </div>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Booking objective</span>
+                      <small>Private to your promotion</small>
+                    </div>
+                    <div className={styles.slotTypeRow}>
+                      {ATTACK_OBJECTIVES.map((objective) => (
+                        <button type="button" key={objective}
+                          className={(segment.attackObjective ?? "GENERATE_HEAT") === objective ? styles.typeActive : styles.secondaryButton}
+                          disabled={!view.canEdit}
+                          onClick={() => updateSegment(segment.draftSegmentId, { attackObjective: objective })}>
+                          {pretty(objective)}
+                        </button>
+                      ))}
+                    </div>
+                    <small className={styles.sideLabel}>A blindside favours credible aggressors; pull-apart brawls need a rivalry with heat. Booking goals may fall flat if the characters do not fit.</small>
+                  </div>
+                ) : null}
 
                 {segment.type === "TURN" ? (
                   <div className={styles.controls}>
