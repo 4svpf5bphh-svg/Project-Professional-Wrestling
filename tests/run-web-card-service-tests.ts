@@ -68,7 +68,12 @@ async function reservedShowFixture(seed: number) {
     promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE"
   ));
   if (!independent) throw new Error("test World has no active takeover-eligible promotion");
-  independent.eventCadenceWeeks = 1;
+  const flagship = aggregate.state.showSeries?.find((series) => (
+    series.promotionId === independent.id && series.role === "FLAGSHIP"
+  ));
+  if (!flagship) throw new Error("card fixture is missing its Flagship show identity");
+  flagship.cadenceWeeks = 1;
+  flagship.anchorWeek = 0;
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
 
@@ -364,7 +369,12 @@ await test("a logistics-only show draft opens in the builder and the first valid
     promotion.playerTakeoverEligibility === "STANDARD" && promotion.lifecycle === "ACTIVE"
   ));
   if (!independent) throw new Error("slot-builder fixture has no takeover-eligible promotion");
-  independent.eventCadenceWeeks = 1;
+  const flagship = aggregate.state.showSeries?.find((series) => (
+    series.promotionId === independent.id && series.role === "FLAGSHIP"
+  ));
+  if (!flagship) throw new Error("card fixture is missing its Flagship show identity");
+  flagship.cadenceWeeks = 1;
+  flagship.anchorWeek = 0;
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
 
