@@ -263,8 +263,14 @@ test("human PPV week requires regular and special slots but never two normal sho
   const special = state.showSeries![specialIndex]!;
   state.showSeries![specialIndex] = { ...special, cadenceWeeks: 52, anchorWeek: 0 };
 
-  const regularRoster = participantIds.slice(0, 5);
-  const specialRoster = participantIds.slice(5, 10);
+  const regularRoster = participantIds.slice(0, 6);
+  const specialRoster = participantIds.slice(4, 10);
+  for (const personId of participantIds.slice(4, 6)) {
+    const person = state.people.find((candidate) => candidate.id === personId)!;
+    person.careerStage = "PRIME";
+    person.skills.stamina = 100;
+    person.fatigue = 0;
+  }
   prepareHumanShow(state, {
     promotionId,
     showSeriesId: regular.id,
