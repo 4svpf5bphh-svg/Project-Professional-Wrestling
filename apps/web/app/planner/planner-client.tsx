@@ -67,6 +67,10 @@ function weekKey(week: WeekView): string {
   return `${week.year}:${week.week}`;
 }
 
+function showEditKey(week: WeekView, showSeriesId: string): string {
+  return `${weekKey(week)}:${showSeriesId}`;
+}
+
 function initialPlan(
   view: PlayerSixWeekPlannerView,
   week: WeekView,
@@ -74,20 +78,25 @@ function initialPlan(
 ): PlanForm | null {
   const promotion = view.promotion;
   if (!promotion) return null;
-  const existing = week.shows[0] ?? null;
+  const selectedSeries = preferredShowSeriesId
+    ? week.showSeriesOptions.find((series) => series.showSeriesId === preferredShowSeriesId) ?? null
+    : week.showSeriesOptions.find((series) => (
+      !week.shows.some((show) => show.showSeriesId === series.showSeriesId)
+    )) ?? week.showSeriesOptions[0] ?? null;
+  const selectedShowSeriesId = selectedSeries?.showSeriesId ?? week.shows[0]?.showSeriesId ?? "";
+  const existing = selectedShowSeriesId
+    ? week.shows.find((show) => show.showSeriesId === selectedShowSeriesId) ?? null
+    : week.shows[0] ?? null;
   const marketId = existing?.marketId ?? promotion.homeMarketId ?? promotion.markets[0]?.marketId;
   const market = promotion.markets.find((candidate) => candidate.marketId === marketId) ?? promotion.markets[0];
   const venueId = existing?.venueId ?? market?.venues[0]?.venueId;
-  if (!market || !venueId) return null;
+  if (!market || !venueId || !selectedShowSeriesId) return null;
 
-  const selectedSeries = preferredShowSeriesId
-    ? week.showSeriesOptions.find((series) => series.showSeriesId === preferredShowSeriesId) ?? null
-    : null;
   return {
     year: week.year,
     week: week.week,
-    showSeriesId: existing?.showSeriesId ?? selectedSeries?.showSeriesId ?? week.showSeries?.showSeriesId ?? "",
-    day: existing?.targetDate.day ?? 6,
+    showSeriesId: selectedShowSeriesId,
+    day: existing?.targetDate.day ?? (selectedSeries?.eventType === "MAJOR" ? 7 : 6),
     marketId: market.marketId,
     venueId,
     ticketStrategy: existing?.ticketStrategy ?? "STANDARD",
@@ -134,7 +143,7 @@ export default function PlannerClient(): React.JSX.Element {
       return;
     }
     setError(null);
-    setEditingKey(weekKey(week));
+    setEditingKey(showEditKey(week, next.showSeriesId));
     setForm(next);
   }
 
@@ -160,7 +169,7 @@ export default function PlannerClient(): React.JSX.Element {
         block: "start",
       });
     });
-    if (target.canPlan && target.shows.length <= 1) beginEdit(target, focusShowSeriesId);
+    if (target.canPlan) beginEdit(target, focusShowSeriesId);
   }, [view, focusedKey, focusShowSeriesId]);
 
   function cancelEdit(): void {
@@ -176,7 +185,7 @@ export default function PlannerClient(): React.JSX.Element {
 
   async function savePlan(week: WeekView): Promise<void> {
     if (!view?.promotion || !form) return;
-    const key = weekKey(week);
+    const key = showEditKey(week, form.showSeriesId);
     let requestId = requestIds.current.get(key);
     if (!requestId) {
       requestId = crypto.randomUUID();
@@ -255,18 +264,18 @@ export default function PlannerClient(): React.JSX.Element {
 
           <section className={styles.timeline}>
             {view.promotion.weeks.map((week) => {
-              const existing = week.shows[0] ?? null;
-              const isEditing = editingKey === weekKey(week) && form !== null;
+              const isEditing = form !== null && editingKey === showEditKey(week, form.showSeriesId);
               const selectedMarket = isEditing
                 ? view.promotion!.markets.find((market) => market.marketId === form!.marketId) ?? null
                 : null;
               const selectedVenue = selectedMarket && isEditing
                 ? selectedMarket.venues.find((venue) => venue.venueId === form!.venueId) ?? null
                 : null;
-              const editableExisting = existing?.availableActions.includes("EDIT_DRAFT") ?? false;
-              const canOpenEditor = week.canPlan && (existing === null || editableExisting) && week.shows.length <= 1;
+              const unplannedSeries = week.showSeriesOptions.filter((series) => (
+                !week.shows.some((show) => show.showSeriesId === series.showSeriesId)
+              ));
               const canSave = Boolean(
-                isEditing && form!.marketId && form!.venueId && view.world.phase === "OPEN" && !saving,
+                isEditing && form!.showSeriesId && form!.marketId && form!.venueId && view.world.phase === "OPEN" && !saving,
               );
 
               const isFocused = focusedKey === weekKey(week);
@@ -280,9 +289,9 @@ export default function PlannerClient(): React.JSX.Element {
                     <div>
                       <span className={styles.eyebrow}>{week.isCurrentWeek ? "CURRENT WEEK" : `+${week.offset} WEEK${week.offset === 1 ? "" : "S"}`}</span>
                       <h2>Year {week.year} · Week {week.week}</h2>
-                      {week.showSeries ? (
+                      {week.showSeriesOptions.length > 0 ? (
                         <small className={styles.showIdentity}>
-                          {week.showSeries.name} · {label(week.showSeries.role)}
+                          {week.showSeriesOptions.map((series) => `${series.name} · ${label(series.role)}`).join("  |  ")}
                         </small>
                       ) : null}
                     </div>
@@ -293,8 +302,8 @@ export default function PlannerClient(): React.JSX.Element {
 
                   {week.shows.length === 0 ? (
                     <div className={styles.emptyShow}>
-                      <strong>{week.showSeries ? `${week.showSeries.name} not planned` : "No show planned"}</strong>
-                      <span>{week.showRequired ? "This show identity needs a reserved show before lock." : "No operating show is scheduled for this promotion in this week."}</span>
+                      <strong>{week.showSeriesOptions.length > 1 ? "Two shows due this week" : week.showSeries ? `${week.showSeries.name} not planned` : "No show planned"}</strong>
+                      <span>{week.showRequired ? "Plan each due show identity before World Lock." : "No operating show is scheduled for this promotion in this week."}</span>
                     </div>
                   ) : week.shows.map((show) => {
                     const timeRemaining = SHOW_TIME_GUIDE_MINUTES - show.plannedShowMinutes;
@@ -302,7 +311,7 @@ export default function PlannerClient(): React.JSX.Element {
                       <section className={styles.showCard} key={show.draftId}>
                         <div className={styles.showTop}>
                           <div>
-                            <span>{DAY_NAMES[show.targetDate.day] ?? `Day ${show.targetDate.day}`}</span>
+                            <span>{show.showSeriesName ?? "Scheduled show"} · {DAY_NAMES[show.targetDate.day] ?? `Day ${show.targetDate.day}`}</span>
                             <strong>{show.venueName ?? "Venue not selected"}</strong>
                             <small>{show.marketName ?? "Market not selected"}{show.ticketStrategy ? ` · ${label(show.ticketStrategy)}` : ""}</small>
                           </div>
@@ -361,27 +370,27 @@ export default function PlannerClient(): React.JSX.Element {
                             {show.slotCount > 0 ? "Edit card" : "Book card"}
                           </a>
                         ) : null}
+                        {show.availableActions.includes("EDIT_DRAFT") && show.showSeriesId ? (
+                          <button className={styles.editButton} onClick={() => beginEdit(week, show.showSeriesId)}>
+                            Edit {show.showSeriesName ?? "show"} details
+                          </button>
+                        ) : null}
                       </section>
                     );
                   })}
 
-                  {week.shows.length > 1 ? <div className={styles.warning}>Multiple drafts exist in this week. Resolve them before using the Alpha planner editor.</div> : null}
-
-                  {canOpenEditor && !isEditing ? (
-                    <button className={styles.editButton} onClick={() => beginEdit(week)}>
-                      {existing ? "Edit show details" : "Plan show"}
+                  {!isEditing && week.canPlan ? unplannedSeries.map((series) => (
+                    <button className={styles.editButton} key={series.showSeriesId} onClick={() => beginEdit(week, series.showSeriesId)}>
+                      Plan {series.name}
                     </button>
-                  ) : null}
+                  )) : null}
 
                   {isEditing ? (
                     <section className={styles.editor}>
                       <div className={styles.editorGrid}>
                         <label>
                           <span>Show</span>
-                          <select
-                            value={form!.showSeriesId}
-                            onChange={(event) => setForm({ ...form!, showSeriesId: event.target.value })}
-                          >
+                          <select value={form!.showSeriesId} disabled>
                             {week.showSeriesOptions.map((series) => (
                               <option value={series.showSeriesId} key={series.showSeriesId}>
                                 {series.name} · {label(series.role)}

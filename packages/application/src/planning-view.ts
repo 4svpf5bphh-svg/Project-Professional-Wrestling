@@ -10,10 +10,7 @@ import type {
   WrestlingEventType,
 } from "../../domain/src/types.js";
 import { addPpwWeeks, comparePpwDates } from "../../sim-core/src/clock.js";
-import {
-  primaryPromotionShowSeriesForDate,
-  promotionShowSeriesDueForDate,
-} from "../../sim-core/src/show-calendar.js";
+import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { activePromotionControlForPlayer, activeWorldMembership } from "./ownership.js";
 import {
   DETAILED_PLANNING_HORIZON_WEEKS,
@@ -26,7 +23,10 @@ import {
   type PlayerShowPlanningState,
   type PlayerShowReadiness,
 } from "./planning-status.js";
-import { maxShowParticipantsForDate } from "./show-capacity.js";
+import {
+  maxShowParticipantsForDate,
+  maxShowParticipantsForEventType,
+} from "./show-capacity.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export type PlayerPlannerShowState = "UNPLANNED" | PlayerShowPlanningState;
@@ -158,6 +158,7 @@ export interface PlayerPlannerWeekView {
     role: PromotionShowSeriesRole;
     eventType: WrestlingEventType;
     eventImportance: number;
+    maxParticipants: number;
   }>;
   canPlan: boolean;
   minParticipants: number;
@@ -512,6 +513,7 @@ export function buildPlayerSixWeekPlannerView(
           role: series.role,
           eventType: series.eventType,
           eventImportance: series.eventImportance,
+          maxParticipants: maxShowParticipantsForEventType(promotion, series.eventType),
         })),
         canPlan: required && aggregate.runtime.phase === "OPEN",
         minParticipants: aggregate.state.ruleset.minEventParticipants,

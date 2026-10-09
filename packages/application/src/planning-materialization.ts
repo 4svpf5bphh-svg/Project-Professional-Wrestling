@@ -18,7 +18,12 @@ import { bookHumanChampionshipMatch } from "../../sim-core/src/human-championshi
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
 import { defaultPlannedFinishForIntent } from "../../sim-core/src/match-finishes.js";
 import { assessMatchStyleReadiness } from "../../sim-core/src/match-style.js";
-import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
+import {
+  promotionShowSeriesById,
+  promotionShowSeriesDueForDate,
+  promotionShowSeriesSlot,
+  type PromotionShowSlot,
+} from "../../sim-core/src/show-calendar.js";
 import type {
   DetailedShowDraft,
   DetailedShowReservation,
@@ -103,6 +108,20 @@ function promotionRunsAtDate(
   return showSeriesId ? dueSeries.some((series) => series.id === showSeriesId) : dueSeries.length > 0;
 }
 
+function reservationSlot(state: WorldState, reservation: DetailedShowReservation): PromotionShowSlot {
+  if (!reservation.showSeriesId) return "REGULAR";
+  const series = promotionShowSeriesById(state, reservation.showSeriesId);
+  return series ? promotionShowSeriesSlot(series) : "REGULAR";
+}
+
+function eventSlot(state: WorldState, event: WrestlingEvent): PromotionShowSlot {
+  if (event.showSeriesId) {
+    const series = promotionShowSeriesById(state, event.showSeriesId);
+    if (series) return promotionShowSeriesSlot(series);
+  }
+  return event.type === "MAJOR" ? "SPECIAL" : "REGULAR";
+}
+
 function contractCoversDate(state: WorldState, contract: Contract, date: PpwDate): boolean {
   if (contract.status !== "SIGNED") return false;
   return comparePpwDates(date, contract.startDate, state.ruleset.weeksPerYear) >= 0
@@ -162,7 +181,14 @@ export function assessDetailedShowReservation(
   if (state.events.some((event) => (
     event.promotionId === reservation.promotionId
     && event.status !== "CANCELLED"
+    && samePpwDate(event.date, reservation.targetDate)
+  ))) {
+    reasons.push("PROMOTION_SHOW_ALREADY_EXISTS");
+  } else if (state.events.some((event) => (
+    event.promotionId === reservation.promotionId
+    && event.status !== "CANCELLED"
     && samePpwWeek(event.date, reservation.targetDate)
+    && eventSlot(state, event) === reservationSlot(state, reservation)
   ))) {
     reasons.push("PROMOTION_SHOW_ALREADY_EXISTS");
   }

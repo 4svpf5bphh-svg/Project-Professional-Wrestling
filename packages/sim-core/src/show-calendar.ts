@@ -68,6 +68,29 @@ function seriesForPromotion(
   return promotion ? defaultPromotionShowSeries(state.world.id, promotion, state.ruleset) : [];
 }
 
+export type PromotionShowSlot = "REGULAR" | "SPECIAL";
+
+export function promotionShowSeriesSlot(
+  series: Pick<PromotionShowSeries, "role">,
+): PromotionShowSlot {
+  return series.role === "SPECIAL" || series.role === "PREMIUM" ? "SPECIAL" : "REGULAR";
+}
+
+function greatestCommonDivisor(left: number, right: number): number {
+  let a = Math.abs(left);
+  let b = Math.abs(right);
+  while (b !== 0) {
+    const next = a % b;
+    a = b;
+    b = next;
+  }
+  return a || 1;
+}
+
+function seriesEverCollide(left: PromotionShowSeries, right: PromotionShowSeries): boolean {
+  return Math.abs(left.anchorWeek - right.anchorWeek) % greatestCommonDivisor(left.cadenceWeeks, right.cadenceWeeks) === 0;
+}
+
 export function promotionShowSeriesDueForDate(
   state: Pick<WorldState, "world" | "ruleset" | "promotions" | "showSeries">,
   promotionId: Id,
@@ -80,22 +103,24 @@ export function promotionShowSeriesDueForDate(
       && (weekIndex - series.anchorWeek) % Math.max(1, series.cadenceWeeks) === 0
     ))
     .sort((left, right) => {
-      const rank = (role: PromotionShowSeriesRole): number => {
-        if (role === "PREMIUM") return 5;
-        if (role === "SPECIAL") return 4;
-        if (role === "FLAGSHIP") return 3;
-        if (role === "SECONDARY") return 2;
+      const slotRank = (series: PromotionShowSeries): number => promotionShowSeriesSlot(series) === "REGULAR" ? 0 : 1;
+      const roleRank = (role: PromotionShowSeriesRole): number => {
+        if (role === "FLAGSHIP") return 5;
+        if (role === "SECONDARY") return 4;
+        if (role === "DEVELOPMENTAL") return 3;
+        if (role === "PREMIUM") return 2;
         return 1;
       };
-      return rank(right.role) - rank(left.role) || left.id.localeCompare(right.id);
+      return slotRank(left) - slotRank(right)
+        || roleRank(right.role) - roleRank(left.role)
+        || left.id.localeCompare(right.id);
     });
 }
 
 /**
- * Alpha currently supports one required operating show in a due week.
- * Multiple due identities are therefore resolved to one primary series.
- * Future multi-show scheduling should consume promotionShowSeriesDueForDate()
- * directly rather than weakening this selection rule.
+ * Compatibility selector for callers that still expect one primary show.
+ * Regular operating shows win over Special/Major events when both are due.
+ * Slot-aware scheduling should consume promotionShowSeriesDueForDate() directly.
  */
 export function primaryPromotionShowSeriesForDate(
   state: Pick<WorldState, "world" | "ruleset" | "promotions" | "showSeries">,
@@ -228,6 +253,29 @@ export function validatePromotionShowSeriesState(
     for (const promotion of state.promotions) {
       if ((flagshipByPromotion.get(promotion.id) ?? 0) !== 1) {
         errors.push(`promotion ${promotion.id} requires exactly one active flagship show series`);
+      }
+
+      const active = (state.showSeries ?? []).filter((series) => series.active && series.promotionId === promotion.id);
+      for (const series of active) {
+        const specialRole = series.role === "SPECIAL" || series.role === "PREMIUM";
+        if (specialRole && series.eventType !== "MAJOR") {
+          errors.push(`special show series ${series.id} must use MAJOR event type`);
+        }
+        if (!specialRole && series.eventType !== "REGULAR") {
+          errors.push(`regular show series ${series.id} must use REGULAR event type`);
+        }
+      }
+
+      for (let leftIndex = 0; leftIndex < active.length; leftIndex += 1) {
+        for (let rightIndex = leftIndex + 1; rightIndex < active.length; rightIndex += 1) {
+          const left = active[leftIndex]!;
+          const right = active[rightIndex]!;
+          if (promotionShowSeriesSlot(left) !== promotionShowSeriesSlot(right)) continue;
+          if (!seriesEverCollide(left, right)) continue;
+          errors.push(
+            `promotion ${promotion.id} has two ${promotionShowSeriesSlot(left).toLowerCase()} show identities that can collide in the same PPW week: ${left.name} and ${right.name}`,
+          );
+        }
       }
     }
   }

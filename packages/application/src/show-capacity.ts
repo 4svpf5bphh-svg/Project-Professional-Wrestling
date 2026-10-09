@@ -1,4 +1,4 @@
-import type { PpwDate, Promotion, WorldState } from "../../domain/src/types.js";
+import type { PpwDate, Promotion, WorldState, WrestlingEventType } from "../../domain/src/types.js";
 import { primaryPromotionShowSeriesForDate } from "../../sim-core/src/show-calendar.js";
 
 /**
@@ -8,10 +8,9 @@ import { primaryPromotionShowSeriesForDate } from "../../sim-core/src/show-calen
  * not the final show-capacity design. Show/Calendar architecture will replace
  * the tier-only model with show identity/importance expectations.
  */
-export function maxShowParticipantsForDate(
-  state: WorldState,
+export function maxShowParticipantsForEventType(
   promotion: Promotion,
-  date: PpwDate,
+  eventType: WrestlingEventType,
 ): number {
   const regular = promotion.playerTakeoverEligibility === "STANDARD"
     ? 20
@@ -24,6 +23,14 @@ export function maxShowParticipantsForDate(
           : promotion.tier === "INDEPENDENT"
             ? 10
             : 8;
+  return eventType === "MAJOR" ? regular + 2 : regular;
+}
+
+export function maxShowParticipantsForDate(
+  state: WorldState,
+  promotion: Promotion,
+  date: PpwDate,
+): number {
   const showSeries = primaryPromotionShowSeriesForDate(state, promotion.id, date);
-  return showSeries?.eventType === "MAJOR" ? regular + 2 : regular;
+  return maxShowParticipantsForEventType(promotion, showSeries?.eventType ?? "REGULAR");
 }

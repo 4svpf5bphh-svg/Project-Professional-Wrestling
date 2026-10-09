@@ -1,7 +1,7 @@
 import type { WorldState, WrestlingEvent } from "../../domain/src/types.js";
 import { ppwDateToWeekIndex } from "./clock.js";
-import { shouldPromotionRunEvent } from "./events.js";
 import { LedgerWriter } from "./ledger.js";
+import { promotionShowSeriesDueForDate } from "./show-calendar.js";
 
 export type HumanWeekReadinessStatus = "NOT_REQUIRED" | "READY" | "SHOW_REQUIRED" | "CARD_REQUIRED";
 export type RoutineContinuityScope = "SHOW_AND_CARD" | "CARD_ONLY";
@@ -13,13 +13,13 @@ export interface HumanWeekReadiness {
   eventId: string | null;
 }
 
-function currentWeekEvent(state: WorldState, promotionId: string): WrestlingEvent | null {
+function currentWeekEvents(state: WorldState, promotionId: string): WrestlingEvent[] {
   const weekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
-  return state.events.find((event) => (
+  return state.events.filter((event) => (
     event.promotionId === promotionId
     && event.status !== "CANCELLED"
     && ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear) === weekIndex
-  )) ?? null;
+  ));
 }
 
 function hasCompleteCard(state: WorldState, event: WrestlingEvent): boolean {
@@ -53,18 +53,25 @@ export function humanWeekReadiness(state: WorldState, promotionId: string): Huma
   if (!promotion) throw new Error(`unknown promotion ${promotionId}`);
   if (promotion.controllerType !== "HUMAN") throw new Error("week readiness is only defined for a human-controlled promotion");
 
-  if (!shouldPromotionRunEvent(state, promotion)) {
+  const dueSeries = promotionShowSeriesDueForDate(state, promotion.id, state.world.currentDate);
+  if (dueSeries.length === 0) {
     return { promotionId, status: "NOT_REQUIRED", readyToAdvance: true, eventId: null };
   }
 
-  const event = currentWeekEvent(state, promotion.id);
-  if (!event) {
+  const events = currentWeekEvents(state, promotion.id);
+  const matchedEvents = dueSeries.map((series) => (
+    events.find((event) => event.showSeriesId === series.id)
+      ?? (dueSeries.length === 1 ? events.find((event) => !event.showSeriesId) ?? null : null)
+  ));
+  if (matchedEvents.some((event) => event === null)) {
     return { promotionId, status: "SHOW_REQUIRED", readyToAdvance: false, eventId: null };
   }
-  if (!hasCompleteCard(state, event)) {
-    return { promotionId, status: "CARD_REQUIRED", readyToAdvance: false, eventId: event.id };
+
+  const incomplete = matchedEvents.find((event) => event !== null && !hasCompleteCard(state, event)) ?? null;
+  if (incomplete) {
+    return { promotionId, status: "CARD_REQUIRED", readyToAdvance: false, eventId: incomplete.id };
   }
-  return { promotionId, status: "READY", readyToAdvance: true, eventId: event.id };
+  return { promotionId, status: "READY", readyToAdvance: true, eventId: matchedEvents[0]?.id ?? null };
 }
 
 export function prepareRoutineContinuityForWeek(state: WorldState): Map<string, RoutineContinuityScope> {

@@ -6,10 +6,14 @@ import {
   activeContractsForPromotion,
   claimIndependentPromotionForHuman,
   createWorld,
+  humanWeekReadiness,
+  planWorldEvents,
   prepareHumanMatchCard,
   prepareHumanShow,
   promotionShowOccurrencesBetween,
+  promotionShowSeriesSlot,
   resolveWorldWeek,
+  validatePromotionShowSeriesState,
 } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
@@ -223,6 +227,100 @@ test("human promotion cannot prepare two shows for the same required week", () =
   }
   ok(rejected, "human promotion could prepare a second show in the same required week");
   ok(state.events.filter((event) => event.promotionId === promotionId).length === 1, "duplicate show mutated World state");
+});
+
+
+
+test("show calendar allows alternating regular identities but rejects same-slot collisions", () => {
+  const state = createWorld(88221, DEFAULT_RULESET);
+  const promotion = state.promotions.find((candidate) => candidate.lifecycle === "ACTIVE")!;
+  const flagshipIndex = state.showSeries!.findIndex((series) => series.promotionId === promotion.id && series.role === "FLAGSHIP");
+  const flagship = state.showSeries![flagshipIndex]!;
+  state.showSeries![flagshipIndex] = { ...flagship, cadenceWeeks: 2, anchorWeek: 0 };
+
+  const secondary = {
+    ...flagship,
+    id: `${flagship.id}:alternate`,
+    name: `${promotion.name} Alternate`,
+    role: "SECONDARY" as const,
+    cadenceWeeks: 2,
+    anchorWeek: 1,
+  };
+  state.showSeries!.push(secondary);
+
+  let errors = validatePromotionShowSeriesState(state);
+  ok(!errors.some((error) => error.includes("two regular show identities")), "alternating regular identities were incorrectly rejected");
+
+  state.showSeries![state.showSeries!.length - 1] = { ...secondary, anchorWeek: 0 };
+  errors = validatePromotionShowSeriesState(state);
+  ok(errors.some((error) => error.includes("two regular show identities")), "same-week regular identity collision was not rejected");
+});
+
+test("human PPV week requires regular and special slots but never two normal shows", () => {
+  const { state, promotionId, participantIds, marketId, venueId } = fixture(10915);
+  const regular = state.showSeries!.find((series) => series.promotionId === promotionId && promotionShowSeriesSlot(series) === "REGULAR")!;
+  const specialIndex = state.showSeries!.findIndex((series) => series.promotionId === promotionId && promotionShowSeriesSlot(series) === "SPECIAL");
+  const special = state.showSeries![specialIndex]!;
+  state.showSeries![specialIndex] = { ...special, cadenceWeeks: 52, anchorWeek: 0 };
+
+  const regularRoster = participantIds.slice(0, 5);
+  const specialRoster = participantIds.slice(5, 10);
+  prepareHumanShow(state, {
+    promotionId,
+    showSeriesId: regular.id,
+    marketId,
+    venueId,
+    day: 4,
+    ticketStrategy: "STANDARD",
+    participantIds: regularRoster,
+  });
+  ok(humanWeekReadiness(state, promotionId).status === "SHOW_REQUIRED", "one prepared slot incorrectly satisfied a two-show PPV week");
+
+  const alternateVenue = state.venues.find((venue) => venue.marketId === marketId && venue.id !== venueId)?.id ?? venueId;
+  prepareHumanShow(state, {
+    promotionId,
+    showSeriesId: special.id,
+    marketId,
+    venueId: alternateVenue,
+    day: 7,
+    ticketStrategy: "PREMIUM",
+    participantIds: specialRoster,
+  });
+  ok(state.events.filter((event) => event.promotionId === promotionId).length === 2, "regular plus special show did not coexist");
+  ok(humanWeekReadiness(state, promotionId).status === "CARD_REQUIRED", "both show slots were not recognised after preparation");
+
+  let duplicateRegularRejected = false;
+  try {
+    prepareHumanShow(state, {
+      promotionId,
+      showSeriesId: regular.id,
+      marketId,
+      venueId,
+      day: 5,
+      ticketStrategy: "STANDARD",
+      participantIds: regularRoster,
+    });
+  } catch {
+    duplicateRegularRejected = true;
+  }
+  ok(duplicateRegularRejected, "a second regular show was allowed in the same PPW week");
+});
+
+test("AI scheduling creates at most one event per weekly slot even when planning is retried", () => {
+  const state = createWorld(10916, DEFAULT_RULESET);
+  const promotion = state.promotions.find((candidate) => candidate.controllerType === "AI" && candidate.lifecycle === "ACTIVE")!;
+  const specialIndex = state.showSeries!.findIndex((series) => series.promotionId === promotion.id && promotionShowSeriesSlot(series) === "SPECIAL");
+  const special = state.showSeries![specialIndex]!;
+  state.showSeries![specialIndex] = { ...special, cadenceWeeks: 52, anchorWeek: 0 };
+
+  planWorldEvents(state);
+  const first = state.events.filter((event) => event.promotionId === promotion.id && event.status !== "CANCELLED");
+  ok(first.length === 2, `expected regular + special AI shows, found ${first.length}`);
+  ok(new Set(first.map((event) => event.date.day)).size === 2, "AI scheduled regular and special shows on the same PPW day");
+
+  planWorldEvents(state);
+  const second = state.events.filter((event) => event.promotionId === promotion.id && event.status !== "CANCELLED");
+  ok(second.length === 2, "AI planning retry flooded the week with duplicate shows");
 });
 
 console.log(`\nHuman show tests: ${passed} passed, ${failed} failed`);

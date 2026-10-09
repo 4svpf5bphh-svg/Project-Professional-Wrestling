@@ -587,6 +587,16 @@ export function upsertDetailedShowDraft(
     planning.workspaces.push(workspace);
   }
 
+  const conflictingDraft = workspace.detailedShowDrafts.find((candidate) => (
+    candidate.draftId !== validatedDraft.draftId
+    && candidate.showSeriesId === validatedDraft.showSeriesId
+    && candidate.targetDate.year === validatedDraft.targetDate.year
+    && candidate.targetDate.week === validatedDraft.targetDate.week
+  ));
+  if (conflictingDraft) {
+    throw new Error("show identity already has a draft in that PPW week");
+  }
+
   const existingIndex = workspace.detailedShowDrafts.findIndex((candidate) => candidate.draftId === validatedDraft.draftId);
   if (existingIndex >= 0) workspace.detailedShowDrafts[existingIndex] = validatedDraft;
   else workspace.detailedShowDrafts.push(validatedDraft);

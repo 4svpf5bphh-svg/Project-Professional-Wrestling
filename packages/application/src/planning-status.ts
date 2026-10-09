@@ -4,6 +4,7 @@ import {
   type HumanWeekReadinessStatus,
 } from "../../sim-core/src/human-routine.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import {
   reservationAssessmentForDraft,
   type ReservationAssessment,
@@ -289,17 +290,26 @@ export function playerCurrentWeekPreparation(
     };
   }
 
+  const dueSeries = promotionShowSeriesDueForDate(state, promotionId, state.world.currentDate);
   const workspace = planning.workspaces.find((candidate) => candidate.promotionId === promotionId);
   const currentDrafts = (workspace?.detailedShowDrafts ?? [])
     .filter((draft) => samePpwWeek(draft.targetDate, state.world.currentDate));
-  const statuses = currentDrafts.map((draft) => (
-    playerShowPlanningStatus(state, planning, runtime, promotionId, draft.draftId)
-  ));
+  const statusBySeries = new Map<Id, PlayerShowPlanningStatus>();
+  for (const draft of currentDrafts) {
+    if (!draft.showSeriesId) continue;
+    statusBySeries.set(
+      draft.showSeriesId,
+      playerShowPlanningStatus(state, planning, runtime, promotionId, draft.draftId),
+    );
+  }
 
-  if (statuses.some((status) => status.reservationId !== null && status.readiness === "READY_TO_LOCK")) {
+  const dueStatuses = dueSeries.map((series) => statusBySeries.get(series.id) ?? null);
+  if (dueStatuses.length > 0 && dueStatuses.every((status) => (
+    status?.reservationId !== null && status?.readiness === "READY_TO_LOCK"
+  ))) {
     return { status: "READY", readyForLock: true, eventId: null };
   }
-  if (statuses.some((status) => status.reservationId !== null && status.readiness === "CARD_REQUIRED")) {
+  if (dueStatuses.some((status) => status?.reservationId !== null && status?.readiness !== "READY_TO_LOCK")) {
     return { status: "CARD_REQUIRED", readyForLock: false, eventId: null };
   }
   return { status: "SHOW_REQUIRED", readyForLock: false, eventId: null };

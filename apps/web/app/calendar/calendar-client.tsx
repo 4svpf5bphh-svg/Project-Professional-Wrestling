@@ -279,7 +279,14 @@ export default function CalendarClient(): React.JSX.Element {
                   <select
                     value={form.role}
                     disabled={form.role === "FLAGSHIP"}
-                    onChange={(event) => setForm({ ...form, role: event.target.value as ShowRole })}
+                    onChange={(event) => {
+                      const role = event.target.value as ShowRole;
+                      setForm({
+                        ...form,
+                        role,
+                        eventType: role === "SPECIAL" || role === "PREMIUM" ? "MAJOR" : "REGULAR",
+                      });
+                    }}
                   >
                     {form.role === "FLAGSHIP" ? <option value="FLAGSHIP">Flagship</option> : null}
                     <option value="SECONDARY">Secondary</option>
@@ -290,10 +297,10 @@ export default function CalendarClient(): React.JSX.Element {
                 </label>
 
                 <label>
-                  <span>Event level</span>
-                  <select value={form.eventType} onChange={(event) => setForm({ ...form, eventType: event.target.value as EventType })}>
-                    <option value="REGULAR">Regular show</option>
-                    <option value="MAJOR">Major event</option>
+                  <span>Weekly slot</span>
+                  <select value={form.eventType} disabled>
+                    <option value="REGULAR">Regular show slot</option>
+                    <option value="MAJOR">Additional major/special slot</option>
                   </select>
                 </label>
 

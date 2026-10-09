@@ -20,9 +20,11 @@ import { competitionDemandFactor } from "./market-competition.js";
 import { resolveEventCard } from "./matches.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 import {
-  primaryPromotionShowSeriesForDate,
   promotionShowOccurrenceId,
+  promotionShowSeriesById,
   promotionShowSeriesDueForDate,
+  promotionShowSeriesSlot,
+  type PromotionShowSlot,
 } from "./show-calendar.js";
 import { recordFinancialTransaction } from "./transactions.js";
 
@@ -306,9 +308,17 @@ function eventSeed(state: WorldState, promotion: Promotion, salt: string): numbe
   );
 }
 
+function eventSlot(state: WorldState, event: WrestlingEvent): PromotionShowSlot {
+  if (event.showSeriesId) {
+    const series = promotionShowSeriesById(state, event.showSeriesId);
+    if (series) return promotionShowSeriesSlot(series);
+  }
+  return event.type === "MAJOR" ? "SPECIAL" : "REGULAR";
+}
+
 export function shouldPromotionRunEvent(state: WorldState, promotion: Promotion): boolean {
   if (promotion.lifecycle === "CLOSED" || promotion.lifecycle === "DORMANT") return false;
-  return primaryPromotionShowSeriesForDate(state, promotion.id, state.world.currentDate) !== null;
+  return promotionShowSeriesDueForDate(state, promotion.id, state.world.currentDate).length > 0;
 }
 
 export interface HumanShowPlan {
@@ -331,19 +341,20 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
   }
 
   const currentWeekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
-  if (state.events.some((event) => (
-    event.promotionId === promotion.id
-    && event.status !== "CANCELLED"
-    && ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear) === currentWeekIndex
-  ))) {
-    throw new Error("human promotion already has a show prepared this PPW week");
-  }
-
   const dueSeries = promotionShowSeriesDueForDate(state, promotion.id, state.world.currentDate);
   const showSeries = plan.showSeriesId
     ? dueSeries.find((series) => series.id === plan.showSeriesId) ?? null
     : dueSeries[0] ?? null;
   if (!showSeries) throw new Error("selected human show identity is not due this PPW week");
+  const targetSlot = promotionShowSeriesSlot(showSeries);
+  if (state.events.some((event) => (
+    event.promotionId === promotion.id
+    && event.status !== "CANCELLED"
+    && ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear) === currentWeekIndex
+    && eventSlot(state, event) === targetSlot
+  ))) {
+    throw new Error(`human promotion already has a ${targetSlot.toLowerCase()} show prepared this PPW week`);
+  }
   const type: WrestlingEventType = showSeries.eventType;
   const market = state.markets.find((candidate) => candidate.id === plan.marketId);
   if (!market) throw new Error(`unknown market ${plan.marketId}`);
@@ -352,6 +363,13 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
   if (venue.marketId !== market.id) throw new Error("selected venue is not in the selected market");
 
   const eventDate = { ...state.world.currentDate, day: plan.day };
+  if (state.events.some((event) => (
+    event.status !== "CANCELLED"
+    && event.promotionId === promotion.id
+    && samePpwDate(event.date, eventDate)
+  ))) {
+    throw new Error("human promotion already has another show on that PPW day");
+  }
   if (state.events.some((event) => (
     event.status !== "CANCELLED"
     && event.venueId === venue.id
@@ -502,57 +520,80 @@ export function planWorldEvents(state: WorldState, execution: WorldEventExecutio
   for (const promotion of orderedPromotions) {
     if (promotion.controllerType !== "AI" && !execution.staffMayPlanShowFor?.has(promotion.id)) continue;
     if (!shouldPromotionRunEvent(state, promotion)) continue;
-    const showSeries = primaryPromotionShowSeriesForDate(state, promotion.id, state.world.currentDate);
-    if (!showSeries) continue;
-    const type: WrestlingEventType = showSeries.eventType;
-    const rng = new DeterministicRng(eventSeed(state, promotion, "event-plan"));
-    const eventDate = { ...state.world.currentDate, day: eventDayFor(state, promotion, type) };
-    const market = selectMarket(state, promotion, type, rng);
-    const strategy = ticketStrategyFor(promotion, type);
-    const selected = selectAppearances(state, promotion, type, eventDate, weeklyCounts, dateBookings);
-    const expectedDemand = estimateDemand(state, promotion, market, type, strategy, selected.map((entry) => entry.person));
-    const venue = chooseVenue(state, market.id, eventDate, expectedDemand);
-    const event: WrestlingEvent = {
-      id: nextEntityId(state, "event"),
-      worldId: state.world.id,
-      promotionId: promotion.id,
-      showSeriesId: showSeries.id,
-      showOccurrenceId: promotionShowOccurrenceId(showSeries.id, eventDate),
-      marketId: market.id,
-      venueId: venue.id,
-      date: eventDate,
-      type,
-      status: "SCHEDULED",
-      ticketStrategy: strategy,
-      expectedDemand,
-      attendance: 0,
-      ticketYield: ticketYield(strategy, market),
-      gateRevenue: 0,
-      totalCost: 0,
-      netResult: 0,
-      eventImportance: showSeries.eventImportance,
-      matchCount: 0,
-      averageMatchRating: 0,
-      bestMatchRating: 0,
-      crowdResponse: 0,
-    };
-    state.events.push(event);
 
-    for (const entry of selected) {
-      const appearance: ScheduledAppearance = {
-        id: nextEntityId(state, "scheduledAppearance"),
+    const dueSeries = promotionShowSeriesDueForDate(state, promotion.id, state.world.currentDate);
+    const occupiedEvents = state.events.filter((event) => (
+      event.promotionId === promotion.id
+      && event.status !== "CANCELLED"
+      && ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear) === currentWeekIndex
+    ));
+    const occupiedDays = new Set(occupiedEvents.map((event) => event.date.day));
+    const occupiedSlots = new Set(occupiedEvents.map((event) => eventSlot(state, event)));
+    const hasSpecial = dueSeries.some((series) => promotionShowSeriesSlot(series) === "SPECIAL");
+
+    for (const showSeries of dueSeries) {
+      const slot = promotionShowSeriesSlot(showSeries);
+      if (occupiedSlots.has(slot)) continue;
+
+      const type: WrestlingEventType = showSeries.eventType;
+      const rng = new DeterministicRng(eventSeed(state, promotion, `event-plan:${showSeries.id}`));
+      const baseDay = slot === "REGULAR" && hasSpecial
+        ? Math.min(6, eventDayFor(state, promotion, type))
+        : eventDayFor(state, promotion, type);
+      const dayCandidates = slot === "SPECIAL"
+        ? [baseDay, 7, 6, 5, 4, 3, 2, 1]
+        : [baseDay, 6, 5, 4, 3, 2, 1, 7];
+      const day = dayCandidates.find((candidate) => !occupiedDays.has(candidate)) ?? baseDay;
+      const eventDate = { ...state.world.currentDate, day };
+      const market = selectMarket(state, promotion, type, rng);
+      const strategy = ticketStrategyFor(promotion, type);
+      const selected = selectAppearances(state, promotion, type, eventDate, weeklyCounts, dateBookings);
+      const expectedDemand = estimateDemand(state, promotion, market, type, strategy, selected.map((entry) => entry.person));
+      const venue = chooseVenue(state, market.id, eventDate, expectedDemand);
+      const event: WrestlingEvent = {
+        id: nextEntityId(state, "event"),
         worldId: state.world.id,
-        eventId: event.id,
         promotionId: promotion.id,
-        personId: entry.person.id,
-        contractId: entry.contract.id,
-        date: { ...eventDate },
-        serviceCapacityAtBooking: Math.max(1, Math.floor(serviceCapacityDatesPerWeek(entry.person))),
-        status: "COMMITTED",
+        showSeriesId: showSeries.id,
+        showOccurrenceId: promotionShowOccurrenceId(showSeries.id, eventDate),
+        marketId: market.id,
+        venueId: venue.id,
+        date: eventDate,
+        type,
+        status: "SCHEDULED",
+        ticketStrategy: strategy,
+        expectedDemand,
+        attendance: 0,
+        ticketYield: ticketYield(strategy, market),
+        gateRevenue: 0,
+        totalCost: 0,
+        netResult: 0,
+        eventImportance: showSeries.eventImportance,
+        matchCount: 0,
+        averageMatchRating: 0,
+        bestMatchRating: 0,
+        crowdResponse: 0,
       };
-      state.scheduledAppearances.push(appearance);
-      weeklyCounts.set(entry.person.id, (weeklyCounts.get(entry.person.id) ?? 0) + 1);
-      dateBookings.add(appearanceDateKey(entry.person.id, eventDate));
+      state.events.push(event);
+      occupiedDays.add(day);
+      occupiedSlots.add(slot);
+
+      for (const entry of selected) {
+        const appearance: ScheduledAppearance = {
+          id: nextEntityId(state, "scheduledAppearance"),
+          worldId: state.world.id,
+          eventId: event.id,
+          promotionId: promotion.id,
+          personId: entry.person.id,
+          contractId: entry.contract.id,
+          date: { ...eventDate },
+          serviceCapacityAtBooking: Math.max(1, Math.floor(serviceCapacityDatesPerWeek(entry.person))),
+          status: "COMMITTED",
+        };
+        state.scheduledAppearances.push(appearance);
+        weeklyCounts.set(entry.person.id, (weeklyCounts.get(entry.person.id) ?? 0) + 1);
+        dateBookings.add(appearanceDateKey(entry.person.id, eventDate));
+      }
     }
   }
 }

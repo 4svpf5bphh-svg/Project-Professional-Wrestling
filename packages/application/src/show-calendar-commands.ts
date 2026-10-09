@@ -127,6 +127,14 @@ export function upsertPromotionShowSeriesCommand(
     if (existing?.role === "FLAGSHIP" && envelope.payload.role !== "FLAGSHIP") throw new Error("the promotion must retain its flagship show identity");
     if (existing?.role !== "FLAGSHIP" && envelope.payload.role === "FLAGSHIP") throw new Error("another show identity cannot replace the flagship through a normal edit");
 
+    const specialRole = envelope.payload.role === "SPECIAL" || envelope.payload.role === "PREMIUM";
+    if (specialRole && envelope.payload.eventType !== "MAJOR") {
+      throw new Error("Special and Premium identities must use Major event level");
+    }
+    if (!specialRole && envelope.payload.eventType !== "REGULAR") {
+      throw new Error("Flagship, Secondary and Developmental identities must use Regular event level");
+    }
+
     assertUniqueActiveName(series, promotion.id, name, existing?.id ?? null);
 
     const next: PromotionShowSeries = {
