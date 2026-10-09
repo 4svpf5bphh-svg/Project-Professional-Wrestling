@@ -86,8 +86,8 @@ export default function ProgrammesClient(): React.JSX.Element {
 
   const canStart = Boolean(
     view?.canEdit
-    && sideA1
-    && sideB1
+    && (sideA1 || sideA2)
+    && (sideB1 || sideB2)
     && !selectionOverlaps()
     && !starting
   );

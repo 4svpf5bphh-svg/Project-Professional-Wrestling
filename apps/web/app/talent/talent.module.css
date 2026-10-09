@@ -8,6 +8,7 @@
 .header,
 .overview,
 .tabs,
+.rosterModes,
 .search,
 .rosterToolbar,
 .marketToolbar,
@@ -169,6 +170,86 @@
   margin-bottom: 14px;
 }
 
+.negotiationGuide {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(240, 194, 87, .2);
+  border-radius: 14px;
+  background: rgba(240, 194, 87, .045);
+  padding: 12px;
+}
+
+.negotiationGuideHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.negotiationGuideHeader > div {
+  display: grid;
+  gap: 3px;
+}
+
+.negotiationGuideHeader span {
+  color: #f0c257;
+  font-size: 9px;
+  font-weight: 950;
+  letter-spacing: .08em;
+}
+
+.negotiationGuideHeader strong {
+  color: #dce9e6;
+  font-size: 12px;
+}
+
+.negotiationGuideHeader b {
+  color: #f0c257;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.negotiationGuideGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.negotiationGuideGrid > div {
+  display: grid;
+  gap: 4px;
+  border-radius: 10px;
+  background: rgba(3, 12, 15, .5);
+  padding: 9px;
+}
+
+.negotiationGuideGrid span {
+  color: #819894;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.negotiationGuideGrid strong {
+  color: #dce9e6;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.negotiationGuide p,
+.negotiationGuide small {
+  margin: 0;
+  color: #93aaa7;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.negotiationGuide small {
+  color: #718784;
+}
+
 .formGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -265,6 +346,57 @@
   border-color: rgba(93, 233, 206, .7);
   background: rgba(93, 233, 206, .12);
   color: #72ead3;
+}
+
+.rosterModes {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  margin-bottom: 12px;
+}
+
+.rosterMode,
+.rosterModeActive,
+.rosterModeDisabled {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgba(129, 187, 181, .16);
+  border-radius: 12px;
+  background: rgba(12, 24, 28, .8);
+  color: #9eb4b2;
+  padding: 9px 10px;
+  text-decoration: none;
+}
+
+.rosterMode strong,
+.rosterModeActive strong,
+.rosterModeDisabled strong {
+  color: #d7e5e2;
+  font-size: 11px;
+}
+
+.rosterMode span,
+.rosterModeActive span,
+.rosterModeDisabled span {
+  overflow: hidden;
+  color: #819894;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rosterModeActive {
+  border-color: rgba(93, 233, 206, .52);
+  background: rgba(93, 233, 206, .1);
+}
+
+.rosterModeActive strong {
+  color: #8ff5df;
+}
+
+.rosterModeDisabled {
+  opacity: .5;
 }
 
 .search {
@@ -382,6 +514,8 @@
 
 .watchFilter,
 .watchFilterActive,
+.advancedFilter,
+.advancedFilterActive,
 .watchButton,
 .watchButtonActive {
   border: 1px solid rgba(129, 187, 181, .2);
@@ -396,6 +530,7 @@
 }
 
 .watchFilterActive,
+.advancedFilterActive,
 .watchButtonActive {
   border-color: rgba(240, 194, 87, .58);
   background: rgba(240, 194, 87, .1);
@@ -406,6 +541,90 @@
 .watchButtonActive:disabled {
   opacity: .55;
   cursor: default;
+}
+
+.marketAdvanced {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 9px;
+  border: 1px solid rgba(93, 233, 206, .14);
+  border-radius: 12px;
+  background: rgba(3, 12, 15, .66);
+  padding: 10px;
+}
+
+.marketAdvancedHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.marketAdvancedHeading > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.marketAdvancedHeading strong {
+  color: #dce9e6;
+  font-size: 11px;
+}
+
+.marketAdvancedHeading span {
+  color: #819894;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.marketAdvancedHeading button {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: #72ead3;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.marketAdvancedHeading button:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+.marketAdvancedGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.marketAdvancedGrid label {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.marketAdvancedGrid label > span {
+  color: #8da5a2;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.marketAdvancedGrid select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(129, 187, 181, .18);
+  border-radius: 9px;
+  background: rgba(7, 16, 20, .96);
+  color: #edf7f5;
+  padding: 8px 6px;
+  font: inherit;
+  font-size: 11px;
 }
 
 .marketCount {
@@ -914,6 +1133,19 @@
 }
 
 @media (max-width: 620px) {
+  .rosterModes {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .rosterMode,
+  .rosterModeActive,
+  .rosterModeDisabled {
+    flex: 0 0 auto;
+    min-width: 112px;
+  }
+
   .marketToolbar,
   .rosterToolbar,
   .marketToolbar {
@@ -935,6 +1167,10 @@
     grid-column: 1 / -1;
   }
 
+  .marketAdvancedGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .header {
     align-items: center;
   }
@@ -947,6 +1183,14 @@
   .metricGrid,
   .formGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .negotiationGuideHeader {
+    flex-direction: column;
+  }
+
+  .negotiationGuideGrid {
+    grid-template-columns: 1fr;
   }
 
   .summary,
@@ -1016,6 +1260,10 @@
 
   .marketSelects {
     grid-template-columns: 1fr;
+  }
+
+  .marketAdvancedGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .marketFacts {

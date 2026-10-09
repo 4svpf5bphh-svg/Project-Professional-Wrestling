@@ -96,7 +96,6 @@ export default function ResultsClient(): React.JSX.Element {
   if (!promotionView && promotionError) {
     return (
       <main className={styles.shell}>
-        <a className={styles.backLink} href="/">← Promotion</a>
         <section className={styles.panel}>
           <p>{promotionError}</p>
           <button className={styles.button} onClick={() => refreshResults().catch(() => undefined)}>Retry</button>
@@ -108,7 +107,6 @@ export default function ResultsClient(): React.JSX.Element {
   if (!promotionView) {
     return (
       <main className={styles.shell}>
-        <a className={styles.backLink} href="/">← Promotion</a>
         <section className={styles.panel}><p>Loading Results & history…</p></section>
       </main>
     );
@@ -118,7 +116,6 @@ export default function ResultsClient(): React.JSX.Element {
     <main className={styles.shell}>
       <header className={styles.header}>
         <div>
-          <a className={styles.backLink} href="/">← Promotion</a>
           <div className={styles.eyebrow}>RESULTS & HISTORY</div>
           <h1>Results & history</h1>
           <p>{activeWorld?.name} · Year {activeWorld?.currentDate.year}, Week {activeWorld?.currentDate.week}</p>

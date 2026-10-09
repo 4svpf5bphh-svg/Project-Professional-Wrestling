@@ -13,6 +13,7 @@ import type {
   AlphaTalentOfferResult,
   AlphaTalentWatchResult,
 } from "../../../../dist/packages/web-adapter/src/talent-service.js";
+import RosterNav from "./roster-nav";
 import styles from "./talent.module.css";
 
 type ErrorPayload = { error?: string };
@@ -34,6 +35,9 @@ type OfferTarget = {
   personName: string;
   sourceContractId: string | null;
   referenceValue: number;
+  suggestedRoleExpectation: OfferRole;
+  interest: PlayerTalentMarketView["interest"] | null;
+  trust: number | null;
   currentContract: PlayerRosterContractView["contract"] | null;
 };
 
@@ -55,6 +59,8 @@ const INTEREST_RANK: Record<PlayerTalentMarketView["interest"], number> = {
   INTERESTED: 3,
   KEEN: 4,
 };
+
+const MARKET_MIN_OPTIONS = [0, 40, 50, 60, 70, 80, 90] as const;
 
 const ROSTER_ROLE_ORDER: OfferRole[] = [
   "MAIN_EVENT",
@@ -130,6 +136,58 @@ function MoneyInput({
   );
 }
 
+function IntegerInput({
+  value,
+  min,
+  max,
+  disabled = false,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  disabled?: boolean;
+  onChange: (value: number) => void;
+}): React.JSX.Element {
+  const [text, setText] = useState(() => String(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setText(String(value));
+  }, [value, focused]);
+
+  function commit(raw: string): void {
+    const parsed = /^\d+$/.test(raw) ? Number(raw) : value;
+    const bounded = Math.min(max, Math.max(min, Number.isSafeInteger(parsed) ? parsed : value));
+    onChange(bounded);
+    setText(String(bounded));
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      value={text}
+      disabled={disabled}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        commit(text);
+      }}
+      onChange={(event) => {
+        const next = event.target.value;
+        if (!/^\d*$/.test(next)) return;
+        setText(next);
+        if (next !== "") {
+          const parsed = Number(next);
+          if (Number.isSafeInteger(parsed) && parsed >= min && parsed <= max) onChange(parsed);
+        }
+      }}
+    />
+  );
+}
+
 function ppwDate(date: { year: number; week: number }): string {
   return `Y${date.year} W${date.week}`;
 }
@@ -184,7 +242,7 @@ function defaultDraft(target: OfferTarget): OfferDraft {
   const value = Math.max(1_000, Math.round(target.referenceValue));
   return {
     family: "LIMITED_NON_EXCLUSIVE",
-    roleExpectation: "REGULAR",
+    roleExpectation: target.suggestedRoleExpectation,
     termWeeks: 13,
     dateEntitlement: 5,
     weeklyGuarantee: Math.round(value * 0.2),
@@ -225,6 +283,128 @@ function draftForFamily(family: OfferFamily, referenceValue: number, current: Of
     weeklyGuarantee: Math.max(0, Math.round(value * 0.2)),
     appearanceFee: Math.max(current.appearanceFee, value),
     signingBonus: Math.max(current.signingBonus, value),
+  };
+}
+
+
+const ROLE_RANK: Record<OfferRole, number> = {
+  DEVELOPMENTAL: 0,
+  REGULAR: 1,
+  FEATURED: 2,
+  UPPER_CARD: 3,
+  MAIN_EVENT: 4,
+  SPECIAL_ATTRACTION: 4,
+};
+
+function moneyRange(low: number, high: number): string {
+  return low === high ? money(low) : `${money(low)}–${money(high)}`;
+}
+
+function effectiveWeeklyPackage(draft: OfferDraft): number {
+  const weeks = Math.max(1, draft.termWeeks);
+  return draft.weeklyGuarantee
+    + draft.signingBonus / weeks
+    + (draft.appearanceFee * draft.dateEntitlement) / weeks;
+}
+
+function negotiationGuide(target: OfferTarget, draft: OfferDraft): {
+  relationship: string;
+  roleRead: string;
+  cashRead: string;
+  scheduleRead: string;
+  structure: string;
+  effectiveWeekly: number;
+} {
+  const reference = Math.max(1_000, target.referenceValue);
+  const weeks = Math.max(1, draft.termWeeks);
+  const density = draft.dateEntitlement / weeks;
+  const actualWeekly = effectiveWeeklyPackage(draft);
+
+  let typicalWeeklyLow = 0;
+  let typicalWeeklyHigh = 0;
+  let typicalAppearanceLow = 0;
+  let typicalAppearanceHigh = 0;
+  let typicalSigningLow = 0;
+  let typicalSigningHigh = 0;
+  let densityLow = 0;
+  let densityHigh = 1;
+
+  if (draft.family === "ONE_OFF") {
+    typicalAppearanceLow = reference * 1.2;
+    typicalAppearanceHigh = reference * 1.8;
+    densityLow = 1;
+    densityHigh = 1;
+  } else if (draft.family === "EXCLUSIVE") {
+    typicalWeeklyLow = reference;
+    typicalWeeklyHigh = reference * 1.25;
+    typicalSigningLow = reference * 3;
+    typicalSigningHigh = reference * 8;
+    densityLow = 0.5;
+    densityHigh = 0.7;
+  } else {
+    typicalWeeklyLow = reference * 0.12;
+    typicalWeeklyHigh = reference * 0.26;
+    typicalAppearanceLow = reference * 0.8;
+    typicalAppearanceHigh = reference * 1.15;
+    typicalSigningLow = reference * 0.5;
+    typicalSigningHigh = reference * 2;
+    densityLow = 0.22;
+    densityHigh = 0.42;
+  }
+
+  const midpointWeekly = (typicalWeeklyLow + typicalWeeklyHigh) / 2;
+  const midpointAppearance = (typicalAppearanceLow + typicalAppearanceHigh) / 2;
+  const midpointSigning = (typicalSigningLow + typicalSigningHigh) / 2;
+  const typicalEquivalent = Math.max(
+    1,
+    midpointWeekly + (midpointAppearance * draft.dateEntitlement) / weeks + midpointSigning / weeks,
+  );
+  const packageRatio = actualWeekly / typicalEquivalent;
+  const cashRead = packageRatio < 0.8
+    ? "Below the normal PPW structure for this deal"
+    : packageRatio > 1.2
+      ? "Above the normal PPW structure for this deal"
+      : "Around the normal PPW structure for this deal";
+
+  const selectedRole = ROLE_RANK[draft.roleExpectation];
+  const suggestedRole = ROLE_RANK[target.suggestedRoleExpectation];
+  const roleRead = selectedRole < suggestedRole
+    ? `Below profile · ${label(target.suggestedRoleExpectation)} is the current guide`
+    : selectedRole > suggestedRole
+      ? `Above profile · stronger promise than the current ${label(target.suggestedRoleExpectation)} guide`
+      : `Aligned with current ${label(target.suggestedRoleExpectation)} profile`;
+
+  const scheduleRead = draft.family === "ONE_OFF"
+    ? "Single appearance"
+    : density < densityLow
+      ? `Light commitment · ${draft.dateEntitlement} dates across ${weeks} weeks`
+      : density > densityHigh
+        ? `Heavy commitment · ${draft.dateEntitlement} dates across ${weeks} weeks`
+        : `Normal commitment · ${draft.dateEntitlement} dates across ${weeks} weeks`;
+
+  const relationship = target.interest
+    ? `Recruitment interest: ${interestLabel(target.interest)}`
+    : target.trust !== null
+      ? target.trust >= 65
+        ? `Relationship: strong · Trust ${Math.round(target.trust)}`
+        : target.trust >= 45
+          ? `Relationship: steady · Trust ${Math.round(target.trust)}`
+          : `Relationship: fragile · Trust ${Math.round(target.trust)}`
+      : "Relationship: no established read";
+
+  const structure = draft.family === "ONE_OFF"
+    ? `One-off guide: appearance ${moneyRange(Math.round(typicalAppearanceLow), Math.round(typicalAppearanceHigh))}; no weekly guarantee or signing bonus.`
+    : draft.family === "EXCLUSIVE"
+      ? `Exclusive guide: weekly ${moneyRange(Math.round(typicalWeeklyLow), Math.round(typicalWeeklyHigh))}; signing ${moneyRange(Math.round(typicalSigningLow), Math.round(typicalSigningHigh))}; usually no appearance fee; roughly 50–70% of weeks purchased.`
+      : `Non-exclusive guide: weekly ${moneyRange(Math.round(typicalWeeklyLow), Math.round(typicalWeeklyHigh))}; appearance ${moneyRange(Math.round(typicalAppearanceLow), Math.round(typicalAppearanceHigh))}; signing ${moneyRange(Math.round(typicalSigningLow), Math.round(typicalSigningHigh))}; roughly 22–42% of the term purchased.`;
+
+  return {
+    relationship,
+    roleRead,
+    cashRead,
+    scheduleRead,
+    structure,
+    effectiveWeekly: Math.round(actualWeekly),
   };
 }
 
@@ -441,6 +621,7 @@ function OfferEditor({
   onSubmit: () => void;
 }): React.JSX.Element {
   const terms = draft.family === "ONE_OFF" ? [1] : draft.family === "EXCLUSIVE" ? [13, 26, 52] : [4, 13, 26];
+  const guide = negotiationGuide(target, draft);
   return (
     <section className={styles.editor} aria-label={`Contract offer for ${target.personName}`}>
       <div className={styles.editorHeader}>
@@ -459,6 +640,23 @@ function OfferEditor({
       </div>
 
       <div className={styles.editorBody}>
+        <section className={styles.negotiationGuide} aria-label="Negotiation guidance">
+          <div className={styles.negotiationGuideHeader}>
+            <div>
+              <span>NEGOTIATION READ</span>
+              <strong>Use this as context, not an acceptance guarantee.</strong>
+            </div>
+            <b>{money(target.referenceValue)}/wk market value</b>
+          </div>
+          <div className={styles.negotiationGuideGrid}>
+            <div><span>Relationship</span><strong>{guide.relationship}</strong></div>
+            <div><span>Role promise</span><strong>{guide.roleRead}</strong></div>
+            <div><span>Cash package</span><strong>{guide.cashRead} · {money(guide.effectiveWeekly)}/wk effective</strong></div>
+            <div><span>Dates</span><strong>{guide.scheduleRead}</strong></div>
+          </div>
+          <p>{guide.structure}</p>
+          <small>Acceptance can still move with wrestler priorities, promotion standing, competing offers, Service Capacity and normal PPW uncertainty. Rival contract terms remain private.</small>
+        </section>
         <div className={styles.formGrid}>
         <label>
           <span>Contract</span>
@@ -482,7 +680,13 @@ function OfferEditor({
         </label>
         <label>
           <span>Purchased dates</span>
-          <input type="number" min={1} max={104} inputMode="numeric" value={draft.dateEntitlement} disabled={draft.family === "ONE_OFF"} onChange={(event) => onChange({ ...draft, dateEntitlement: Number(event.target.value) })} />
+          <IntegerInput
+            value={draft.dateEntitlement}
+            min={1}
+            max={104}
+            disabled={draft.family === "ONE_OFF"}
+            onChange={(value) => onChange({ ...draft, dateEntitlement: value })}
+          />
         </label>
         <label>
           <span>Weekly guarantee</span>
@@ -532,6 +736,13 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
   const [marketDivisionFilter, setMarketDivisionFilter] = useState<MarketDivisionFilter>("ALL");
   const [marketInterestFilter, setMarketInterestFilter] = useState<MarketInterestFilter>("ALL");
   const [marketWatchOnly, setMarketWatchOnly] = useState(false);
+  const [marketAdvancedOpen, setMarketAdvancedOpen] = useState(false);
+  const [marketMinPopularity, setMarketMinPopularity] = useState(0);
+  const [marketMinRecognition, setMarketMinRecognition] = useState(0);
+  const [marketMinMomentum, setMarketMinMomentum] = useState(0);
+  const [marketMinInRing, setMarketMinInRing] = useState(0);
+  const [marketMinCraft, setMarketMinCraft] = useState(0);
+  const [marketMinPresentation, setMarketMinPresentation] = useState(0);
   const [marketLimit, setMarketLimit] = useState(25);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -582,6 +793,11 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
   }
 
   useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    setTab(initialTab);
+    setQuery("");
+    setMarketLimit(25);
+  }, [initialTab]);
 
   function openMarketOffer(wrestler: PlayerTalentMarketView): void {
     const next: OfferTarget = {
@@ -590,6 +806,9 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       personName: wrestler.name,
       sourceContractId: null,
       referenceValue: wrestler.estimatedWeeklyValue,
+      suggestedRoleExpectation: wrestler.suggestedRoleExpectation,
+      interest: wrestler.interest,
+      trust: null,
       currentContract: null,
     };
     setTarget(next);
@@ -604,7 +823,10 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       personId: wrestler.personId,
       personName: wrestler.name,
       sourceContractId: wrestler.contractId,
-      referenceValue: Math.max(wrestler.contract.weeklyGuarantee, wrestler.contract.appearanceFee, 1_000),
+      referenceValue: wrestler.estimatedWeeklyValue,
+      suggestedRoleExpectation: wrestler.suggestedRoleExpectation,
+      interest: null,
+      trust: wrestler.trust,
       currentContract: wrestler.contract,
     };
     setTarget(next);
@@ -701,6 +923,9 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       setDraft(null);
       setTab("OFFERS");
       setQuery("");
+      if (typeof window !== "undefined") {
+        window.history.replaceState(window.history.state, "", "/talent?view=offers");
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to submit contract offer");
     } finally {
@@ -737,6 +962,12 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       .filter((entry) => marketDivisionFilter === "ALL" || entry.division === marketDivisionFilter)
       .filter((entry) => marketAvailabilityFilter === "ALL" || entry.availability === marketAvailabilityFilter)
       .filter((entry) => !marketWatchOnly || entry.watched)
+      .filter((entry) => entry.popularity >= marketMinPopularity)
+      .filter((entry) => entry.recognition >= marketMinRecognition)
+      .filter((entry) => entry.momentum >= marketMinMomentum)
+      .filter((entry) => entry.skills.inRingQuality >= marketMinInRing)
+      .filter((entry) => entry.skills.matchCraft >= marketMinCraft)
+      .filter((entry) => entry.skills.presentation >= marketMinPresentation)
       .filter((entry) => {
         if (marketInterestFilter === "INTERESTED_PLUS") return INTEREST_RANK[entry.interest] >= INTEREST_RANK.INTERESTED;
         if (marketInterestFilter === "OPEN_PLUS") return INTEREST_RANK[entry.interest] >= INTEREST_RANK.OPEN_TO_TALKS;
@@ -750,7 +981,21 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       if (marketSort === "NAME") return left.name.localeCompare(right.name);
       return right.estimatedWeeklyValue - left.estimatedWeeklyValue || right.popularity - left.popularity || left.name.localeCompare(right.name);
     });
-  }, [view, query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketWatchOnly, marketSort]);
+  }, [
+    view,
+    query,
+    marketAvailabilityFilter,
+    marketDivisionFilter,
+    marketInterestFilter,
+    marketWatchOnly,
+    marketMinPopularity,
+    marketMinRecognition,
+    marketMinMomentum,
+    marketMinInRing,
+    marketMinCraft,
+    marketMinPresentation,
+    marketSort,
+  ]);
   const visibleMarket = useMemo(() => market.slice(0, marketLimit), [market, marketLimit]);
   const offers = useMemo(
     () => (view?.pendingOffers ?? []).filter((entry) => matchesQuery(entry.personName, query)),
@@ -760,19 +1005,20 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
 
   useEffect(() => {
     setMarketLimit(25);
-  }, [query, marketAvailabilityFilter, marketDivisionFilter, marketInterestFilter, marketWatchOnly, marketSort]);
-
-  function selectTab(nextTab: TalentTab): void {
-    setTab(nextTab);
-    setQuery("");
-    setMarketLimit(25);
-    if (typeof window !== "undefined") {
-      const url = nextTab === "ROSTER"
-        ? "/talent"
-        : `/talent?view=${nextTab.toLowerCase()}`;
-      window.history.replaceState(window.history.state, "", url);
-    }
-  }
+  }, [
+    query,
+    marketAvailabilityFilter,
+    marketDivisionFilter,
+    marketInterestFilter,
+    marketWatchOnly,
+    marketMinPopularity,
+    marketMinRecognition,
+    marketMinMomentum,
+    marketMinInRing,
+    marketMinCraft,
+    marketMinPresentation,
+    marketSort,
+  ]);
 
   function toggleRosterRole(role: OfferRole): void {
     setCollapsedRosterRoles((current) => {
@@ -783,14 +1029,48 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
     });
   }
 
+  const marketAdvancedCount = [
+    marketMinPopularity,
+    marketMinRecognition,
+    marketMinMomentum,
+    marketMinInRing,
+    marketMinCraft,
+    marketMinPresentation,
+  ].filter((value) => value > 0).length;
+
+  function resetMarketAdvanced(): void {
+    setMarketMinPopularity(0);
+    setMarketMinRecognition(0);
+    setMarketMinMomentum(0);
+    setMarketMinInRing(0);
+    setMarketMinCraft(0);
+    setMarketMinPresentation(0);
+  }
+
+  const rosterMen = view?.roster.filter((entry) => entry.division === "MEN").length ?? 0;
+  const rosterWomen = view?.roster.filter((entry) => entry.division === "WOMEN").length ?? 0;
+  const watchedMarket = view?.market.filter((entry) => entry.watched).length ?? 0;
+  const recruitmentOffers = view?.pendingOffers.filter((offer) => offer.offerKind === "RECRUITMENT").length ?? 0;
+  const renewalOffers = view?.pendingOffers.filter((offer) => offer.offerKind === "RENEWAL").length ?? 0;
+  const pageEyebrow = tab === "ROSTER" ? "YOUR ROSTER" : tab === "MARKET" ? "TALENT MARKET" : "CONTRACT OFFERS";
+  const pageTitle = tab === "ROSTER"
+    ? view?.promotion?.name ?? "Your roster"
+    : tab === "MARKET"
+      ? "Find talent"
+      : "Pending offers";
+  const pageDescription = tab === "ROSTER"
+    ? "Your contracted wrestlers and roster structure."
+    : tab === "MARKET"
+      ? "Search wrestlers currently available to approach."
+      : "Recruitment and renewal offers awaiting resolution.";
+
   return (
     <main className={styles.shell}>
-      <a className={styles.backLink} href="/">← Promotion home</a>
       <header className={styles.header}>
         <div>
-          <span className={styles.eyebrow}>ROSTER & TALENT MARKET</span>
-          <h1>{view?.promotion?.name ?? "Talent management"}</h1>
-          <p>{view ? `${view.world.name} · ${ppwDate(view.world.currentDate)}` : "Loading your World…"}</p>
+          <span className={styles.eyebrow}>{pageEyebrow}</span>
+          <h1>{pageTitle}</h1>
+          <p>{view ? `${view.world.name} · ${ppwDate(view.world.currentDate)} · ${pageDescription}` : "Loading your World…"}</p>
         </div>
         <button className={styles.button} disabled={loading || submitting} onClick={() => void refresh()}>{loading ? "Loading…" : "Refresh"}</button>
       </header>
@@ -812,25 +1092,28 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
 
       {view?.promotion ? (
         <>
-          <section className={styles.overview}>
-            <div><span>Roster contracts</span><strong>{view.roster.length}</strong></div>
-            <div><span>Available talent</span><strong>{view.market.length}</strong></div>
-            <div><span>Pending offers</span><strong>{view.pendingOffers.length}</strong></div>
-          </section>
-
-          <div className={styles.tabs} role="tablist" aria-label="Talent management views">
-            {(["ROSTER", "MARKET", "OFFERS"] as const).map((candidate) => (
-              <button
-                key={candidate}
-                role="tab"
-                aria-selected={tab === candidate}
-                className={tab === candidate ? styles.activeTab : styles.tab}
-                onClick={() => selectTab(candidate)}
-              >
-                {candidate === "MARKET" ? "Talent market" : candidate[0] + candidate.slice(1).toLowerCase()}
-              </button>
-            ))}
-          </div>
+          {tab === "ROSTER" ? (
+            <>
+              <section className={styles.overview}>
+                <div><span>Roster contracts</span><strong>{view.roster.length}</strong></div>
+                <div><span>Men</span><strong>{rosterMen}</strong></div>
+                <div><span>Women</span><strong>{rosterWomen}</strong></div>
+              </section>
+              <RosterNav active="SINGLES" />
+            </>
+          ) : tab === "MARKET" ? (
+            <section className={styles.overview}>
+              <div><span>Available talent</span><strong>{view.market.length}</strong></div>
+              <div><span>Watching</span><strong>{watchedMarket}</strong></div>
+              <div><span>Pending offers</span><strong>{view.pendingOffers.length}</strong></div>
+            </section>
+          ) : (
+            <section className={styles.overview}>
+              <div><span>Pending offers</span><strong>{view.pendingOffers.length}</strong></div>
+              <div><span>Recruitment</span><strong>{recruitmentOffers}</strong></div>
+              <div><span>Renewals</span><strong>{renewalOffers}</strong></div>
+            </section>
+          )}
 
           {tab === "ROSTER" ? (
             <section className={styles.rosterToolbar} aria-label="Roster search and filters">
@@ -906,6 +1189,14 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
                 >
                   ★ Watchlist
                 </button>
+                <button
+                  className={marketAdvancedOpen || marketAdvancedCount > 0 ? styles.advancedFilterActive : styles.advancedFilter}
+                  type="button"
+                  aria-expanded={marketAdvancedOpen}
+                  onClick={() => setMarketAdvancedOpen((current) => !current)}
+                >
+                  Advanced{marketAdvancedCount > 0 ? ` · ${marketAdvancedCount}` : ""}
+                </button>
               </div>
               <div className={styles.marketSelects}>
                 <label>
@@ -936,6 +1227,36 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
                   </select>
                 </label>
               </div>
+              {marketAdvancedOpen ? (
+                <section className={styles.marketAdvanced} aria-label="Advanced talent market filters">
+                  <div className={styles.marketAdvancedHeading}>
+                    <div>
+                      <strong>Minimum attributes</strong>
+                      <span>Combine thresholds, then use Value low to find the cheapest wrestler who clears them.</span>
+                    </div>
+                    <button type="button" onClick={resetMarketAdvanced} disabled={marketAdvancedCount === 0}>Reset</button>
+                  </div>
+                  <div className={styles.marketAdvancedGrid}>
+                    {([
+                      ["Popularity", marketMinPopularity, setMarketMinPopularity],
+                      ["Recognition", marketMinRecognition, setMarketMinRecognition],
+                      ["Momentum", marketMinMomentum, setMarketMinMomentum],
+                      ["In-ring", marketMinInRing, setMarketMinInRing],
+                      ["Craft", marketMinCraft, setMarketMinCraft],
+                      ["Presentation", marketMinPresentation, setMarketMinPresentation],
+                    ] as const).map(([name, value, setter]) => (
+                      <label key={name}>
+                        <span>{name}</span>
+                        <select value={value} onChange={(event) => setter(Number(event.target.value))}>
+                          {MARKET_MIN_OPTIONS.map((minimum) => (
+                            <option key={minimum} value={minimum}>{minimum === 0 ? "Any" : `${minimum}+`}</option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
               <div className={styles.marketCount}>
                 Showing <b>{Math.min(marketLimit, market.length)}</b> of <b>{market.length}</b> matching wrestlers
               </div>

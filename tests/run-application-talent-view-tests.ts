@@ -116,6 +116,11 @@ test("talent view exposes full own roster contracts and remains source-agnostic"
     "contract-derived roster entry did not expose public roster affiliation",
   );
   ok(rosterEntry?.contract.weeklyGuarantee === 1_234_567, "player could not see their own contract money");
+  ok((rosterEntry?.estimatedWeeklyValue ?? 0) > 0, "roster view did not expose the PPW market-value guide");
+  ok(
+    ["DEVELOPMENTAL", "REGULAR", "FEATURED", "UPPER_CARD", "MAIN_EVENT", "SPECIAL_ATTRACTION"].includes(rosterEntry?.suggestedRoleExpectation ?? ""),
+    "roster view did not expose a suggested negotiation role",
+  );
   ok(view.player.promotionId === promotionAId, "talent projection returned the wrong controlled promotion");
 });
 
@@ -141,6 +146,11 @@ test("talent market can expose non-exclusive availability without leaking rival 
     "market entry did not expose a coarse recruitment-interest band",
   );
   ok(marketEntry?.division === "WOMEN", "market entry did not expose wrestler division");
+  ok((marketEntry?.estimatedWeeklyValue ?? 0) > 0, "market entry did not expose the PPW market-value guide");
+  ok(
+    ["DEVELOPMENTAL", "REGULAR", "FEATURED", "UPPER_CARD", "MAIN_EVENT", "SPECIAL_ATTRACTION"].includes(marketEntry?.suggestedRoleExpectation ?? ""),
+    "market entry did not expose a suggested negotiation role",
+  );
   ok(
     marketEntry?.employmentPromotions.some((entry) => entry.promotionId === promotionBId),
     "market entry did not expose the wrestler's public employment promotion",

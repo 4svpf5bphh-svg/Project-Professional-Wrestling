@@ -21,6 +21,16 @@ import styles from "./card.module.css";
 
 type ErrorPayload = { error?: string };
 type BookableFinish = Exclude<MatchFinish, "INJURY_STOPPAGE">;
+type WrestlerPickerSort = "POPULARITY" | "MOMENTUM" | "IN_RING" | "PRESENTATION" | "DATES" | "NAME";
+type WrestlerPickerTarget =
+  | { kind: "MATCH"; matchId: string; side: "A" | "B"; slotIndex: number; currentId: string; label: string }
+  | { kind: "SEGMENT"; segmentId: string; slotIndex: number; currentId: string; label: string }
+  | { kind: "TURN"; segmentId: string; currentId: string; label: string };
+
+type WrestlerPickerOption = {
+  person: AlphaCardParticipantView;
+  disabledReason: string | null;
+};
 
 const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
   "COMPETITIVE", "SHOWCASE", "DOMINANT", "TECHNICAL",
@@ -156,6 +166,155 @@ function MinuteField(props: {
   );
 }
 
+function WrestlerSlotButton({
+  person,
+  disabled,
+  onClick,
+}: {
+  person: AlphaCardParticipantView | null;
+  disabled: boolean;
+  onClick: () => void;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      className={person ? styles.wrestlerSlotSelected : styles.wrestlerSlotEmpty}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {person ? (
+        <>
+          <span><strong>{person.name}</strong><small>{person.alignment}</small></span>
+          <span><b>POP {Math.round(person.popularity)}</b><small>{person.datesRemaining} dates</small></span>
+        </>
+      ) : (
+        <>
+          <span><strong>Choose wrestler</strong><small>Search your available roster</small></span>
+          <b>＋</b>
+        </>
+      )}
+    </button>
+  );
+}
+
+function WrestlerPicker({
+  label,
+  currentId,
+  options,
+  onSelect,
+  onClose,
+}: {
+  label: string;
+  currentId: string;
+  options: WrestlerPickerOption[];
+  onSelect: (personId: string) => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<WrestlerPickerSort>("POPULARITY");
+
+  useEffect(() => {
+    const body = document.body;
+    const previousOverflow = body.style.overflow;
+    body.style.overflow = "hidden";
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose]);
+
+  const visible = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    const filtered = options.filter(({ person }) => !normalized || person.name.toLowerCase().includes(normalized));
+    return [...filtered].sort((left, right) => {
+      const availability = Number(Boolean(left.disabledReason)) - Number(Boolean(right.disabledReason));
+      if (availability !== 0) return availability;
+      if (sort === "MOMENTUM") return right.person.momentum - left.person.momentum || left.person.name.localeCompare(right.person.name);
+      if (sort === "IN_RING") return right.person.skills.inRingQuality - left.person.skills.inRingQuality || left.person.name.localeCompare(right.person.name);
+      if (sort === "PRESENTATION") return right.person.skills.presentation - left.person.skills.presentation || left.person.name.localeCompare(right.person.name);
+      if (sort === "DATES") return right.person.datesRemaining - left.person.datesRemaining || left.person.name.localeCompare(right.person.name);
+      if (sort === "NAME") return left.person.name.localeCompare(right.person.name);
+      return right.person.popularity - left.person.popularity
+        || right.person.momentum - left.person.momentum
+        || left.person.name.localeCompare(right.person.name);
+    });
+  }, [options, query, sort]);
+
+  return (
+    <div
+      className={styles.pickerBackdrop}
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.currentTarget === event.target) onClose();
+      }}
+    >
+      <section className={styles.pickerSheet} role="dialog" aria-modal="true" aria-label={label}>
+        <header className={styles.pickerHeader}>
+          <div>
+            <span className={styles.pickerEyebrow}>SELECT WRESTLER</span>
+            <h2>{label}</h2>
+          </div>
+          <button type="button" className={styles.pickerClose} onClick={onClose}>Close</button>
+        </header>
+        <div className={styles.pickerTools}>
+          <input
+            autoFocus
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search wrestler…"
+            aria-label="Search wrestlers"
+          />
+          <select value={sort} onChange={(event) => setSort(event.target.value as WrestlerPickerSort)} aria-label="Sort wrestlers">
+            <option value="POPULARITY">Popularity</option>
+            <option value="MOMENTUM">Momentum</option>
+            <option value="IN_RING">In-ring</option>
+            <option value="PRESENTATION">Presentation</option>
+            <option value="DATES">Dates remaining</option>
+            <option value="NAME">Name</option>
+          </select>
+        </div>
+        <div className={styles.pickerMeta}>
+          <span>{visible.length} wrestler{visible.length === 1 ? "" : "s"}</span>
+          {currentId ? <button type="button" onClick={() => onSelect("")}>Clear selection</button> : null}
+        </div>
+        <div className={styles.pickerList}>
+          {visible.map(({ person, disabledReason }) => {
+            const selected = person.personId === currentId;
+            return (
+              <button
+                type="button"
+                key={person.personId}
+                className={selected ? styles.pickerRowSelected : styles.pickerRow}
+                disabled={Boolean(disabledReason)}
+                onClick={() => onSelect(person.personId)}
+              >
+                <div className={styles.pickerIdentity}>
+                  <span><strong>{person.name}</strong><small>{person.alignment}</small></span>
+                  {selected ? <em>Selected</em> : disabledReason ? <em>{disabledReason}</em> : null}
+                </div>
+                <div className={styles.pickerMetrics}>
+                  <span>POP <b>{Math.round(person.popularity)}</b></span>
+                  <span>MOM <b>{Math.round(person.momentum)}</b></span>
+                  <span>RING <b>{Math.round(person.skills.inRingQuality)}</b></span>
+                  <span>CRAFT <b>{Math.round(person.skills.matchCraft)}</b></span>
+                  <span>PRES <b>{Math.round(person.skills.presentation)}</b></span>
+                  <span>DATES <b>{person.datesRemaining}</b></span>
+                </div>
+              </button>
+            );
+          })}
+          {visible.length === 0 ? <div className={styles.pickerEmpty}>No wrestlers match that search.</div> : null}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export default function CardClient(): React.JSX.Element {
   const [view, setView] = useState<AlphaCurrentWeekCardView | null>(null);
   const [matches, setMatches] = useState<AlphaCardMatchView[]>([]);
@@ -167,6 +326,7 @@ export default function CardClient(): React.JSX.Element {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedSlotKey, setExpandedSlotKey] = useState<string | null>(null);
+  const [wrestlerPicker, setWrestlerPicker] = useState<WrestlerPickerTarget | null>(null);
   const requestId = useRef<string | null>(null);
 
   async function load(): Promise<void> {
@@ -186,6 +346,7 @@ export default function CardClient(): React.JSX.Element {
       setRunningOrder(cloneOrder(payload.runningOrder));
       setTitleAssignments(cloneAssignments(payload.championshipAssignments));
       setExpandedSlotKey(null);
+      setWrestlerPicker(null);
       setSaved(false);
       requestId.current = null;
     } catch (reason) {
@@ -572,6 +733,67 @@ export default function CardClient(): React.JSX.Element {
       ?? "Unknown wrestler";
   }
 
+  function pickerPerson(personId: string): AlphaCardParticipantView | null {
+    return participantView(personId);
+  }
+
+  function otherMatchBookingLabel(personId: string, currentMatchId: string): string | null {
+    const other = matches.find((match) => (
+      match.draftMatchId !== currentMatchId
+      && [...match.sideAIds, ...match.sideBIds].includes(personId)
+    ));
+    if (!other) return null;
+    const slotIndex = runningOrder.findIndex((slot) => slot.kind === "MATCH" && slot.refId === other.draftMatchId);
+    return slotIndex >= 0 ? `Booked · Slot ${slotIndex + 1}` : "Booked in another match";
+  }
+
+  function pickerOptions(target: WrestlerPickerTarget): WrestlerPickerOption[] {
+    if (!view) return [];
+    const pool = new Map(view.availableParticipants.map((person) => [person.personId, person]));
+    const current = target.currentId ? participantView(target.currentId) : null;
+    if (current) pool.set(current.personId, current);
+
+    if (target.kind === "MATCH") {
+      const match = matches.find((candidate) => candidate.draftMatchId === target.matchId);
+      const sameMatchIds = new Set(match ? [...match.sideAIds, ...match.sideBIds].filter(Boolean) : []);
+      sameMatchIds.delete(target.currentId);
+      return [...pool.values()].map((person) => ({
+        person,
+        disabledReason: sameMatchIds.has(person.personId)
+          ? "Already in this match"
+          : otherMatchBookingLabel(person.personId, target.matchId),
+      }));
+    }
+
+    const segment = segments.find((candidate) => candidate.draftSegmentId === target.segmentId);
+    if (!segment) return [];
+    const eligibleIds = new Set(segmentEligiblePeople(segment).map((person) => person.personId));
+    if (current) eligibleIds.add(current.personId);
+    const sameSegmentIds = new Set(segment.participantIds.filter(Boolean));
+    sameSegmentIds.delete(target.currentId);
+
+    return [...pool.values()]
+      .filter((person) => eligibleIds.has(person.personId))
+      .map((person) => ({
+        person,
+        disabledReason: target.kind === "TURN" || !sameSegmentIds.has(person.personId)
+          ? null
+          : "Already in this segment",
+      }));
+  }
+
+  function selectFromPicker(personId: string): void {
+    if (!wrestlerPicker) return;
+    if (wrestlerPicker.kind === "MATCH") {
+      setMatchParticipant(wrestlerPicker.matchId, wrestlerPicker.side, wrestlerPicker.slotIndex, personId);
+    } else if (wrestlerPicker.kind === "SEGMENT") {
+      setSegmentParticipant(wrestlerPicker.segmentId, wrestlerPicker.slotIndex, personId);
+    } else {
+      setTurnPerson(wrestlerPicker.segmentId, personId);
+    }
+    setWrestlerPicker(null);
+  }
+
   function matchSummary(match: AlphaCardMatchView): string {
     const sideA = match.sideAIds.map(personName).join(" & ");
     const sideB = match.sideBIds.map(personName).join(" & ");
@@ -602,18 +824,6 @@ export default function CardClient(): React.JSX.Element {
       : null;
     const allowed = programme ? new Set(programme.participantIds) : null;
     return view.availableParticipants.filter((person) => !allowed || allowed.has(person.personId));
-  }
-
-  function segmentPersonOptions(segment: AlphaCardSegmentView, currentId: string): React.JSX.Element[] {
-    return segmentEligiblePeople(segment).map((person) => (
-      <option
-        key={person.personId}
-        value={person.personId}
-        disabled={segment.participantIds.some((personId) => personId === person.personId && personId !== currentId)}
-      >
-        {person.name} · {person.alignment} · POP {Math.round(person.popularity)}
-      </option>
-    ));
   }
 
   async function save(): Promise<void> {
@@ -679,7 +889,17 @@ export default function CardClient(): React.JSX.Element {
   const lastMatchId = [...runningOrder].reverse().find((slot) => slot.kind === "MATCH")?.refId ?? null;
 
   return (
-    <main className="app-shell">
+    <>
+      {wrestlerPicker ? (
+        <WrestlerPicker
+          label={wrestlerPicker.label}
+          currentId={wrestlerPicker.currentId}
+          options={pickerOptions(wrestlerPicker)}
+          onSelect={selectFromPicker}
+          onClose={() => setWrestlerPicker(null)}
+        />
+      ) : null}
+      <main className="app-shell">
       <div className={styles.header}>
         <div>
           <span className="eyebrow">SHOW BUILDER</span>
@@ -729,15 +949,6 @@ export default function CardClient(): React.JSX.Element {
               const concernPeople = readiness?.participants.filter((person) => person.status !== "COMFORTABLE") ?? [];
               const slotKey = `MATCH:${slot.refId}`;
               const expanded = expandedSlotKey === slotKey;
-              const participantOptions = (currentId: string) => view.availableParticipants.map((person) => (
-                <option
-                  key={person.personId}
-                  value={person.personId}
-                  disabled={personBookedInOtherMatch(person.personId, match.draftMatchId, currentId)}
-                >
-                  {person.name} · {person.alignment} · POP {Math.round(person.popularity)}
-                </option>
-              ));
               return (
                 <article className={`${styles.matchCard} ${match.draftMatchId === lastMatchId ? styles.mainEventCard : ""}`} key={slotKey}>
                   <button
@@ -784,9 +995,19 @@ export default function CardClient(): React.JSX.Element {
                         </select>
                       ) : null}
                       {match.sideAIds.map((personId, personIndex) => (
-                        <select key={`A-${personIndex}`} value={personId} disabled={!view.canEdit} onChange={(event) => setMatchParticipant(match.draftMatchId, "A", personIndex, event.target.value)}>
-                          <option value="">Choose wrestler</option>{participantOptions(personId)}
-                        </select>
+                        <WrestlerSlotButton
+                          key={`A-${personIndex}`}
+                          person={pickerPerson(personId)}
+                          disabled={!view.canEdit}
+                          onClick={() => setWrestlerPicker({
+                            kind: "MATCH",
+                            matchId: match.draftMatchId,
+                            side: "A",
+                            slotIndex: personIndex,
+                            currentId: personId,
+                            label: `Side A · ${match.type === "TAG" ? `Wrestler ${personIndex + 1}` : "Singles"}`,
+                          })}
+                        />
                       ))}
                     </div>
                     <div className={styles.versus}>VS</div>
@@ -811,9 +1032,19 @@ export default function CardClient(): React.JSX.Element {
                         </select>
                       ) : null}
                       {match.sideBIds.map((personId, personIndex) => (
-                        <select key={`B-${personIndex}`} value={personId} disabled={!view.canEdit} onChange={(event) => setMatchParticipant(match.draftMatchId, "B", personIndex, event.target.value)}>
-                          <option value="">Choose wrestler</option>{participantOptions(personId)}
-                        </select>
+                        <WrestlerSlotButton
+                          key={`B-${personIndex}`}
+                          person={pickerPerson(personId)}
+                          disabled={!view.canEdit}
+                          onClick={() => setWrestlerPicker({
+                            kind: "MATCH",
+                            matchId: match.draftMatchId,
+                            side: "B",
+                            slotIndex: personIndex,
+                            currentId: personId,
+                            label: `Side B · ${match.type === "TAG" ? `Wrestler ${personIndex + 1}` : "Singles"}`,
+                          })}
+                        />
                       ))}
                     </div>
                   </div>
@@ -948,18 +1179,16 @@ export default function CardClient(): React.JSX.Element {
                   <div className={styles.controls}>
                     <div className={styles.control}>
                       <label>Who turns?</label>
-                      <select
-                        value={segment.turnPersonId ?? ""}
+                      <WrestlerSlotButton
+                        person={pickerPerson(segment.turnPersonId ?? "")}
                         disabled={!view.canEdit}
-                        onChange={(event) => setTurnPerson(segment.draftSegmentId, event.target.value)}
-                      >
-                        <option value="">Choose wrestler</option>
-                        {segmentEligiblePeople(segment).map((person) => (
-                          <option key={person.personId} value={person.personId}>
-                            {person.name} · {person.alignment} · POP {Math.round(person.popularity)}
-                          </option>
-                        ))}
-                      </select>
+                        onClick={() => setWrestlerPicker({
+                          kind: "TURN",
+                          segmentId: segment.draftSegmentId,
+                          currentId: segment.turnPersonId ?? "",
+                          label: "Who turns?",
+                        })}
+                      />
                     </div>
                     <div className={styles.control}>
                       <label>Turns to</label>
@@ -991,9 +1220,17 @@ export default function CardClient(): React.JSX.Element {
                       if (personId === segment.turnPersonId) return null;
                       return (
                         <div className={styles.segmentPersonRow} key={personIndex}>
-                          <select value={personId} disabled={!view.canEdit} onChange={(event) => setSegmentParticipant(segment.draftSegmentId, personIndex, event.target.value)}>
-                            <option value="">Choose wrestler</option>{segmentPersonOptions(segment, personId)}
-                          </select>
+                          <WrestlerSlotButton
+                            person={pickerPerson(personId)}
+                            disabled={!view.canEdit}
+                            onClick={() => setWrestlerPicker({
+                              kind: "SEGMENT",
+                              segmentId: segment.draftSegmentId,
+                              slotIndex: personIndex,
+                              currentId: personId,
+                              label: `${pretty(segment.type)} · Wrestler ${personIndex + 1}`,
+                            })}
+                          />
                           <button type="button" className={styles.smallRemove} disabled={!view.canEdit || segment.participantIds.length <= 1} onClick={() => removeSegmentParticipant(segment.draftSegmentId, personIndex)}>×</button>
                         </div>
                       );
@@ -1016,9 +1253,17 @@ export default function CardClient(): React.JSX.Element {
                     </div>
                     {segment.participantIds.map((personId, personIndex) => (
                       <div className={styles.segmentPersonRow} key={personIndex}>
-                        <select value={personId} disabled={!view.canEdit} onChange={(event) => setSegmentParticipant(segment.draftSegmentId, personIndex, event.target.value)}>
-                          <option value="">Choose wrestler</option>{segmentPersonOptions(segment, personId)}
-                        </select>
+                        <WrestlerSlotButton
+                          person={pickerPerson(personId)}
+                          disabled={!view.canEdit}
+                          onClick={() => setWrestlerPicker({
+                            kind: "SEGMENT",
+                            segmentId: segment.draftSegmentId,
+                            slotIndex: personIndex,
+                            currentId: personId,
+                            label: `${pretty(segment.type)} · Wrestler ${personIndex + 1}`,
+                          })}
+                        />
                         <button type="button" className={styles.smallRemove} disabled={!view.canEdit || segment.participantIds.length <= segmentMinimum(segment.type)} onClick={() => removeSegmentParticipant(segment.draftSegmentId, personIndex)}>×</button>
                       </div>
                     ))}
@@ -1078,6 +1323,7 @@ export default function CardClient(): React.JSX.Element {
           {saved ? <div className={styles.saved}>Booking saved · running order and talent reservation refreshed</div> : null}
         </div>
       </section>
-    </main>
+      </main>
+    </>
   );
 }

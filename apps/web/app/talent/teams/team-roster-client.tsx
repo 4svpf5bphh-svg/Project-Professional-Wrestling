@@ -6,6 +6,7 @@ import type {
   PlayerTeamHistoryView,
 } from "../../../../../dist/packages/application/src/team-history-view.js";
 import type { PlayerTalentManagementView } from "../../../../../dist/packages/application/src/talent-view.js";
+import RosterNav from "../roster-nav";
 import styles from "../talent.module.css";
 
 type ErrorPayload = { error?: string };
@@ -139,7 +140,6 @@ export default function TeamRosterClient(): React.JSX.Element {
 
   return (
     <main className={styles.shell}>
-      <a className={styles.backLink} href="/">← Promotion home</a>
       <header className={styles.header}>
         <div>
           <span className={styles.eyebrow}>ROSTER · TAG TEAMS</span>
@@ -169,6 +169,8 @@ export default function TeamRosterClient(): React.JSX.Element {
             <div><span>Wrestlers in teams</span><strong>{wrestlersInTeams}</strong></div>
             <div><span>Current tag titles</span><strong>{currentTagTitles}</strong></div>
           </section>
+
+          <RosterNav active="TAG_TEAMS" />
 
           <label className={styles.search}>
             <span>Search your tag teams</span>
