@@ -184,7 +184,7 @@ function WrestlerSlotButton({
     >
       {person ? (
         <>
-          <span><strong>{person.name}</strong><small>{person.alignment}</small></span>
+          <span><strong>{person.name}</strong><small>{person.division === "WOMEN" ? "WOMAN" : person.division === "MEN" ? "MAN" : "DIVISION ?"} · {person.alignment}</small></span>
           <span><b>POP {Math.round(person.popularity)}</b><small>{person.datesRemaining} dates</small></span>
         </>
       ) : (
@@ -262,7 +262,6 @@ function WrestlerPicker({
         </header>
         <div className={styles.pickerTools}>
           <input
-            autoFocus
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -294,7 +293,11 @@ function WrestlerPicker({
                 onClick={() => onSelect(person.personId)}
               >
                 <div className={styles.pickerIdentity}>
-                  <span><strong>{person.name}</strong><small>{person.alignment}</small></span>
+                  <span>
+                    <strong>{person.name}</strong>
+                    <small className={styles.pickerDivision}>{person.division === "WOMEN" ? "WOMAN" : person.division === "MEN" ? "MAN" : "DIVISION ?"}</small>
+                    <small>{person.alignment}</small>
+                  </span>
                   {selected ? <em>Selected</em> : disabledReason ? <em>{disabledReason}</em> : null}
                 </div>
                 <div className={styles.pickerMetrics}>

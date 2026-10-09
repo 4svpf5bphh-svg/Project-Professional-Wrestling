@@ -904,6 +904,15 @@
   font-weight: 850;
 }
 
+.pickerIdentity .pickerDivision {
+  border: 1px solid #2b394a;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .035);
+  color: #aebdce;
+  padding: 2px 5px;
+  letter-spacing: .04em;
+}
+
 .pickerIdentity em {
   flex: 0 0 auto;
   color: #8ff5df;
@@ -962,6 +971,10 @@
 
   .pickerTools {
     grid-template-columns: minmax(0, 1fr) 132px;
+  }
+
+  .pickerTools input {
+    font-size: 16px;
   }
 
   .pickerMetrics {

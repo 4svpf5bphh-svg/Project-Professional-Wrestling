@@ -400,6 +400,13 @@ await test("a logistics-only show draft opens in the builder and the first valid
   ok(builder.availableParticipants.length >= builder.minParticipants, "builder did not expose enough contracted talent");
 
   const persistedForBuilder = await repository.load(worldId);
+  const firstPickerPerson = builder.availableParticipants[0];
+  if (!firstPickerPerson) throw new Error("builder did not expose a wrestler for picker division coverage");
+  const firstPickerStatePerson = persistedForBuilder.state.people.find((person) => person.id === firstPickerPerson.personId);
+  ok(
+    firstPickerPerson.division === (firstPickerStatePerson?.division ?? null),
+    "card picker projection did not expose the wrestler division",
+  );
   const selectedIds = sameDivisionParticipantIds(
     persistedForBuilder.state,
     builder.availableParticipants,

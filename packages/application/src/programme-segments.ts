@@ -176,7 +176,10 @@ function segmentOutcome(
   const [presentationWeight, starWeight, momentumWeight] = weights[segment.type];
   const delivery = presentation * presentationWeight + starPower * starWeight + momentum * momentumWeight;
   const moraleModifier = round1((morale - 50) * 0.08);
-  const fatigueModifier = round1(-fatigue * 0.10);
+  // Normal/rested condition should not make every segment report that fatigue
+  // hurt delivery. Only materially elevated fatigue becomes a visible penalty.
+  // A future chronological show executor can model within-show fatigue by slot.
+  const fatigueModifier = round1(-Math.max(0, fatigue - 30) * 0.12);
   const programme = segment.programmeId
     ? (state.programmes ?? []).find((candidate) => candidate.id === segment.programmeId)
     : null;

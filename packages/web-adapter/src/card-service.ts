@@ -7,6 +7,7 @@ import type {
   MatchStyleProfile,
   MatchType,
   PpwDate,
+  WrestlerDivision,
   WorldState,
 } from "../../domain/src/types.js";
 import {
@@ -50,6 +51,7 @@ import {
 export interface AlphaCardParticipantView {
   personId: Id;
   name: string;
+  division: WrestlerDivision | null;
   alignment: "FACE" | "HEEL" | "TWEENER";
   popularity: number;
   momentum: number;
@@ -685,6 +687,7 @@ function availableCardParticipants(
     result.push({
       personId,
       name: person.name,
+      division: person.division ?? null,
       alignment: wrestlerAlignmentForPromotion(state, promotionId, person.id),
       popularity: person.popularity,
       momentum: person.momentum,
@@ -845,6 +848,7 @@ export async function loadAlphaShowCard(
     return {
       personId,
       name: person.name,
+      division: person.division ?? null,
       alignment: wrestlerAlignmentForPromotion(aggregate.state, promotion.id, person.id),
       popularity: person.popularity,
       momentum: person.momentum,
