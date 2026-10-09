@@ -306,13 +306,16 @@ await test("Alpha player home view carries the same player-scoped Attention with
 
   const renewal = view.attention.find((item) => item.attentionId === `contract-expiry:${contract.id}`);
   ok(renewal?.deepLink === "/talent", "renewal Attention did not link to Talent");
-  const show = view.attention.find((item) => item.attentionId.startsWith("required-show:"));
-  ok(show?.deepLink === "/planner", "required-show Attention did not link to the six-week Planner");
 });
 
 await test("reserved current-week preparation replaces false missing-show Attention and becomes READY when the card is complete", () => {
   const f = fixture(18506);
   const incompleteDraft = currentWeekDraft(f, false);
+
+  const requiredView = buildAlphaPlayerWorldView(f.aggregate, f.playerId);
+  const requiredShow = requiredView.attention.find((item) => item.attentionId.startsWith("required-show:"));
+  ok(requiredShow?.deepLink === "/planner", "required-show Attention did not link to the six-week Planner");
+
   saveAndReserveCurrentWeekDraft(f, incompleteDraft, 0, "attention-readiness-incomplete");
 
   const incompleteView = buildAlphaPlayerWorldView(f.aggregate, f.playerId);
