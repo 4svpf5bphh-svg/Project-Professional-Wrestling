@@ -1335,7 +1335,9 @@ export default function CardClient(): React.JSX.Element {
                           <span className={styles.sideLabel}>{personIndex === 0 ? "Attacker" : personIndex === 1 ? "Victim" : "Also involved"}</span>
                         ) : null}
                         <WrestlerSlotButton
-                          person={pickerPerson(personId)}
+                          person={pickerPerson(segment.type === "ATTACK" && personIndex < 2
+                            ? (personIndex === 0 ? (segment.attackerPersonId ?? "") : (segment.victimPersonId ?? ""))
+                            : personId)}
                           disabled={!view.canEdit}
                           onClick={() => setWrestlerPicker({
                             kind: "SEGMENT",
