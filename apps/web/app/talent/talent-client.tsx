@@ -130,6 +130,58 @@ function MoneyInput({
   );
 }
 
+function IntegerInput({
+  value,
+  min,
+  max,
+  disabled = false,
+  onChange,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  disabled?: boolean;
+  onChange: (value: number) => void;
+}): React.JSX.Element {
+  const [text, setText] = useState(() => String(value));
+  const [focused, setFocused] = useState(false);
+
+  useEffect(() => {
+    if (!focused) setText(String(value));
+  }, [value, focused]);
+
+  function commit(raw: string): void {
+    const parsed = /^\d+$/.test(raw) ? Number(raw) : value;
+    const bounded = Math.min(max, Math.max(min, Number.isSafeInteger(parsed) ? parsed : value));
+    onChange(bounded);
+    setText(String(bounded));
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      value={text}
+      disabled={disabled}
+      onFocus={() => setFocused(true)}
+      onBlur={() => {
+        setFocused(false);
+        commit(text);
+      }}
+      onChange={(event) => {
+        const next = event.target.value;
+        if (!/^\d*$/.test(next)) return;
+        setText(next);
+        if (next !== "") {
+          const parsed = Number(next);
+          if (Number.isSafeInteger(parsed) && parsed >= min && parsed <= max) onChange(parsed);
+        }
+      }}
+    />
+  );
+}
+
 function ppwDate(date: { year: number; week: number }): string {
   return `Y${date.year} W${date.week}`;
 }
@@ -482,7 +534,13 @@ function OfferEditor({
         </label>
         <label>
           <span>Purchased dates</span>
-          <input type="number" min={1} max={104} inputMode="numeric" value={draft.dateEntitlement} disabled={draft.family === "ONE_OFF"} onChange={(event) => onChange({ ...draft, dateEntitlement: Number(event.target.value) })} />
+          <IntegerInput
+            value={draft.dateEntitlement}
+            min={1}
+            max={104}
+            disabled={draft.family === "ONE_OFF"}
+            onChange={(value) => onChange({ ...draft, dateEntitlement: value })}
+          />
         </label>
         <label>
           <span>Weekly guarantee</span>
