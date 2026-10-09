@@ -434,6 +434,8 @@
 
 .watchFilter,
 .watchFilterActive,
+.advancedFilter,
+.advancedFilterActive,
 .watchButton,
 .watchButtonActive {
   border: 1px solid rgba(129, 187, 181, .2);
@@ -448,6 +450,7 @@
 }
 
 .watchFilterActive,
+.advancedFilterActive,
 .watchButtonActive {
   border-color: rgba(240, 194, 87, .58);
   background: rgba(240, 194, 87, .1);
@@ -458,6 +461,90 @@
 .watchButtonActive:disabled {
   opacity: .55;
   cursor: default;
+}
+
+.marketAdvanced {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 9px;
+  border: 1px solid rgba(93, 233, 206, .14);
+  border-radius: 12px;
+  background: rgba(3, 12, 15, .66);
+  padding: 10px;
+}
+
+.marketAdvancedHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.marketAdvancedHeading > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.marketAdvancedHeading strong {
+  color: #dce9e6;
+  font-size: 11px;
+}
+
+.marketAdvancedHeading span {
+  color: #819894;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.marketAdvancedHeading button {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: #72ead3;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.marketAdvancedHeading button:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+.marketAdvancedGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.marketAdvancedGrid label {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.marketAdvancedGrid label > span {
+  color: #8da5a2;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.marketAdvancedGrid select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid rgba(129, 187, 181, .18);
+  border-radius: 9px;
+  background: rgba(7, 16, 20, .96);
+  color: #edf7f5;
+  padding: 8px 6px;
+  font: inherit;
+  font-size: 11px;
 }
 
 .marketCount {
@@ -1000,6 +1087,10 @@
     grid-column: 1 / -1;
   }
 
+  .marketAdvancedGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .header {
     align-items: center;
   }
@@ -1081,6 +1172,10 @@
 
   .marketSelects {
     grid-template-columns: 1fr;
+  }
+
+  .marketAdvancedGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .marketFacts {
