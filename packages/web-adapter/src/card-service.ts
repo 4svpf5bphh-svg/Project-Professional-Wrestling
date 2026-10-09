@@ -634,6 +634,10 @@ function resolveDraftId(
     : requiredText(requestedDraftId, "draftId", 128);
 }
 
+function weekIndex(date: PpwDate, weeksPerYear: number): number {
+  return ((date.year - 1) * weeksPerYear) + (date.week - 1);
+}
+
 function contractCoversDate(
   state: WorldState,
   contract: WorldState["contracts"][number],
