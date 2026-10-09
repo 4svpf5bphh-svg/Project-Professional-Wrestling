@@ -76,6 +76,11 @@ test("human promoter can prepare a current-week show from real roster and venue 
   ok(event.marketId === marketId && event.venueId === venueId, "player market/venue choices were not preserved");
   ok(event.date.day === 5, "player show-day choice was not preserved");
   ok(event.ticketStrategy === "STANDARD", "player ticket strategy was not preserved");
+  ok(Boolean(event.showSeriesId), "prepared show did not retain its promotion-owned show identity");
+  const showSeries = state.showSeries?.find((candidate) => candidate.id === event.showSeriesId);
+  ok(showSeries?.promotionId === promotionId, "prepared show references another promotion's show identity");
+  ok(event.type === showSeries?.eventType, "prepared show type did not come from its show identity");
+  ok(event.eventImportance === showSeries?.eventImportance, "prepared show importance did not come from its show identity");
   ok(event.expectedDemand > 0 && event.ticketYield > 0, "prepared show has no economic preview");
 
   const appearances = state.scheduledAppearances.filter((appearance) => appearance.eventId === event.id);

@@ -19,6 +19,7 @@ import { contractById, personById } from "./indexes.js";
 import { competitionDemandFactor } from "./market-competition.js";
 import { resolveEventCard } from "./matches.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
+import { primaryPromotionShowSeriesForDate } from "./show-calendar.js";
 import { recordFinancialTransaction } from "./transactions.js";
 
 const ROLE_PRIORITY: Record<Contract["roleExpectation"], number> = {
@@ -303,8 +304,7 @@ function eventSeed(state: WorldState, promotion: Promotion, salt: string): numbe
 
 export function shouldPromotionRunEvent(state: WorldState, promotion: Promotion): boolean {
   if (promotion.lifecycle === "CLOSED" || promotion.lifecycle === "DORMANT") return false;
-  const weekIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
-  return weekIndex % Math.max(1, promotion.eventCadenceWeeks) === 0;
+  return primaryPromotionShowSeriesForDate(state, promotion.id, state.world.currentDate) !== null;
 }
 
 export interface HumanShowPlan {
@@ -334,9 +334,9 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
     throw new Error("human promotion already has a show prepared this PPW week");
   }
 
-  const type: WrestlingEventType = (currentWeekIndex + 1) % state.ruleset.majorEventIntervalWeeks === 0
-    ? "MAJOR"
-    : "REGULAR";
+  const showSeries = primaryPromotionShowSeriesForDate(state, promotion.id, state.world.currentDate);
+  if (!showSeries) throw new Error("human promotion has no show identity due this PPW week");
+  const type: WrestlingEventType = showSeries.eventType;
   const market = state.markets.find((candidate) => candidate.id === plan.marketId);
   if (!market) throw new Error(`unknown market ${plan.marketId}`);
   const venue = state.venues.find((candidate) => candidate.id === plan.venueId);
@@ -409,6 +409,7 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
     id: nextEntityId(state, "event"),
     worldId: state.world.id,
     promotionId: promotion.id,
+    showSeriesId: showSeries.id,
     marketId: market.id,
     venueId: venue.id,
     date: eventDate,
@@ -421,7 +422,7 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
     gateRevenue: 0,
     totalCost: 0,
     netResult: 0,
-    eventImportance: type === "MAJOR" ? 85 : 58,
+    eventImportance: showSeries.eventImportance,
     matchCount: 0,
     averageMatchRating: 0,
     bestMatchRating: 0,
@@ -453,6 +454,8 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
     entityIds: [event.id, promotion.id, market.id, venue.id],
     payload: {
       type,
+      showSeriesId: showSeries.id,
+      showSeriesRole: showSeries.role,
       day: plan.day,
       ticketStrategy: plan.ticketStrategy,
       participants: selected.length,
@@ -490,7 +493,9 @@ export function planWorldEvents(state: WorldState, execution: WorldEventExecutio
   for (const promotion of orderedPromotions) {
     if (promotion.controllerType !== "AI" && !execution.staffMayPlanShowFor?.has(promotion.id)) continue;
     if (!shouldPromotionRunEvent(state, promotion)) continue;
-    const type: WrestlingEventType = (weekIndex + 1) % state.ruleset.majorEventIntervalWeeks === 0 ? "MAJOR" : "REGULAR";
+    const showSeries = primaryPromotionShowSeriesForDate(state, promotion.id, state.world.currentDate);
+    if (!showSeries) continue;
+    const type: WrestlingEventType = showSeries.eventType;
     const rng = new DeterministicRng(eventSeed(state, promotion, "event-plan"));
     const eventDate = { ...state.world.currentDate, day: eventDayFor(state, promotion, type) };
     const market = selectMarket(state, promotion, type, rng);
@@ -502,6 +507,7 @@ export function planWorldEvents(state: WorldState, execution: WorldEventExecutio
       id: nextEntityId(state, "event"),
       worldId: state.world.id,
       promotionId: promotion.id,
+      showSeriesId: showSeries.id,
       marketId: market.id,
       venueId: venue.id,
       date: eventDate,
@@ -514,7 +520,7 @@ export function planWorldEvents(state: WorldState, execution: WorldEventExecutio
       gateRevenue: 0,
       totalCost: 0,
       netResult: 0,
-      eventImportance: type === "MAJOR" ? 85 : 58,
+      eventImportance: showSeries.eventImportance,
       matchCount: 0,
       averageMatchRating: 0,
       bestMatchRating: 0,
