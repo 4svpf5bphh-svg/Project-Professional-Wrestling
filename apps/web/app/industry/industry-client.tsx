@@ -81,7 +81,6 @@ export default function IndustryClient(): React.JSX.Element {
   if (!view) {
     return (
       <main className={styles.shell}>
-        <a className={styles.backLink} href="/results">← Results & history</a>
         <section className={styles.panel}>
           <p>{error ?? "Loading the PPW industry…"}</p>
           {error ? <button className={styles.button} onClick={() => refresh().catch(() => undefined)}>Retry</button> : null}
@@ -94,7 +93,6 @@ export default function IndustryClient(): React.JSX.Element {
     <main className={styles.shell}>
       <header className={styles.header}>
         <div>
-          <a className={styles.backLink} href="/results">← Results & history</a>
           <div className={styles.eyebrow}>INDUSTRY</div>
           <h1>The PPW world</h1>
           <p>{view.world.name} · Year {view.world.currentDate.year}, Week {view.world.currentDate.week}</p>
