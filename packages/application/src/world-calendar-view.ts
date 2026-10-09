@@ -34,6 +34,17 @@ export interface PlayerWorldCalendarOccurrenceView {
   status: "CALENDAR" | "SCHEDULED" | "COMPLETED" | "CANCELLED";
 }
 
+export interface PlayerWorldCalendarShowSeriesView {
+  showSeriesId: Id;
+  name: string;
+  role: PromotionShowSeriesRole;
+  eventType: WrestlingEventType;
+  cadenceWeeks: number;
+  anchorWeek: number;
+  eventImportance: number;
+  canArchive: boolean;
+}
+
 export interface PlayerWorldCalendarView {
   world: {
     worldId: Id;
@@ -44,8 +55,11 @@ export interface PlayerWorldCalendarView {
   player: {
     playerId: string;
     promotionId: Id | null;
+    promotionName: string | null;
+    canEdit: boolean;
   };
   horizonWeeks: number;
+  myShowSeries: PlayerWorldCalendarShowSeriesView[];
   occurrences: PlayerWorldCalendarOccurrenceView[];
 }
 
@@ -75,6 +89,26 @@ export function buildPlayerWorldCalendarView(
   const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
 
   const promotionsById = new Map(aggregate.state.promotions.map((promotion) => [promotion.id, promotion]));
+  const controlledPromotion = control ? promotionsById.get(control.promotionId) ?? null : null;
+  const myShowSeries = control
+    ? (aggregate.state.showSeries ?? [])
+      .filter((series) => series.promotionId === control.promotionId && series.active)
+      .map((series): PlayerWorldCalendarShowSeriesView => ({
+        showSeriesId: series.id,
+        name: series.name,
+        role: series.role,
+        eventType: series.eventType,
+        cadenceWeeks: series.cadenceWeeks,
+        anchorWeek: series.anchorWeek,
+        eventImportance: series.eventImportance,
+        canArchive: series.role !== "FLAGSHIP",
+      }))
+      .sort((left, right) => (
+        Number(right.role === "FLAGSHIP") - Number(left.role === "FLAGSHIP")
+        || right.eventImportance - left.eventImportance
+        || left.name.localeCompare(right.name)
+      ))
+    : [];
   const marketsById = new Map(aggregate.state.markets.map((market) => [market.id, market]));
   const venuesById = new Map(aggregate.state.venues.map((venue) => [venue.id, venue]));
 
@@ -117,8 +151,11 @@ export function buildPlayerWorldCalendarView(
     player: {
       playerId,
       promotionId: control?.promotionId ?? null,
+      promotionName: controlledPromotion?.name ?? null,
+      canEdit: aggregate.runtime.phase === "OPEN",
     },
     horizonWeeks,
+    myShowSeries,
     occurrences,
   };
 }

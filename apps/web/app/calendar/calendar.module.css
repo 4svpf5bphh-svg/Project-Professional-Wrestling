@@ -247,3 +247,179 @@
     white-space: nowrap;
   }
 }
+
+
+.manage {
+  max-width: 900px;
+  margin: 0 auto 14px;
+  border: 1px solid rgba(93, 233, 206, .2);
+  border-radius: 15px;
+  background: rgba(8, 21, 24, .94);
+  overflow: hidden;
+}
+
+.manageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+}
+
+.manageHeader > div {
+  display: grid;
+  gap: 3px;
+}
+
+.seriesList {
+  display: grid;
+  border-top: 1px solid rgba(129, 187, 181, .09);
+}
+
+.seriesRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid rgba(129, 187, 181, .075);
+  padding: 10px 12px;
+}
+
+.seriesRow:first-child { border-top: 0; }
+
+.seriesRow > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.seriesRow strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.seriesRow span,
+.editor small {
+  color: #829a97;
+  font-size: 9px;
+}
+
+.seriesActions {
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.seriesActions button,
+.editorHeader button {
+  min-height: 34px;
+  border: 1px solid rgba(129, 187, 181, .17);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .03);
+  color: #a9bbb8;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.seriesActions .archiveButton {
+  color: #e8aaa6;
+}
+
+.editor {
+  border-top: 1px solid rgba(93, 233, 206, .18);
+  background: rgba(93, 233, 206, .035);
+  padding: 12px;
+}
+
+.editorHeader,
+.editorFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.editorHeader { margin-bottom: 10px; }
+
+.editorGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.editorGrid label {
+  display: grid;
+  gap: 5px;
+}
+
+.editorGrid label > span {
+  color: #8aa29f;
+  font-size: 9px;
+  font-weight: 850;
+}
+
+.fullField { grid-column: 1 / -1; }
+
+.editorGrid input,
+.editorGrid select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  box-sizing: border-box;
+  border: 1px solid rgba(129, 187, 181, .2);
+  border-radius: 10px;
+  background: #0a1519;
+  color: #edf7f5;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 16px;
+}
+
+.editorGrid input[type="range"] {
+  min-height: 34px;
+  padding: 0;
+}
+
+.editorFooter {
+  margin-top: 10px;
+}
+
+.saveButton {
+  min-height: 40px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(93, 233, 206, .42);
+  border-radius: 10px;
+  background: rgba(93, 233, 206, .12);
+  color: #8ff5df;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+@media (max-width: 620px) {
+  .seriesRow {
+    align-items: flex-start;
+  }
+
+  .editorGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .fullField {
+    grid-column: auto;
+  }
+
+  .editorFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .saveButton {
+    width: 100%;
+  }
+}
