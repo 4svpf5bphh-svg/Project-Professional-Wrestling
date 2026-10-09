@@ -17,6 +17,7 @@ import { buildContractTerms, createSignedContract, defaultPromotionContractPolic
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 import { registerEntityIdCounters } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
+import { seedWorldPromotionShowSeries } from "./show-calendar.js";
 import {
   validateWorldRosterSourceResult,
   type WorldRosterSource,
@@ -151,6 +152,7 @@ export function createWorld(
     venues,
     promotions,
     promotionMarketStates,
+    showSeries: seedWorldPromotionShowSeries(worldId, promotions, ruleset),
     people,
     contracts: [],
     contractOffers: [],

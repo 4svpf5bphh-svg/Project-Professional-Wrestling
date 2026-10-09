@@ -193,6 +193,21 @@ test("schema v4 migrates with empty promotion wrestler presentation state", () =
   ok(current.stateSchemaVersion === CURRENT_WORLD_STATE_SCHEMA_VERSION, "v4 migration did not upgrade to current schema");
 });
 
+test("schema v6 migrates promotion-owned show series and event lineage", () => {
+  const state = createWorld(22013, DEFAULT_RULESET);
+  const snapshot = createPersistedWorldState(state);
+  const legacyV6: any = structuredClone(snapshot);
+  legacyV6.stateSchemaVersion = 6;
+  delete legacyV6.showSeries;
+  for (const event of legacyV6.events) delete event.showSeriesId;
+
+  const restored = restorePersistedWorldState(legacyV6);
+  ok((restored.showSeries?.length ?? 0) === restored.promotions.length * 2, "v6 migration did not seed flagship and premium show identities");
+  ok(restored.showSeries?.every((series) => series.worldId === restored.world.id), "migrated show identity crossed World boundary");
+  const current = createPersistedWorldState(restored);
+  ok(current.stateSchemaVersion === CURRENT_WORLD_STATE_SCHEMA_VERSION, "v6 migration did not upgrade to current schema");
+});
+
 test("schema v5 migrates with empty relationship and roster-affiliation collections", () => {
   const snapshot = createPersistedWorldState(createWorld(22011, DEFAULT_RULESET));
   const legacyV5: any = structuredClone(snapshot);

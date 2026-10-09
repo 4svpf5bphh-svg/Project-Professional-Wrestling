@@ -1,0 +1,147 @@
+import type {
+  Id,
+  PpwDate,
+  Promotion,
+  PromotionShowSeries,
+  PromotionShowSeriesRole,
+  Ruleset,
+  WorldState,
+} from "../../domain/src/types.js";
+import { ppwDateToWeekIndex } from "./clock.js";
+
+function seriesId(promotionId: Id, role: "FLAGSHIP" | "PREMIUM"): Id {
+  return `show-series:${promotionId}:${role.toLowerCase()}`;
+}
+
+export function defaultPromotionShowSeries(
+  worldId: Id,
+  promotion: Promotion,
+  ruleset: Ruleset,
+): PromotionShowSeries[] {
+  const regularCadence = Math.max(1, Math.floor(promotion.eventCadenceWeeks));
+  const premiumEveryShows = Math.max(2, Math.floor(ruleset.majorEventIntervalWeeks));
+  const premiumCadence = regularCadence * premiumEveryShows;
+  return [
+    {
+      id: seriesId(promotion.id, "FLAGSHIP"),
+      worldId,
+      promotionId: promotion.id,
+      name: `${promotion.name} Flagship`,
+      role: "FLAGSHIP",
+      eventType: "REGULAR",
+      cadenceWeeks: regularCadence,
+      anchorWeek: 0,
+      eventImportance: 58,
+      active: true,
+    },
+    {
+      id: seriesId(promotion.id, "PREMIUM"),
+      worldId,
+      promotionId: promotion.id,
+      name: `${promotion.name} Premium`,
+      role: "PREMIUM",
+      eventType: "MAJOR",
+      cadenceWeeks: premiumCadence,
+      anchorWeek: regularCadence * (premiumEveryShows - 1),
+      eventImportance: 85,
+      active: true,
+    },
+  ];
+}
+
+export function seedWorldPromotionShowSeries(
+  worldId: Id,
+  promotions: readonly Promotion[],
+  ruleset: Ruleset,
+): PromotionShowSeries[] {
+  return promotions.flatMap((promotion) => defaultPromotionShowSeries(worldId, promotion, ruleset));
+}
+
+function seriesForPromotion(
+  state: Pick<WorldState, "world" | "ruleset" | "promotions" | "showSeries">,
+  promotionId: Id,
+): PromotionShowSeries[] {
+  const persisted = (state.showSeries ?? []).filter((series) => series.promotionId === promotionId && series.active);
+  if (persisted.length > 0) return persisted;
+  const promotion = state.promotions.find((candidate) => candidate.id === promotionId);
+  return promotion ? defaultPromotionShowSeries(state.world.id, promotion, state.ruleset) : [];
+}
+
+export function promotionShowSeriesDueForDate(
+  state: Pick<WorldState, "world" | "ruleset" | "promotions" | "showSeries">,
+  promotionId: Id,
+  date: PpwDate,
+): PromotionShowSeries[] {
+  const weekIndex = ppwDateToWeekIndex(date, state.ruleset.weeksPerYear);
+  return seriesForPromotion(state, promotionId)
+    .filter((series) => (
+      weekIndex >= series.anchorWeek
+      && (weekIndex - series.anchorWeek) % Math.max(1, series.cadenceWeeks) === 0
+    ))
+    .sort((left, right) => {
+      const rank = (role: PromotionShowSeriesRole): number => {
+        if (role === "PREMIUM") return 5;
+        if (role === "SPECIAL") return 4;
+        if (role === "FLAGSHIP") return 3;
+        if (role === "SECONDARY") return 2;
+        return 1;
+      };
+      return rank(right.role) - rank(left.role) || left.id.localeCompare(right.id);
+    });
+}
+
+/**
+ * Alpha currently supports one required operating show in a due week.
+ * Multiple due identities are therefore resolved to one primary series.
+ * Future multi-show scheduling should consume promotionShowSeriesDueForDate()
+ * directly rather than weakening this selection rule.
+ */
+export function primaryPromotionShowSeriesForDate(
+  state: Pick<WorldState, "world" | "ruleset" | "promotions" | "showSeries">,
+  promotionId: Id,
+  date: PpwDate,
+): PromotionShowSeries | null {
+  return promotionShowSeriesDueForDate(state, promotionId, date)[0] ?? null;
+}
+
+export function promotionShowSeriesById(
+  state: Pick<WorldState, "showSeries">,
+  showSeriesId: Id,
+): PromotionShowSeries | null {
+  return state.showSeries?.find((series) => series.id === showSeriesId) ?? null;
+}
+
+export function validatePromotionShowSeriesState(
+  state: Pick<WorldState, "world" | "promotions" | "showSeries">,
+): string[] {
+  const errors: string[] = [];
+  const promotionIds = new Set(state.promotions.map((promotion) => promotion.id));
+  const ids = new Set<Id>();
+  const flagshipByPromotion = new Map<Id, number>();
+
+  for (const series of state.showSeries ?? []) {
+    if (ids.has(series.id)) errors.push(`duplicate show series id: ${series.id}`);
+    ids.add(series.id);
+    if (series.worldId !== state.world.id) errors.push(`show series ${series.id} crosses world boundary`);
+    if (!promotionIds.has(series.promotionId)) errors.push(`show series ${series.id} references missing promotion`);
+    if (!Number.isSafeInteger(series.cadenceWeeks) || series.cadenceWeeks < 1) errors.push(`show series ${series.id} has invalid cadence`);
+    if (!Number.isSafeInteger(series.anchorWeek) || series.anchorWeek < 0 || series.anchorWeek >= Math.max(1, series.cadenceWeeks)) {
+      errors.push(`show series ${series.id} has invalid anchor week`);
+    }
+    if (!Number.isFinite(series.eventImportance) || series.eventImportance < 0 || series.eventImportance > 100) {
+      errors.push(`show series ${series.id} has invalid event importance`);
+    }
+    if (series.active && series.role === "FLAGSHIP") {
+      flagshipByPromotion.set(series.promotionId, (flagshipByPromotion.get(series.promotionId) ?? 0) + 1);
+    }
+  }
+
+  if ((state.showSeries ?? []).length > 0) {
+    for (const promotion of state.promotions) {
+      if ((flagshipByPromotion.get(promotion.id) ?? 0) !== 1) {
+        errors.push(`promotion ${promotion.id} requires exactly one active flagship show series`);
+      }
+    }
+  }
+  return errors;
+}

@@ -37,6 +37,7 @@ export type ContractOfferStatus = "PENDING" | "ACCEPTED" | "REJECTED" | "WITHDRA
 export type RoleExpectation = "MAIN_EVENT" | "UPPER_CARD" | "FEATURED" | "REGULAR" | "DEVELOPMENTAL" | "SPECIAL_ATTRACTION";
 export type TicketStrategy = "ACCESSIBLE" | "STANDARD" | "PREMIUM" | "PRESTIGE";
 export type WrestlingEventType = "REGULAR" | "MAJOR";
+export type PromotionShowSeriesRole = "FLAGSHIP" | "SECONDARY" | "DEVELOPMENTAL" | "SPECIAL" | "PREMIUM";
 export type WrestlingEventStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED";
 export type ScheduledAppearanceStatus = "COMMITTED" | "COMPLETED" | "CANCELLED";
 export type MatchType = "SINGLES" | "TAG";
@@ -184,6 +185,19 @@ export interface Promotion {
   aiProfile: AiProfile;
 }
 
+export interface PromotionShowSeries {
+  id: Id;
+  worldId: Id;
+  promotionId: Id;
+  name: string;
+  role: PromotionShowSeriesRole;
+  eventType: WrestlingEventType;
+  cadenceWeeks: number;
+  anchorWeek: number;
+  eventImportance: number;
+  active: boolean;
+}
+
 export interface PromotionStanding {
   worldId: Id;
   promotionId: Id;
@@ -306,6 +320,7 @@ export interface WrestlingEvent {
   id: Id;
   worldId: Id;
   promotionId: Id;
+  showSeriesId?: Id;
   marketId: Id;
   venueId: Id;
   date: PpwDate;
@@ -498,6 +513,7 @@ export interface WorldState {
   venues: Venue[];
   promotions: Promotion[];
   promotionMarketStates: PromotionMarketState[];
+  showSeries?: PromotionShowSeries[];
   promotionStandings?: PromotionStanding[];
   promotionSurvivalStates?: PromotionSurvivalState[];
   people: Person[];

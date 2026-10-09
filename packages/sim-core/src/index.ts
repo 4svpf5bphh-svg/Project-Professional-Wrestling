@@ -31,6 +31,7 @@ export * from "./relationships.js";
 export * from "./resolution.js";
 export * from "./rng.js";
 export * from "./roster-source.js";
+export * from "./show-calendar.js";
 export * from "./show-flow.js";
 export * from "./snapshot.js";
 export * from "./state-schema.js";
