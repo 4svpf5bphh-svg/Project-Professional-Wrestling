@@ -5,6 +5,7 @@ import type {
   Person,
   Promotion,
   PromotionMarketState,
+  PromotionShowSeries,
   PromotionTier,
   Ruleset,
   Venue,
@@ -18,6 +19,12 @@ import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 import { registerEntityIdCounters } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { seedWorldPromotionShowSeries } from "./show-calendar.js";
+
+export type WorldShowSeriesSource = (
+  worldId: string,
+  promotions: readonly Promotion[],
+  ruleset: Ruleset,
+) => PromotionShowSeries[];
 import {
   validateWorldRosterSourceResult,
   type WorldRosterSource,
@@ -113,6 +120,7 @@ export function createWorld(
   rosterSource: WorldRosterSource = generatedFictionalRosterSource,
   promotionSource: WorldPromotionSource = generatedFictionalPromotionSource,
   initialRosterAssignmentSource: InitialRosterAssignmentSource = emptyInitialRosterAssignmentSource,
+  showSeriesSource: WorldShowSeriesSource = seedWorldPromotionShowSeries,
 ): WorldState {
   const rng = new DeterministicRng(seed);
   const worldId = `world-${seed >>> 0}`;
@@ -152,7 +160,7 @@ export function createWorld(
     venues,
     promotions,
     promotionMarketStates,
-    showSeries: seedWorldPromotionShowSeries(worldId, promotions, ruleset),
+    showSeries: showSeriesSource(worldId, promotions, ruleset),
     people,
     contracts: [],
     contractOffers: [],

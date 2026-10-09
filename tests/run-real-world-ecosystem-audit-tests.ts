@@ -2,6 +2,7 @@ import type { Person, Promotion, WorldState } from "../packages/domain/src/types
 import { REAL_WORLD_ALPHA_RULESET } from "../packages/config/src/real-world-ruleset.js";
 import { calibratedRealActiveMixedRosterSource } from "../packages/content/src/real-active-mixed-roster.js";
 import { realPromotionEcosystemSource } from "../packages/content/src/real-promotions.js";
+import { realPromotionShowSeriesSource } from "../packages/content/src/real-show-series.js";
 import {
   REAL_WORLD_TAKEOVER_STARTUP_MEN,
   REAL_WORLD_TAKEOVER_STARTUP_ROSTER_SIZE,
@@ -134,6 +135,7 @@ function buildWorld(seed: number): WorldState {
     calibratedRealActiveMixedRosterSource,
     realPromotionEcosystemSource,
     realWorldInitialRosterAssignmentSource,
+    realPromotionShowSeriesSource,
   );
   seedRealActiveTagTeams(state);
   seedRealWrestlerRelationships(state);
@@ -175,6 +177,25 @@ const wwe = start.promotions.find((promotion) => promotion.name === "WWE");
 const nxt = start.promotions.find((promotion) => promotion.name === "NXT");
 const roh = start.promotions.find((promotion) => promotion.name === "ROH");
 ok(wwe && nxt && roh, "audit World is missing WWE, NXT or ROH");
+
+const showNames = (promotionId: string) => (
+  start.showSeries?.filter((series) => series.promotionId === promotionId).map((series) => series.name) ?? []
+);
+const wweShows = showNames(wwe!.id);
+ok(wweShows.includes("Monday Night Raw"), "WWE calendar is missing Raw");
+ok(wweShows.includes("Friday Night SmackDown"), "WWE calendar is missing SmackDown");
+ok(wweShows.includes("WrestleMania"), "WWE calendar is missing WrestleMania");
+const aew = start.promotions.find((promotion) => promotion.name === "AEW");
+ok(aew, "audit World is missing AEW");
+const aewShows = showNames(aew!.id);
+ok(aewShows.includes("AEW Dynamite") && aewShows.includes("AEW Collision"), "AEW calendar is missing its alternating regular identities");
+ok(aewShows.includes("AEW All In"), "AEW calendar is missing All In");
+
+for (const promotion of start.promotions.filter((candidate) => candidate.identity?.origin === "REAL_WORLD")) {
+  const series = start.showSeries?.filter((candidate) => candidate.promotionId === promotion.id) ?? [];
+  ok(series.some((candidate) => candidate.role === "FLAGSHIP"), `${promotion.name} calendar has no flagship`);
+  ok(series.some((candidate) => candidate.role === "PREMIUM"), `${promotion.name} calendar has no crown event`);
+}
 const peopleByName = new Map(start.people.map((person) => [person.name, person]));
 const takeoverIds = new Set(
   start.promotions

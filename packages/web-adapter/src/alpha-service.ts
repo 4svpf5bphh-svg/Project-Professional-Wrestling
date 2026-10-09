@@ -1,6 +1,7 @@
 import { REAL_WORLD_ALPHA_RULESET } from "../../config/src/real-world-ruleset.js";
 import { calibratedRealActiveMixedRosterSource } from "../../content/src/real-active-mixed-roster.js";
 import { realPromotionEcosystemSource } from "../../content/src/real-promotions.js";
+import { realPromotionShowSeriesSource } from "../../content/src/real-show-series.js";
 import { realWorldInitialRosterAssignmentSource } from "../../content/src/real-aew-roh-cmll-rosters.js";
 import { seedRealActiveTagTeams } from "../../content/src/real-active-tag-teams.js";
 import { seedRealWrestlerRelationships } from "../../content/src/real-wrestler-relationships.js";
@@ -118,6 +119,7 @@ export function createAlphaWorldAggregate(options: AlphaWorldBootstrapOptions): 
     calibratedRealActiveMixedRosterSource,
     realPromotionEcosystemSource,
     realWorldInitialRosterAssignmentSource,
+    realPromotionShowSeriesSource,
   );
   seedRealActiveTagTeams(state);
   seedRealWrestlerRelationships(state);
