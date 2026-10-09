@@ -116,7 +116,7 @@ export function buildPlayerAttention(
         title: "This week’s show needs planning",
         summary: "No mandatory show is committed yet. Complete the show plan before the weekly lock or Routine Continuity will step in.",
         deadline: { ...currentDate, day: 7 },
-        deepLink: "#show-plan",
+        deepLink: "/planner",
         dismissible: false,
         sourceOpportunityCategory: null,
       });
@@ -145,7 +145,7 @@ export function buildPlayerAttention(
             ? status.riskReasons.join(" · ")
             : "A future committed show no longer passes live availability checks.",
           deadline: { ...draft.targetDate },
-          deepLink: "#show-plan",
+          deepLink: "/planner",
           dismissible: false,
           sourceOpportunityCategory: null,
         });
@@ -156,7 +156,7 @@ export function buildPlayerAttention(
           title: `Future show reserved for Year ${draft.targetDate.year}, Week ${draft.targetDate.week}`,
           summary: "Venue and selected wrestler dates are currently reserved. PPW will keep revalidating the plan as the World changes.",
           deadline: { ...draft.targetDate },
-          deepLink: "#show-plan",
+          deepLink: "/planner",
           dismissible: true,
           sourceOpportunityCategory: null,
         });
