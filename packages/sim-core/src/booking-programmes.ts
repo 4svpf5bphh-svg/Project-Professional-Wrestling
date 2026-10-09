@@ -117,6 +117,8 @@ export function selectFreshSinglesPair(state: WorldState, event: WrestlingEvent,
     a: Person;
     b: Person;
     recent: boolean;
+    programmeWindow: boolean;
+    unused: boolean;
     meetings: number;
     gap: number;
     star: number;
@@ -130,11 +132,14 @@ export function selectFreshSinglesPair(state: WorldState, event: WrestlingEvent,
       const key = pairKey(a.id, b.id);
       const history = histories.get(key);
       const gap = history ? currentWeek - history.lastWeek : 1_000_000;
+      const meetings = history?.meetings ?? 0;
       candidates.push({
         a,
         b,
         recent: gap <= 2,
-        meetings: history?.meetings ?? 0,
+        programmeWindow: meetings > 0 && meetings < 4 && gap >= 3 && gap <= 10,
+        unused: meetings === 0,
+        meetings,
         gap,
         star: pushScore(a) + pushScore(b),
         key,
@@ -144,6 +149,8 @@ export function selectFreshSinglesPair(state: WorldState, event: WrestlingEvent,
 
   candidates.sort((left, right) => (
     Number(left.recent) - Number(right.recent)
+    || Number(right.programmeWindow) - Number(left.programmeWindow)
+    || Number(right.unused) - Number(left.unused)
     || left.meetings - right.meetings
     || right.gap - left.gap
     || right.star - left.star

@@ -183,8 +183,9 @@ test("Programme state survives persistence and schema restore", () => {
 });
 
 
-test("fresh singles fallback chooses an unused pairing instead of forcing a recent rematch", () => {
+test("fresh singles fallback favours healthy spaced continuity without forcing immediate rematches", () => {
   const { state, promotion, personIds } = programmeFixture(9100);
+  state.world.currentDate = { ...state.world.currentDate, week: 8, day: 1 };
   const people = personIds.map((id) => state.people.find((person) => person.id === id)!);
   const market = state.markets.find((candidate) => candidate.id === promotion.homeMarketId)!;
   const venue = state.venues.find((candidate) => candidate.marketId === market.id)!;
@@ -242,6 +243,7 @@ test("fresh singles fallback chooses an unused pairing instead of forcing a rece
   addRecentMatch("ab", a!.id, b!.id, 1);
   addRecentMatch("ac", a!.id, c!.id, 2);
   addRecentMatch("ad", a!.id, d!.id, 3);
+  state.events.find((event) => event.id === "fresh-history-event-ab")!.date.week = 4;
 
   const targetEvent = {
     id: "fresh-target-event",
@@ -269,12 +271,10 @@ test("fresh singles fallback chooses an unused pairing instead of forcing a rece
   const selected = selectFreshSinglesPair(state, targetEvent, people);
   ok(Boolean(selected), "fresh singles selector returned no pairing");
   const selectedKey = pairKey(selected![0].id, selected![1].id);
-  ok(selectedKey !== pairKey(a!.id, b!.id), "fresh singles fallback forced the top wrestler into a recent rematch");
+  ok(selectedKey !== pairKey(a!.id, c!.id), "fresh singles fallback forced an immediate rematch");
   ok(
-    selectedKey === pairKey(b!.id, c!.id)
-      || selectedKey === pairKey(b!.id, d!.id)
-      || selectedKey === pairKey(c!.id, d!.id),
-    "fresh singles fallback did not choose one of the unused available pairings",
+    selectedKey === pairKey(a!.id, b!.id),
+    "fresh singles fallback ignored a healthy spaced continuation in favour of unrelated novelty",
   );
 });
 
