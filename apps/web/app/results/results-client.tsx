@@ -252,6 +252,11 @@ export default function ResultsClient(): React.JSX.Element {
                                   <span key={participant.personId}>{participant.name}</span>
                                 ))}
                               </div>
+                              {slot.segment.type === "ATTACK" && slot.segment.attackerPersonId && slot.segment.victimPersonId ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "Attacker"} attacked {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"}</span>
+                                </div>
+                              ) : null}
                               <div className={styles.matchMeta}>
                                 <span>{slot.segment.programmeId ? "Programme attached" : "Standalone segment"}</span>
                                 {slot.segment.executionQuality !== null ? <span>Execution {decimal(slot.segment.executionQuality)}</span> : null}
@@ -437,6 +442,11 @@ export default function ResultsClient(): React.JSX.Element {
                                       </a>
                                     ))}
                                   </div>
+                                  {slot.segment.type === "ATTACK" && slot.segment.attackerPersonId && slot.segment.victimPersonId ? (
+                                    <div className={styles.matchMeta}>
+                                      <span>{slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "Attacker"} attacked {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"}</span>
+                                    </div>
+                                  ) : null}
                                   {slot.segment.type === "TURN" && slot.segment.turnTargetAlignment ? (
                                     <div className={styles.matchMeta}>
                                       <span>

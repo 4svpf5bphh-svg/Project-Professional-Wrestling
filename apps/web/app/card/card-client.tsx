@@ -384,6 +384,12 @@ export default function CardClient(): React.JSX.Element {
     && segment.participantIds.length <= 4
     && segment.participantIds.every(Boolean)
     && new Set(segment.participantIds).size === segment.participantIds.length
+    && (segment.type !== "ATTACK" || (
+      Boolean(segment.attackerPersonId) && Boolean(segment.victimPersonId)
+      && segment.attackerPersonId !== segment.victimPersonId
+      && segment.participantIds.includes(segment.attackerPersonId ?? "")
+      && segment.participantIds.includes(segment.victimPersonId ?? "")
+    ))
     && (segment.type !== "TURN" || (
       Boolean(segment.turnPersonId)
       && segment.participantIds.includes(segment.turnPersonId ?? "")
@@ -458,6 +464,8 @@ export default function CardClient(): React.JSX.Element {
       participantIds: Array.from({ length: segmentMinimum(type) }, () => ""),
       programmeId: null,
       plannedLengthMinutes: 6,
+      attackerPersonId: null,
+      victimPersonId: null,
       turnPersonId: null,
       turnTargetAlignment: null,
     }]);
@@ -604,6 +612,10 @@ export default function CardClient(): React.JSX.Element {
     updateSegment(segmentId, {
       type,
       participantIds,
+      attackerPersonId: type === "ATTACK" && segment.type === "ATTACK" && participantIds.includes(segment.attackerPersonId ?? "")
+        ? (segment.attackerPersonId ?? null) : null,
+      victimPersonId: type === "ATTACK" && segment.type === "ATTACK" && participantIds.includes(segment.victimPersonId ?? "")
+        ? (segment.victimPersonId ?? null) : null,
       turnPersonId: type === "TURN"
         ? (segment.turnPersonId && participantIds.includes(segment.turnPersonId) ? segment.turnPersonId : participantIds.find(Boolean) ?? null)
         : null,
@@ -626,6 +638,8 @@ export default function CardClient(): React.JSX.Element {
     updateSegment(segmentId, {
       programmeId,
       participantIds,
+      attackerPersonId: segment.attackerPersonId && participantIds.includes(segment.attackerPersonId) ? segment.attackerPersonId : null,
+      victimPersonId: segment.victimPersonId && participantIds.includes(segment.victimPersonId) ? segment.victimPersonId : null,
       turnPersonId: segment.turnPersonId && participantIds.includes(segment.turnPersonId) ? segment.turnPersonId : null,
     });
   }
@@ -637,7 +651,21 @@ export default function CardClient(): React.JSX.Element {
     participantIds[index] = personId;
     updateSegment(segmentId, {
       participantIds,
+      attackerPersonId: segment.type === "ATTACK" && index === 0 ? (personId || null) : (segment.attackerPersonId ?? null),
+      victimPersonId: segment.type === "ATTACK" && index === 1 ? (personId || null) : (segment.victimPersonId ?? null),
       turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
+    });
+  }
+
+  function swapAttackRoles(segmentId: string): void {
+    const segment = segments.find((candidate) => candidate.draftSegmentId === segmentId);
+    if (!segment || segment.type !== "ATTACK" || !segment.participantIds[0] || !segment.participantIds[1]) return;
+    const participantIds = [...segment.participantIds];
+    [participantIds[0], participantIds[1]] = [participantIds[1]!, participantIds[0]!];
+    updateSegment(segmentId, {
+      participantIds,
+      attackerPersonId: participantIds[0],
+      victimPersonId: participantIds[1],
     });
   }
 
@@ -810,6 +838,11 @@ export default function CardClient(): React.JSX.Element {
       const who = segment.turnPersonId ? personName(segment.turnPersonId) : "Choose wrestler";
       const target = segment.turnTargetAlignment ? pretty(segment.turnTargetAlignment) : "Choose alignment";
       return `Turn · ${who} → ${target} · ${segment.plannedLengthMinutes} min`;
+    }
+    if (segment.type === "ATTACK") {
+      const attacker = segment.attackerPersonId ? personName(segment.attackerPersonId) : "Choose attacker";
+      const victim = segment.victimPersonId ? personName(segment.victimPersonId) : "Choose victim";
+      return `Attack · ${attacker} attacks ${victim} · ${segment.plannedLengthMinutes} min`;
     }
     return `${pretty(segment.type)} · ${people} · ${segment.plannedLengthMinutes} min`;
   }
@@ -1251,11 +1284,14 @@ export default function CardClient(): React.JSX.Element {
                 ) : (
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
-                      <span>Who is involved?</span>
+                      <span>{segment.type === "ATTACK" ? "Who attacks whom?" : "Who is involved?"}</span>
                       {segment.programmeId ? <small>Limited to this Programme</small> : <small>Any contracted wrestler</small>}
                     </div>
                     {segment.participantIds.map((personId, personIndex) => (
                       <div className={styles.segmentPersonRow} key={personIndex}>
+                        {segment.type === "ATTACK" ? (
+                          <span className={styles.sideLabel}>{personIndex === 0 ? "Attacker" : personIndex === 1 ? "Victim" : "Also involved"}</span>
+                        ) : null}
                         <WrestlerSlotButton
                           person={pickerPerson(personId)}
                           disabled={!view.canEdit}
@@ -1264,12 +1300,19 @@ export default function CardClient(): React.JSX.Element {
                             segmentId: segment.draftSegmentId,
                             slotIndex: personIndex,
                             currentId: personId,
-                            label: `${pretty(segment.type)} · Wrestler ${personIndex + 1}`,
+                            label: segment.type === "ATTACK"
+                              ? (personIndex === 0 ? "Choose attacker" : personIndex === 1 ? "Choose victim" : "Also involved")
+                              : `${pretty(segment.type)} · Wrestler ${personIndex + 1}`,
                           })}
                         />
-                        <button type="button" className={styles.smallRemove} disabled={!view.canEdit || segment.participantIds.length <= segmentMinimum(segment.type)} onClick={() => removeSegmentParticipant(segment.draftSegmentId, personIndex)}>×</button>
+                        {segment.type === "ATTACK" && personIndex < 2 ? null : (
+                          <button type="button" className={styles.smallRemove} disabled={!view.canEdit || segment.participantIds.length <= segmentMinimum(segment.type)} onClick={() => removeSegmentParticipant(segment.draftSegmentId, personIndex)}>×</button>
+                        )}
                       </div>
                     ))}
+                    {segment.type === "ATTACK" ? (
+                      <button type="button" className={styles.secondaryButton} disabled={!view.canEdit || !segment.participantIds[0] || !segment.participantIds[1]} onClick={() => swapAttackRoles(segment.draftSegmentId)}>Swap attacker / victim</button>
+                    ) : null}
                     <button type="button" className={styles.secondaryButton} disabled={!view.canEdit || segment.participantIds.length >= 4} onClick={() => addSegmentParticipant(segment.draftSegmentId)}>+ Add wrestler</button>
                     {view.programmes.length > 0 ? <a className={styles.programmeLink} href="/programmes">Manage Programmes →</a> : <a className={styles.programmeLink} href="/programmes">Start a Programme →</a>}
                   </div>

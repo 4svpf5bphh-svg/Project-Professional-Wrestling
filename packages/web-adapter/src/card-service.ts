@@ -104,6 +104,8 @@ export interface AlphaCardSegmentView {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  attackerPersonId?: Id | null;
+  victimPersonId?: Id | null;
   turnPersonId?: Id | null;
   turnTargetAlignment?: WrestlerAlignment | null;
 }
@@ -419,6 +421,13 @@ function normalizeSegments(
       ? requiredText(segment.turnPersonId ?? "", `segments[${index}].turnPersonId`, 128)
       : null;
     const turnTargetAlignment = segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null;
+    const attackerPersonId = segment.type === "ATTACK"
+      ? requiredText(segment.attackerPersonId ?? "", `segments[${index}].attackerPersonId`, 128) : null;
+    const victimPersonId = segment.type === "ATTACK"
+      ? requiredText(segment.victimPersonId ?? "", `segments[${index}].victimPersonId`, 128) : null;
+    if (segment.type === "ATTACK" && (
+      attackerPersonId === victimPersonId || !people.includes(attackerPersonId!) || !people.includes(victimPersonId!)
+    )) throw new Error("ATTACK segment requires distinct attacker and victim among its participants");
     if (segment.type === "TURN") {
       if (!people.includes(turnPersonId!)) throw new Error("TURN segment wrestler must be one of the segment participants");
       if (!turnTargetAlignment || !["FACE", "HEEL", "TWEENER"].includes(turnTargetAlignment)) {
@@ -448,6 +457,7 @@ function normalizeSegments(
       participantIds: people,
       programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
+      ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId } : {}),
       ...(segment.type === "TURN" ? { turnPersonId, turnTargetAlignment } : {}),
     } satisfies DetailedShowSegmentDraft;
   });
@@ -859,6 +869,8 @@ export async function loadAlphaShowCard(
       participantIds: [...segment.participantIds],
       programmeId: segment.programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
+      attackerPersonId: segment.type === "ATTACK" ? (segment.attackerPersonId ?? null) : null,
+      victimPersonId: segment.type === "ATTACK" ? (segment.victimPersonId ?? null) : null,
       turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
       turnTargetAlignment: segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
     })),

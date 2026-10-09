@@ -55,6 +55,9 @@ export interface DetailedShowSegmentDraft {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  // Roles are authored intent; participants alone must not invent attack direction.
+  attackerPersonId?: Id | null;
+  victimPersonId?: Id | null;
   turnPersonId?: Id | null;
   turnTargetAlignment?: WrestlerAlignment | null;
 }
@@ -292,6 +295,15 @@ function validateShowSegmentDraft(
       : normalizedId(draft.turnPersonId, "turnPersonId"))
     : null;
   const turnTargetAlignment = draft.type === "TURN" ? (draft.turnTargetAlignment ?? null) : null;
+  const attackerPersonId = draft.type === "ATTACK"
+    ? (draft.attackerPersonId == null ? null : normalizedId(draft.attackerPersonId, "attackerPersonId")) : null;
+  const victimPersonId = draft.type === "ATTACK"
+    ? (draft.victimPersonId == null ? null : normalizedId(draft.victimPersonId, "victimPersonId")) : null;
+  if (draft.type === "ATTACK" && (
+    !attackerPersonId || !victimPersonId || attackerPersonId === victimPersonId
+    || !draft.participantIds.includes(attackerPersonId)
+    || !draft.participantIds.includes(victimPersonId)
+  )) throw new Error("ATTACK segment requires distinct attacker and victim among its participants");
   if (draft.type === "TURN") {
     if (!turnPersonId || !draft.participantIds.includes(turnPersonId)) {
       throw new Error("TURN segment must identify one participating wrestler who turns");
@@ -320,6 +332,7 @@ function validateShowSegmentDraft(
     participantIds: [...draft.participantIds],
     programmeId,
     plannedLengthMinutes: draft.plannedLengthMinutes,
+    ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId } : {}),
     ...(draft.type === "TURN" ? { turnPersonId, turnTargetAlignment } : {}),
   };
 }

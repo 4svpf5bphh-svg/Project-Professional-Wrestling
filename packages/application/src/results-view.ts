@@ -135,6 +135,8 @@ export interface PlayerShowSegmentView {
   plannedLengthMinutes: number;
   participants: PlayerShowSegmentParticipantView[];
   programmeId: Id | null;
+  attackerPersonId: Id | null;
+  victimPersonId: Id | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
   executionQuality: number | null;
@@ -559,6 +561,8 @@ export function buildPlayerShowHistory(
           name: peopleById.get(personId)?.name ?? "Unknown wrestler",
         })),
         programmeId: segment.programmeId,
+        attackerPersonId: segment.attackerPersonId,
+        victimPersonId: segment.victimPersonId,
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,
         executionQuality: segment.executionQuality,

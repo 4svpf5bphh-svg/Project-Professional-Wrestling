@@ -336,6 +336,34 @@ await test("Show Builder persists an interleaved Programme segment with wrestler
   ok(reloaded.runningOrder[1]?.kind === "SEGMENT", "segment slot moved after reload");
 });
 
+await test("Card requires attack roles and preserves them on reload", async () => {
+  const fixture = await reservedShowFixture(61098);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const [attacker, victim] = fixture.participantIds;
+  if (!attacker || !victim) throw new Error("attack fixture requires two wrestlers");
+  const attack: AlphaCardSegmentView = {
+    draftSegmentId: "card-attack-1",
+    type: "ATTACK",
+    participantIds: [attacker, victim],
+    programmeId: null,
+    plannedLengthMinutes: 6,
+    attackerPersonId: attacker,
+    victimPersonId: victim,
+  };
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "web-card-attack-roles",
+    expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion,
+    matches: singlesCard(fixture.participantIds),
+    segments: [attack],
+    championshipAssignments: [],
+  });
+  ok(saved.segments[0]?.attackerPersonId === attacker, "Card lost the attacker role");
+  ok(saved.segments[0]?.victimPersonId === victim, "Card lost the victim role");
+  const loaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(loaded.segments[0]?.attackerPersonId === attacker && loaded.segments[0]?.victimPersonId === victim, "attack roles did not survive reload");
+});
+
 await test("Alpha browser card booking derives the reservation from the wrestlers actually booked", async () => {
   const fixture = await reservedShowFixture(61012);
   const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");

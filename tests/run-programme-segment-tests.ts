@@ -161,6 +161,43 @@ test("typed show segments can attach an active Programme and preserve running or
   ok(programmeActivities(setup.state, setup.programme.id)[0]?.kind === "SEGMENT", "typed segment did not feed Programme history");
 });
 
+test("ATTACK records explicit attacker and victim into immutable show history", () => {
+  const setup = fixture(9158);
+  const [attacker, victim] = setup.rosterIds;
+  const base = {
+    draftId: "attack-segment-show",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null,
+    venueId: null,
+    ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [],
+    championshipAssignments: [],
+  };
+  const attack = {
+    draftSegmentId: "attack-1",
+    type: "ATTACK" as const,
+    participantIds: [attacker!, victim!],
+    programmeId: setup.programme.id,
+    plannedLengthMinutes: 5,
+    attackerPersonId: attacker!,
+    victimPersonId: victim!,
+  };
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...attack, victimPersonId: attacker! }],
+  }), "distinct attacker and victim");
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [attack],
+  });
+  const saved = setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!;
+  ok(saved.attackerPersonId === attacker && saved.victimPersonId === victim, "attack roles were not saved");
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "attack did not resolve");
+  const recorded = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(recorded.attackerPersonId === attacker && recorded.victimPersonId === victim, "attack direction was lost from the ledger");
+});
+
 test("standalone segments become factual show history without inventing Programme activity", () => {
   const setup = fixture(9151);
   upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {

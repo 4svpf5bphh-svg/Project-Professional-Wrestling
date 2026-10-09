@@ -63,6 +63,8 @@ export interface PlayerWorldResultSegmentView {
   order: number;
   type: DetailedShowSegmentType;
   participants: Array<{ personId: Id; name: string }>;
+  attackerPersonId: Id | null;
+  victimPersonId: Id | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
   crowdResponse: number | null;
@@ -281,6 +283,8 @@ export function buildPlayerWorldResultsView(
           personId,
           name: peopleById.get(personId)?.name ?? "Unknown wrestler",
         })),
+        attackerPersonId: segment.attackerPersonId,
+        victimPersonId: segment.victimPersonId,
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,
         crowdResponse: segment.crowdResponse,

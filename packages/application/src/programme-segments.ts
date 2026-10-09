@@ -43,6 +43,8 @@ export interface ResolvedShowSegment {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  attackerPersonId: Id | null;
+  victimPersonId: Id | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
   executionQuality: number | null;
@@ -61,6 +63,8 @@ interface NormalizedDraftSegment {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  attackerPersonId: Id | null;
+  victimPersonId: Id | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
 }
@@ -121,6 +125,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     participantIds: [...segment.participantIds],
     programmeId: segment.programmeId,
     plannedLengthMinutes: segment.plannedLengthMinutes,
+    attackerPersonId: segment.type === "ATTACK" ? (segment.attackerPersonId ?? null) : null,
+    victimPersonId: segment.type === "ATTACK" ? (segment.victimPersonId ?? null) : null,
     turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
     turnTargetAlignment: segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
   }));
@@ -133,6 +139,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       participantIds: [...segment.participantIds],
       programmeId: segment.programmeId,
       plannedLengthMinutes: 6,
+      attackerPersonId: null,
+      victimPersonId: null,
       turnPersonId: null,
       turnTargetAlignment: null,
     }));
@@ -237,6 +245,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const participantIds = entry.payload.participantIds;
   const programmeId = entry.payload.programmeId;
   const plannedLengthMinutes = entry.payload.plannedLengthMinutes;
+  const attackerPersonId = entry.payload.attackerPersonId ?? null;
+  const victimPersonId = entry.payload.victimPersonId ?? null;
   const turnPersonId = entry.payload.turnPersonId === undefined ? null : entry.payload.turnPersonId;
   const turnTargetAlignment = entry.payload.turnTargetAlignment === undefined ? null : entry.payload.turnTargetAlignment;
   const executionQuality = typeof entry.payload.segmentExecutionQuality === "number" ? entry.payload.segmentExecutionQuality : null;
@@ -263,6 +273,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || (programmeId !== null && typeof programmeId !== "string")
     || typeof plannedLengthMinutes !== "number"
     || !Number.isInteger(plannedLengthMinutes)
+    || (attackerPersonId !== null && typeof attackerPersonId !== "string")
+    || (victimPersonId !== null && typeof victimPersonId !== "string")
     || (turnPersonId !== null && typeof turnPersonId !== "string")
     || (turnTargetAlignment !== null && !isWrestlerAlignment(turnTargetAlignment))
     || (outcome !== null && !["POOR", "FLAT", "SOLID", "STRONG", "HOT"].includes(outcome))
@@ -279,6 +291,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     participantIds: participantIds ? participantIds.split(",").filter(Boolean) : [],
     programmeId,
     plannedLengthMinutes,
+    attackerPersonId: attackerPersonId as Id | null,
+    victimPersonId: victimPersonId as Id | null,
     turnPersonId,
     turnTargetAlignment: turnTargetAlignment as WrestlerAlignment | null,
     executionQuality,
@@ -353,6 +367,8 @@ export function recordResolvedShowSegments(
             participantIds: segment.participantIds.join(","),
             programmeId: segment.programmeId,
             plannedLengthMinutes: segment.plannedLengthMinutes,
+            attackerPersonId: segment.attackerPersonId,
+            victimPersonId: segment.victimPersonId,
             turnPersonId: segment.turnPersonId,
             turnTargetAlignment: segment.turnTargetAlignment,
             segmentExecutionQuality: outcome.executionQuality,
