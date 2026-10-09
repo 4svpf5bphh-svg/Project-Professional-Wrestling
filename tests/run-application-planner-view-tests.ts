@@ -2,6 +2,7 @@ declare const process: { exitCode?: number };
 
 import {
   buildPlayerSixWeekPlannerView,
+  buildPlayerWorldCalendarView,
   claimIndependentPromotionForPlayer,
   createWorldCommandState,
   createWorldOwnershipState,
@@ -211,6 +212,56 @@ test("six-week planner crosses PPW year boundaries correctly", () => {
   const view = buildPlayerSixWeekPlannerView(aggregate, "player-a");
   ok(view.promotion?.weeks[0]?.year === 1 && view.promotion.weeks[0]?.week === 50, "planner lost current week at year end");
   ok(view.promotion?.weeks[3]?.year === 2 && view.promotion.weeks[3]?.week === 1, "planner did not roll into the next PPW year");
+});
+
+
+
+test("shared World calendar exposes public show identities without leaking rival private planning", () => {
+  const { aggregate, promotionAId, promotionBId } = twoPlayerFixture(73006);
+  const view = buildPlayerWorldCalendarView(aggregate, "player-a", 6);
+
+  ok(view.horizonWeeks === 6, "World calendar did not preserve its requested horizon");
+  ok(view.occurrences.some((entry) => entry.promotionId === promotionAId && entry.isPlayerPromotion), "World calendar lost the player's own promotion");
+  ok(view.occurrences.some((entry) => entry.promotionId === promotionBId && !entry.isPlayerPromotion), "World calendar did not expose another human promotion's public show identity");
+
+  const rivalOccurrence = view.occurrences.find((entry) => entry.promotionId === promotionBId);
+  ok(rivalOccurrence !== undefined, "fixture has no rival occurrence in the shared calendar");
+  ok(rivalOccurrence?.eventId === null && rivalOccurrence.marketId === null && rivalOccurrence.venueId === null, "rival private planner logistics leaked into the public calendar");
+
+  const ownOccurrence = view.occurrences.find((entry) => entry.promotionId === promotionAId);
+  if (!ownOccurrence) throw new Error("fixture has no own occurrence in the shared calendar");
+  const market = aggregate.state.markets.find((candidate) => candidate.id === aggregate.state.promotions.find((candidate) => candidate.id === promotionAId)!.homeMarketId)!;
+  const venue = aggregate.state.venues.find((candidate) => candidate.marketId === market.id)!;
+  const eventId = "calendar-public-event";
+  aggregate.state.events.push({
+    id: eventId,
+    worldId: aggregate.state.world.id,
+    promotionId: promotionAId,
+    showSeriesId: ownOccurrence.showSeriesId,
+    showOccurrenceId: ownOccurrence.occurrenceId,
+    marketId: market.id,
+    venueId: venue.id,
+    date: { year: ownOccurrence.year, week: ownOccurrence.week, day: 6 },
+    type: ownOccurrence.eventType,
+    status: "SCHEDULED",
+    ticketStrategy: "STANDARD",
+    expectedDemand: 1000,
+    attendance: 0,
+    ticketYield: 20,
+    gateRevenue: 0,
+    totalCost: 0,
+    netResult: 0,
+    eventImportance: ownOccurrence.eventImportance,
+    matchCount: 0,
+    averageMatchRating: 0,
+    bestMatchRating: 0,
+    crowdResponse: 0,
+  });
+
+  const refreshed = buildPlayerWorldCalendarView(aggregate, "player-a", 6);
+  const publicBooked = refreshed.occurrences.find((entry) => entry.occurrenceId === ownOccurrence.occurrenceId);
+  ok(publicBooked?.eventId === eventId && publicBooked.status === "SCHEDULED", "canonical scheduled event did not appear on the World calendar");
+  ok(publicBooked?.day === 6 && publicBooked.marketName === market.name && publicBooked.venueName === venue.name, "public booked occurrence did not expose its announced date/location");
 });
 
 test("non-members cannot read a World planning horizon", () => {

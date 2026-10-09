@@ -28,6 +28,7 @@ export * from "./stewardship-release.js";
 export * from "./talent-view.js";
 export * from "./team-history-view.js";
 export * from "./world-aggregate.js";
+export * from "./world-calendar-view.js";
 export * from "./world-results-view.js";
 export * from "./world-transactions.js";
 export * from "./wrestler-profile-view.js";
