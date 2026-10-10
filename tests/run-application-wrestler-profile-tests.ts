@@ -4,6 +4,7 @@ import {
   buildPlayerWrestlerProfileView,
   cloneApplicationWorld,
   createWorldEngagementState,
+  openBackstageConversation,
   setWrestlerCreativeProfileCommand,
   wrestlerCreativeProfileFor,
   defaultWrestlerCreativeFields,
@@ -424,7 +425,9 @@ test("Wrestler profiles expose only controller-owned Backstage history, includin
   aggregate.engagement=createWorldEngagementState(aggregate.state.world.id);
   const contract=activeContractsForPromotion(aggregate.state,promotionAId)[0]!;
   const person=aggregate.state.people.find(x=>x.id===contract.personId)!;
-  const partner=aggregate.state.people.find(x=>x.id!==person.id)!;
+  const partnerContract=activeContractsForPromotion(aggregate.state,promotionAId)
+    .find(x=>x.personId!==person.id)!;
+  const partner=aggregate.state.people.find(x=>x.id===partnerContract.personId)!;
   const day={...aggregate.state.world.currentDate};
   const base={
     worldId:aggregate.state.world.id,wrestlerId:person.id,sourceContractId:contract.id,
@@ -448,7 +451,7 @@ test("Wrestler profiles expose only controller-owned Backstage history, includin
   const partnerEntry=openBackstageConversation(aggregate.engagement,{
     conversationId:"profile-partner-history",promotionId:promotionAId,
     worldId:aggregate.state.world.id,wrestlerId:partner.id,
-    sourceContractId:contract.id,partnerPersonId:person.id,
+    sourceContractId:partnerContract.id,partnerPersonId:person.id,
     createdDate:day,status:"NOTED",response:null,responseDate:null,
     promisedRole:null,observedMatchShows:0,observedFeaturedShows:0,
     kind:"TEAM_MOMENT",sharedTagMatches:2,averageCrowdResponse:77,
