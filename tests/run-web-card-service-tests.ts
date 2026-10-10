@@ -336,6 +336,49 @@ await test("Show Builder persists an interleaved Programme segment with wrestler
   ok(reloaded.runningOrder[1]?.kind === "SEGMENT", "segment slot moved after reload");
 });
 
+for (const [kind, seed] of [["CHALLENGE", 61100], ["CONFRONTATION", 61101]] as const) {
+  await test(`Card saves directed ${kind.toLowerCase()} roles without changing match reservations`, async () => {
+    const fixture = await reservedShowFixture(seed);
+    const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    const [first, second] = fixture.participantIds;
+    if (!first || !second) throw new Error("directed fixture needs two wrestlers");
+    const angle: AlphaCardSegmentView = {
+      draftSegmentId: `card-directed-${kind.toLowerCase()}`,
+      type: kind,
+      participantIds: [first, second],
+      programmeId: null,
+      plannedLengthMinutes: 5,
+      initiatorPersonId: second,
+      targetPersonId: first,
+    };
+    let invalid = false;
+    try {
+      await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+        requestId: `card-directed-invalid-${kind}`,
+        expectedRevision: before.world.revision,
+        expectedPlanVersion: before.workspaceVersion,
+        matches: singlesCard(fixture.participantIds),
+        segments: [{ ...angle, targetPersonId: first, initiatorPersonId: null }],
+        championshipAssignments: [],
+      });
+    } catch (error) {
+      invalid = String(error).includes("distinct initiator and target");
+    }
+    ok(invalid, "Card accepted a partly specified directed angle");
+    const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: `card-directed-save-${kind}`,
+      expectedRevision: before.world.revision,
+      expectedPlanVersion: before.workspaceVersion,
+      matches: singlesCard(fixture.participantIds),
+      segments: [angle],
+      championshipAssignments: [],
+    });
+    ok(saved.segments[0]?.initiatorPersonId === second && saved.segments[0]?.targetPersonId === first, "saved roles were reordered");
+    const reloaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    ok(reloaded.segments[0]?.initiatorPersonId === second && reloaded.segments[0]?.targetPersonId === first, "directed roles lost on reload");
+  });
+}
+
 await test("Card requires attack roles and preserves them on reload", async () => {
   const fixture = await reservedShowFixture(61098);
   const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");

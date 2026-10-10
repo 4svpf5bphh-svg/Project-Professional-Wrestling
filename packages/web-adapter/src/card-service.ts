@@ -108,6 +108,8 @@ export interface AlphaCardSegmentView {
   plannedLengthMinutes: number;
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
+  initiatorPersonId?: Id | null;
+  targetPersonId?: Id | null;
   attackPresentation?: AttackPresentation | null;
   attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
@@ -432,6 +434,15 @@ function normalizeSegments(
     if (segment.type === "ATTACK" && (
       attackerPersonId === victimPersonId || !people.includes(attackerPersonId!) || !people.includes(victimPersonId!)
     )) throw new Error("ATTACK segment requires distinct attacker and victim among its participants");
+    const isDirected = segment.type === "CHALLENGE" || segment.type === "CONFRONTATION";
+    const initiatorPersonId = isDirected && segment.initiatorPersonId != null
+      ? requiredText(segment.initiatorPersonId, `segments[${index}].initiatorPersonId`, 128) : null;
+    const targetPersonId = isDirected && segment.targetPersonId != null
+      ? requiredText(segment.targetPersonId, `segments[${index}].targetPersonId`, 128) : null;
+    if (isDirected && (initiatorPersonId !== null || targetPersonId !== null) && (
+      !initiatorPersonId || !targetPersonId || initiatorPersonId === targetPersonId
+      || !people.includes(initiatorPersonId) || !people.includes(targetPersonId)
+    )) throw new Error("directed segment requires distinct initiator and target among participants");
     const attackPresentation = segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null;
     const attackObjective = segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null;
     if (segment.type === "ATTACK" && (
@@ -467,6 +478,7 @@ function normalizeSegments(
       participantIds: people,
       programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
+      ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
       ...(segment.type === "TURN" ? { turnPersonId, turnTargetAlignment } : {}),
     } satisfies DetailedShowSegmentDraft;
@@ -881,6 +893,8 @@ export async function loadAlphaShowCard(
       plannedLengthMinutes: segment.plannedLengthMinutes,
       attackerPersonId: segment.type === "ATTACK" ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: segment.type === "ATTACK" ? (segment.victimPersonId ?? null) : null,
+      initiatorPersonId: ["CHALLENGE", "CONFRONTATION"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
+      targetPersonId: ["CHALLENGE", "CONFRONTATION"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
       attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
       attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null,
       turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,

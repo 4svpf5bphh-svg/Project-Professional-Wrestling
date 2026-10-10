@@ -161,6 +161,47 @@ test("typed show segments can attach an active Programme and preserve running or
   ok(programmeActivities(setup.state, setup.programme.id)[0]?.kind === "SEGMENT", "typed segment did not feed Programme history");
 });
 
+for (const [kind, seed] of [["CHALLENGE", 9156], ["CONFRONTATION", 9157]] as const) {
+  test(`${kind} preserves chosen initiator and target without guessing them from participant order`, () => {
+    const setup = fixture(seed);
+    const [first, second] = setup.rosterIds;
+    const base = {
+      draftId: `directed-${kind.toLowerCase()}`,
+      promotionId: setup.promotion.id,
+      targetDate: setup.targetDate,
+      marketId: null,
+      venueId: null,
+      ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4),
+      matches: [],
+      championshipAssignments: [],
+    };
+    const directed = {
+      draftSegmentId: "directed-1",
+      type: kind,
+      participantIds: [first!, second!],
+      programmeId: setup.programme.id,
+      plannedLengthMinutes: 5,
+      initiatorPersonId: second!,
+      targetPersonId: first!,
+    };
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...directed, targetPersonId: null }],
+    }), "distinct initiator and target");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...directed, targetPersonId: second! }],
+    }), "distinct initiator and target");
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, { ...base, segments: [directed] });
+    const stored = setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!;
+    ok(stored.initiatorPersonId === second && stored.targetPersonId === first, "directed booking lost role direction");
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "directed segment did not resolve");
+    const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(frozen.initiatorPersonId === second && frozen.targetPersonId === first, "ledger lost directed roles");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0, "replay duplicated directed segment");
+  });
+}
+
 test("ATTACK records explicit attacker and victim into immutable show history", () => {
   const setup = fixture(9158);
   const [attacker, victim] = setup.rosterIds;

@@ -48,6 +48,8 @@ export interface ResolvedShowSegment {
   plannedLengthMinutes: number;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
+  initiatorPersonId: Id | null;
+  targetPersonId: Id | null;
   attackPresentation: AttackPresentation | null;
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
@@ -71,6 +73,8 @@ interface NormalizedDraftSegment {
   plannedLengthMinutes: number;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
+  initiatorPersonId: Id | null;
+  targetPersonId: Id | null;
   attackPresentation: AttackPresentation | null;
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
@@ -135,6 +139,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     plannedLengthMinutes: segment.plannedLengthMinutes,
     attackerPersonId: segment.type === "ATTACK" ? (segment.attackerPersonId ?? null) : null,
     victimPersonId: segment.type === "ATTACK" ? (segment.victimPersonId ?? null) : null,
+    initiatorPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" ? (segment.initiatorPersonId ?? null) : null,
+    targetPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" ? (segment.targetPersonId ?? null) : null,
     attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? null) : null,
     attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? null) : null,
     turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
@@ -151,6 +157,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       plannedLengthMinutes: 6,
       attackerPersonId: null,
       victimPersonId: null,
+      initiatorPersonId: null,
+      targetPersonId: null,
       attackPresentation: null,
       attackObjective: null,
       turnPersonId: null,
@@ -286,6 +294,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const plannedLengthMinutes = entry.payload.plannedLengthMinutes;
   const attackerPersonId = entry.payload.attackerPersonId ?? null;
   const victimPersonId = entry.payload.victimPersonId ?? null;
+  const initiatorPersonId = entry.payload.initiatorPersonId ?? null;
+  const targetPersonId = entry.payload.targetPersonId ?? null;
   const attackPresentation = entry.payload.attackPresentation ?? null;
   const attackObjective = entry.payload.attackObjective ?? null;
   const turnPersonId = entry.payload.turnPersonId === undefined ? null : entry.payload.turnPersonId;
@@ -318,6 +328,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || !Number.isInteger(plannedLengthMinutes)
     || (attackerPersonId !== null && typeof attackerPersonId !== "string")
     || (victimPersonId !== null && typeof victimPersonId !== "string")
+    || (initiatorPersonId !== null && typeof initiatorPersonId !== "string")
+    || (targetPersonId !== null && typeof targetPersonId !== "string")
     || (attackPresentation !== null && !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(String(attackPresentation)))
     || (attackObjective !== null && !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(String(attackObjective)))
     || (turnPersonId !== null && typeof turnPersonId !== "string")
@@ -338,6 +350,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     plannedLengthMinutes,
     attackerPersonId: attackerPersonId as Id | null,
     victimPersonId: victimPersonId as Id | null,
+    initiatorPersonId: initiatorPersonId as Id | null,
+    targetPersonId: targetPersonId as Id | null,
     attackPresentation: attackPresentation as AttackPresentation | null,
     attackObjective: attackObjective as AttackObjective | null,
     turnPersonId,
@@ -417,6 +431,8 @@ export function recordResolvedShowSegments(
             plannedLengthMinutes: segment.plannedLengthMinutes,
             attackerPersonId: segment.attackerPersonId,
             victimPersonId: segment.victimPersonId,
+            initiatorPersonId: segment.initiatorPersonId,
+            targetPersonId: segment.targetPersonId,
             attackPresentation: segment.attackPresentation,
             attackObjective: segment.attackObjective,
             turnPersonId: segment.turnPersonId,

@@ -137,6 +137,8 @@ export interface PlayerShowSegmentView {
   programmeId: Id | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
+  initiatorPersonId: Id | null;
+  targetPersonId: Id | null;
   attackPresentation: AttackPresentation | null;
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
@@ -571,6 +573,8 @@ export function buildPlayerShowHistory(
         programmeId: segment.programmeId,
         attackerPersonId: segment.attackerPersonId,
         victimPersonId: segment.victimPersonId,
+        initiatorPersonId: segment.initiatorPersonId,
+        targetPersonId: segment.targetPersonId,
         attackPresentation: segment.attackPresentation,
         attackObjective: segment.attackObjective,
         turnPersonId: segment.turnPersonId,

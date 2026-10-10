@@ -61,6 +61,9 @@ export interface DetailedShowSegmentDraft {
   // Roles are authored intent; participants alone must not invent attack direction.
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
+  // CHALLENGE/CONFRONTATION direction is authored, never inferred from participant order.
+  initiatorPersonId?: Id | null;
+  targetPersonId?: Id | null;
   attackPresentation?: AttackPresentation | null;
   attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
@@ -309,6 +312,17 @@ function validateShowSegmentDraft(
     || !draft.participantIds.includes(attackerPersonId)
     || !draft.participantIds.includes(victimPersonId)
   )) throw new Error("ATTACK segment requires distinct attacker and victim among its participants");
+  const isDirected = draft.type === "CHALLENGE" || draft.type === "CONFRONTATION";
+  const initiatorPersonId = isDirected && draft.initiatorPersonId != null
+    ? normalizedId(draft.initiatorPersonId, "initiatorPersonId") : null;
+  const targetPersonId = isDirected && draft.targetPersonId != null
+    ? normalizedId(draft.targetPersonId, "targetPersonId") : null;
+  // Legacy saved segments can have no roles. New role-aware bookings must supply a valid pair.
+  if (isDirected && (initiatorPersonId !== null || targetPersonId !== null) && (
+    !initiatorPersonId || !targetPersonId || initiatorPersonId === targetPersonId
+    || !draft.participantIds.includes(initiatorPersonId)
+    || !draft.participantIds.includes(targetPersonId)
+  )) throw new Error("directed segment requires distinct initiator and target among participants");
   const attackPresentation = draft.type === "ATTACK" ? (draft.attackPresentation ?? "BLINDSIDE") : null;
   const attackObjective = draft.type === "ATTACK" ? (draft.attackObjective ?? "GENERATE_HEAT") : null;
   if (draft.type === "ATTACK" && (
@@ -343,6 +357,7 @@ function validateShowSegmentDraft(
     participantIds: [...draft.participantIds],
     programmeId,
     plannedLengthMinutes: draft.plannedLengthMinutes,
+    ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
     ...(draft.type === "TURN" ? { turnPersonId, turnTargetAlignment } : {}),
   };
