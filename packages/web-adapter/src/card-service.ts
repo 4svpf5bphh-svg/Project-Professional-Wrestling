@@ -99,6 +99,8 @@ export interface AlphaCardMatchView {
   readiness?: AlphaCardMatchReadinessView;
   plannedLengthMinutes: number;
   plannedFinish?: MatchFinish;
+  interfererPersonId?: Id | null;
+  interferenceSide?: MatchSide | null;
 }
 
 export interface AlphaCardSegmentView {
@@ -279,6 +281,15 @@ function normalizeCompleteCard(
     }
 
     const ids = [...match.sideAIds, ...match.sideBIds];
+    const interfererPersonId = match.interfererPersonId ?? null;
+    const interferenceSide = match.interferenceSide ?? null;
+    if ((interfererPersonId === null) !== (interferenceSide === null)
+      || (interferenceSide !== null && !MATCH_SIDES.has(interferenceSide))) {
+      throw new Error("run-in requires an outside wrestler and the side they assist");
+    }
+    if (interfererPersonId && ids.includes(interfererPersonId)) {
+      throw new Error("run-in wrestler cannot compete in the same match");
+    }
     if (new Set(ids).size !== ids.length) throw new Error("one wrestler cannot occupy multiple positions in a match");
     for (const personId of ids) {
       requiredText(personId, `matches[${index}] wrestler`, 128);
@@ -287,6 +298,7 @@ function normalizeCompleteCard(
       orderedParticipants.push(personId);
     }
 
+    if (interfererPersonId) orderedParticipants.push(interfererPersonId);
     return {
       draftMatchId,
       type: match.type,
@@ -297,6 +309,7 @@ function normalizeCompleteCard(
       ...(style === undefined ? {} : { style }),
       plannedLengthMinutes: match.plannedLengthMinutes,
       plannedFinish,
+      ...(interfererPersonId ? { interfererPersonId, interferenceSide } : {}),
     } satisfies DetailedMatchDraft;
   });
 
@@ -678,6 +691,8 @@ function replaceMaterializedEventCard(
       ...(match.style === undefined ? {} : { style: { ...match.style } }),
       plannedLengthMinutes: match.plannedLengthMinutes,
       plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
+      ...(match.interfererPersonId && match.interferenceSide
+        ? { interfererPersonId: match.interfererPersonId, interferenceSide: match.interferenceSide } : {}),
     };
   });
   const materializedMatches = prepareHumanMatchCard(state, eventId, plans);
@@ -1023,6 +1038,8 @@ export async function loadAlphaShowCard(
           }),
           plannedLengthMinutes: match.plannedLengthMinutes,
           plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
+          interfererPersonId: match.interfererPersonId ?? null,
+          interferenceSide: match.interferenceSide ?? null,
         } satisfies AlphaCardMatchView]
         : []
     )),

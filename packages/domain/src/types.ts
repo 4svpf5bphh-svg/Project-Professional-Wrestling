@@ -373,6 +373,12 @@ export interface ScheduledAppearance {
   status: ScheduledAppearanceStatus;
 }
 
+export interface MatchInterference {
+  personId: Id;
+  aidedSide: MatchSide;
+  outcome: "SUCCESS" | "THWARTED" | null;
+}
+
 export interface Match {
   id: Id;
   worldId: Id;
@@ -388,6 +394,7 @@ export interface Match {
   intendedWinnerSide: MatchSide;
   actualWinnerSide: MatchSide | null;
   finishChangedDueToInjury: boolean;
+  interference?: MatchInterference;
   executionQuality: number;
   criticalRatingStars: number;
   crowdResponse: number;

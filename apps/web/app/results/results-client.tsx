@@ -323,6 +323,11 @@ export default function ResultsClient(): React.JSX.Element {
                               <span>{match.actualLengthMinutes} min{match.actualLengthMinutes !== match.plannedLengthMinutes ? ` / ${match.plannedLengthMinutes} planned` : ""}</span>
                               <span>Crowd {decimal(match.crowdResponse)}</span>
                             </div>
+                            {match.interference ? (
+                              <div className={styles.matchMeta}>
+                                <span>Run-in: {match.interference.name} assisted Side {match.interference.aidedSide} · {match.interference.outcome === "SUCCESS" ? "Succeeded (protected finish)" : "Thwarted"}</span>
+                              </div>
+                            ) : null}
                             {match.styleResult ? (
                               <div className={styles.styleResult}>
                                 <div>
@@ -524,6 +529,11 @@ export default function ResultsClient(): React.JSX.Element {
                                   <span>{match.actualLengthMinutes} min</span>
                                   <span>Crowd {decimal(match.crowdResponse)}</span>
                                 </div>
+                                {match.interference ? (
+                                  <div className={styles.matchMeta}>
+                                    <span>Run-in: {match.interference.name} assisted Side {match.interference.aidedSide} · {match.interference.outcome === "SUCCESS" ? "Succeeded" : "Thwarted"}</span>
+                                  </div>
+                                ) : null}
                                 {match.titleOutcomes.map((title) => (
                                   <a className={`${styles.consequence} ${styles.titleLink}`} href="/championships" key={title.championshipId}>
                                     <strong>{title.championshipName}</strong>

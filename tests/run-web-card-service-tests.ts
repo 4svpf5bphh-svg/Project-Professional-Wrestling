@@ -447,6 +447,61 @@ await test("RESCUE allows a booked outsider to save a wrestler in an active Prog
   ok(reloaded.segments[0]?.rescuerPersonId === rescuer, "outsider rescuer disappeared on reload");
 });
 
+await test("Run-in saves, reloads, resolves and records the actual finish without changing the intended winner", async () => {
+  const fixture = await reservedShowFixture(61118);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const card = singlesCard(fixture.participantIds);
+  if (card.length < 2) throw new Error("run-in fixture requires at least two matches");
+  const interferer = card[1]!.sideAIds[0]!;
+  const planned = card.map((match, index) => index === 0
+    ? { ...match, interfererPersonId: interferer, interferenceSide: "A" as const, plannedFinish: "CLEAN_PIN" as const }
+    : match);
+  const invalid = planned.map((match, index) => index === 0
+    ? { ...match, interfererPersonId: match.sideAIds[0]! } : match);
+  let rejected = false;
+  try {
+    await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: "run-in-invalid-competitor", expectedRevision: before.world.revision,
+      expectedPlanVersion: before.workspaceVersion, matches: invalid, championshipAssignments: [],
+    });
+  } catch (error) {
+    rejected = String(error).includes("cannot compete in the same match");
+  }
+  ok(rejected, "the booked match winner could interfere in their own match");
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "run-in-valid", expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion, matches: planned, championshipAssignments: [],
+  });
+  ok(saved.matches[0]?.interfererPersonId === interferer && saved.matches[0]?.interferenceSide === "A",
+    "run-in intent was lost on save");
+  const loaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(loaded.matches[0]?.interfererPersonId === interferer && loaded.matches[0]?.interferenceSide === "A",
+    "run-in booking was lost on reload");
+  await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+    expectedRevision: saved.world.revision,
+  });
+  const finished = await fixture.repository.load(fixture.worldId);
+  const relevant = finished.state.matches.find((match) => match.promotionId === saved.promotion.promotionId
+    && match.order === 1 && match.status === "COMPLETED" && match.interference?.personId === interferer);
+  ok(relevant, "run-in was not preserved on the completed match");
+  ok(relevant?.actualWinnerSide === "A", "run-in reversed the player's winner choice");
+  ok(relevant?.interference?.outcome === "SUCCESS" || relevant?.interference?.outcome === "THWARTED",
+    "run-in was not resolved deterministically");
+  const evidence = finished.state.ledger.find((entry) => entry.type === "MATCH_COMPLETED"
+    && entry.entityIds.includes(relevant!.id));
+  ok(evidence?.payload.interferencePersonId === interferer
+    && evidence.payload.interferenceAidedSide === "A"
+    && evidence.payload.interferenceOutcome === relevant?.interference?.outcome,
+    "match ledger does not agree with run-in result");
+  if (relevant?.interference?.outcome === "SUCCESS") {
+    ok(evidence?.payload.actualFinish === "PROTECTED_FINISH", "successful interference did not protect the finish");
+  }
+  const show = finished.state.events.find((event) => event.id === relevant?.eventId)!;
+  const appearance = finished.state.scheduledAppearances.find((entry) => entry.eventId === show.id
+    && entry.personId === interferer);
+  ok(appearance?.status === "COMPLETED", "run-in wrestler did not fulfil their booked appearance");
+});
+
 await test("Card post-match assault links to completed match without changing its finish", async () => {
   const fixture = await reservedShowFixture(61106);
   const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");

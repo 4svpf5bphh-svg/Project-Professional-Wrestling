@@ -27,6 +27,8 @@ export interface DetailedMatchDraft {
   style?: MatchStyleProfile;
   plannedLengthMinutes: number | null;
   plannedFinish?: MatchFinish;
+  interfererPersonId?: Id | null;
+  interferenceSide?: MatchSide | null;
 }
 
 export interface ChampionshipDraftAssignment {
@@ -228,6 +230,18 @@ function validateMatchDraft(
     throw new Error("draft planned match finish must be clean, submission, flash or protected");
   }
   const style = draft.style === undefined ? undefined : normalizeMatchStyle(draft.style);
+  const interfererPersonId = draft.interfererPersonId == null ? null : normalizedId(draft.interfererPersonId, "interfererPersonId");
+  const interferenceSide = draft.interferenceSide ?? null;
+  if ((interfererPersonId === null) !== (interferenceSide === null)
+    || (interferenceSide !== null && !MATCH_SIDES.has(interferenceSide))) {
+    throw new Error("run-in requires an outside wrestler and an aided match side");
+  }
+  if (interfererPersonId !== null && sideIds.includes(interfererPersonId)) {
+    throw new Error("run-in wrestler cannot compete in the same match");
+  }
+  if (interfererPersonId !== null && !participantIds.has(interfererPersonId)) {
+    throw new Error("run-in wrestler must be selected for this show draft");
+  }
 
   return {
     draftMatchId,
@@ -239,6 +253,7 @@ function validateMatchDraft(
     ...(style === undefined ? {} : { style }),
     plannedLengthMinutes: draft.plannedLengthMinutes,
     ...(draft.plannedFinish === undefined ? {} : { plannedFinish: draft.plannedFinish }),
+    ...(interfererPersonId === null ? {} : { interfererPersonId, interferenceSide }),
   };
 }
 

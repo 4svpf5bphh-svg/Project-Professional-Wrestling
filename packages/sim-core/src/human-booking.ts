@@ -27,6 +27,8 @@ export interface HumanMatchPlan {
   style?: MatchStyleProfile;
   plannedLengthMinutes: number;
   plannedFinish?: MatchFinish;
+  interfererPersonId?: string | null;
+  interferenceSide?: MatchSide | null;
 }
 
 function validateSideSize(type: MatchType, sideAIds: string[], sideBIds: string[]): void {
@@ -93,6 +95,7 @@ export function prepareHumanMatchCard(
   }
 
   const used = new Set<string>();
+  const runInWrestlers = new Set<string>();
   for (const plan of plans) {
     validateSideSize(plan.type, plan.sideAIds, plan.sideBIds);
     if (!Number.isInteger(plan.plannedLengthMinutes) || plan.plannedLengthMinutes < 3 || plan.plannedLengthMinutes > 60) {
@@ -103,6 +106,18 @@ export function prepareHumanMatchCard(
     }
     if (plan.style !== undefined) normalizeMatchStyle(plan.style);
     const ids = [...plan.sideAIds, ...plan.sideBIds];
+    const interfererId = plan.interfererPersonId ?? null;
+    const aidedSide = plan.interferenceSide ?? null;
+    if ((interfererId === null) !== (aidedSide === null) || (aidedSide !== null && aidedSide !== "A" && aidedSide !== "B")) {
+      throw new Error("run-in requires an outside wrestler and an aided side");
+    }
+    if (interfererId !== null) {
+      if (ids.includes(interfererId)) throw new Error("run-in wrestler cannot compete in the same match");
+      if (!committedIds.has(interfererId)) throw new Error("run-in wrestler must be committed to this event");
+      const interferencePerson = state.people.find((person) => person.id === interfererId);
+      if (!interferencePerson || interferencePerson.status !== "ACTIVE") throw new Error("run-in wrestler is unavailable");
+      runInWrestlers.add(interfererId);
+    }
     const people = ids.map((personId) => state.people.find((candidate) => candidate.id === personId));
     if (people.some((person) => !person)) throw new Error("match references a missing wrestler");
     requireSameWrestlerDivision(
@@ -118,9 +133,10 @@ export function prepareHumanMatchCard(
     }
   }
 
+  const usedAnywhere = new Set([...used, ...runInWrestlers]);
   if (
     !options.allowSegmentOnlyCommitted
-    && (used.size !== committedIds.size || [...committedIds].some((personId) => !used.has(personId)))
+    && (usedAnywhere.size !== committedIds.size || [...committedIds].some((personId) => !usedAnywhere.has(personId)))
   ) {
     throw new Error("manual card must use every wrestler committed to the show exactly once");
   }
@@ -143,6 +159,8 @@ export function prepareHumanMatchCard(
       intendedWinnerSide: plan.intendedWinnerSide,
       actualWinnerSide: null,
       finishChangedDueToInjury: false,
+      ...(plan.interfererPersonId && plan.interferenceSide
+        ? { interference: { personId: plan.interfererPersonId, aidedSide: plan.interferenceSide, outcome: null } } : {}),
       executionQuality: 0,
       criticalRatingStars: 0,
       crowdResponse: 0,
@@ -174,7 +192,7 @@ export function prepareHumanMatchCard(
     entityIds: [event.id, promotion.id, ...matches.map((match) => match.id)],
     payload: {
       matches: matches.length,
-      wrestlers: used.size,
+      wrestlers: usedAnywhere.size,
       mainEventMatchId: matches[matches.length - 1]!.id,
     },
   });

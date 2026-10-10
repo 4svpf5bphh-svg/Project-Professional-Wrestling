@@ -24,6 +24,7 @@ type BookableFinish = Exclude<MatchFinish, "INJURY_STOPPAGE">;
 type WrestlerPickerSort = "POPULARITY" | "MOMENTUM" | "IN_RING" | "PRESENTATION" | "DATES" | "NAME";
 type WrestlerPickerTarget =
   | { kind: "MATCH"; matchId: string; side: "A" | "B"; slotIndex: number; currentId: string; label: string }
+  | { kind: "RUN_IN"; matchId: string; currentId: string; label: string }
   | { kind: "SEGMENT"; segmentId: string; slotIndex: number; currentId: string; label: string }
   | { kind: "TURN"; segmentId: string; currentId: string; label: string };
 
@@ -375,16 +376,24 @@ export default function CardClient(): React.JSX.Element {
   const allBookedPersonIds = useMemo(
     () => [
       ...matchPersonIds,
+      ...matches.map((match) => match.interfererPersonId ?? "").filter(Boolean),
       ...segments.flatMap((segment) => segment.participantIds).filter(Boolean),
     ],
-    [matchPersonIds, segments],
+    [matchPersonIds, matches, segments],
   );
   const uniqueBookedCount = new Set(allBookedPersonIds).size;
   const bookedMinutes = matches.reduce((sum, match) => sum + match.plannedLengthMinutes, 0)
     + segments.reduce((sum, segment) => sum + segment.plannedLengthMinutes, 0);
   const minutesRemaining = SHOW_TIME_GUIDE_MINUTES - bookedMinutes;
   const duplicateMatchBooking = new Set(matchPersonIds).size !== matchPersonIds.length;
-  const completeMatches = matches.every((match) => [...match.sideAIds, ...match.sideBIds].every(Boolean));
+  const completeMatches = matches.every((match) => {
+    const ids = [...match.sideAIds, ...match.sideBIds];
+    return ids.every(Boolean) && (
+      !match.interfererPersonId
+        ? !match.interferenceSide
+        : Boolean(match.interferenceSide) && !ids.includes(match.interfererPersonId)
+    );
+  });
   const completeSegments = segments.every((segment) => (
     segment.participantIds.length >= segmentMinimum(segment.type)
     && segment.participantIds.length <= 4
@@ -480,6 +489,8 @@ export default function CardClient(): React.JSX.Element {
       style: { ...defaultMatchStyleForIntent("COMPETITIVE") },
       plannedLengthMinutes: type === "TAG" ? 15 : 12,
       plannedFinish: "CLEAN_PIN",
+      interfererPersonId: null,
+      interferenceSide: null,
     }]);
     setRunningOrder((current) => [...current, { kind: "MATCH", refId: id }]);
     setExpandedSlotKey(`MATCH:${id}`);
@@ -516,6 +527,15 @@ export default function CardClient(): React.JSX.Element {
   function updateMatch(matchId: string, patch: Partial<AlphaCardMatchView>): void {
     setMatches((current) => current.map((match) => match.draftMatchId === matchId ? { ...match, ...patch } : match));
     markDirty();
+  }
+
+  function setRunInPerson(matchId: string, personId: string): void {
+    const match = matches.find((candidate) => candidate.draftMatchId === matchId);
+    if (!match) return;
+    updateMatch(matchId, {
+      interfererPersonId: personId || null,
+      interferenceSide: personId ? (match.interferenceSide ?? "A") : null,
+    });
   }
 
   function setMatchPreset(matchId: string, intent: AlphaCardMatchView["intent"]): void {
@@ -912,6 +932,14 @@ export default function CardClient(): React.JSX.Element {
     const current = target.currentId ? participantView(target.currentId) : null;
     if (current) pool.set(current.personId, current);
 
+    if (target.kind === "RUN_IN") {
+      const match = matches.find((candidate) => candidate.draftMatchId === target.matchId);
+      const competitorIds = new Set(match ? [...match.sideAIds, ...match.sideBIds].filter(Boolean) : []);
+      return [...pool.values()].map((person) => ({
+        person,
+        disabledReason: competitorIds.has(person.personId) ? "Competing in this match" : null,
+      }));
+    }
     if (target.kind === "MATCH") {
       const match = matches.find((candidate) => candidate.draftMatchId === target.matchId);
       const sameMatchIds = new Set(match ? [...match.sideAIds, ...match.sideBIds].filter(Boolean) : []);
@@ -951,6 +979,8 @@ export default function CardClient(): React.JSX.Element {
     if (!wrestlerPicker) return;
     if (wrestlerPicker.kind === "MATCH") {
       setMatchParticipant(wrestlerPicker.matchId, wrestlerPicker.side, wrestlerPicker.slotIndex, personId);
+    } else if (wrestlerPicker.kind === "RUN_IN") {
+      setRunInPerson(wrestlerPicker.matchId, personId);
     } else if (wrestlerPicker.kind === "SEGMENT") {
       setSegmentParticipant(wrestlerPicker.segmentId, wrestlerPicker.slotIndex, personId);
     } else {
@@ -1261,6 +1291,33 @@ export default function CardClient(): React.JSX.Element {
                         })}
                       </select>
                     </div>
+                  </div>
+
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Run-in / Match interference</span>
+                      <small>Optional. The outside wrestler tries to help one side. Success can protect the finish, but never secretly overrides your chosen winner.</small>
+                    </div>
+                    <div className={styles.segmentPersonRow}>
+                      <WrestlerSlotButton
+                        person={pickerPerson(match.interfererPersonId ?? "")}
+                        disabled={!view.canEdit}
+                        onClick={() => setWrestlerPicker({
+                          kind: "RUN_IN", matchId: match.draftMatchId,
+                          currentId: match.interfererPersonId ?? "",
+                          label: "Choose run-in wrestler",
+                        })}
+                      />
+                    </div>
+                    {match.interfererPersonId ? (
+                      <div className={styles.control}>
+                        <label>Who are they helping?</label>
+                        <select value={match.interferenceSide ?? "A"} disabled={!view.canEdit}
+                          onChange={(event) => updateMatch(match.draftMatchId, { interferenceSide: event.target.value as "A" | "B" })}>
+                          <option value="A">Side A</option><option value="B">Side B</option>
+                        </select>
+                      </div>
+                    ) : null}
                   </div>
 
                   <details className={styles.stylePanel}>

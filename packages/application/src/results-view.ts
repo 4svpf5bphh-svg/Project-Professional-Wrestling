@@ -112,6 +112,7 @@ export interface PlayerShowMatchView {
   finishChangedDueToInjury: boolean;
   participants: PlayerShowParticipantView[];
   winnerNames: string[];
+  interference: { personId: Id; name: string; aidedSide: "A" | "B"; outcome: "SUCCESS" | "THWARTED" | null } | null;
   titleOutcomes: PlayerShowTitleOutcomeView[];
   injuries: PlayerShowInjuryView[];
   crowdFlowFactors: PlayerShowCrowdFactorView[];
@@ -561,6 +562,12 @@ export function buildPlayerShowHistory(
           finishChangedDueToInjury: match.finishChangedDueToInjury,
           participants,
           winnerNames: participants.filter((participant) => participant.won).map((participant) => participant.name),
+          interference: match.interference ? {
+            personId: match.interference.personId,
+            name: peopleById.get(match.interference.personId)?.name ?? "Unknown wrestler",
+            aidedSide: match.interference.aidedSide,
+            outcome: match.interference.outcome,
+          } : null,
           titleOutcomes,
           injuries,
           crowdFlowFactors: frozenCrowdFactors(matchLedgerByMatch.get(match.id), match.id, match.order),
