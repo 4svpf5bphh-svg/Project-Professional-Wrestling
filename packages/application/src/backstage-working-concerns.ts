@@ -86,6 +86,7 @@ export function generateWorkingPartnershipConcerns(aggregate: ApplicationWorldAg
       if (existing.some(c => c.conversationId === id)) continue;
       const relationship = (state.wrestlerRelationships ?? []).find(r =>
         r.personAId === first && r.personBId === second);
+      if (!relationship) continue; // No invented interpersonal state for an orphaned ledger record.
       candidates.push({
         ledgerId: entry.id,
         conversation: {
@@ -96,8 +97,8 @@ export function generateWorkingPartnershipConcerns(aggregate: ApplicationWorldAg
           createdDate: { ...state.world.currentDate },
           status: "OPEN", response: null, responseDate: null,
           promisedRole: null, observedMatchShows: shows, observedFeaturedShows: 0,
-          professionalTrustAtPitch: relationship?.professionalTrust ?? null,
-          tagFamiliarityAtPitch: relationship?.familiarity ?? null,
+          professionalTrustAtPitch: relationship.professionalTrust,
+          tagFamiliarityAtPitch: relationship.familiarity,
           workingSourceLedgerId: entry.id,
           workingTrustDelta: loss,
         },
