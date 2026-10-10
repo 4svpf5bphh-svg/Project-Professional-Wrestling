@@ -931,7 +931,8 @@ test("Underwhelming real match crowds lead to a persistent optional gimmick disc
   const note=f.aggregate.engagement!.backstageConversations[0]!;
   ok(note.kind==="GIMMICK_CHANGE_PITCH" && note.sourceContractId===f.contract.id
     && note.wrestlerId===f.person.id && note.observedMatchShows===4
-    && note.observedCrowdResponse===50 && note.currentGimmickArchetype==="AUTHENTIC"
+    && note.observedCrowdResponse===50
+    && note.currentGimmickArchetype===defaultWrestlerCreativeFields(f.person).gimmickArchetype
     && note.suggestedGimmickArchetype !== note.currentGimmickArchetype,
     "pitch lost actual evidence or grounded proposal");
   const view=buildPlayerBackstageView(f.aggregate,"backstage-owner");
