@@ -15,6 +15,7 @@ import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
 import { createWorldEngagementState, openBackstageConversation } from "../packages/application/src/engagement.js";
 import { activeContractsForPromotion } from "../packages/sim-core/src/index.js";
 import { promotionTalentTrustFor } from "../packages/sim-core/src/talent-trust.js";
+import { generateTagTeamPitches } from "../packages/application/src/backstage-pitches.js";
 import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
 import { claimIndependentPromotionForPlayer } from "../packages/application/src/ownership.js";
 import type { Match, WrestlingEvent } from "../packages/domain/src/types.js";
@@ -485,6 +486,142 @@ test("An unanswered concern and a conversation without an explicit promise have 
   ok(applyBackstagePromiseConsequences(f.aggregate) === 0 && JSON.stringify(state) === before,
     "a plain conversation generated a penalty or bonus");
   ok(pair.promotionId === f.promotion.id, "test trust context shifted unexpectedly");
+});
+
+
+/** Add two actual resolved good tag performances, not fictitious relationship rolls. */
+function successfulTagPair(f: ReturnType<typeof fixture>, crowd = 78): string {
+  const state = f.aggregate.state;
+  const partnerContract = activeContractsForPromotion(state, f.promotion.id)
+    .find((contract) => contract.personId !== f.person.id);
+  if (!partnerContract) throw Error("need two contracted wrestlers for pitch");
+  partnerContract.startDate = { ...f.contract.startDate };
+  partnerContract.endDate = { ...f.contract.endDate };
+  partnerContract.dateEntitlement = 12;
+  partnerContract.datesUsed = 2;
+  for (let i = 1; i <= 2; i++) {
+    const eventId = "backstage-show-" + i;
+    const match = state.matches.find((entry) => entry.eventId === eventId && entry.order === 1)!;
+    match.type = "TAG";
+    match.crowdResponse = crowd;
+    state.matchParticipants.push({
+      id: "tag-pitch-partner-" + i, worldId: state.world.id,
+      eventId, matchId: match.id, personId: partnerContract.personId, side: "A", won: true,
+    });
+  }
+  return partnerContract.personId;
+}
+
+test("Successful real tag matches generate an optional positive pitch with a named partner", () => {
+  const f = fixture();
+  f.contract.roleExpectation = "REGULAR";
+  const partnerId = successfulTagPair(f);
+  const before = JSON.stringify(f.aggregate.state);
+  ok(generateTagTeamPitches(f.aggregate) === 1, "tag team success did not produce a pitch");
+  ok(generateTagTeamPitches(f.aggregate) === 0, "same pitch generated twice");
+  ok(JSON.stringify(f.aggregate.state) === before, "pitch mutated in-ring results or contracts");
+  const message = f.aggregate.engagement!.backstageConversations[0]!;
+  ok(message.kind === "TAG_TEAM_PITCH" && message.partnerPersonId === partnerId
+    && message.sharedTagMatches === 2 && message.averageCrowdResponse === 78,
+    "positive pitch lacks evidence or correct partner");
+  const view = buildPlayerBackstageView(f.aggregate, "backstage-owner");
+  ok(view.openCount === 1 && view.conversations[0]?.partnerPersonId === partnerId
+    && !!view.conversations[0]?.partnerName && !view.conversations[0]?.canPromiseFeaturedBooking,
+    "Backstage pitch incorrectly exposes role-promise options or partner");
+  const alert = buildPlayerAttention(f.aggregate, "backstage-owner")
+    .find((item) => item.attentionId === "backstage:" + message.conversationId);
+  ok(alert?.deepLink === "/backstage" && alert.title.includes("tag-team idea")
+    && alert.category === "IMPORTANT", "positive pitch did not appear on Home");
+  const saved = cloneApplicationWorld(f.aggregate);
+  ok(saved.engagement?.backstageConversations[0]?.partnerPersonId === partnerId,
+    "positive pitch was not persistently saved");
+  const originalState = JSON.stringify(f.aggregate.state);
+  const teamsBefore = JSON.stringify(f.aggregate.state.teams);
+  const response = {
+    requestId: "consider-pairing", worldId: f.aggregate.state.world.id, playerId: "backstage-owner",
+    commandType: "RESPOND_BACKSTAGE_CONVERSATION" as const,
+    payload: { conversationId: message.conversationId, response: "CONSIDER_TAG_TEAM" as const },
+  };
+  const result = respondBackstageConversationCommand(f.aggregate, response);
+  ok(result.status === "ANSWERED" && result.response === "CONSIDER_TAG_TEAM", "player choice was not recorded");
+  ok(respondBackstageConversationCommand(f.aggregate, response).status === "ANSWERED", "idempotent pitch reply failed");
+  ok(buildPlayerBackstageView(f.aggregate, "backstage-owner").openCount === 0, "answered pitch remained open");
+  ok(JSON.stringify(f.aggregate.state) === originalState && JSON.stringify(f.aggregate.state.teams) === teamsBefore,
+    "considering a pitch created a tag team or changed simulated strengths");
+  ok(generateTagTeamPitches(f.aggregate) === 0, "answered pitch reopened without new evidence");
+});
+
+test("Pitch reply type is protected; bookers cannot disguise a creative pitch as a promise", () => {
+  const f = fixture();
+  f.contract.roleExpectation = "REGULAR";
+  successfulTagPair(f);
+  generateTagTeamPitches(f.aggregate);
+  const id = f.aggregate.engagement!.backstageConversations[0]!.conversationId;
+  for (const response of ["HEAR_OUT", "PROMISE_FEATURED_BOOKING"] as const) {
+    let rejected = false;
+    try {
+      respondBackstageConversationCommand(f.aggregate, {
+        requestId: "invalid-pitch-choice-" + response,
+        worldId: f.aggregate.state.world.id, playerId: "backstage-owner",
+        commandType: "RESPOND_BACKSTAGE_CONVERSATION",
+        payload: { conversationId: id, response },
+      });
+    } catch { rejected = true; }
+    ok(rejected, "a role-usage reply was accepted for a tag-team idea");
+  }
+  let outsiderRejected = false;
+  try {
+    respondBackstageConversationCommand(f.aggregate, {
+      requestId: "intruder-pitch", worldId: f.aggregate.state.world.id,
+      playerId: "intruder", commandType: "RESPOND_BACKSTAGE_CONVERSATION",
+      payload: { conversationId: id, response: "PASS_TAG_TEAM" },
+    });
+  } catch { outsiderRejected = true; }
+  ok(outsiderRejected && f.aggregate.engagement?.backstageConversations[0]?.status === "OPEN",
+    "another player responded to a private creative pitch");
+});
+
+test("Weak, one-off or already established teams do not flood Backstage pitches", () => {
+  const onlyOne = fixture();
+  onlyOne.contract.roleExpectation = "REGULAR";
+  const partner = successfulTagPair(onlyOne);
+  const second = onlyOne.aggregate.state.matches.find((entry) => entry.id === "backstage-show-2-match-1")!;
+  second.type = "SINGLES";
+  ok(generateTagTeamPitches(onlyOne.aggregate) === 0, "one successful tag match was enough to pitch");
+
+  const weak = fixture();
+  weak.contract.roleExpectation = "REGULAR";
+  successfulTagPair(weak, 42);
+  ok(generateTagTeamPitches(weak.aggregate) === 0, "poorly received pairing was pitched as successful");
+
+  second.type = "TAG";
+  const state = onlyOne.aggregate.state;
+  const teamId = "established-pitch-pair";
+  state.teams ??= [];
+  state.teamMemberships ??= [];
+  state.teams.push({
+    id: teamId, worldId: state.world.id, name: "Already a Team",
+    status: "ACTIVE", formedDate: { ...state.world.currentDate }, disbandedDate: null,
+  });
+  for (const personId of [onlyOne.person.id, partner]) {
+    state.teamMemberships.push({
+      id: "pitch-team-member-" + personId, worldId: state.world.id,
+      teamId, personId, joinedDate: { ...state.world.currentDate }, leftDate: null, active: true,
+    });
+  }
+  ok(generateTagTeamPitches(onlyOne.aggregate) === 0, "established team generated redundant pitch");
+});
+
+test("Complaints and creative pitches share the same strict per-promotion weekly budget", () => {
+  const f = fixture();
+  successfulTagPair(f);
+  ok(generateBackstageConversations(f.aggregate) === 1, "expected existing booking concern");
+  ok(generateTagTeamPitches(f.aggregate) === 0, "pitch bypassed the weekly cap");
+  f.aggregate.state.world.currentDate = addPpwWeeks(
+    f.aggregate.state.world.currentDate, 1, f.aggregate.state.ruleset.weeksPerYear,
+  );
+  ok(generateTagTeamPitches(f.aggregate) === 1, "positive pitch was not deferred to next PPW week");
+  ok(f.aggregate.engagement?.backstageConversations.length === 2, "pitch overwrote original concern");
 });
 
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");
