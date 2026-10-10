@@ -1228,8 +1228,9 @@ test("A trusted on-screen rival is proposed by the wrestler most interested in t
 
 test("Private creative responses survive into the next conversation without pretending to be bookings",()=>{
   const f=fixture();
-  f.aggregate.engagement=createWorldEngagementState(f.aggregate.state.world.id);
-  const aggregate=f.aggregate, engagement=aggregate.engagement;
+  const engagement=createWorldEngagementState(f.aggregate.state.world.id);
+  const aggregate=f.aggregate;
+  aggregate.engagement=engagement;
   const first=generateBackstageConversations(aggregate);
   ok(first===1,"fixture should create a real role-usage concern");
   const role=engagement.backstageConversations[0]!;
@@ -1303,7 +1304,8 @@ test("Verified positive teamwork gives continuity, a considered pitch alone neve
   f.contract.roleExpectation="REGULAR";
   const partnerId=successfulTagPair(f);
   const second=f.aggregate.state.people.find(p=>p.id===partnerId)!;
-  const engagement=f.aggregate.engagement=createWorldEngagementState(f.aggregate.state.world.id);
+  const engagement=createWorldEngagementState(f.aggregate.state.world.id);
+  f.aggregate.engagement=engagement;
   const date={...f.aggregate.state.world.currentDate};
   const note=openBackstageConversation(engagement,{
     conversationId:"team-history-verified",worldId:f.aggregate.state.world.id,
