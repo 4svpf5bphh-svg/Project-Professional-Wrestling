@@ -93,6 +93,7 @@ export function generateTagTeamPitches(aggregate: ApplicationWorldAggregate): nu
     const candidates: Array<{ record: BackstageConversation; crowd: number; pitchPriority: number }> = [];
     for (const stats of pairStats.values()) {
       const [a,b] = stats.people;
+      const key=keyForPair(a,b);
       const average = Math.round((stats.crowd / stats.count) * 10) / 10;
       if (stats.count < 2 || average < 65) continue;
       const existingTeam = (state.teams ?? []).some((team) => {
