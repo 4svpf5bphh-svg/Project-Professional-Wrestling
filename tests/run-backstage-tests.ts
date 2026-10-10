@@ -11,7 +11,7 @@ import {
   respondBackstageConversationCommand,
 } from "../packages/application/src/index.js";
 import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
-import { openBackstageConversation } from "../packages/application/src/engagement.js";
+import { createWorldEngagementState, openBackstageConversation } from "../packages/application/src/engagement.js";
 import { activeContractsForPromotion } from "../packages/sim-core/src/index.js";
 import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
 import { claimIndependentPromotionForPlayer } from "../packages/application/src/ownership.js";
@@ -204,7 +204,8 @@ test("Backstage creates at most one new conversation per promotion per week, eve
 
 test("A full unanswered Backstage inbox preserves further eligible concerns for another week", () => {
   const f = fixture();
-  const engagement = f.aggregate.engagement!;
+  f.aggregate.engagement = createWorldEngagementState(f.aggregate.state.world.id);
+  const engagement = f.aggregate.engagement;
   ok(BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION === 3, "open conversation cap changed unexpectedly");
   for (let n = 0; n < BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION; n++) {
     const date = addPpwWeeks(f.aggregate.state.world.currentDate, -n - 1, f.aggregate.state.ruleset.weeksPerYear);
