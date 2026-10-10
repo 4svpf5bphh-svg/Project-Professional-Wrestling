@@ -1,6 +1,8 @@
 declare const process: { exitCode?: number };
 import {
   buildPlayerAttention,
+  BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION,
+  BACKSTAGE_NEW_CONVERSATIONS_PER_PROMOTION_WEEK,
   buildPlayerBackstageView,
   cloneApplicationWorld,
   createPersistedApplicationWorld,
@@ -8,6 +10,7 @@ import {
   respondBackstageConversationCommand,
 } from "../packages/application/src/index.js";
 import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
+import { openBackstageConversation } from "../packages/application/src/engagement.js";
 import { activeContractsForPromotion } from "../packages/sim-core/src/index.js";
 import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
 import { claimIndependentPromotionForPlayer } from "../packages/application/src/ownership.js";
@@ -152,6 +155,70 @@ test("A special-attraction/limited-date role alone never generates a booking com
   f.contract.roleExpectation="MAIN_EVENT";
   f.aggregate.state.scheduledAppearances.length=0;
   ok(generateBackstageConversations(f.aggregate)===0,"unused finite dates generated grievance");
+});
+
+
+test("Backstage creates at most one new conversation per promotion per week, even after an immediate reply", () => {
+  const f = fixture();
+  const state = f.aggregate.state;
+  const otherContract = activeContractsForPromotion(state, f.promotion.id)
+    .find((contract) => contract.id !== f.contract.id);
+  ok(otherContract, "fixture needs a second contracted wrestler");
+  otherContract!.roleExpectation = "UPPER_CARD";
+  otherContract!.startDate = { ...f.contract.startDate };
+  otherContract!.endDate = { ...f.contract.endDate };
+  otherContract!.dateEntitlement = 12;
+  otherContract!.datesUsed = 4;
+  for (let n = 1; n <= 4; n++) {
+    const eventId = "backstage-show-" + n;
+    const existing = state.scheduledAppearances.find((appearance) => appearance.eventId === eventId)!;
+    state.scheduledAppearances.push({
+      ...existing, id: "second-backstage-appearance-" + n,
+      contractId: otherContract!.id, personId: otherContract!.personId,
+    });
+    state.matchParticipants.push({
+      id: "second-backstage-participant-" + n, worldId: state.world.id,
+      matchId: eventId + "-match-1", eventId, personId: otherContract!.personId,
+      side: "B", won: false,
+    });
+  }
+  ok(BACKSTAGE_NEW_CONVERSATIONS_PER_PROMOTION_WEEK === 1, "cap changed unexpectedly");
+  ok(generateBackstageConversations(f.aggregate) === 1, "first weekly concern did not appear");
+  const first = f.aggregate.engagement!.backstageConversations[0]!;
+  const response = respondBackstageConversationCommand(f.aggregate, {
+    requestId: "weekly-limit-reply",
+    worldId: state.world.id,
+    playerId: "backstage-owner",
+    commandType: "RESPOND_BACKSTAGE_CONVERSATION",
+    payload: { conversationId: first.conversationId, response: "HEAR_OUT" },
+  });
+  ok(response.status === "ANSWERED", "reply did not close first concern");
+  ok(generateBackstageConversations(f.aggregate) === 0, "same-week retry created a second concern");
+  state.world.currentDate = addPpwWeeks(state.world.currentDate, 1, state.ruleset.weeksPerYear);
+  ok(generateBackstageConversations(f.aggregate) === 1, "second contract was lost after weekly limit");
+  ok(generateBackstageConversations(f.aggregate) === 0, "repeat generation was not idempotent");
+  ok(new Set(f.aggregate.engagement!.backstageConversations.map((x) => x.sourceContractId)).size === 2,
+    "one wrestler's concern was repeated instead of selecting the next eligible contract");
+});
+
+test("A full unanswered Backstage inbox preserves further eligible concerns for another week", () => {
+  const f = fixture();
+  const engagement = f.aggregate.engagement!;
+  ok(BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION === 3, "open conversation cap changed unexpectedly");
+  for (let n = 0; n < BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION; n++) {
+    const date = addPpwWeeks(f.aggregate.state.world.currentDate, -n - 1, f.aggregate.state.ruleset.weeksPerYear);
+    openBackstageConversation(engagement, {
+      conversationId: "old-backstage-concern-" + n,
+      worldId: f.aggregate.state.world.id, promotionId: f.promotion.id,
+      wrestlerId: "old-person-" + n, sourceContractId: "old-contract-" + n,
+      kind: "ROLE_USAGE_CONCERN", createdDate: date,
+      status: "OPEN", response: null, responseDate: null, promisedRole: "UPPER_CARD",
+      observedMatchShows: 4, observedFeaturedShows: 0,
+    });
+  }
+  ok(generateBackstageConversations(f.aggregate) === 0, "fourth unanswered concern was generated");
+  ok(engagement.backstageConversations.length === BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION,
+    "cap silently deleted existing conversations");
 });
 
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");

@@ -20,3 +20,7 @@ Presentation: Backstage area and Attention deep links; no simulation authority i
 
 ## Deliberately deferred
 Multi-type creative suggestions, interpersonal disputes, scripted-character pitches, staff delegation, graded response impact, time-limited follow-ups, persistent promise obligations, roster personality adaptation, balance caps for a large world and AI dialogue. Do not infer that answering "Hear them out" automatically makes the wrestler happy.
+
+## Attention pacing
+
+A promotion receives at most one new Backstage conversation per PPW week and holds at most three unanswered conversations from this generator. Limits apply even if the player replies during the same week. Eligible candidates are ranked deterministically by actual completed matches, promised role, then contract ID. Deferred requests are reconsidered later, never fabricated as already created and never auto-answered. The limit is per promotion, not a global first-player advantage.

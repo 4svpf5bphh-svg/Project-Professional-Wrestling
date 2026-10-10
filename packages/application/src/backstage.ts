@@ -13,6 +13,9 @@ import { executeIdempotentCommand, type ApplicationCommandEnvelope } from "./com
 import { activePromotionControlForPlayer, activePromotionControls, activeWorldMembership } from "./ownership.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
+export const BACKSTAGE_NEW_CONVERSATIONS_PER_PROMOTION_WEEK = 1;
+export const BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION = 3;
+
 /**
  * Conservative first trigger: four completed in-ring appearances under the same
  * contract, but zero appropriate featured slots within the recent 12-week view.
@@ -30,7 +33,23 @@ export function generateBackstageConversations(aggregate: ApplicationWorldAggreg
   let created = 0;
 
   for (const control of controls) {
-    // Existing unanswered requests do not prevent other promotions from acting.
+    const prior = engagement.backstageConversations.filter(
+      (conversation) => conversation.promotionId === control.promotionId,
+    );
+    const unanswered = prior.filter((conversation) => conversation.status === "OPEN").length;
+    const thisWeek = prior.filter((conversation) => (
+      conversation.createdDate.year === aggregate.state.world.currentDate.year
+      && conversation.createdDate.week === aggregate.state.world.currentDate.week
+    )).length;
+    const available = Math.min(
+      BACKSTAGE_NEW_CONVERSATIONS_PER_PROMOTION_WEEK - thisWeek,
+      BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION - unanswered,
+    );
+    if (available <= 0) continue;
+
+    // Deterministic ordering prevents whatever order the contract array happens
+    // to be stored in from deciding who gets the one weekly conversation slot.
+    const candidates: BackstageConversation[] = [];
     for (const contract of activeContractsForPromotion(aggregate.state, control.promotionId)) {
       if (contract.roleExpectation !== "MAIN_EVENT" && contract.roleExpectation !== "UPPER_CARD") continue;
       const id = `backstage:role-usage:${contract.id}`;
@@ -40,7 +59,7 @@ export function generateBackstageConversations(aggregate: ApplicationWorldAggreg
       const featured = evidence.mainEventShows
         + (contract.roleExpectation === "UPPER_CARD" ? evidence.upperCardShows : 0);
       if (featured > 0) continue;
-      const record: BackstageConversation = {
+      candidates.push({
         conversationId: id,
         worldId: aggregate.state.world.id,
         promotionId: contract.promotionId,
@@ -54,8 +73,15 @@ export function generateBackstageConversations(aggregate: ApplicationWorldAggreg
         promisedRole: contract.roleExpectation,
         observedMatchShows: evidence.inRingShows,
         observedFeaturedShows: featured,
-      };
-      openBackstageConversation(engagement, record);
+      });
+    }
+    candidates.sort((a, b) => (
+      b.observedMatchShows - a.observedMatchShows
+      || (a.promisedRole === "MAIN_EVENT" ? 0 : 1) - (b.promisedRole === "MAIN_EVENT" ? 0 : 1)
+      || a.sourceContractId.localeCompare(b.sourceContractId)
+    ));
+    for (const candidate of candidates.slice(0, available)) {
+      openBackstageConversation(engagement, candidate);
       created += 1;
     }
   }
