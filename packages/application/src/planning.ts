@@ -47,6 +47,7 @@ export type DetailedShowSegmentType =
   | "PROMO"
   | "INTERVIEW"
   | "CONFRONTATION"
+  | "INTERRUPTION"
   | "CHALLENGE"
   | "CONTRACT_SIGNING"
   | "ATTACK"
@@ -60,6 +61,8 @@ export type AttackObjective = "GENERATE_HEAT" | "BUILD_SYMPATHY" | "ESCALATE_RIV
 export type TurnPresentation = "REVEAL" | "BETRAYAL";
 export type SigningOutcome = "SIGNED" | "REJECTED" | "WALKOUT" | "BRAWL";
 export type ChallengeResponse = "ACCEPTED" | "REFUSED" | "LEFT_OPEN";
+// Both outcomes are player-scripted; no random story outcome at World Lock.
+export type InterruptionOutcome = "VERBAL_EXCHANGE" | "INTERRUPTER_PREVAILS" | "SPEAKER_PREVAILS" | "BRAWL";
 
 export interface DetailedShowSegmentDraft {
   draftSegmentId: string;
@@ -79,6 +82,7 @@ export interface DetailedShowSegmentDraft {
   targetPersonId?: Id | null;
   signingOutcome?: SigningOutcome | null;
   challengeResponse?: ChallengeResponse | null;
+  interruptionOutcome?: InterruptionOutcome | null;
   attackPresentation?: AttackPresentation | null;
   attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
@@ -163,6 +167,7 @@ const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "PROMO",
   "INTERVIEW",
   "CONFRONTATION",
+  "INTERRUPTION",
   "CHALLENGE",
   "CONTRACT_SIGNING",
   "ATTACK",
@@ -326,7 +331,7 @@ function validateShowSegmentDraft(
   if (new Set(draft.participantIds).size !== draft.participantIds.length) {
     throw new Error("show segment cannot include the same wrestler twice");
   }
-  if (["CONFRONTATION", "CHALLENGE", "CONTRACT_SIGNING", "ATTACK"].includes(draft.type) && draft.participantIds.length < 2) {
+  if (["CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "ATTACK"].includes(draft.type) && draft.participantIds.length < 2) {
     throw new Error(`${draft.type} segment requires at least two wrestlers`);
   }
   if (draft.type === "POST_MATCH_ASSAULT" && draft.participantIds.length < 2) {
@@ -368,7 +373,7 @@ function validateShowSegmentDraft(
     !rescuerPersonId || rescuerPersonId === attackerPersonId || rescuerPersonId === victimPersonId
     || !draft.participantIds.includes(rescuerPersonId)
   )) throw new Error("RESCUE requires a distinct rescuer among segment participants");
-  const isDirected = draft.type === "CHALLENGE" || draft.type === "CONFRONTATION" || draft.type === "CONTRACT_SIGNING";
+  const isDirected = draft.type === "CHALLENGE" || draft.type === "CONFRONTATION" || draft.type === "INTERRUPTION" || draft.type === "CONTRACT_SIGNING";
   const initiatorPersonId = isDirected && draft.initiatorPersonId != null
     ? normalizedId(draft.initiatorPersonId, "initiatorPersonId") : null;
   const targetPersonId = isDirected && draft.targetPersonId != null
@@ -384,6 +389,11 @@ function validateShowSegmentDraft(
   if (challengeResponse !== null && !["ACCEPTED", "REFUSED", "LEFT_OPEN"].includes(challengeResponse)) {
     throw new Error("CHALLENGE has an unsupported scripted response");
   }
+  const interruptionOutcome = draft.type === "INTERRUPTION" ? (draft.interruptionOutcome ?? "VERBAL_EXCHANGE") : null;
+  if (draft.type === "INTERRUPTION" && (
+    !initiatorPersonId || !targetPersonId
+    || !["VERBAL_EXCHANGE", "INTERRUPTER_PREVAILS", "SPEAKER_PREVAILS", "BRAWL"].includes(interruptionOutcome!)
+  )) throw new Error("INTERRUPTION requires interrupter, original speaker and a scripted outcome");
   const signingOutcome = draft.type === "CONTRACT_SIGNING" ? (draft.signingOutcome ?? "SIGNED") : null;
   if (draft.type === "CONTRACT_SIGNING" && (
     !initiatorPersonId || !targetPersonId
@@ -440,6 +450,7 @@ function validateShowSegmentDraft(
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
     ...(draft.type === "CHALLENGE" && challengeResponse ? { challengeResponse } : {}),
+    ...(draft.type === "INTERRUPTION" ? { interruptionOutcome } : {}),
     ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
     ...(draft.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
     ...(draft.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),

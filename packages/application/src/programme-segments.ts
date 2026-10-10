@@ -22,6 +22,7 @@ import type {
   TurnPresentation,
   SigningOutcome,
   ChallengeResponse,
+  InterruptionOutcome,
   WorldPlanningState,
 } from "./planning.js";
 
@@ -30,6 +31,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "PROMO",
   "INTERVIEW",
   "CONFRONTATION",
+  "INTERRUPTION",
   "CHALLENGE",
   "CONTRACT_SIGNING",
   "ATTACK",
@@ -62,6 +64,7 @@ export interface ResolvedShowSegment {
   targetPersonId: Id | null;
   signingOutcome: SigningOutcome | null;
   challengeResponse: ChallengeResponse | null;
+  interruptionOutcome: InterruptionOutcome | null;
   attackPresentation: AttackPresentation | null;
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
@@ -93,6 +96,7 @@ interface NormalizedDraftSegment {
   targetPersonId: Id | null;
   signingOutcome: SigningOutcome | null;
   challengeResponse: ChallengeResponse | null;
+  interruptionOutcome: InterruptionOutcome | null;
   attackPresentation: AttackPresentation | null;
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
@@ -163,10 +167,11 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       ? (segment.victimPersonId ?? null) : null,
     rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
     sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
-    initiatorPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "CONTRACT_SIGNING" ? (segment.initiatorPersonId ?? null) : null,
-    targetPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "CONTRACT_SIGNING" ? (segment.targetPersonId ?? null) : null,
+    initiatorPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING" ? (segment.initiatorPersonId ?? null) : null,
+    targetPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING" ? (segment.targetPersonId ?? null) : null,
     signingOutcome: segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
     challengeResponse: segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : null,
+    interruptionOutcome: segment.type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null,
     attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? null) : null,
     attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? null) : null,
     turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
@@ -192,6 +197,7 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       targetPersonId: null,
       signingOutcome: null,
       challengeResponse: null,
+      interruptionOutcome: null,
       attackPresentation: null,
       attackObjective: null,
       turnPersonId: null,
@@ -233,6 +239,7 @@ function segmentOutcome(
     PROMO: [0.62, 0.23, 0.15],
     INTERVIEW: [0.68, 0.20, 0.12],
     CONFRONTATION: [0.50, 0.32, 0.18],
+    INTERRUPTION: [0.57, 0.28, 0.15],
     CHALLENGE: [0.56, 0.28, 0.16],
     CONTRACT_SIGNING: [0.53, 0.31, 0.16],
     ATTACK: [0.38, 0.34, 0.28],
@@ -304,6 +311,18 @@ function segmentOutcome(
     // Match result is authoritative. The assault cannot alter it.
     const aftermath = victimMatchOutcome === "WON" ? 1 : victimMatchOutcome === "LOST" ? -0.5 : 0;
     angleFitModifier = round1(clamp(roleClarity + aftermath, -5, 5));
+  }
+  if (segment.type === "INTERRUPTION" && segment.initiatorPersonId && segment.targetPersonId) {
+    const interrupterAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, segment.initiatorPersonId);
+    const speakerAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, segment.targetPersonId);
+    const rivalryContext = programme ? clamp(((programme.heat ?? 50) - 50) / 18, -2, 2) : -0.5;
+    const contrast = interrupterAlignment !== speakerAlignment ? 1.5 : 0;
+    // No simulation veto: the booked side prevails, even if the audience is unconvinced.
+    const beat = segment.interruptionOutcome === "BRAWL" ? (programme ? 1.5 : -0.5)
+      : segment.interruptionOutcome === "INTERRUPTER_PREVAILS" ? (interrupterAlignment === "HEEL" ? 1 : 0)
+      : segment.interruptionOutcome === "SPEAKER_PREVAILS" ? (speakerAlignment === "FACE" ? 1 : 0)
+      : 0.25;
+    angleFitModifier = round1(clamp(rivalryContext + contrast + beat, -5, 5));
   }
   if (segment.type === "CHALLENGE" && segment.challengeResponse && segment.initiatorPersonId && segment.targetPersonId) {
     // Booking controls the response; role clarity and rivalry affect reception.
@@ -389,6 +408,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const targetPersonId = entry.payload.targetPersonId ?? null;
   const signingOutcome = entry.payload.signingOutcome ?? null;
   const challengeResponse = entry.payload.challengeResponse ?? null;
+  const interruptionOutcome = entry.payload.interruptionOutcome ?? null;
   const attackPresentation = entry.payload.attackPresentation ?? null;
   const attackObjective = entry.payload.attackObjective ?? null;
   const turnPersonId = entry.payload.turnPersonId === undefined ? null : entry.payload.turnPersonId;
@@ -431,6 +451,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || (targetPersonId !== null && typeof targetPersonId !== "string")
     || (signingOutcome !== null && !["SIGNED", "REJECTED", "WALKOUT", "BRAWL"].includes(String(signingOutcome)))
     || (challengeResponse !== null && !["ACCEPTED", "REFUSED", "LEFT_OPEN"].includes(String(challengeResponse)))
+    || (interruptionOutcome !== null && !["VERBAL_EXCHANGE", "INTERRUPTER_PREVAILS", "SPEAKER_PREVAILS", "BRAWL"].includes(String(interruptionOutcome)))
     || (attackPresentation !== null && !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(String(attackPresentation)))
     || (attackObjective !== null && !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(String(attackObjective)))
     || (turnPersonId !== null && typeof turnPersonId !== "string")
@@ -461,6 +482,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     targetPersonId: targetPersonId as Id | null,
     signingOutcome: signingOutcome as SigningOutcome | null,
     challengeResponse: challengeResponse as ChallengeResponse | null,
+    interruptionOutcome: interruptionOutcome as InterruptionOutcome | null,
     attackPresentation: attackPresentation as AttackPresentation | null,
     attackObjective: attackObjective as AttackObjective | null,
     turnPersonId,
@@ -582,6 +604,7 @@ export function recordResolvedShowSegments(
             targetPersonId: segment.targetPersonId,
             signingOutcome: segment.signingOutcome,
             challengeResponse: segment.challengeResponse,
+            interruptionOutcome: segment.interruptionOutcome,
             attackPresentation: segment.attackPresentation,
             attackObjective: segment.attackObjective,
             turnPersonId: segment.turnPersonId,

@@ -145,6 +145,7 @@ export interface PlayerShowSegmentView {
   targetPersonId: Id | null;
   signingOutcome: "SIGNED" | "REJECTED" | "WALKOUT" | "BRAWL" | null;
   challengeResponse: "ACCEPTED" | "REFUSED" | "LEFT_OPEN" | null;
+  interruptionOutcome: "VERBAL_EXCHANGE" | "INTERRUPTER_PREVAILS" | "SPEAKER_PREVAILS" | "BRAWL" | null;
   attackPresentation: AttackPresentation | null;
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
@@ -596,6 +597,7 @@ export function buildPlayerShowHistory(
         targetPersonId: segment.targetPersonId,
         signingOutcome: segment.signingOutcome,
         challengeResponse: segment.challengeResponse,
+        interruptionOutcome: segment.interruptionOutcome,
         attackPresentation: segment.attackPresentation,
         attackObjective: segment.attackObjective,
         turnPersonId: segment.turnPersonId,

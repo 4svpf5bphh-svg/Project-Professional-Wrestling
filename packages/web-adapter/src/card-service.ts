@@ -28,6 +28,7 @@ import {
   type TurnPresentation,
   type SigningOutcome,
   type ChallengeResponse,
+  type InterruptionOutcome,
   type DetailedShowSlotRef,
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
@@ -120,6 +121,7 @@ export interface AlphaCardSegmentView {
   targetPersonId?: Id | null;
   signingOutcome?: SigningOutcome | null;
   challengeResponse?: ChallengeResponse | null;
+  interruptionOutcome?: InterruptionOutcome | null;
   attackPresentation?: AttackPresentation | null;
   attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
@@ -232,6 +234,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "PROMO",
   "INTERVIEW",
   "CONFRONTATION",
+  "INTERRUPTION",
   "CHALLENGE",
   "CONTRACT_SIGNING",
   "ATTACK",
@@ -446,7 +449,7 @@ function normalizeSegments(
       requiredText(personId, `segments[${index}].participantIds[${personIndex}]`, 128)
     ));
     if (new Set(people).size !== people.length) throw new Error("segment cannot include the same wrestler twice");
-    if (["CONFRONTATION", "CHALLENGE", "CONTRACT_SIGNING", "ATTACK"].includes(segment.type) && people.length < 2) {
+    if (["CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "ATTACK"].includes(segment.type) && people.length < 2) {
       throw new Error(`${segment.type.toLowerCase()} segment requires at least two wrestlers`);
     }
     if (segment.type === "POST_MATCH_ASSAULT" && people.length < 2) {
@@ -485,7 +488,7 @@ function normalizeSegments(
       rescuerPersonId === attackerPersonId || rescuerPersonId === victimPersonId
       || !people.includes(rescuerPersonId!)
     )) throw new Error("RESCUE requires a distinct rescuer among segment participants");
-    const isDirected = segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "CONTRACT_SIGNING";
+    const isDirected = segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING";
     const initiatorPersonId = isDirected && segment.initiatorPersonId != null
       ? requiredText(segment.initiatorPersonId, `segments[${index}].initiatorPersonId`, 128) : null;
     const targetPersonId = isDirected && segment.targetPersonId != null
@@ -498,6 +501,11 @@ function normalizeSegments(
     if (challengeResponse !== null && !["ACCEPTED", "REFUSED", "LEFT_OPEN"].includes(challengeResponse)) {
       throw new Error("CHALLENGE has an unsupported scripted response");
     }
+    const interruptionOutcome = segment.type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null;
+    if (segment.type === "INTERRUPTION" && (
+      !initiatorPersonId || !targetPersonId
+      || !["VERBAL_EXCHANGE", "INTERRUPTER_PREVAILS", "SPEAKER_PREVAILS", "BRAWL"].includes(interruptionOutcome!)
+    )) throw new Error("INTERRUPTION requires interrupter, original speaker and a scripted outcome");
     const signingOutcome = segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null;
     if (segment.type === "CONTRACT_SIGNING" && (
       !initiatorPersonId || !targetPersonId
@@ -549,6 +557,7 @@ function normalizeSegments(
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
       ...(segment.type === "CHALLENGE" && challengeResponse ? { challengeResponse } : {}),
+      ...(segment.type === "INTERRUPTION" ? { interruptionOutcome } : {}),
       ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
       ...(segment.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
       ...(segment.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),
@@ -970,10 +979,11 @@ export async function loadAlphaShowCard(
       victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
       sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
-      initiatorPersonId: ["CHALLENGE", "CONFRONTATION", "CONTRACT_SIGNING"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
-      targetPersonId: ["CHALLENGE", "CONFRONTATION", "CONTRACT_SIGNING"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
+      initiatorPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
+      targetPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
       signingOutcome: segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
       challengeResponse: segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : null,
+      interruptionOutcome: segment.type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null,
       attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
       attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null,
       turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,

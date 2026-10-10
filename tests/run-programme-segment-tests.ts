@@ -360,6 +360,51 @@ test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the
     "assault altered a completed match finish");
 });
 
+for (const [outcome, seed] of [
+  ["VERBAL_EXCHANGE", 9179], ["INTERRUPTER_PREVAILS", 9180],
+  ["SPEAKER_PREVAILS", 9181], ["BRAWL", 9182],
+] as const) {
+  test(`INTERRUPTION preserves scripted ${outcome} and named roles at World Lock`, () => {
+    const setup = fixture(seed);
+    const [speaker, interrupter] = setup.rosterIds;
+    const base = {
+      draftId: "interruption-draft", promotionId: setup.promotion.id,
+      targetDate: setup.targetDate, marketId: null, venueId: null,
+      ticketStrategy: null, participantIds: setup.rosterIds.slice(0, 4),
+      matches: [], championshipAssignments: [],
+    };
+    const angle = {
+      draftSegmentId: "interruption-1", type: "INTERRUPTION" as const,
+      participantIds: [speaker!, interrupter!],
+      initiatorPersonId: interrupter!, targetPersonId: speaker!,
+      interruptionOutcome: outcome, programmeId: setup.programme.id,
+      plannedLengthMinutes: 6,
+    };
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, interruptionOutcome: "RANDOM" as typeof outcome }],
+    }), "scripted outcome");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, initiatorPersonId: speaker }],
+    }), "distinct initiator and target");
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [angle],
+    });
+    const stored = setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!;
+    ok(stored.interruptionOutcome === outcome, "draft lost chosen ending");
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1,
+      "interruption was not recorded");
+    const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(frozen.interruptionOutcome === outcome, "sim changed scripted interruption");
+    ok(frozen.initiatorPersonId === interrupter && frozen.targetPersonId === speaker,
+      "interrupter and speaker roles swapped");
+    ok(frozen.executionQuality !== null && frozen.crowdResponse !== null,
+      "interruption was not rated for execution and crowd response");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+      "interruption produced duplicate history");
+  });
+}
+
 for (const [response, seed] of [["ACCEPTED", 9175], ["REFUSED", 9176], ["LEFT_OPEN", 9177]] as const) {
   test(`CHALLENGE saves player-selected ${response} without overriding it`, () => {
     const setup = fixture(seed);

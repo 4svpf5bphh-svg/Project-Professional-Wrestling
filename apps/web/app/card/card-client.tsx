@@ -39,7 +39,7 @@ const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
 ];
 const MATCH_FINISHES: BookableFinish[] = ["CLEAN_PIN", "SUBMISSION", "FLASH_PIN", "PROTECTED_FINISH"];
 const SEGMENT_TYPES: AlphaCardSegmentView["type"][] = [
-  "PROMO", "INTERVIEW", "CONFRONTATION", "CHALLENGE", "CONTRACT_SIGNING", "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN",
+  "PROMO", "INTERVIEW", "CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN",
 ];
 const ATTACK_FORMATS = ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"] as const;
 const ATTACK_OBJECTIVES = ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"] as const;
@@ -114,11 +114,11 @@ function cloneAssignments(assignments: AlphaChampionshipAssignmentView[]): Alpha
 }
 
 function isDirectedSegment(type: AlphaCardSegmentView["type"]): boolean {
-  return type === "CHALLENGE" || type === "CONFRONTATION" || type === "CONTRACT_SIGNING";
+  return type === "CHALLENGE" || type === "CONFRONTATION" || type === "INTERRUPTION" || type === "CONTRACT_SIGNING";
 }
 
 function segmentMinimum(type: AlphaCardSegmentView["type"]): number {
-  return type === "RESCUE" ? 3 : type === "POST_MATCH_ASSAULT" || type === "CONFRONTATION" || type === "CHALLENGE" || type === "CONTRACT_SIGNING" || type === "ATTACK" ? 2 : 1;
+  return type === "RESCUE" ? 3 : type === "POST_MATCH_ASSAULT" || type === "CONFRONTATION" || type === "INTERRUPTION" || type === "CHALLENGE" || type === "CONTRACT_SIGNING" || type === "ATTACK" ? 2 : 1;
 }
 
 function MinuteField(props: {
@@ -517,6 +517,7 @@ export default function CardClient(): React.JSX.Element {
       initiatorPersonId: null,
       targetPersonId: null,
       signingOutcome: type === "CONTRACT_SIGNING" ? "SIGNED" : null,
+      interruptionOutcome: type === "INTERRUPTION" ? "VERBAL_EXCHANGE" : null,
       challengeResponse: type === "CHALLENGE" ? "LEFT_OPEN" : null,
       attackPresentation: type === "ATTACK" ? "BLINDSIDE" : null,
       attackObjective: type === "ATTACK" ? "GENERATE_HEAT" : null,
@@ -721,6 +722,7 @@ export default function CardClient(): React.JSX.Element {
       targetPersonId: isDirectedSegment(type) && type === segment.type && participantIds.includes(segment.targetPersonId ?? "")
         ? (segment.targetPersonId ?? null) : null,
       signingOutcome: type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
+      interruptionOutcome: type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null,
       challengeResponse: type === "CHALLENGE"
         ? (segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : "LEFT_OPEN") : null,
       attackPresentation: type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
@@ -1018,6 +1020,12 @@ export default function CardClient(): React.JSX.Element {
     if (isDirectedSegment(segment.type)) {
       const initiator = segment.initiatorPersonId ? personName(segment.initiatorPersonId) : "Choose initiator";
       const target = segment.targetPersonId ? personName(segment.targetPersonId) : "Choose target";
+      if (segment.type === "INTERRUPTION") {
+        const beat = segment.interruptionOutcome === "INTERRUPTER_PREVAILS" ? "interrupter prevails"
+          : segment.interruptionOutcome === "SPEAKER_PREVAILS" ? "speaker prevails"
+          : segment.interruptionOutcome === "BRAWL" ? "brawl" : "verbal exchange";
+        return `Interruption · ${initiator} interrupts ${target} · ${beat} · ${segment.plannedLengthMinutes} min`;
+      }
       if (segment.type === "CONTRACT_SIGNING") {
         return `Contract signing · ${initiator} & ${target} · ${(segment.signingOutcome ?? "SIGNED").toLowerCase()} · ${segment.plannedLengthMinutes} min`;
       }
@@ -1474,6 +1482,27 @@ export default function CardClient(): React.JSX.Element {
                   </div>
                 ) : null}
 
+                {segment.type === "INTERRUPTION" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Script the interruption</span>
+                      <small>Who gets the better of the exchange is your choice. The simulation rates the crowd response, not the story result.</small>
+                    </div>
+                    <div className={styles.control}>
+                      <label>On-screen ending</label>
+                      <select value={segment.interruptionOutcome ?? "VERBAL_EXCHANGE"} disabled={!view.canEdit}
+                        onChange={(event) => updateSegment(segment.draftSegmentId, {
+                          interruptionOutcome: event.target.value as "VERBAL_EXCHANGE" | "INTERRUPTER_PREVAILS" | "SPEAKER_PREVAILS" | "BRAWL",
+                        })}>
+                        <option value="VERBAL_EXCHANGE">Heated verbal exchange</option>
+                        <option value="INTERRUPTER_PREVAILS">Interrupter shuts down the speaker</option>
+                        <option value="SPEAKER_PREVAILS">Original speaker shuts down the interrupter</option>
+                        <option value="BRAWL">It breaks into a brawl</option>
+                      </select>
+                    </div>
+                  </div>
+                ) : null}
+
                 {segment.type === "CHALLENGE" ? (
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
@@ -1662,7 +1691,7 @@ export default function CardClient(): React.JSX.Element {
                             {segment.type === "RESCUE" ? (personIndex === 0 ? "Aggressor" : personIndex === 1 ? "Victim" : personIndex === 2 ? "Rescuer" : "Also involved")
                               : segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT"
                               ? (personIndex === 0 ? "Attacker" : personIndex === 1 ? "Victim" : "Also involved")
-                              : (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Challenger" : segment.type === "CONTRACT_SIGNING" ? "Proposer" : "Instigator") : personIndex === 1 ? (segment.type === "CONTRACT_SIGNING" ? "Responder" : "Target") : "Also involved")}
+                              : (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Challenger" : segment.type === "CONTRACT_SIGNING" ? "Proposer" : segment.type === "INTERRUPTION" ? "Interrupter" : "Instigator") : personIndex === 1 ? (segment.type === "CONTRACT_SIGNING" ? "Responder" : segment.type === "INTERRUPTION" ? "Original speaker" : "Target") : "Also involved")}
                           </span>
                         ) : null}
                         <WrestlerSlotButton
@@ -1684,7 +1713,7 @@ export default function CardClient(): React.JSX.Element {
                               : segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT"
                               ? (personIndex === 0 ? "Choose attacker" : personIndex === 1 ? "Choose victim" : "Also involved")
                               : isDirectedSegment(segment.type)
-                                ? (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Choose challenger" : segment.type === "CONTRACT_SIGNING" ? "Choose proposer" : "Choose instigator") : personIndex === 1 ? (segment.type === "CONTRACT_SIGNING" ? "Choose responder" : "Choose target") : "Also involved")
+                                ? (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Choose challenger" : segment.type === "CONTRACT_SIGNING" ? "Choose proposer" : segment.type === "INTERRUPTION" ? "Choose interrupter" : "Choose instigator") : personIndex === 1 ? (segment.type === "CONTRACT_SIGNING" ? "Choose responder" : segment.type === "INTERRUPTION" ? "Choose original speaker" : "Choose target") : "Also involved")
                                 : `${pretty(segment.type)} · Wrestler ${personIndex + 1}`,
                           })}
                         />

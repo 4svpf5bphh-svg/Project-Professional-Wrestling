@@ -502,6 +502,49 @@ await test("Run-in saves, reloads, resolves and records the actual finish withou
   ok(appearance?.status === "COMPLETED", "run-in wrestler did not fulfil their booked appearance");
 });
 
+for (const [outcome, seed] of [
+  ["INTERRUPTER_PREVAILS", 61135], ["SPEAKER_PREVAILS", 61136], ["BRAWL", 61137],
+] as const) {
+  await test(`Card preserves authored ${outcome} interruption through World Lock`, async () => {
+    const fixture = await reservedShowFixture(seed);
+    const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    const [speaker, interrupter] = fixture.participantIds;
+    if (!speaker || !interrupter) throw new Error("interruption needs two wrestlers");
+    const segment: AlphaCardSegmentView = {
+      draftSegmentId: "planned-interruption", type: "INTERRUPTION",
+      participantIds: [speaker, interrupter], initiatorPersonId: interrupter,
+      targetPersonId: speaker, interruptionOutcome: outcome,
+      programmeId: null, plannedLengthMinutes: 6,
+    };
+    const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: `scripted-interruption-${seed}`,
+      expectedRevision: before.world.revision,
+      expectedPlanVersion: before.workspaceVersion,
+      matches: singlesCard(fixture.participantIds),
+      segments: [segment], championshipAssignments: [],
+    });
+    ok(saved.segments[0]?.interruptionOutcome === outcome, "save changed scripted interruption");
+    const reloaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    ok(reloaded.segments[0]?.interruptionOutcome === outcome
+      && reloaded.segments[0]?.initiatorPersonId === interrupter
+      && reloaded.segments[0]?.targetPersonId === speaker,
+      "Card reload lost the scripted ending or directed roles");
+    await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+      expectedRevision: saved.world.revision,
+    });
+    const finished = await fixture.repository.load(fixture.worldId);
+    const entry = finished.state.ledger.find((e) => e.type === "SHOW_SEGMENT_COMPLETED"
+      && e.payload.draftSegmentId === segment.draftSegmentId);
+    ok(entry?.payload.segmentType === "INTERRUPTION"
+      && entry.payload.interruptionOutcome === outcome
+      && entry.payload.initiatorPersonId === interrupter
+      && entry.payload.targetPersonId === speaker,
+      "World Lock changed the authored interruption result");
+    ok(typeof entry?.payload.segmentCrowdResponse === "number",
+      "no crowd evaluation for scripted interruption");
+  });
+}
+
 for (const [response, seed] of [["ACCEPTED", 61130], ["REFUSED", 61131], ["LEFT_OPEN", 61132]] as const) {
   await test(`Card persists scripted CHALLENGE ${response} through World Lock`, async () => {
     const fixture = await reservedShowFixture(seed);
