@@ -30,3 +30,7 @@ Scope: read-through of planning validation, authored segment resolution, immutab
 2. **Consequences** — deterministic, bounded, explainable backstage reactions to repeated booking treatment. A scripted rejection/attack/betrayal stays scripted; wrestlers react to believable treatment and working relationships, not randomly change the on-screen result.
 3. **Relationship and trust integration** — reuse `wrestlerRelationships`, promotion talent trust and existing morale processing, with a single World Lock pass, replay protection and no new hidden competitive advantage.
 4. **Exposure and explanation** — surface the leading causes on wrestler profiles/booker briefings later, after the underlying behaviour is proven and UI consolidation is designed.
+
+## Talent Expectations read model (next increment)
+
+The completed-show evidence view `talentExpectationEvidenceForContract` compares the active contract\'s role promise and purchased/used dates to completed promotion shows, contract-specific completed appearances, actual in-ring card position, and completed scripted angles. It surfaces those observations on the **own-roster** wrestler-profile response only. Unknown, cancelled and future events, other contracts and other promotions are not silently counted. It does not evaluate satisfaction, alter morale, introduce staff promises or change the World schema. A special attraction\'s rare appearances and a finite dates contract are *not* automatically breaches of promise.

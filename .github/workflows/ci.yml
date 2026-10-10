@@ -62,6 +62,8 @@ jobs:
         run: node dist/tests/run-programme-segment-tests.js
       - name: Run talent story-memory coverage
         run: node dist/tests/run-talent-story-memory-tests.js
+      - name: Run talent expectation evidence coverage
+        run: node dist/tests/run-talent-expectation-tests.js
       - name: Build Alpha web app
         run: npm run web:build
       - name: Run Alpha HTTP integration

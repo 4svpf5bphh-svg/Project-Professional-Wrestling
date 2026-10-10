@@ -28,6 +28,7 @@ export * from "./stewardship-caretaker.js";
 export * from "./stewardship-release.js";
 export * from "./talent-view.js";
 export * from "./talent-story-memories.js";
+export * from "./talent-expectations.js";
 export * from "./team-history-view.js";
 export * from "./stable-commands.js";
 export * from "./stable-view.js";

@@ -25,6 +25,7 @@ import {
   activeWorldMembership,
 } from "./ownership.js";
 import type { PlayerTalentSkillsView } from "./talent-view.js";
+import { talentExpectationEvidenceForContract, type TalentExpectationEvidence } from "./talent-expectations.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export type WrestlerProfileEmploymentStatus =
@@ -102,6 +103,7 @@ export interface PlayerWrestlerProfileView {
     wear: number | null;
     hasPendingOffer: boolean;
     ourContract: PlayerWrestlerProfileContractView | null;
+    bookingEvidence: TalentExpectationEvidence | null;
   } | null;
   careerStats: {
     completedMatches: number;
@@ -395,6 +397,10 @@ export function buildPlayerWrestlerProfileView(
         offer.promotionId === playerPromotion.id && offer.personId === personId && offer.status === "PENDING"
       )),
       ourContract,
+      bookingEvidence: ourContract
+        ? talentExpectationEvidenceForContract(aggregate.state, activeContractsForPerson(aggregate.state, personId)
+          .find((candidate) => candidate.promotionId === playerPromotion.id)!.id)
+        : null,
     };
   }
 
