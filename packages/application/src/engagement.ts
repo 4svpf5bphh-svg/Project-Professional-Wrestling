@@ -4,7 +4,19 @@ export type PlayerActivityStatus = "ACTIVE" | "WARNING" | "STEWARDED";
 export type OpportunityCategory = "TALENT" | "MARKET" | "BUSINESS" | "WORLD";
 export type StewardshipExitRequestStatus = "OPEN" | "SETTLED" | "WITHDRAWN";
 export type BackstageConversationStatus = "OPEN" | "ANSWERED";
-export type BackstageResponse = "HEAR_OUT" | "EXPLAIN_PLAN" | "STAND_FIRM";
+export type BackstageResponse = "HEAR_OUT" | "EXPLAIN_PLAN" | "STAND_FIRM" | "PROMISE_FEATURED_BOOKING";
+
+export type BackstagePromiseStatus = "PENDING" | "FULFILLED" | "NOT_DELIVERED" | "NO_OPPORTUNITY";
+
+export interface BackstageBookingPromise {
+  kind: "FEATURED_MATCH";
+  madeDate: PpwDate;
+  dueDate: PpwDate;
+  expectedPosition: "MAIN_EVENT" | "UPPER_CARD";
+  status: BackstagePromiseStatus;
+  resolvedDate: PpwDate | null;
+  fulfilledEventId: Id | null;
+}
 
 export interface BackstageConversation {
   conversationId: string;
@@ -21,6 +33,8 @@ export interface BackstageConversation {
   promisedRole: "MAIN_EVENT" | "UPPER_CARD";
   observedMatchShows: number;
   observedFeaturedShows: number;
+  /** Optional for snapshots created before promise tracking existed. */
+  promise?: BackstageBookingPromise | null;
 }
 
 export interface PlayerActivityRecord {
@@ -173,6 +187,12 @@ export function normalizeWorldEngagementState(
       ...record,
       createdDate: cloneDate(record.createdDate),
       responseDate: record.responseDate ? cloneDate(record.responseDate) : null,
+      promise: record.promise ? {
+        ...record.promise,
+        madeDate: cloneDate(record.promise.madeDate),
+        dueDate: cloneDate(record.promise.dueDate),
+        resolvedDate: record.promise.resolvedDate ? cloneDate(record.promise.resolvedDate) : null,
+      } : null,
     })),
   };
 }
@@ -384,7 +404,7 @@ export function openBackstageConversation(
     || !Number.isSafeInteger(conversation.observedFeaturedShows) || conversation.observedFeaturedShows !== 0) {
     throw new Error("Backstage concern requires eligible role-usage evidence");
   }
-  const stored = { ...conversation, conversationId, createdDate: cloneDate(conversation.createdDate) };
+  const stored = { ...conversation, conversationId, createdDate: cloneDate(conversation.createdDate), promise: null };
   engagement.backstageConversations.push(stored);
   return stored;
 }
@@ -394,10 +414,18 @@ export function answerBackstageConversation(
   conversationId: string,
   response: BackstageResponse,
   date: PpwDate,
+  promise: BackstageBookingPromise | null = null,
 ): BackstageConversation {
   const id = normalizedNonEmpty(conversationId, "conversationId", 240);
-  if (!["HEAR_OUT", "EXPLAIN_PLAN", "STAND_FIRM"].includes(response)) {
+  if (!["HEAR_OUT", "EXPLAIN_PLAN", "STAND_FIRM", "PROMISE_FEATURED_BOOKING"].includes(response)) {
     throw new Error("unsupported Backstage response");
+  }
+  if ((response === "PROMISE_FEATURED_BOOKING") !== (promise !== null)) {
+    throw new Error("a booking promise must have an explicit, tracked commitment");
+  }
+  if (promise && (promise.kind !== "FEATURED_MATCH" || promise.status !== "PENDING"
+    || promise.resolvedDate !== null || promise.fulfilledEventId !== null)) {
+    throw new Error("invalid Backstage promise");
   }
   const conversation = engagement.backstageConversations.find((entry) => entry.conversationId === id);
   if (!conversation) throw new Error("Backstage conversation not found");
@@ -405,5 +433,8 @@ export function answerBackstageConversation(
   conversation.status = "ANSWERED";
   conversation.response = response;
   conversation.responseDate = cloneDate(date);
+  conversation.promise = promise ? {
+    ...promise, madeDate: cloneDate(promise.madeDate), dueDate: cloneDate(promise.dueDate),
+  } : null;
   return conversation;
 }

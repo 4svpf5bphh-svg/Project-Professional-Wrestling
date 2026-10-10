@@ -1,12 +1,13 @@
 import type { Id, PpwDate } from "../../domain/src/types.js";
-import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
-import { comparePpwDates } from "../../sim-core/src/clock.js";
+import { activeContractsForPromotion, contractIsActive } from "../../sim-core/src/contracts.js";
+import { addPpwWeeks, comparePpwDates } from "../../sim-core/src/clock.js";
 import {
   answerBackstageConversation,
   createWorldEngagementState,
   openBackstageConversation,
   type BackstageConversation,
   type BackstageResponse,
+  type BackstageBookingPromise,
 } from "./engagement.js";
 import { talentExpectationEvidenceForContract } from "./talent-expectations.js";
 import { executeIdempotentCommand, type ApplicationCommandEnvelope } from "./commands.js";
@@ -99,6 +100,8 @@ export interface PlayerBackstageConversation {
   observedMatchShows: number;
   response: BackstageResponse | null;
   responseDate: PpwDate | null;
+  canPromiseFeaturedBooking: boolean;
+  promise: BackstageBookingPromise | null;
 }
 
 export interface PlayerBackstageView {
@@ -141,6 +144,14 @@ export function buildPlayerBackstageView(
       observedMatchShows: entry.observedMatchShows,
       response: entry.response,
       responseDate: entry.responseDate ? { ...entry.responseDate } : null,
+      canPromiseFeaturedBooking: entry.status === "OPEN"
+        && canMakeFeaturedPromise(aggregate, entry),
+      promise: entry.promise ? {
+        ...entry.promise,
+        madeDate: { ...entry.promise.madeDate },
+        dueDate: { ...entry.promise.dueDate },
+        resolvedDate: entry.promise.resolvedDate ? { ...entry.promise.resolvedDate } : null,
+      } : null,
     })),
   };
 }
@@ -176,12 +187,115 @@ export function respondBackstageConversationCommand(
       if (!conversation || conversation.promotionId !== control.promotionId) {
         throw new Error("Backstage conversation does not belong to your promotion");
       }
+      let promise: BackstageBookingPromise | null = null;
+      if (envelope.payload.response === "PROMISE_FEATURED_BOOKING") {
+        if (!canMakeFeaturedPromise(aggregate, conversation)) {
+          throw new Error("cannot promise a featured match without active dates and time to book");
+        }
+        const endDate = aggregate.state.contracts.find((entry) => entry.id === conversation.sourceContractId)!.endDate;
+        const fourWeeks = addPpwWeeks(aggregate.state.world.currentDate, 4, aggregate.state.ruleset.weeksPerYear);
+        const dueDate = comparePpwDates(endDate, fourWeeks, aggregate.state.ruleset.weeksPerYear) < 0
+          ? endDate : fourWeeks;
+        promise = {
+          kind: "FEATURED_MATCH",
+          madeDate: { ...aggregate.state.world.currentDate },
+          dueDate: { ...dueDate },
+          expectedPosition: conversation.promisedRole,
+          status: "PENDING",
+          resolvedDate: null,
+          fulfilledEventId: null,
+        };
+      }
       return { ...answerBackstageConversation(
         engagement!,
         conversation.conversationId,
         envelope.payload.response,
         aggregate.state.world.currentDate,
+        promise,
       ) };
     },
   );
+}
+
+
+/**
+ * The player must have at least one unused booked date and a full next PPW
+ * week in which to fulfil their word. Neither an expired contract nor a
+ * wrestler on another promotion's deal may be promised an automatic push.
+ */
+function canMakeFeaturedPromise(
+  aggregate: ApplicationWorldAggregate,
+  conversation: BackstageConversation,
+): boolean {
+  const state = aggregate.state;
+  const contract = state.contracts.find((entry) => entry.id === conversation.sourceContractId);
+  if (!contract || contract.promotionId !== conversation.promotionId
+    || contract.personId !== conversation.wrestlerId
+    || !contractIsActive(state, contract)
+    || contract.dateEntitlement - contract.datesUsed < 1) return false;
+  const nextWeek = addPpwWeeks(state.world.currentDate, 1, state.ruleset.weeksPerYear);
+  return comparePpwDates(contract.endDate, nextWeek, state.ruleset.weeksPerYear) >= 0;
+}
+
+/**
+ * Factual follow-through only. The player scripts the matches; World resolution
+ * checks whether the promised placement actually took place under the correct
+ * contract. No morale/trust, money, match finish, or stable membership changes.
+ *
+ * PENDING -> FULFILLED happens for a completed featured match. The deadline
+ * resolves to NOT_DELIVERED only if there was a completed promotion show in
+ * the window; with no opportunity it is NO_OPPORTUNITY. A completed result
+ * is immutable and the pass is idempotent.
+ */
+export function evaluateBackstagePromises(aggregate: ApplicationWorldAggregate): number {
+  const state = aggregate.state;
+  const weeksPerYear = state.ruleset.weeksPerYear;
+  let resolved = 0;
+  for (const conversation of aggregate.engagement?.backstageConversations ?? []) {
+    const promise = conversation.promise;
+    if (!promise || promise.status !== "PENDING") continue;
+    const shows = state.events
+      .filter((event) => (
+        event.promotionId === conversation.promotionId
+        && event.status === "COMPLETED"
+        && comparePpwDates(event.date, promise.madeDate, weeksPerYear) > 0
+        && comparePpwDates(event.date, promise.dueDate, weeksPerYear) <= 0
+      )).sort((a, b) => comparePpwDates(a.date, b.date, weeksPerYear) || a.id.localeCompare(b.id));
+    let fulfilledId: Id | null = null;
+    for (const event of shows) {
+      // Contract-specific date usage prevents outside appearances, loans,
+      // or another deal from satisfying a private booking commitment.
+      if (!state.scheduledAppearances.some((entry) => entry.eventId === event.id
+        && entry.personId === conversation.wrestlerId
+        && entry.contractId === conversation.sourceContractId
+        && entry.status === "COMPLETED")) continue;
+      const card = state.matches
+        .filter((match) => match.eventId === event.id && match.status === "COMPLETED")
+        .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+      if (card.length === 0) continue;
+      const ownMatchIds = new Set(state.matchParticipants
+        .filter((participant) => participant.eventId === event.id && participant.personId === conversation.wrestlerId)
+        .map((participant) => participant.matchId));
+      const bestIndex = card.reduce((best, match, idx) => ownMatchIds.has(match.id) ? idx : best, -1);
+      if (bestIndex < 0) continue;
+      const delivered = promise.expectedPosition === "MAIN_EVENT"
+        ? bestIndex === card.length - 1
+        : bestIndex >= Math.floor(card.length / 2);
+      if (delivered) { fulfilledId = event.id; break; }
+    }
+
+    if (fulfilledId) {
+      promise.status = "FULFILLED";
+      promise.fulfilledEventId = fulfilledId;
+      promise.resolvedDate = { ...state.world.currentDate };
+      resolved += 1;
+      continue;
+    }
+    if (comparePpwDates(state.world.currentDate, promise.dueDate, weeksPerYear) > 0) {
+      promise.status = shows.length > 0 ? "NOT_DELIVERED" : "NO_OPPORTUNITY";
+      promise.resolvedDate = { ...state.world.currentDate };
+      resolved += 1;
+    }
+  }
+  return resolved;
 }

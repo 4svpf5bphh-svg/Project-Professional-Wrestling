@@ -148,6 +148,31 @@ export function buildPlayerAttention(
       });
     }
 
+    for (const conversation of aggregate.engagement?.backstageConversations ?? []) {
+      if (conversation.promotionId !== promotion.id || !conversation.promise
+        || conversation.promise.status === "PENDING") continue;
+      const status = conversation.promise.status;
+      const name = personName(aggregate, conversation.wrestlerId);
+      pushIfVisible(aggregate, playerId, items, {
+        attentionId: `backstage-promise:${conversation.conversationId}:${status}`,
+        category: "IMPORTANT",
+        title: status === "FULFILLED"
+          ? `You delivered on your word to ${name}`
+          : status === "NOT_DELIVERED"
+            ? `Your booking promise to ${name} wasn't delivered`
+            : `No eligible show took place for ${name}'s booking promise`,
+        summary: status === "FULFILLED"
+          ? "The promised featured match took place. Your commitment is recorded in Backstage."
+          : status === "NOT_DELIVERED"
+            ? "The agreed window passed without the promised featured match. Review the booking history in Backstage."
+            : "The promised window passed without a completed promotion show. No breach or morale consequence is assumed.",
+        deadline: null,
+        deepLink: "/backstage",
+        dismissible: true,
+        sourceOpportunityCategory: null,
+      });
+    }
+
     const workspace = aggregate.planning.workspaces.find((candidate) => candidate.promotionId === promotion.id);
     for (const draft of workspace?.detailedShowDrafts ?? []) {
       const status = playerShowPlanningStatus(aggregate.state, aggregate.planning, aggregate.runtime, promotion.id, draft.draftId);
