@@ -29,13 +29,16 @@ function opposed(programme:Programme,a:Id,b:Id):boolean {
     || (matchPair(programme.sideA,b)&&matchPair(programme.sideB,a));
 }
 function validMatchSide(
-  aggregate: ApplicationWorldAggregate,matchId:Id,a:Id,b:Id,
+  aggregate: ApplicationWorldAggregate,matchId:Id,eventId:Id,a:Id,b:Id,
 ): boolean {
-  const people=aggregate.state.matchParticipants.filter(p=>p.matchId===matchId);
+  const people=aggregate.state.matchParticipants.filter(p=>p.matchId===matchId && p.eventId===eventId);
   const groups=new Map<string,Id[]>();
   for(const p of people){const side=groups.get(p.side)??[];side.push(p.personId);groups.set(p.side,side)}
-  return [...groups.values()].some(ids=>ids.length===2&&ids.includes(a)&&ids.includes(b)
-    && ids[0]!==ids[1]);
+  const sides=[...groups.values()];
+  return sides.length===2
+    &&sides.every(ids=>ids.length===2&&new Set(ids).size===2)
+    &&new Set(people.map(p=>p.personId)).size===4
+    &&sides.some(ids=>ids.includes(a)&&ids.includes(b));
 }
 
 /** Take a genuine baseline at the response command, including same-day edits. */
@@ -109,7 +112,8 @@ function evidenceFor(aggregate:ApplicationWorldAggregate,conversation:BackstageC
       &&!baseline?.existingCompletedMatchIds.includes(m.id)
       &&eventById.has(m.eventId)
       &&after(eventById.get(m.eventId)!.date)
-      &&validMatchSide(aggregate,m.id,conversation.wrestlerId,conversation.partnerPersonId!))
+      &&atLeast(state.world.currentDate,eventById.get(m.eventId)!.date,weeksPerYear)
+      &&validMatchSide(aggregate,m.id,m.eventId,conversation.wrestlerId,conversation.partnerPersonId!))
       .filter(m=>{
         const a=appearances.get(m.eventId);
         return a?.has(conversation.wrestlerId+"|"+conversation.sourceContractId)

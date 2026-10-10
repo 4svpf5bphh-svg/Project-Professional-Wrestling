@@ -1481,6 +1481,10 @@ test("Tag pitches require a genuinely completed 2-person tag pairing in the same
       serviceCapacityAtBooking:1,status:"COMPLETED",
     });
   });
+  // A future completed record is not credited before that week is resolved.
+  ok(assessCreativeFollowThrough(a)===0,
+    "follow-through claimed a match from a future PPW week");
+  a.state.world.currentDate={...future};
   // A real completed tag match in another promotion does not qualify.
   a.state.matches.at(-1)!.promotionId="outside-promotion";
   ok(assessCreativeFollowThrough(a)===0,"another promotion earned our follow-through");
