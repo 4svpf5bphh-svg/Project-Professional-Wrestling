@@ -15,6 +15,8 @@ const REPLIES: Array<{ value: BackstageResponse; label: string; detail: string }
   { value: "EXPLAIN_PLAN", label: "Explain your current plans", detail: "Discuss the way you have used them, without committing to a new position." },
   { value: "STAND_FIRM", label: "Stand firm", detail: "Make it clear that you intend to keep booking as you have." },
   { value: "PROMISE_FEATURED_BOOKING", label: "Promise a featured match", detail: "Commit to a suitable main-event or upper-card match within four PPW weeks (or before the contract ends). The World checks actual results." },
+  { value: "CONSIDER_TAG_TEAM", label: "Explore the pairing", detail: "Keep this suggestion in mind. Only you decide whether to make an actual tag team or book them together." },
+  { value: "PASS_TAG_TEAM", label: "Not right now", detail: "Pass on the pitch without affecting contracts, morale or wrestling results." },
 ];
 
 function roleLabel(role: string): string {
@@ -104,21 +106,44 @@ export default function BackstageClient(): React.JSX.Element {
           {!view.canRespond && view.openCount > 0 ? <p className="muted body-copy">The World is currently locked. Conversations can be answered when it reopens.</p> : null}
           <div className="choice-grid">
             {view.conversations.map((conversation) => {
-              const selected = choices[conversation.conversationId] ?? "HEAR_OUT";
+              const pitch = conversation.kind === "TAG_TEAM_PITCH";
+              const replies = REPLIES.filter((reply) => pitch
+                ? reply.value === "CONSIDER_TAG_TEAM" || reply.value === "PASS_TAG_TEAM"
+                : reply.value !== "CONSIDER_TAG_TEAM" && reply.value !== "PASS_TAG_TEAM");
+              const selected = choices[conversation.conversationId] ?? (pitch ? "CONSIDER_TAG_TEAM" : "HEAR_OUT");
               return (
                 <article className="choice-card" key={conversation.conversationId}>
                   <div className="choice-card-top">
                     <div>
-                      <span className="eyebrow">{conversation.status === "OPEN" ? "WANTS A WORD" : "CONVERSATION RECORDED"}</span>
+                      <span className="eyebrow">{pitch ? "CREATIVE PITCH" : conversation.status === "OPEN" ? "WANTS A WORD" : "CONVERSATION RECORDED"}</span>
                       <h3>{conversation.wrestlerName}</h3>
                     </div>
                     <span className="revision">Y{conversation.createdDate.year} W{conversation.createdDate.week}</span>
                   </div>
-                  <p className="body-copy">
-                    I signed for a {roleLabel(conversation.promisedRole)} role, but I've worked {conversation.observedMatchShows} matches
-                    without being given that featured position. I'd like to understand where I stand.
-                  </p>
-                  <p className="muted micro-copy">Contract role: {roleLabel(conversation.promisedRole)} · Last {conversation.observedMatchShows} completed in-ring appearances were not in that position</p>
+                  {pitch ? (
+                    <>
+                      <p className="body-copy">
+                        I reckon {conversation.partnerName ?? "my partner"} and I have something together.
+                        We've worked well in the ring and the crowd is getting behind us.
+                        How about giving us a run as a proper team?
+                      </p>
+                      <p className="muted micro-copy">
+                        {conversation.sharedTagMatches} completed tag matches together · Average crowd response: {conversation.averageCrowdResponse?.toFixed(1) ?? "—"}/100.
+                      </p>
+                      <a href="/talent/teams" style={{ color: "#5de9ce", fontWeight: 850 }}>
+                        Tag teams management →
+                      </a>
+                      <p className="muted micro-copy">This is a creative suggestion only. No team, match or storyline is created automatically.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="body-copy">
+                        I signed for a {roleLabel(conversation.promisedRole ?? "UPPER_CARD")} role, but I've worked {conversation.observedMatchShows} matches
+                        without being given that featured position. I'd like to understand where I stand.
+                      </p>
+                      <p className="muted micro-copy">Contract role: {roleLabel(conversation.promisedRole ?? "UPPER_CARD")} · Last {conversation.observedMatchShows} completed in-ring appearances were not in that position.</p>
+                    </>
+                  )}
                   {conversation.promise ? (
                     <p className="body-copy" style={{ borderTop: "1px solid #354459", paddingTop: 12 }}>
                       <strong>Booking promise: {conversation.promise.status.replaceAll("_", " ").toLowerCase()}.</strong>{" "}
@@ -140,7 +165,7 @@ export default function BackstageClient(): React.JSX.Element {
                   ) : null}
                   {conversation.status === "OPEN" ? (
                     <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
-                      {REPLIES.map((reply) => (
+                      {replies.map((reply) => (
                         <button key={reply.value} type="button"
                           disabled={!view.canRespond || busyId !== null
                             || (reply.value === "PROMISE_FEATURED_BOOKING" && !conversation.canPromiseFeaturedBooking)}
@@ -163,7 +188,7 @@ export default function BackstageClient(): React.JSX.Element {
                     </div>
                   ) : (
                     <p className="muted body-copy">You responded: {REPLIES.find((reply) => reply.value === conversation.response)?.label ?? "Response recorded"}.
-                      This conversation is now part of your promotion history.</p>
+                      This conversation is now part of your promotion history. {pitch ? "No team has been created automatically." : ""}</p>
                   )}
                 </article>
               );
