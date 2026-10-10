@@ -1,5 +1,6 @@
 export * from "./attention.js";
 export * from "./backstage.js";
+export * from "./backstage-follow-through.js";
 export * from "./backstage-consequences.js";
 export * from "./business-view.js";
 export * from "./championship-history-view.js";

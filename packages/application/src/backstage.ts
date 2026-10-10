@@ -17,6 +17,7 @@ import type { GimmickArchetype } from "./wrestler-creative.js";
 import type { WrestlerCreativeInterest } from "./wrestler-creative-interests.js";
 import { buildBackstageDialogue, type BackstageDialogue } from "./backstage-dialogue.js";
 import type { BackstageContinuitySnapshot } from "./backstage-continuity.js";
+import { creativeBaselineAtResponse } from "./backstage-follow-through.js";
 
 export const BACKSTAGE_NEW_CONVERSATIONS_PER_PROMOTION_WEEK = 1;
 export const BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION = 3;
@@ -100,6 +101,7 @@ export interface PlayerBackstageConversation {
   /** Factual, non-authoritative line in a fictional voice; not an event or a booking decision. */
   dialogue: BackstageDialogue;
   continuity: BackstageContinuitySnapshot | null;
+  creativeFollowThrough: NonNullable<BackstageConversation["creativeFollowThrough"]> | null;
   createdDate: PpwDate;
   status: "OPEN" | "ANSWERED" | "NOTED";
   kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH";
@@ -160,6 +162,7 @@ export function buildPlayerBackstageView(
       wrestlerName: names.get(entry.wrestlerId) ?? "Former roster member",
       dialogue: buildBackstageDialogue(entry, persons.get(entry.wrestlerId), names),
       continuity: entry.continuity ? structuredClone(entry.continuity) : null,
+      creativeFollowThrough: entry.creativeFollowThrough ? structuredClone(entry.creativeFollowThrough) : null,
       createdDate: { ...entry.createdDate },
       status: entry.status,
       kind: entry.kind,
@@ -246,13 +249,18 @@ export function respondBackstageConversationCommand(
           fulfilledEventId: null,
         };
       }
-      return { ...answerBackstageConversation(
+      const considered=["CONSIDER_TAG_TEAM","CONSIDER_RIVALRY","CONSIDER_GIMMICK_CHANGE"]
+        .includes(envelope.payload.response);
+      const baseline=considered ? creativeBaselineAtResponse(aggregate,conversation) : null;
+      const recorded=answerBackstageConversation(
         engagement!,
         conversation.conversationId,
         envelope.payload.response,
         aggregate.state.world.currentDate,
         promise,
-      ) };
+      );
+      if (baseline) recorded.creativeBaseline=baseline;
+      return { ...recorded };
     },
   );
 }

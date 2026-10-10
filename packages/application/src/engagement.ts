@@ -66,6 +66,19 @@ export interface BackstageConversation {
   currentGimmickArchetype?: GimmickArchetype;
   suggestedGimmickArchetype?: GimmickArchetype;
   observedCrowdResponse?: number;
+  /** Factual evidence that existed when booker said "consider". Never sim power. */
+  creativeBaseline?: {
+    existingProgrammeIds: Id[];
+    existingCompletedMatchIds: Id[];
+    lastPresentationRevision: number;
+  } | null;
+  /** Observed later action, not a new promise or assumed creative acceptance. */
+  creativeFollowThrough?: {
+    kind: "TAG_MATCH_BOOKED" | "PROGRAMME_STARTED" | "GIMMICK_UPDATED";
+    evidenceId: Id;
+    happenedDate: PpwDate;
+    recordedDate: PpwDate;
+  } | null;
   /** Immutable context, frozen when this message is created, for later continuity. */
   continuity?: BackstageContinuitySnapshot;
   /** Optional for snapshots created before promise tracking existed. */
@@ -236,6 +249,16 @@ export function normalizeWorldEngagementState(
       ...record,
       createdDate: cloneDate(record.createdDate),
       responseDate: record.responseDate ? cloneDate(record.responseDate) : null,
+      creativeBaseline: record.creativeBaseline ? {
+        ...record.creativeBaseline,
+        existingProgrammeIds: [...(record.creativeBaseline.existingProgrammeIds ?? [])],
+        existingCompletedMatchIds: [...(record.creativeBaseline.existingCompletedMatchIds ?? [])],
+      } : undefined,
+      creativeFollowThrough: record.creativeFollowThrough ? {
+        ...record.creativeFollowThrough,
+        happenedDate: cloneDate(record.creativeFollowThrough.happenedDate),
+        recordedDate: cloneDate(record.creativeFollowThrough.recordedDate),
+      } : undefined,
       continuity: record.continuity ? {
         ...record.continuity,
         lastCreativeDecisionDate: record.continuity.lastCreativeDecisionDate
