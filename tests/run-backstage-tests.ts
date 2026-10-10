@@ -272,7 +272,7 @@ test("A deliberate promise is persistent, has a bounded deadline and is fulfille
   const created = respondBackstageConversationCommand(f.aggregate, command);
   ok(created.promise?.status === "PENDING" && created.promise.kind === "FEATURED_MATCH",
     "no explicit tracked promise");
-  ok(created.promise.dueDate.week === addPpwWeeks(start, 4, f.aggregate.state.ruleset.weeksPerYear).week,
+  ok(created.promise?.dueDate.week === addPpwWeeks(start, 4, f.aggregate.state.ruleset.weeksPerYear).week,
     "promise did not specify the four-week deadline");
   const replay = respondBackstageConversationCommand(f.aggregate, command);
   ok(replay.promise?.status === "PENDING", "idempotent replay mutated promise");
