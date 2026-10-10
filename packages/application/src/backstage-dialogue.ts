@@ -72,6 +72,16 @@ const openings: Record<BackstageTemperament, readonly [string,string]> = {
     "I know the long game matters. I've got a thought.",
   ],
 };
+/** Positive team news never sounds like someone demanding a push or payoff. */
+const goodNewsOpenings: Record<BackstageTemperament, string> = {
+  COLLABORATIVE: "It's good to see us working together like this.",
+  AMBITIOUS: "The building is finally getting behind our team.",
+  INDEPENDENT: "Credit where it's due — the partnership is working.",
+  METHODICAL: "The tag work has been getting more consistent.",
+  SHOWMAN: "You can hear the people getting into what we're doing.",
+  STEADY: "Things are settling into a good rhythm.",
+};
+
 const endings: Record<PersonalityMotivation, string> = {
   TOP_BILLING: "I want to earn a meaningful place on the card.",
   MONEY: "Let's make the dates we're working count.",
@@ -91,7 +101,7 @@ export function buildBackstageDialogue(
   const personality = wrestlerPersonalityFor(person);
   const tone = personality.temperament;
   const variant = deterministicSeedFromText("ppw:backstage-voice:v1:" + entry.conversationId) % 2;
-  const prefix = openings[tone][variant];
+  const prefix = entry.kind === "TEAM_MOMENT" ? goodNewsOpenings[tone] : openings[tone][variant];
   const motivation = personality.motivations[0] ?? "PRESTIGE";
   // Positive news isn't a request for anything and should not end with
   // an implied demand for a reward or push.
