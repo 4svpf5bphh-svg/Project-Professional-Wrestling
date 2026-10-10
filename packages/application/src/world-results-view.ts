@@ -71,6 +71,7 @@ export interface PlayerWorldResultSegmentView {
   victimMatchOutcome: "WON" | "LOST" | "DRAW" | null;
   initiatorPersonId: Id | null;
   targetPersonId: Id | null;
+  signingOutcome: "SIGNED" | "REJECTED" | "WALKOUT" | "BRAWL" | null;
   attackPresentation: AttackPresentation | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
@@ -305,6 +306,7 @@ export function buildPlayerWorldResultsView(
         victimMatchOutcome: segment.victimMatchOutcome,
         initiatorPersonId: segment.initiatorPersonId,
         targetPersonId: segment.targetPersonId,
+        signingOutcome: segment.signingOutcome,
         attackPresentation: segment.attackPresentation,
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,

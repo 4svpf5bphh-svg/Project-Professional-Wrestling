@@ -360,6 +360,48 @@ test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the
     "assault altered a completed match finish");
 });
 
+for (const [signingOutcome, seed] of [
+  ["SIGNED", 9171], ["REJECTED", 9172], ["WALKOUT", 9173], ["BRAWL", 9174],
+] as const) {
+  test(`CONTRACT_SIGNING freezes scripted ${signingOutcome} and authored roles without random outcomes`, () => {
+    const setup = fixture(seed);
+    const proposer = setup.rosterIds[0]!;
+    const responder = setup.rosterIds[1]!;
+    const angle = {
+      draftSegmentId: "signing-1", type: "CONTRACT_SIGNING" as const,
+      participantIds: [responder, proposer], initiatorPersonId: proposer,
+      targetPersonId: responder, signingOutcome, programmeId: setup.programme.id,
+      plannedLengthMinutes: 8,
+    };
+    const base = {
+      draftId: "contract-signing-show", promotionId: setup.promotion.id,
+      targetDate: setup.targetDate, marketId: null, venueId: null,
+      ticketStrategy: null, participantIds: setup.rosterIds.slice(0, 4),
+      matches: [], championshipAssignments: [],
+    };
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, initiatorPersonId: responder, targetPersonId: responder }],
+    }), "distinct initiator and target");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, signingOutcome: "SURPRISE" as typeof signingOutcome }],
+    }), "scripted outcome");
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [angle],
+    });
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "signing was not recorded");
+    const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(frozen.signingOutcome === signingOutcome,
+      "simulation changed the player-authored signing");
+    ok(frozen.initiatorPersonId === proposer && frozen.targetPersonId === responder,
+      "signing roles were inferred from participant order");
+    ok(frozen.crowdResponse !== null && frozen.executionQuality !== null,
+      "signing was not evaluated for delivery");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+      "signing repeated on World replay");
+  });
+}
+
 test("ATTACK records explicit attacker and victim into immutable show history", () => {
   const setup = fixture(9158);
   const [attacker, victim] = setup.rosterIds;

@@ -20,6 +20,7 @@ import type {
   AttackPresentation,
   AttackObjective,
   TurnPresentation,
+  SigningOutcome,
   WorldPlanningState,
 } from "./planning.js";
 
@@ -29,6 +30,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "INTERVIEW",
   "CONFRONTATION",
   "CHALLENGE",
+  "CONTRACT_SIGNING",
   "ATTACK",
   "RESCUE",
   "POST_MATCH_ASSAULT",
@@ -57,6 +59,7 @@ export interface ResolvedShowSegment {
   victimMatchOutcome: "WON" | "LOST" | "DRAW" | null;
   initiatorPersonId: Id | null;
   targetPersonId: Id | null;
+  signingOutcome: SigningOutcome | null;
   attackPresentation: AttackPresentation | null;
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
@@ -86,6 +89,7 @@ interface NormalizedDraftSegment {
   sourceDraftMatchId: string | null;
   initiatorPersonId: Id | null;
   targetPersonId: Id | null;
+  signingOutcome: SigningOutcome | null;
   attackPresentation: AttackPresentation | null;
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
@@ -156,8 +160,9 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       ? (segment.victimPersonId ?? null) : null,
     rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
     sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
-    initiatorPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" ? (segment.initiatorPersonId ?? null) : null,
-    targetPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" ? (segment.targetPersonId ?? null) : null,
+    initiatorPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "CONTRACT_SIGNING" ? (segment.initiatorPersonId ?? null) : null,
+    targetPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "CONTRACT_SIGNING" ? (segment.targetPersonId ?? null) : null,
+    signingOutcome: segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
     attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? null) : null,
     attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? null) : null,
     turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
@@ -181,6 +186,7 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       sourceDraftMatchId: null,
       initiatorPersonId: null,
       targetPersonId: null,
+      signingOutcome: null,
       attackPresentation: null,
       attackObjective: null,
       turnPersonId: null,
@@ -223,6 +229,7 @@ function segmentOutcome(
     INTERVIEW: [0.68, 0.20, 0.12],
     CONFRONTATION: [0.50, 0.32, 0.18],
     CHALLENGE: [0.56, 0.28, 0.16],
+    CONTRACT_SIGNING: [0.53, 0.31, 0.16],
     ATTACK: [0.38, 0.34, 0.28],
     RESCUE: [0.42, 0.30, 0.28],
     POST_MATCH_ASSAULT: [0.38, 0.35, 0.27],
@@ -293,6 +300,18 @@ function segmentOutcome(
     const aftermath = victimMatchOutcome === "WON" ? 1 : victimMatchOutcome === "LOST" ? -0.5 : 0;
     angleFitModifier = round1(clamp(roleClarity + aftermath, -5, 5));
   }
+  if (segment.type === "CONTRACT_SIGNING" && segment.initiatorPersonId && segment.targetPersonId) {
+    // The signed/rejected/walkout/brawl beat is scripted. Alignment and
+    // ongoing rivalry only influence how convincingly it plays to the crowd.
+    const proposer = wrestlerAlignmentForPromotion(state, event.promotionId, segment.initiatorPersonId);
+    const responder = wrestlerAlignmentForPromotion(state, event.promotionId, segment.targetPersonId);
+    const tension = proposer !== responder ? 1.5 : -0.5;
+    const context = programme ? clamp(((programme.heat ?? 50) - 50) / 18, -2, 2) : -0.5;
+    const format = segment.signingOutcome === "BRAWL" ? (programme ? 1.5 : -1.5)
+      : segment.signingOutcome === "SIGNED" ? 0.5
+      : segment.signingOutcome === "WALKOUT" ? (programme ? 0.5 : -0.5) : 0;
+    angleFitModifier = round1(clamp(tension + context + format, -5, 5));
+  }
   const alignmentVolatilityModifier = segment.type === "TURN" && segment.turnPersonId
     ? round1(recentAlignmentVolatilityPenalty(state, event.promotionId, [segment.turnPersonId]))
     : 0;
@@ -353,6 +372,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const victimMatchOutcome = entry.payload.victimMatchOutcome ?? null;
   const initiatorPersonId = entry.payload.initiatorPersonId ?? null;
   const targetPersonId = entry.payload.targetPersonId ?? null;
+  const signingOutcome = entry.payload.signingOutcome ?? null;
   const attackPresentation = entry.payload.attackPresentation ?? null;
   const attackObjective = entry.payload.attackObjective ?? null;
   const turnPersonId = entry.payload.turnPersonId === undefined ? null : entry.payload.turnPersonId;
@@ -393,6 +413,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || (victimMatchOutcome !== null && !["WON", "LOST", "DRAW"].includes(String(victimMatchOutcome)))
     || (initiatorPersonId !== null && typeof initiatorPersonId !== "string")
     || (targetPersonId !== null && typeof targetPersonId !== "string")
+    || (signingOutcome !== null && !["SIGNED", "REJECTED", "WALKOUT", "BRAWL"].includes(String(signingOutcome)))
     || (attackPresentation !== null && !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(String(attackPresentation)))
     || (attackObjective !== null && !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(String(attackObjective)))
     || (turnPersonId !== null && typeof turnPersonId !== "string")
@@ -421,6 +442,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     victimMatchOutcome: victimMatchOutcome as "WON" | "LOST" | "DRAW" | null,
     initiatorPersonId: initiatorPersonId as Id | null,
     targetPersonId: targetPersonId as Id | null,
+    signingOutcome: signingOutcome as SigningOutcome | null,
     attackPresentation: attackPresentation as AttackPresentation | null,
     attackObjective: attackObjective as AttackObjective | null,
     turnPersonId,
@@ -540,6 +562,7 @@ export function recordResolvedShowSegments(
             victimMatchOutcome: sourceMatch?.victimMatchOutcome ?? null,
             initiatorPersonId: segment.initiatorPersonId,
             targetPersonId: segment.targetPersonId,
+            signingOutcome: segment.signingOutcome,
             attackPresentation: segment.attackPresentation,
             attackObjective: segment.attackObjective,
             turnPersonId: segment.turnPersonId,

@@ -252,6 +252,11 @@ export default function ResultsClient(): React.JSX.Element {
                                   <span key={participant.personId}>{participant.name}</span>
                                 ))}
                               </div>
+                              {slot.segment.type === "CONTRACT_SIGNING" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.signingOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Proposer"} and {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Responder"} · {slot.segment.signingOutcome === "SIGNED" ? "Signed on-screen" : slot.segment.signingOutcome === "REJECTED" ? "Proposal rejected" : slot.segment.signingOutcome === "WALKOUT" ? "Walkout" : "Signing broke into a brawl"}</span>
+                                </div>
+                              ) : null}
                               {(slot.segment.type === "CHALLENGE" || slot.segment.type === "CONFRONTATION") && slot.segment.initiatorPersonId && slot.segment.targetPersonId ? (
                                   <div className={styles.matchMeta}>
                                     <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Wrestler"} {slot.segment.type === "CHALLENGE" ? "challenged" : "confronted"} {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "opponent"}</span>
@@ -470,7 +475,12 @@ export default function ResultsClient(): React.JSX.Element {
                                       </a>
                                     ))}
                                   </div>
-                                  {(slot.segment.type === "CHALLENGE" || slot.segment.type === "CONFRONTATION") && slot.segment.initiatorPersonId && slot.segment.targetPersonId ? (
+                                  {slot.segment.type === "CONTRACT_SIGNING" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.signingOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Proposer"} and {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Responder"} · {slot.segment.signingOutcome === "SIGNED" ? "Signed on-screen" : slot.segment.signingOutcome === "REJECTED" ? "Proposal rejected" : slot.segment.signingOutcome === "WALKOUT" ? "Walkout" : "Signing broke into a brawl"}</span>
+                                </div>
+                              ) : null}
+                              {(slot.segment.type === "CHALLENGE" || slot.segment.type === "CONFRONTATION") && slot.segment.initiatorPersonId && slot.segment.targetPersonId ? (
                                   <div className={styles.matchMeta}>
                                     <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Wrestler"} {slot.segment.type === "CHALLENGE" ? "challenged" : "confronted"} {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "opponent"}</span>
                                   </div>

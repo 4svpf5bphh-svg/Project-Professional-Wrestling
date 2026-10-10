@@ -502,6 +502,43 @@ await test("Run-in saves, reloads, resolves and records the actual finish withou
   ok(appearance?.status === "COMPLETED", "run-in wrestler did not fulfil their booked appearance");
 });
 
+for (const [signingOutcome, seed] of [["SIGNED", 61128], ["BRAWL", 61129]] as const) {
+  await test(`Card preserves the scripted ${signingOutcome} signing through World Lock`, async () => {
+    const fixture = await reservedShowFixture(seed);
+    const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    const [responder, proposer] = fixture.participantIds;
+    if (!responder || !proposer) throw new Error("signing fixture needs two wrestlers");
+    const angle: AlphaCardSegmentView = {
+      draftSegmentId: "scripted-signing", type: "CONTRACT_SIGNING",
+      participantIds: [responder, proposer], initiatorPersonId: proposer,
+      targetPersonId: responder, signingOutcome, programmeId: null, plannedLengthMinutes: 7,
+    };
+    const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: `signing-save-${seed}`, expectedRevision: before.world.revision,
+      expectedPlanVersion: before.workspaceVersion, matches: singlesCard(fixture.participantIds),
+      segments: [angle], championshipAssignments: [],
+    });
+    ok(saved.segments[0]?.signingOutcome === signingOutcome,
+      "save changed the authored signing outcome");
+    const reloaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    ok(reloaded.segments[0]?.initiatorPersonId === proposer
+      && reloaded.segments[0]?.targetPersonId === responder
+      && reloaded.segments[0]?.signingOutcome === signingOutcome,
+      "Card reload changed signing story or participant direction");
+    await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+      expectedRevision: saved.world.revision,
+    });
+    const finished = await fixture.repository.load(fixture.worldId);
+    const frozen = finished.state.ledger.find((entry) => entry.type === "SHOW_SEGMENT_COMPLETED"
+      && entry.payload.draftSegmentId === angle.draftSegmentId);
+    ok(frozen?.payload.segmentType === "CONTRACT_SIGNING"
+      && frozen.payload.signingOutcome === signingOutcome,
+      "World simulation rewrote contract signing");
+    ok(frozen?.payload.initiatorPersonId === proposer && frozen.payload.targetPersonId === responder,
+      "World history lost the role order");
+  });
+}
+
 await test("Card post-match assault links to completed match without changing its finish", async () => {
   const fixture = await reservedShowFixture(61106);
   const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");

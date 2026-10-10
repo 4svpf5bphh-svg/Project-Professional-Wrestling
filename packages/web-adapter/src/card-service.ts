@@ -26,6 +26,7 @@ import {
   type AttackPresentation,
   type AttackObjective,
   type TurnPresentation,
+  type SigningOutcome,
   type DetailedShowSlotRef,
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
@@ -116,6 +117,7 @@ export interface AlphaCardSegmentView {
   sourceDraftMatchId?: string | null;
   initiatorPersonId?: Id | null;
   targetPersonId?: Id | null;
+  signingOutcome?: SigningOutcome | null;
   attackPresentation?: AttackPresentation | null;
   attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
@@ -229,6 +231,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "INTERVIEW",
   "CONFRONTATION",
   "CHALLENGE",
+  "CONTRACT_SIGNING",
   "ATTACK",
   "RESCUE",
   "POST_MATCH_ASSAULT",
@@ -441,7 +444,7 @@ function normalizeSegments(
       requiredText(personId, `segments[${index}].participantIds[${personIndex}]`, 128)
     ));
     if (new Set(people).size !== people.length) throw new Error("segment cannot include the same wrestler twice");
-    if (["CONFRONTATION", "CHALLENGE", "ATTACK"].includes(segment.type) && people.length < 2) {
+    if (["CONFRONTATION", "CHALLENGE", "CONTRACT_SIGNING", "ATTACK"].includes(segment.type) && people.length < 2) {
       throw new Error(`${segment.type.toLowerCase()} segment requires at least two wrestlers`);
     }
     if (segment.type === "POST_MATCH_ASSAULT" && people.length < 2) {
@@ -480,7 +483,7 @@ function normalizeSegments(
       rescuerPersonId === attackerPersonId || rescuerPersonId === victimPersonId
       || !people.includes(rescuerPersonId!)
     )) throw new Error("RESCUE requires a distinct rescuer among segment participants");
-    const isDirected = segment.type === "CHALLENGE" || segment.type === "CONFRONTATION";
+    const isDirected = segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "CONTRACT_SIGNING";
     const initiatorPersonId = isDirected && segment.initiatorPersonId != null
       ? requiredText(segment.initiatorPersonId, `segments[${index}].initiatorPersonId`, 128) : null;
     const targetPersonId = isDirected && segment.targetPersonId != null
@@ -489,6 +492,11 @@ function normalizeSegments(
       !initiatorPersonId || !targetPersonId || initiatorPersonId === targetPersonId
       || !people.includes(initiatorPersonId) || !people.includes(targetPersonId)
     )) throw new Error("directed segment requires distinct initiator and target among participants");
+    const signingOutcome = segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null;
+    if (segment.type === "CONTRACT_SIGNING" && (
+      !initiatorPersonId || !targetPersonId
+      || !["SIGNED", "REJECTED", "WALKOUT", "BRAWL"].includes(signingOutcome!)
+    )) throw new Error("CONTRACT_SIGNING needs proposer, responder and a scripted outcome");
     const attackPresentation = segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null;
     const attackObjective = segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null;
     if (segment.type === "ATTACK" && (
@@ -533,6 +541,7 @@ function normalizeSegments(
       programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
+      ...(segment.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
       ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
       ...(segment.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
       ...(segment.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),
@@ -954,8 +963,9 @@ export async function loadAlphaShowCard(
       victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
       sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
-      initiatorPersonId: ["CHALLENGE", "CONFRONTATION"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
-      targetPersonId: ["CHALLENGE", "CONFRONTATION"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
+      initiatorPersonId: ["CHALLENGE", "CONFRONTATION", "CONTRACT_SIGNING"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
+      targetPersonId: ["CHALLENGE", "CONFRONTATION", "CONTRACT_SIGNING"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
+      signingOutcome: segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
       attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
       attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null,
       turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,

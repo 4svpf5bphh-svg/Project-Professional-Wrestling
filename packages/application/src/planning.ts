@@ -48,6 +48,7 @@ export type DetailedShowSegmentType =
   | "INTERVIEW"
   | "CONFRONTATION"
   | "CHALLENGE"
+  | "CONTRACT_SIGNING"
   | "ATTACK"
   | "RESCUE"
   | "POST_MATCH_ASSAULT"
@@ -57,6 +58,7 @@ export type DetailedShowSegmentType =
 export type AttackPresentation = "BLINDSIDE" | "BEATDOWN" | "PULL_APART_BRAWL";
 export type AttackObjective = "GENERATE_HEAT" | "BUILD_SYMPATHY" | "ESCALATE_RIVALRY";
 export type TurnPresentation = "REVEAL" | "BETRAYAL";
+export type SigningOutcome = "SIGNED" | "REJECTED" | "WALKOUT" | "BRAWL";
 
 export interface DetailedShowSegmentDraft {
   draftSegmentId: string;
@@ -74,6 +76,7 @@ export interface DetailedShowSegmentDraft {
   // CHALLENGE/CONFRONTATION direction is authored, never inferred from participant order.
   initiatorPersonId?: Id | null;
   targetPersonId?: Id | null;
+  signingOutcome?: SigningOutcome | null;
   attackPresentation?: AttackPresentation | null;
   attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
@@ -159,6 +162,7 @@ const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "INTERVIEW",
   "CONFRONTATION",
   "CHALLENGE",
+  "CONTRACT_SIGNING",
   "ATTACK",
   "RESCUE",
   "POST_MATCH_ASSAULT",
@@ -320,7 +324,7 @@ function validateShowSegmentDraft(
   if (new Set(draft.participantIds).size !== draft.participantIds.length) {
     throw new Error("show segment cannot include the same wrestler twice");
   }
-  if (["CONFRONTATION", "CHALLENGE", "ATTACK"].includes(draft.type) && draft.participantIds.length < 2) {
+  if (["CONFRONTATION", "CHALLENGE", "CONTRACT_SIGNING", "ATTACK"].includes(draft.type) && draft.participantIds.length < 2) {
     throw new Error(`${draft.type} segment requires at least two wrestlers`);
   }
   if (draft.type === "POST_MATCH_ASSAULT" && draft.participantIds.length < 2) {
@@ -362,7 +366,7 @@ function validateShowSegmentDraft(
     !rescuerPersonId || rescuerPersonId === attackerPersonId || rescuerPersonId === victimPersonId
     || !draft.participantIds.includes(rescuerPersonId)
   )) throw new Error("RESCUE requires a distinct rescuer among segment participants");
-  const isDirected = draft.type === "CHALLENGE" || draft.type === "CONFRONTATION";
+  const isDirected = draft.type === "CHALLENGE" || draft.type === "CONFRONTATION" || draft.type === "CONTRACT_SIGNING";
   const initiatorPersonId = isDirected && draft.initiatorPersonId != null
     ? normalizedId(draft.initiatorPersonId, "initiatorPersonId") : null;
   const targetPersonId = isDirected && draft.targetPersonId != null
@@ -373,6 +377,11 @@ function validateShowSegmentDraft(
     || !draft.participantIds.includes(initiatorPersonId)
     || !draft.participantIds.includes(targetPersonId)
   )) throw new Error("directed segment requires distinct initiator and target among participants");
+  const signingOutcome = draft.type === "CONTRACT_SIGNING" ? (draft.signingOutcome ?? "SIGNED") : null;
+  if (draft.type === "CONTRACT_SIGNING" && (
+    !initiatorPersonId || !targetPersonId
+    || !["SIGNED", "REJECTED", "WALKOUT", "BRAWL"].includes(signingOutcome!)
+  )) throw new Error("CONTRACT_SIGNING needs proposer, responder and a scripted outcome");
   const attackPresentation = draft.type === "ATTACK" ? (draft.attackPresentation ?? "BLINDSIDE") : null;
   const attackObjective = draft.type === "ATTACK" ? (draft.attackObjective ?? "GENERATE_HEAT") : null;
   if (draft.type === "ATTACK" && (
@@ -422,6 +431,7 @@ function validateShowSegmentDraft(
     programmeId,
     plannedLengthMinutes: draft.plannedLengthMinutes,
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
+    ...(draft.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
     ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
     ...(draft.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
     ...(draft.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),
