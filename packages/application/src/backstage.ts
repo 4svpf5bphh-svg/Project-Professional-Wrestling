@@ -94,8 +94,8 @@ export interface PlayerBackstageConversation {
   wrestlerId: Id;
   wrestlerName: string;
   createdDate: PpwDate;
-  status: "OPEN" | "ANSWERED";
-  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH";
+  status: "OPEN" | "ANSWERED" | "NOTED";
+  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT";
   promisedRole: "MAIN_EVENT" | "UPPER_CARD" | null;
   observedMatchShows: number;
   partnerPersonId: Id | null;

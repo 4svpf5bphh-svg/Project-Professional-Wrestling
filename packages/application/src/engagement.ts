@@ -3,7 +3,7 @@ import type { Id, PpwDate } from "../../domain/src/types.js";
 export type PlayerActivityStatus = "ACTIVE" | "WARNING" | "STEWARDED";
 export type OpportunityCategory = "TALENT" | "MARKET" | "BUSINESS" | "WORLD";
 export type StewardshipExitRequestStatus = "OPEN" | "SETTLED" | "WITHDRAWN";
-export type BackstageConversationStatus = "OPEN" | "ANSWERED";
+export type BackstageConversationStatus = "OPEN" | "ANSWERED" | "NOTED";
 export type BackstageResponse = "HEAR_OUT" | "EXPLAIN_PLAN" | "STAND_FIRM" | "PROMISE_FEATURED_BOOKING" | "CONSIDER_TAG_TEAM" | "PASS_TAG_TEAM" | "CONSIDER_RIVALRY" | "PASS_RIVALRY";
 
 export type BackstagePromiseStatus = "PENDING" | "FULFILLED" | "NOT_DELIVERED" | "NO_OPPORTUNITY" | "EXCUSED";
@@ -39,7 +39,7 @@ export interface BackstageConversation {
   promotionId: Id;
   wrestlerId: Id;
   sourceContractId: Id;
-  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH";
+  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT";
   createdDate: PpwDate;
   status: BackstageConversationStatus;
   response: BackstageResponse | null;
@@ -422,8 +422,10 @@ export function openBackstageConversation(
   if (engagement.backstageConversations.some((entry) => entry.conversationId === conversationId)) {
     throw new Error("Backstage conversation already exists");
   }
-  if (conversation.status !== "OPEN" || conversation.response !== null || conversation.responseDate !== null) {
-    throw new Error("new Backstage conversation must be unanswered");
+  const informational = conversation.kind === "TEAM_MOMENT";
+  if (conversation.status !== (informational ? "NOTED" : "OPEN")
+    || conversation.response !== null || conversation.responseDate !== null) {
+    throw new Error("new Backstage item has an invalid initial lifecycle");
   }
   if (conversation.kind === "ROLE_USAGE_CONCERN") {
     if (!["MAIN_EVENT", "UPPER_CARD"].includes(conversation.promisedRole ?? "")
@@ -449,6 +451,17 @@ export function openBackstageConversation(
       || typeof conversation.professionalTrustAtPitch !== "number"
       || conversation.professionalTrustAtPitch < 60 || conversation.professionalTrustAtPitch > 100) {
       throw new Error("Backstage rivalry pitch requires verified match and trust evidence");
+    }
+  } else if (conversation.kind === "TEAM_MOMENT") {
+    if (conversation.promisedRole !== null || !conversation.partnerPersonId
+      || conversation.partnerPersonId === conversation.wrestlerId
+      || !Number.isSafeInteger(conversation.sharedTagMatches)
+      || (conversation.sharedTagMatches ?? 0) < 2
+      || typeof conversation.averageCrowdResponse !== "number"
+      || conversation.averageCrowdResponse < 70 || conversation.averageCrowdResponse > 100
+      || typeof conversation.professionalTrustAtPitch !== "number"
+      || conversation.professionalTrustAtPitch < 60 || conversation.professionalTrustAtPitch > 100) {
+      throw new Error("positive locker-room moment requires verified relationship and match evidence");
     }
   } else throw new Error("unsupported Backstage conversation kind");
   const stored = { ...conversation, conversationId, createdDate: cloneDate(conversation.createdDate), promise: null };
