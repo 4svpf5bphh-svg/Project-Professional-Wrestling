@@ -3,7 +3,7 @@ import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-ser
 import { claimIndependentPromotionForPlayer } from "../packages/application/src/ownership.js";
 import { activeContractsForPromotion } from "../packages/sim-core/src/index.js";
 import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
-import { openBackstageConversation } from "../packages/application/src/engagement.js";
+import { openBackstageConversation, createWorldEngagementState } from "../packages/application/src/engagement.js";
 import { respondBackstageConversationCommand, buildPlayerBackstageView } from "../packages/application/src/backstage.js";
 import { assessWorkingConcernFollowThrough } from "../packages/application/src/backstage-working-follow-through.js";
 import { cloneApplicationWorld } from "../packages/application/src/world-aggregate.js";
@@ -16,6 +16,7 @@ function fixture(reply:"DISCUSS_WORKING_PLAN"|"KEEP_WORKING_PAIR"|"CONSIDER_PART
   const a=createAlphaWorldAggregate({seed:90471,playerId:"owner"});
   const promotion=a.state.promotions.find(p=>p.playerTakeoverEligibility==="STANDARD" &&p.lifecycle==="ACTIVE")!;
   claimIndependentPromotionForPlayer(a.state,a.ownership,"owner",promotion.id);
+  a.engagement=createWorldEngagementState(a.state.world.id);
   const contracts=activeContractsForPromotion(a.state,promotion.id).slice(0,3);
   ok(contracts.length===3,"needs three signed roster workers");
   const [lead,partner,alternative]=contracts;
