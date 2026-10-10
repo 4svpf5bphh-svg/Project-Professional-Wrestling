@@ -8,7 +8,9 @@
 import type { Id, PpwDate, WrestlerRelationship, WorkingChemistry, WorldState } from "../../domain/src/types.js";
 import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { eventsForWeek, matchesForEvent, participantsForMatch } from "../../sim-core/src/indexes.js";
-import { WORKING_PARTNERSHIP_LEDGER_TYPE } from "./working-relationship-evolution.js";
+import {
+  WORKING_PARTNERSHIP_LEDGER_TYPE, WORKING_PARTNERSHIP_STRAIN_LEDGER_TYPE,
+} from "./working-relationship-evolution.js";
 
 export interface WrestlerWorkingConnectionView {
   personId: Id;
@@ -27,8 +29,13 @@ export interface WrestlerWorkingConnectionView {
   recentTagMatchesTogether: number;
   recentSinglesOppositions: number;
   latestSharedMatchDate: PpwDate | null;
-  /** Most recent proven collaboration improvement, not an asserted friendship. */
-  lastDevelopment: { date: PpwDate; trustDelta: number; familiarityDelta: number } | null;
+  /** Audited improvement/strain in performance confidence, never evidence of personal hostility. */
+  lastDevelopment: {
+    kind: "IMPROVEMENT" | "STRAIN";
+    date: PpwDate;
+    trustDelta: number;
+    familiarityDelta: number;
+  } | null;
 }
 
 interface ConnectionDraft {
@@ -38,7 +45,7 @@ interface ConnectionDraft {
   recentTagMatchesTogether: number;
   recentSinglesOppositions: number;
   latestSharedMatchDate: PpwDate | null;
-  lastDevelopment: { date: PpwDate; trustDelta: number; familiarityDelta: number } | null;
+  lastDevelopment: WrestlerWorkingConnectionView["lastDevelopment"];
 }
 
 const LOOKBACK_WEEKS = 12;
@@ -83,7 +90,8 @@ export function workingConnectionsForWrestler(
     const entry = state.ledger[i]!;
     const age = nowForLedger - ppwDateToWeekIndex(entry.date, state.ruleset.weeksPerYear);
     if (age >= 26) break;
-    if (age < 0 || entry.type !== WORKING_PARTNERSHIP_LEDGER_TYPE) continue;
+    if (age < 0 || (entry.type !== WORKING_PARTNERSHIP_LEDGER_TYPE
+      && entry.type !== WORKING_PARTNERSHIP_STRAIN_LEDGER_TYPE)) continue;
     const [a, b] = entry.entityIds;
     const other = a === personId ? b : b === personId ? a : null;
     if (!other || !names.has(other)) continue;
@@ -92,7 +100,10 @@ export function workingConnectionsForWrestler(
     const trustDelta = entry.payload.trustDelta;
     const familiarityDelta = entry.payload.familiarityDelta;
     if (typeof trustDelta !== "number" || typeof familiarityDelta !== "number") continue;
-    draft.lastDevelopment = { date: { ...entry.date }, trustDelta, familiarityDelta };
+    draft.lastDevelopment = {
+      kind: entry.type === WORKING_PARTNERSHIP_STRAIN_LEDGER_TYPE ? "STRAIN" : "IMPROVEMENT",
+      date: { ...entry.date }, trustDelta, familiarityDelta,
+    };
   }
 
   // The index only visits the last 12 PPW weeks; no unbounded ledger scan.

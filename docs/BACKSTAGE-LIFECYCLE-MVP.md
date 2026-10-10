@@ -106,3 +106,26 @@ professional-respect development. Historical saves are not backfilled, and
 reads/retries cannot apply rewards. Full negative interpersonal consequences
 require independent evidence and separate balancing; this is only the first
 bounded positive working-cooperation consequence.
+
+## Conservative working-confidence strain (2026-10-10, development only)
+
+Only an *established* two-wrestler partnership (pre-existing World familiarity
+at least 12) can lose a small amount of professional confidence from repeatedly
+poor working execution. Three different completed tag-show appearances in a
+rolling ten-week window with match execution at or below 40/100, no adequately
+executed tag match together (68+) in the broader twelve-week window, and an
+actual poor match in the resolving week are required. One pair-wide consequence
+at most per twelve PPW weeks, capped at -0.6 professional trust with a floor
+of 35. No action occurs for new pairs, a single weak show, drafted/cancelled
+matches, scripted defeats or a scripted betrayal. The change is symmetrical
+because PPW has no verified individual-at-fault evidence: no member is blamed.
+All completed shows, including AI promotions and outside non-exclusive dates,
+count equally, with one World-authoritative ledger record per actual change.
+
+This represents lowered fictional in-ring working confidence, **not**
+real-world personal hostility. It does not change affinity, rivalry heat,
+relationship tags, familiarity, match results, chemistry, morale, promotion
+trust, titles, contracts or booking. It cannot break teams, create feuds,
+cause a walkout, or override authored on-screen decisions. The latest
+positive/negative professional-development event is visible only in owned-roster
+working history, without cross-promotion private dialogue.

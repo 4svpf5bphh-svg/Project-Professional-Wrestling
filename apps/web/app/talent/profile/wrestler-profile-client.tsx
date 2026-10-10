@@ -444,9 +444,17 @@ export default function WrestlerProfileClient({
                     <span>In-game professional trust {Math.round(connection.relationship.professionalTrust)}</span>
                   ) : null}
                   {connection.lastDevelopment ? (
-                    <span>Recent cooperation: respect +{connection.lastDevelopment.trustDelta.toFixed(1)},
-                      familiarity +{connection.lastDevelopment.familiarityDelta}
-                      {" · "}{ppwDate(connection.lastDevelopment.date)}</span>
+                    <span>
+                      {connection.lastDevelopment.kind === "STRAIN"
+                        ? "Working confidence strained (repeated poor execution)"
+                        : "Recent cooperation"}
+                      : respect {connection.lastDevelopment.trustDelta > 0 ? "+" : ""}
+                      {connection.lastDevelopment.trustDelta.toFixed(1)}
+                      {connection.lastDevelopment.familiarityDelta
+                        ? `, familiarity +${connection.lastDevelopment.familiarityDelta}`
+                        : ""}
+                      {" · "}{ppwDate(connection.lastDevelopment.date)}
+                    </span>
                   ) : null}
                 </div>
               </article>
