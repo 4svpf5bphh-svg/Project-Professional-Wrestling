@@ -13,7 +13,7 @@ import {
 } from "../packages/application/src/index.js";
 import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
 import { createWorldEngagementState, openBackstageConversation } from "../packages/application/src/engagement.js";
-import { activeContractsForPromotion } from "../packages/sim-core/src/index.js";
+import { activeContractsForPromotion, upsertWrestlerRelationship } from "../packages/sim-core/src/index.js";
 import { promotionTalentTrustFor } from "../packages/sim-core/src/talent-trust.js";
 import { generateTagTeamPitches } from "../packages/application/src/backstage-pitches.js";
 import { generateRivalryPitches } from "../packages/application/src/backstage-rivalries.js";
@@ -1573,6 +1573,8 @@ test("World-locked working strain creates one private, optional review with safe
     side: i < 2 ? "A" as const : "B" as const, won: false,
   })));
   const [a, b] = [ids[0]!, ids[1]!].sort();
+  upsertWrestlerRelationship(state, {personAId: a!, personBId: b!,
+    professionalTrust: 64, familiarity: 32});
   state.ledger.push({
     id: "ledger:working-strain-test",
     worldId: state.world.id, date: sourceDate, order: state.ledger.length + 1,
@@ -1645,6 +1647,8 @@ test("Outside promotion work, out-of-date strain and zero roster dates do not cr
   other.datesUsed = 0;
   const sourceDate = addPpwWeeks(state.world.currentDate, -1, state.ruleset.weeksPerYear);
   const foreignPromotion = state.promotions.find(p => p.id !== promotion.id)!;
+  upsertWrestlerRelationship(state, {personAId: person.id, personBId: other.personId,
+    professionalTrust: 58, familiarity: 22});
   state.ledger.push({
     id: "ledger:outside-strain",
     worldId: state.world.id, date: sourceDate, order: state.ledger.length + 1,
