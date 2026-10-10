@@ -286,7 +286,14 @@ try {
     risk: 31,
     epic: 60,
   };
-  matches[0] = { ...matches[0], style: httpStyle };
+  ok(matches.length >= 2, "HTTP scripted run-in fixture needs at least two singles matches");
+  const runInPerson = matches[1].sideAIds[0];
+  matches[0] = {
+    ...matches[0], style: httpStyle,
+    interfererPersonId: runInPerson,
+    interferenceSide: "A",
+    interferenceOutcome: "SUCCESS",
+  };
   const turnPerson = cardView.participants[0];
   ok(turnPerson, "HTTP card view exposed no wrestler for Turn regression");
   const turnTargetAlignment = turnPerson.alignment === "HEEL" ? "FACE" : "HEEL";
@@ -299,6 +306,66 @@ try {
     turnPersonId: turnPerson.personId,
     turnTargetAlignment,
   };
+  const firstMatch = matches[0];
+  const secondMatch = matches[1];
+  const assault = {
+    draftSegmentId: `${cardView.draftId}:ci-post-match-assault`,
+    type: "POST_MATCH_ASSAULT",
+    participantIds: [secondMatch.sideBIds[0], firstMatch.sideBIds[0]],
+    attackerPersonId: secondMatch.sideBIds[0],
+    victimPersonId: firstMatch.sideBIds[0],
+    sourceDraftMatchId: firstMatch.draftMatchId,
+    programmeId: null,
+    plannedLengthMinutes: 5,
+  };
+  const signing = {
+    draftSegmentId: `${cardView.draftId}:ci-contract-signing`,
+    type: "CONTRACT_SIGNING",
+    participantIds: [firstMatch.sideAIds[0], firstMatch.sideBIds[0]],
+    programmeId: null,
+    plannedLengthMinutes: 6,
+    initiatorPersonId: firstMatch.sideAIds[0],
+    targetPersonId: firstMatch.sideBIds[0],
+    signingOutcome: "WALKOUT",
+  };
+  const interruption = {
+    draftSegmentId: `${cardView.draftId}:ci-interruption`,
+    type: "INTERRUPTION",
+    participantIds: [firstMatch.sideAIds[0], secondMatch.sideAIds[0]],
+    programmeId: null,
+    plannedLengthMinutes: 6,
+    initiatorPersonId: secondMatch.sideAIds[0],
+    targetPersonId: firstMatch.sideAIds[0],
+    interruptionOutcome: "INTERRUPTER_PREVAILS",
+  };
+  const attack = {
+    draftSegmentId: `${cardView.draftId}:ci-attack`,
+    type: "ATTACK",
+    participantIds: [secondMatch.sideBIds[0], firstMatch.sideAIds[0]],
+    programmeId: null,
+    plannedLengthMinutes: 4,
+    attackerPersonId: secondMatch.sideBIds[0],
+    victimPersonId: firstMatch.sideAIds[0],
+    attackPresentation: "BEATDOWN",
+    attackObjective: "BUILD_SYMPATHY",
+  };
+  const rescue = {
+    draftSegmentId: `${cardView.draftId}:ci-rescue`,
+    type: "RESCUE",
+    participantIds: [secondMatch.sideBIds[0], firstMatch.sideAIds[0], secondMatch.sideAIds[0]],
+    programmeId: null,
+    plannedLengthMinutes: 5,
+    attackerPersonId: secondMatch.sideBIds[0],
+    victimPersonId: firstMatch.sideAIds[0],
+    rescuerPersonId: secondMatch.sideAIds[0],
+  };
+  const scriptedSegments = [assault, signing, interruption, attack, rescue, turnSegment];
+  const bookedOrder = [
+    { kind: "MATCH", refId: firstMatch.draftMatchId },
+    { kind: "SEGMENT", refId: assault.draftSegmentId },
+    ...matches.slice(1).map((match) => ({ kind: "MATCH", refId: match.draftMatchId })),
+    ...scriptedSegments.slice(1).map((segment) => ({ kind: "SEGMENT", refId: segment.draftSegmentId })),
+  ];
   const savedCard = await json(await fetch(`${baseUrl}/api/show-card`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -308,11 +375,8 @@ try {
       expectedPlanVersion: cardView.workspaceVersion,
       draftId,
       matches,
-      segments: [turnSegment],
-      runningOrder: [
-        ...matches.map((match) => ({ kind: "MATCH", refId: match.draftMatchId })),
-        { kind: "SEGMENT", refId: turnSegment.draftSegmentId },
-      ],
+      segments: scriptedSegments,
+      runningOrder: bookedOrder,
       championshipAssignments: [],
     }),
   }));
@@ -320,9 +384,38 @@ try {
   ok(savedCard.matches.every((match) => match.type === "SINGLES"), "HTTP match card changed booked match types");
   ok(savedCard.matches[0]?.style?.competitiveness === 84, "HTTP show-card route dropped match style");
   ok(savedCard.matches[0]?.style?.risk === 31, "HTTP show-card route changed match style dimensions");
-  ok(savedCard.segments?.length === 1 && savedCard.segments[0]?.type === "TURN", "HTTP show-card route rejected or dropped TURN");
-  ok(savedCard.segments[0]?.turnPersonId === turnPerson.personId, "HTTP show-card route dropped the turning wrestler");
-  ok(savedCard.segments[0]?.turnTargetAlignment === turnTargetAlignment, "HTTP show-card route dropped the target alignment");
+  ok(savedCard.segments?.length === scriptedSegments.length, "HTTP save dropped new segment types");
+  const savedByType = new Map(savedCard.segments.map((segment) => [segment.type, segment]));
+  ok(savedByType.get("TURN")?.turnPersonId === turnPerson.personId, "HTTP show-card route dropped the turning wrestler");
+  ok(savedByType.get("TURN")?.turnTargetAlignment === turnTargetAlignment, "HTTP show-card route dropped target alignment");
+  ok(savedByType.get("POST_MATCH_ASSAULT")?.sourceDraftMatchId === firstMatch.draftMatchId
+    && savedByType.get("POST_MATCH_ASSAULT")?.attackerPersonId === assault.attackerPersonId
+    && savedByType.get("POST_MATCH_ASSAULT")?.victimPersonId === assault.victimPersonId,
+    "HTTP route discarded post-match assault roles or source match");
+  ok(savedByType.get("CONTRACT_SIGNING")?.signingOutcome === "WALKOUT"
+    && savedByType.get("CONTRACT_SIGNING")?.initiatorPersonId === signing.initiatorPersonId
+    && savedByType.get("CONTRACT_SIGNING")?.targetPersonId === signing.targetPersonId,
+    "HTTP route discarded scripted contract-signing decision");
+  ok(savedByType.get("INTERRUPTION")?.interruptionOutcome === "INTERRUPTER_PREVAILS"
+    && savedByType.get("INTERRUPTION")?.initiatorPersonId === interruption.initiatorPersonId,
+    "HTTP route discarded named interrupter or scripted outcome");
+  ok(savedByType.get("ATTACK")?.attackPresentation === "BEATDOWN"
+    && savedByType.get("ATTACK")?.attackObjective === "BUILD_SYMPATHY",
+    "HTTP route discarded attack format or objective");
+  ok(savedByType.get("RESCUE")?.rescuerPersonId === rescue.rescuerPersonId,
+    "HTTP route discarded the named rescuer");
+  ok(savedCard.matches[0]?.interfererPersonId === runInPerson
+    && savedCard.matches[0]?.interferenceSide === "A"
+    && savedCard.matches[0]?.interferenceOutcome === "SUCCESS",
+    "HTTP route discarded a player's selected match run-in");
+  const reloadedCard = await json(await fetch(`${baseUrl}/api/show-card?draftId=${encodeURIComponent(draftId)}`, { cache: "no-store" }));
+  ok(reloadedCard.matches[0]?.interfererPersonId === runInPerson
+    && reloadedCard.matches[0]?.interferenceOutcome === "SUCCESS",
+    "HTTP reload silently reset the selected match interference");
+  ok(reloadedCard.segments.length === scriptedSegments.length
+    && reloadedCard.segments.some((segment) => segment.type === "POST_MATCH_ASSAULT"
+      && segment.sourceDraftMatchId === firstMatch.draftMatchId),
+    "HTTP reload lost new segments or their match links");
 
   const ready = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
   ok(ready.promotion?.showPlanning?.currentPlan?.state === "RESERVED", "HTTP booked show lost its reserved planning state before lock");
@@ -352,6 +445,13 @@ try {
   ok(playerShow.matches.length === matches.length, "HTTP player results did not preserve the booked card");
   ok(playerShow.matches.every((match) => match.winnerNames.length > 0), "HTTP player results omitted match winners");
   ok(playerShow.segments?.some((segment) => segment.type === "TURN"), "HTTP player results omitted the resolved Turn segment");
+  for (const type of ["CONTRACT_SIGNING", "POST_MATCH_ASSAULT", "INTERRUPTION", "ATTACK", "RESCUE"]) {
+    ok(playerShow.segments?.some((segment) => segment.type === type),
+      "HTTP results omitted resolved " + type);
+  }
+  const bookedInterference = playerShow.matches.find((match) => match.interference?.personId === runInPerson
+    || match.interferencePersonId === runInPerson);
+  ok(bookedInterference, "HTTP results lost the booked interfering wrestler");
 
   const worldResults = await json(await fetch(`${baseUrl}/api/world-results`, { cache: "no-store" }));
   const worldShow = worldResults.shows?.find((show) => show.eventId === resolvedEventId);

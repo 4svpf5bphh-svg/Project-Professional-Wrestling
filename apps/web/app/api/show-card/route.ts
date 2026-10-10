@@ -71,6 +71,18 @@ function nonNegativeInteger(value: unknown, label: string): number {
   return value;
 }
 
+/** Parse enum-bearing script fields without trusting arbitrary client strings. */
+function nullableChoice<const T extends string>(
+  value: unknown,
+  label: string,
+  options: readonly T[],
+): T | null {
+  const text = optionalText(value, label, 64);
+  if (text === undefined) return null;
+  if (!options.some((option) => option === text)) throw new Error(`${label} has an unsupported value`);
+  return text as T;
+}
+
 function plannedLength(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 3 || value > 60) {
     throw new Error(`${label} must be an integer from 3 to 60`);
@@ -134,6 +146,10 @@ function matches(value: unknown): AlphaCardMatchView[] {
       ...(style === undefined ? {} : { style }),
       plannedLengthMinutes: plannedLength(candidate.plannedLengthMinutes, `matches[${index}].plannedLengthMinutes`),
       ...(plannedFinish === undefined ? {} : { plannedFinish }),
+      // The HTTP boundary must not strip the script written in the card UI.
+      interfererPersonId: optionalText(candidate.interfererPersonId, `matches[${index}].interfererPersonId`, 128) ?? null,
+      interferenceSide: nullableChoice(candidate.interferenceSide, `matches[${index}].interferenceSide`, ["A", "B"]) ,
+      interferenceOutcome: nullableChoice(candidate.interferenceOutcome, `matches[${index}].interferenceOutcome`, ["SUCCESS", "THWARTED"]),
     };
   });
 }
@@ -148,35 +164,50 @@ function segmentLength(value: unknown, label: string): number {
 function segments(value: unknown): AlphaCardSegmentView[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) throw new Error("segments must be an array");
-  const supported = new Set(["PROMO", "INTERVIEW", "CONFRONTATION", "CHALLENGE", "ATTACK", "CELEBRATION", "TURN"]);
+  // Keep the HTTP schema in step with the playable Card and service layer.
+  const supported = new Set<string>([
+    "PROMO", "INTERVIEW", "CONFRONTATION", "INTERRUPTION", "CHALLENGE",
+    "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION",
+    "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN",
+  ]);
   return value.map((entry, index) => {
     if (!entry || typeof entry !== "object") throw new Error(`segments[${index}] must be an object`);
     const candidate = entry as Record<string, unknown>;
     const type = requiredText(candidate.type, `segments[${index}].type`, 32);
     if (!supported.has(type)) throw new Error(`unsupported segment type ${type}`);
-    const turnPersonId = candidate.turnPersonId === null || candidate.turnPersonId === undefined || candidate.turnPersonId === ""
-      ? null
-      : requiredText(candidate.turnPersonId, `segments[${index}].turnPersonId`, 128);
-    const turnTargetAlignment = candidate.turnTargetAlignment === null
-      || candidate.turnTargetAlignment === undefined
-      || candidate.turnTargetAlignment === ""
-      ? null
-      : requiredText(candidate.turnTargetAlignment, `segments[${index}].turnTargetAlignment`, 16);
-    if (turnTargetAlignment !== null && !["FACE", "HEEL", "TWEENER"].includes(turnTargetAlignment)) {
-      throw new Error(`segments[${index}].turnTargetAlignment must be FACE, HEEL or TWEENER`);
-    }
+    const fieldId = (key: string): string | null => (
+      optionalText(candidate[key], `segments[${index}].${key}`, 128) ?? null
+    );
+    const pick = <const T extends string>(key: string, values: readonly T[]): T | null => (
+      nullableChoice(candidate[key], `segments[${index}].${key}`, values)
+    );
     return {
       draftSegmentId: requiredText(candidate.draftSegmentId, `segments[${index}].draftSegmentId`, 128),
       type: type as AlphaCardSegmentView["type"],
       participantIds: personIds(candidate.participantIds, `segments[${index}].participantIds`),
-      programmeId: candidate.programmeId === null || candidate.programmeId === undefined || candidate.programmeId === ""
-        ? null
-        : requiredText(candidate.programmeId, `segments[${index}].programmeId`, 128),
+      programmeId: fieldId("programmeId"),
       plannedLengthMinutes: segmentLength(candidate.plannedLengthMinutes, `segments[${index}].plannedLengthMinutes`),
-      turnPersonId: type === "TURN" ? turnPersonId : null,
-      turnTargetAlignment: type === "TURN"
-        ? turnTargetAlignment as AlphaCardSegmentView["turnTargetAlignment"]
-        : null,
+      attackerPersonId: fieldId("attackerPersonId"),
+      victimPersonId: fieldId("victimPersonId"),
+      rescuerPersonId: fieldId("rescuerPersonId"),
+      sourceDraftMatchId: fieldId("sourceDraftMatchId"),
+      initiatorPersonId: fieldId("initiatorPersonId"),
+      targetPersonId: fieldId("targetPersonId"),
+      signingOutcome: pick("signingOutcome", ["SIGNED", "REJECTED", "WALKOUT", "BRAWL"]),
+      stableId: fieldId("stableId"),
+      stableInvitationOutcome: pick("stableInvitationOutcome", ["ACCEPTED", "REFUSED"]),
+      stableExitOutcome: pick("stableExitOutcome", ["EXPELLED", "WALKED_OUT"]),
+      stableReconciliationOutcome: pick("stableReconciliationOutcome", ["RECONCILED", "REBUFFED"]),
+      challengeResponse: pick("challengeResponse", ["ACCEPTED", "REFUSED", "LEFT_OPEN"]),
+      interruptionOutcome: pick("interruptionOutcome", [
+        "VERBAL_EXCHANGE", "INTERRUPTER_PREVAILS", "SPEAKER_PREVAILS", "BRAWL",
+      ]),
+      attackPresentation: pick("attackPresentation", ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"]),
+      attackObjective: pick("attackObjective", ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"]),
+      turnPersonId: fieldId("turnPersonId"),
+      turnTargetAlignment: pick("turnTargetAlignment", ["FACE", "HEEL", "TWEENER"]),
+      turnPresentation: pick("turnPresentation", ["REVEAL", "BETRAYAL"]),
+      betrayedPersonId: fieldId("betrayedPersonId"),
     };
   });
 }
