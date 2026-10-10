@@ -407,6 +407,11 @@ export default function CardClient(): React.JSX.Element {
       && segment.participantIds.includes(segment.turnPersonId ?? "")
       && Boolean(segment.turnTargetAlignment)
       && segment.turnTargetAlignment !== personAlignment(segment.turnPersonId ?? "")
+      && (segment.turnPresentation !== "BETRAYAL" || (
+        Boolean(segment.betrayedPersonId)
+        && segment.betrayedPersonId !== segment.turnPersonId
+        && segment.participantIds.includes(segment.betrayedPersonId ?? "")
+      ))
     ))
   ));
   const hasCurrentStyleRefusal = matches.some((match) => {
@@ -484,6 +489,8 @@ export default function CardClient(): React.JSX.Element {
       attackObjective: type === "ATTACK" ? "GENERATE_HEAT" : null,
       turnPersonId: null,
       turnTargetAlignment: null,
+      turnPresentation: type === "TURN" ? "REVEAL" : null,
+      betrayedPersonId: null,
     }]);
     setRunningOrder((current) => [...current, { kind: "SEGMENT", refId: id }]);
     setExpandedSlotKey(`SEGMENT:${id}`);
@@ -642,6 +649,10 @@ export default function CardClient(): React.JSX.Element {
         ? (segment.turnPersonId && participantIds.includes(segment.turnPersonId) ? segment.turnPersonId : participantIds.find(Boolean) ?? null)
         : null,
       turnTargetAlignment: type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
+      turnPresentation: type === "TURN" ? (segment.turnPresentation ?? "REVEAL") : null,
+      betrayedPersonId: type === "TURN" && segment.turnPresentation === "BETRAYAL"
+        && segment.betrayedPersonId && participantIds.includes(segment.betrayedPersonId)
+        && segment.betrayedPersonId !== segment.turnPersonId ? segment.betrayedPersonId : null,
     });
   }
 
@@ -665,6 +676,7 @@ export default function CardClient(): React.JSX.Element {
       initiatorPersonId: segment.initiatorPersonId && participantIds[0] === segment.initiatorPersonId ? segment.initiatorPersonId : null,
       targetPersonId: segment.targetPersonId && participantIds[1] === segment.targetPersonId ? segment.targetPersonId : null,
       turnPersonId: segment.turnPersonId && participantIds.includes(segment.turnPersonId) ? segment.turnPersonId : null,
+      betrayedPersonId: segment.betrayedPersonId && participantIds.includes(segment.betrayedPersonId) ? segment.betrayedPersonId : null,
     });
   }
 
@@ -680,6 +692,9 @@ export default function CardClient(): React.JSX.Element {
       initiatorPersonId: isDirectedSegment(segment.type) && index === 0 ? (personId || null) : (segment.initiatorPersonId ?? null),
       targetPersonId: isDirectedSegment(segment.type) && index === 1 ? (personId || null) : (segment.targetPersonId ?? null),
       turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
+      betrayedPersonId: segment.type === "TURN" && segment.betrayedPersonId === segment.participantIds[index]
+        ? (personId && personId !== segment.turnPersonId ? personId : null)
+        : (segment.betrayedPersonId ?? null),
     });
   }
 
@@ -733,6 +748,8 @@ export default function CardClient(): React.JSX.Element {
       participantIds,
       turnPersonId: personId || null,
       turnTargetAlignment: targetMatchesNewCurrent ? null : (segment.turnTargetAlignment ?? null),
+      betrayedPersonId: segment.betrayedPersonId && participantIds.includes(segment.betrayedPersonId)
+        && segment.betrayedPersonId !== personId ? segment.betrayedPersonId : null,
     });
   }
 
@@ -751,6 +768,8 @@ export default function CardClient(): React.JSX.Element {
       turnPersonId: segment.turnPersonId && participantIds.includes(segment.turnPersonId)
         ? segment.turnPersonId
         : segment.type === "TURN" ? (participantIds.find(Boolean) ?? null) : null,
+      betrayedPersonId: segment.betrayedPersonId && participantIds.includes(segment.betrayedPersonId)
+        ? segment.betrayedPersonId : null,
     });
   }
 
@@ -882,7 +901,9 @@ export default function CardClient(): React.JSX.Element {
     if (segment.type === "TURN") {
       const who = segment.turnPersonId ? personName(segment.turnPersonId) : "Choose wrestler";
       const target = segment.turnTargetAlignment ? pretty(segment.turnTargetAlignment) : "Choose alignment";
-      return `Turn · ${who} → ${target} · ${segment.plannedLengthMinutes} min`;
+      const betrayed = segment.turnPresentation === "BETRAYAL"
+        ? ` · Betrays ${segment.betrayedPersonId ? personName(segment.betrayedPersonId) : "choose wrestler"}` : "";
+      return `Turn · ${who} → ${target}${betrayed} · ${segment.plannedLengthMinutes} min`;
     }
     if (isDirectedSegment(segment.type)) {
       const initiator = segment.initiatorPersonId ? personName(segment.initiatorPersonId) : "Choose initiator";
@@ -1334,6 +1355,34 @@ export default function CardClient(): React.JSX.Element {
 
                 {segment.type === "TURN" ? (
                   <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Turn angle</span>
+                      <small>How the turn happens on screen</small>
+                    </div>
+                    <div className={styles.slotTypeRow}>
+                      <button type="button" className={(segment.turnPresentation ?? "REVEAL") === "REVEAL" ? styles.typeActive : styles.secondaryButton} disabled={!view.canEdit}
+                        onClick={() => updateSegment(segment.draftSegmentId, { turnPresentation: "REVEAL", betrayedPersonId: null })}>Alignment reveal</button>
+                      <button type="button" className={segment.turnPresentation === "BETRAYAL" ? styles.typeActive : styles.secondaryButton} disabled={!view.canEdit}
+                        onClick={() => updateSegment(segment.draftSegmentId, { turnPresentation: "BETRAYAL" })}>Betrayal</button>
+                    </div>
+                    {segment.turnPresentation === "BETRAYAL" ? (
+                      <div className={styles.segmentPeopleHeader}>
+                        <span>Who gets betrayed?</span>
+                        <small>First add them below, then select their name</small>
+                      </div>
+                    ) : null}
+                    {segment.turnPresentation === "BETRAYAL" ? (
+                      <div className={styles.slotTypeRow}>
+                        {segment.participantIds.filter((personId) => Boolean(personId) && personId !== segment.turnPersonId).map((personId) => (
+                          <button type="button" key={personId}
+                            className={segment.betrayedPersonId === personId ? styles.typeActive : styles.secondaryButton}
+                            disabled={!view.canEdit}
+                            onClick={() => updateSegment(segment.draftSegmentId, { betrayedPersonId: personId })}>
+                            {personName(personId)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                     <div className={styles.segmentPeopleHeader}>
                       <span>Others involved (optional)</span>
                       <small>{segment.programmeId ? "Limited to this Programme" : "Add anyone else involved in the turn"}</small>

@@ -51,6 +51,7 @@ export type DetailedShowSegmentType =
 
 export type AttackPresentation = "BLINDSIDE" | "BEATDOWN" | "PULL_APART_BRAWL";
 export type AttackObjective = "GENERATE_HEAT" | "BUILD_SYMPATHY" | "ESCALATE_RIVALRY";
+export type TurnPresentation = "REVEAL" | "BETRAYAL";
 
 export interface DetailedShowSegmentDraft {
   draftSegmentId: string;
@@ -68,6 +69,8 @@ export interface DetailedShowSegmentDraft {
   attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
   turnTargetAlignment?: WrestlerAlignment | null;
+  turnPresentation?: TurnPresentation | null;
+  betrayedPersonId?: Id | null;
 }
 
 export interface DetailedShowSlotRef {
@@ -329,7 +332,17 @@ function validateShowSegmentDraft(
     !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(attackPresentation!)
     || !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(attackObjective!)
   )) throw new Error("ATTACK segment has an unsupported presentation or objective");
+  const turnPresentation = draft.type === "TURN" ? (draft.turnPresentation ?? "REVEAL") : null;
+  const betrayedPersonId = draft.type === "TURN" && turnPresentation === "BETRAYAL"
+    ? (draft.betrayedPersonId == null ? null : normalizedId(draft.betrayedPersonId, "betrayedPersonId"))
+    : null;
   if (draft.type === "TURN") {
+    if (turnPresentation !== "REVEAL" && turnPresentation !== "BETRAYAL") {
+      throw new Error("TURN segment has an unsupported presentation");
+    }
+    if (turnPresentation === "BETRAYAL" && (
+      !betrayedPersonId || betrayedPersonId === turnPersonId || !draft.participantIds.includes(betrayedPersonId)
+    )) throw new Error("BETRAYAL requires a distinct betrayed wrestler among segment participants");
     if (!turnPersonId || !draft.participantIds.includes(turnPersonId)) {
       throw new Error("TURN segment must identify one participating wrestler who turns");
     }
@@ -359,7 +372,7 @@ function validateShowSegmentDraft(
     plannedLengthMinutes: draft.plannedLengthMinutes,
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
-    ...(draft.type === "TURN" ? { turnPersonId, turnTargetAlignment } : {}),
+    ...(draft.type === "TURN" ? { turnPersonId, turnTargetAlignment, turnPresentation, betrayedPersonId } : {}),
   };
 }
 

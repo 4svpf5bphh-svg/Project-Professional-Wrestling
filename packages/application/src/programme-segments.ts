@@ -19,6 +19,7 @@ import type {
   DetailedShowSegmentType,
   AttackPresentation,
   AttackObjective,
+  TurnPresentation,
   WorldPlanningState,
 } from "./planning.js";
 
@@ -54,6 +55,8 @@ export interface ResolvedShowSegment {
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
+  turnPresentation: TurnPresentation | null;
+  betrayedPersonId: Id | null;
   executionQuality: number | null;
   crowdResponse: number | null;
   impact: number | null;
@@ -79,6 +82,8 @@ interface NormalizedDraftSegment {
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
+  turnPresentation: TurnPresentation | null;
+  betrayedPersonId: Id | null;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -145,6 +150,9 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? null) : null,
     turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
     turnTargetAlignment: segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
+    turnPresentation: segment.type === "TURN" ? (segment.turnPresentation ?? "REVEAL") : null,
+    betrayedPersonId: segment.type === "TURN" && segment.turnPresentation === "BETRAYAL"
+      ? (segment.betrayedPersonId ?? null) : null,
   }));
   const typedIds = new Set(typed.map((segment) => segment.draftSegmentId));
   const legacy = (draft.programmeSegments ?? [])
@@ -163,6 +171,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       attackObjective: null,
       turnPersonId: null,
       turnTargetAlignment: null,
+      turnPresentation: null,
+      betrayedPersonId: null,
     }));
   return [...typed, ...legacy];
 }
@@ -300,6 +310,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const attackObjective = entry.payload.attackObjective ?? null;
   const turnPersonId = entry.payload.turnPersonId === undefined ? null : entry.payload.turnPersonId;
   const turnTargetAlignment = entry.payload.turnTargetAlignment === undefined ? null : entry.payload.turnTargetAlignment;
+  const turnPresentation = entry.payload.turnPresentation ?? (type === "TURN" ? "REVEAL" : null);
+  const betrayedPersonId = entry.payload.betrayedPersonId ?? null;
   const executionQuality = typeof entry.payload.segmentExecutionQuality === "number" ? entry.payload.segmentExecutionQuality : null;
   const crowdResponse = typeof entry.payload.segmentCrowdResponse === "number" ? entry.payload.segmentCrowdResponse : null;
   const impact = typeof entry.payload.segmentImpact === "number" ? entry.payload.segmentImpact : null;
@@ -334,6 +346,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || (attackObjective !== null && !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(String(attackObjective)))
     || (turnPersonId !== null && typeof turnPersonId !== "string")
     || (turnTargetAlignment !== null && !isWrestlerAlignment(turnTargetAlignment))
+    || (turnPresentation !== null && turnPresentation !== "REVEAL" && turnPresentation !== "BETRAYAL")
+    || (betrayedPersonId !== null && typeof betrayedPersonId !== "string")
     || (outcome !== null && !["POOR", "FLAT", "SOLID", "STRONG", "HOT"].includes(outcome))
   ) return null;
 
@@ -356,6 +370,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     attackObjective: attackObjective as AttackObjective | null,
     turnPersonId,
     turnTargetAlignment: turnTargetAlignment as WrestlerAlignment | null,
+    turnPresentation: turnPresentation as TurnPresentation | null,
+    betrayedPersonId: betrayedPersonId as Id | null,
     executionQuality,
     crowdResponse,
     impact,
@@ -437,6 +453,8 @@ export function recordResolvedShowSegments(
             attackObjective: segment.attackObjective,
             turnPersonId: segment.turnPersonId,
             turnTargetAlignment: segment.turnTargetAlignment,
+            turnPresentation: segment.turnPresentation,
+            betrayedPersonId: segment.betrayedPersonId,
             segmentExecutionQuality: outcome.executionQuality,
             segmentCrowdResponse: outcome.crowdResponse,
             segmentImpact: outcome.impact,

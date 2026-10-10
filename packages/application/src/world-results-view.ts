@@ -70,6 +70,8 @@ export interface PlayerWorldResultSegmentView {
   attackPresentation: AttackPresentation | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
+  turnPresentation: "REVEAL" | "BETRAYAL" | null;
+  betrayedPersonId: Id | null;
   crowdResponse: number | null;
   outcomeBand: ResolvedSegmentOutcomeBand | null;
 }
@@ -293,6 +295,8 @@ export function buildPlayerWorldResultsView(
         attackPresentation: segment.attackPresentation,
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,
+        turnPresentation: segment.turnPresentation,
+        betrayedPersonId: segment.betrayedPersonId,
         crowdResponse: segment.crowdResponse,
         outcomeBand: segment.outcomeBand,
       }));

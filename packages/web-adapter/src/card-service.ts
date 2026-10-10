@@ -25,6 +25,7 @@ import {
   type DetailedShowSegmentType,
   type AttackPresentation,
   type AttackObjective,
+  type TurnPresentation,
   type DetailedShowSlotRef,
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
@@ -114,6 +115,8 @@ export interface AlphaCardSegmentView {
   attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
   turnTargetAlignment?: WrestlerAlignment | null;
+  turnPresentation?: TurnPresentation | null;
+  betrayedPersonId?: Id | null;
 }
 
 export interface AlphaCardProgrammeView {
@@ -427,6 +430,10 @@ function normalizeSegments(
       ? requiredText(segment.turnPersonId ?? "", `segments[${index}].turnPersonId`, 128)
       : null;
     const turnTargetAlignment = segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null;
+    const turnPresentation = segment.type === "TURN" ? (segment.turnPresentation ?? "REVEAL") : null;
+    const betrayedPersonId = segment.type === "TURN" && turnPresentation === "BETRAYAL"
+      ? requiredText(segment.betrayedPersonId ?? "", `segments[${index}].betrayedPersonId`, 128)
+      : null;
     const attackerPersonId = segment.type === "ATTACK"
       ? requiredText(segment.attackerPersonId ?? "", `segments[${index}].attackerPersonId`, 128) : null;
     const victimPersonId = segment.type === "ATTACK"
@@ -450,6 +457,12 @@ function normalizeSegments(
       || !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(attackObjective!)
     )) throw new Error("ATTACK segment has an unsupported presentation or objective");
     if (segment.type === "TURN") {
+      if (turnPresentation !== "REVEAL" && turnPresentation !== "BETRAYAL") {
+        throw new Error("TURN segment has an unsupported presentation");
+      }
+      if (turnPresentation === "BETRAYAL" && (
+        betrayedPersonId === turnPersonId || !people.includes(betrayedPersonId!)
+      )) throw new Error("BETRAYAL requires a distinct betrayed wrestler among segment participants");
       if (!people.includes(turnPersonId!)) throw new Error("TURN segment wrestler must be one of the segment participants");
       if (!turnTargetAlignment || !["FACE", "HEEL", "TWEENER"].includes(turnTargetAlignment)) {
         throw new Error("TURN segment must choose face, heel or tweener");
@@ -480,7 +493,7 @@ function normalizeSegments(
       plannedLengthMinutes: segment.plannedLengthMinutes,
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
-      ...(segment.type === "TURN" ? { turnPersonId, turnTargetAlignment } : {}),
+      ...(segment.type === "TURN" ? { turnPersonId, turnTargetAlignment, turnPresentation, betrayedPersonId } : {}),
     } satisfies DetailedShowSegmentDraft;
   });
 
@@ -899,6 +912,9 @@ export async function loadAlphaShowCard(
       attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null,
       turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
       turnTargetAlignment: segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
+      turnPresentation: segment.type === "TURN" ? (segment.turnPresentation ?? "REVEAL") : null,
+      betrayedPersonId: segment.type === "TURN" && segment.turnPresentation === "BETRAYAL"
+        ? (segment.betrayedPersonId ?? null) : null,
     })),
     ...(draft.programmeSegments ?? []).map((segment) => ({
       draftSegmentId: segment.draftSegmentId,
@@ -908,6 +924,8 @@ export async function loadAlphaShowCard(
       plannedLengthMinutes: 6,
       turnPersonId: null,
       turnTargetAlignment: null,
+      turnPresentation: null,
+      betrayedPersonId: null,
     })),
   ];
   const segmentIds = new Set(segments.map((segment) => segment.draftSegmentId));

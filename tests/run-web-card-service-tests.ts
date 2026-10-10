@@ -700,6 +700,41 @@ await test("Show Builder persists and resolves a TURN segment into promotion ali
   ok(resolved.state.ledger.some((entry) => entry.type === "PROMOTION_ALIGNMENT_CHANGED" && entry.payload.method === "TURN"), "turn did not create alignment-change history");
 });
 
+await test("Betrayal Turn survives Card reload and resolves into factual public show history", async () => {
+  const fixture = await reservedShowFixture(61086);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const [turner, betrayed] = fixture.participantIds;
+  if (!turner || !betrayed) throw new Error("betrayal fixture requires two wrestlers");
+  const current = before.availableParticipants.find((person) => person.personId === turner)?.alignment
+    ?? before.participants.find((person) => person.personId === turner)?.alignment;
+  if (!current) throw new Error("betrayal fixture lacks current alignment");
+  const target = current === "HEEL" ? "FACE" : "HEEL";
+  const card = singlesCard(fixture.participantIds);
+  const segment: AlphaCardSegmentView = {
+    draftSegmentId: "card-betrayal", type: "TURN",
+    participantIds: [turner, betrayed], programmeId: null, plannedLengthMinutes: 6,
+    turnPersonId: turner, turnTargetAlignment: target,
+    turnPresentation: "BETRAYAL", betrayedPersonId: betrayed,
+  };
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "card-betrayal-save", expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion, matches: card, segments: [segment],
+    runningOrder: [{ kind: "SEGMENT", refId: segment.draftSegmentId }, ...card.map((match) => ({
+      kind: "MATCH" as const, refId: match.draftMatchId,
+    }))], championshipAssignments: [],
+  });
+  ok(saved.segments[0]?.turnPresentation === "BETRAYAL" && saved.segments[0]?.betrayedPersonId === betrayed, "Card dropped betrayal metadata");
+  const loaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(loaded.segments[0]?.betrayedPersonId === betrayed, "reload dropped betrayed wrestler");
+  await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+    expectedRevision: saved.world.revision,
+  });
+  const resolved = await fixture.repository.load(fixture.worldId);
+  ok(wrestlerAlignmentForPromotion(resolved.state, saved.promotion.promotionId, turner) === target, "betrayer's alignment never changed");
+  ok(resolved.state.ledger.some((entry) => entry.type === "SHOW_SEGMENT_COMPLETED"
+    && entry.payload.turnPresentation === "BETRAYAL" && entry.payload.betrayedPersonId === betrayed), "show history lacks betrayal evidence");
+});
+
 await test("Alpha browser card booking rejects a championship on the wrong match division without mutation", async () => {
   const fixture = await reservedShowFixture(61013);
   const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");

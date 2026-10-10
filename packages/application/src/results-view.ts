@@ -143,6 +143,8 @@ export interface PlayerShowSegmentView {
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
+  turnPresentation: "REVEAL" | "BETRAYAL" | null;
+  betrayedPersonId: Id | null;
   executionQuality: number | null;
   crowdResponse: number | null;
   outcomeBand: ResolvedSegmentOutcomeBand | null;
@@ -579,6 +581,8 @@ export function buildPlayerShowHistory(
         attackObjective: segment.attackObjective,
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,
+        turnPresentation: segment.turnPresentation,
+        betrayedPersonId: segment.betrayedPersonId,
         executionQuality: segment.executionQuality,
         crowdResponse: segment.crowdResponse,
         outcomeBand: segment.outcomeBand,

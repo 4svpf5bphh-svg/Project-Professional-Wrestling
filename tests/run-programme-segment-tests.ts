@@ -419,6 +419,53 @@ test("TURN segment freezes its intent and changes promotion alignment only after
   ok(changeEntry?.date.day === setup.targetDate.day, "turn alignment history was not dated to the show itself");
 });
 
+test("BETRAYAL turn requires a valid target and records both people without duplicate alignment changes", () => {
+  const setup = fixture(9166);
+  const turner = setup.rosterIds[0]!;
+  const betrayed = setup.rosterIds[1]!;
+  setPromotionWrestlerAlignment(setup.state, setup.promotion.id, turner, "FACE");
+  const betrayedOriginalAlignment = wrestlerAlignmentForPromotion(setup.state, setup.promotion.id, betrayed);
+  const base = {
+    draftId: "betrayal-show", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+  };
+  const turn = {
+    draftSegmentId: "betrayal-slot",
+    type: "TURN" as const,
+    participantIds: [turner, betrayed],
+    programmeId: setup.programme.id,
+    plannedLengthMinutes: 7,
+    turnPersonId: turner,
+    turnTargetAlignment: "HEEL" as const,
+    turnPresentation: "BETRAYAL" as const,
+    betrayedPersonId: betrayed,
+  };
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...turn, betrayedPersonId: turner }],
+  }), "distinct betrayed wrestler");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...turn, betrayedPersonId: setup.rosterIds[2] }],
+  }), "distinct betrayed wrestler");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...turn, betrayedPersonId: null }],
+  }), "distinct betrayed wrestler");
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, { ...base, segments: [turn] });
+  const stored = setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!;
+  ok(stored.turnPresentation === "BETRAYAL" && stored.betrayedPersonId === betrayed, "betrayal intent lost during drafting");
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "betrayal segment not recorded");
+  const resolved = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(resolved.turnPersonId === turner && resolved.betrayedPersonId === betrayed, "ledger lost betrayal direction");
+  ok(resolved.turnPresentation === "BETRAYAL", "ledger lost turn presentation");
+  ok(wrestlerAlignmentForPromotion(setup.state, setup.promotion.id, turner) === "FACE", "betrayal changed alignment before applying");
+  ok(applyResolvedShowTurns(setup.state) === 1, "betrayal did not trigger alignment change");
+  ok(wrestlerAlignmentForPromotion(setup.state, setup.promotion.id, turner) === "HEEL", "betrayer did not turn heel");
+  ok(applyResolvedShowTurns(setup.state) === 0, "betrayal applied twice");
+  ok(wrestlerAlignmentForPromotion(setup.state, setup.promotion.id, betrayed) === betrayedOriginalAlignment,
+    "betrayal must not turn the victim");
+});
+
 test("Programme segments remain planned until their show has completed", () => {
   const setup = fixture(9143);
   addSegmentDraft(setup);

@@ -272,6 +272,9 @@ export default function ResultsClient(): React.JSX.Element {
                                   <span>
                                     {slot.segment.participants.find((participant) => participant.personId === slot.segment.turnPersonId)?.name ?? "Wrestler"} → {label(slot.segment.turnTargetAlignment)}
                                   </span>
+                                  {slot.segment.turnPresentation === "BETRAYAL" && slot.segment.betrayedPersonId ? (
+                                    <span>Betrayed {slot.segment.participants.find((person) => person.personId === slot.segment.betrayedPersonId)?.name ?? "another wrestler"}</span>
+                                  ) : null}
                                 ) : slot.segment.executionQuality === null ? <span>Resolved show history</span> : null}
                               </div>
                               {slot.segment.factors.length > 0 ? (
@@ -465,6 +468,9 @@ export default function ResultsClient(): React.JSX.Element {
                                       <span>
                                         {slot.segment.participants.find((participant) => participant.personId === slot.segment.turnPersonId)?.name ?? "Wrestler"} → {label(slot.segment.turnTargetAlignment)}
                                       </span>
+                                      {slot.segment.turnPresentation === "BETRAYAL" && slot.segment.betrayedPersonId ? (
+                                        <span>Betrayed {slot.segment.participants.find((person) => person.personId === slot.segment.betrayedPersonId)?.name ?? "another wrestler"}</span>
+                                      ) : null}
                                     </div>
                                   ) : null}
                                 </article>
