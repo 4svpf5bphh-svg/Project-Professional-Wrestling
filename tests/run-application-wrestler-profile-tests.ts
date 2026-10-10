@@ -531,7 +531,7 @@ test("Researched real characters carry to fresh promotions without overwritten p
   engage.wrestlerCreativeProfiles!.push({
     worldId:aggregate.state.world.id,promotionId:promotionBId,personId:person.id,
     changedDate:{...aggregate.state.world.currentDate},
-    fields:legacyFields,history:[{revision:6,date:{...aggregate.state.world.currentDate},
+    fields:{...legacyFields,ringName:"The Chief"},history:[{revision:6,date:{...aggregate.state.world.currentDate},
       previous:legacyFields,next:{...legacyFields,ringName:"The Chief"}}],
   });
   const upgraded=wrestlerCreativeProfileFor(engage,promotionBId,person);
