@@ -195,6 +195,19 @@ export default function BackstageClient(): React.JSX.Element {
                       <p className="muted micro-copy">Contract role: {roleLabel(conversation.promisedRole ?? "UPPER_CARD")} · Last {conversation.observedMatchShows} completed in-ring appearances were not in that position.</p>
                     </>
                   )}
+                  {conversation.creativeFollowThrough ? (
+                    <p className="body-copy">
+                      <strong>Booked follow-through:</strong>{" "}
+                      {conversation.creativeFollowThrough.kind==="TAG_MATCH_BOOKED"
+                        ? "You booked the suggested partnership in a completed tag match."
+                        : conversation.creativeFollowThrough.kind==="PROGRAMME_STARTED"
+                          ? "You started a Programme with the suggested opponent."
+                          : "You changed the wrestler's gimmick presentation."}
+                      {" "}Y{conversation.creativeFollowThrough.happenedDate.year}
+                      {" "}W{conversation.creativeFollowThrough.happenedDate.week}.
+                      No new points or trust modifier has been applied.
+                    </p>
+                  ) : null}
                   {conversation.continuity
                     && (conversation.continuity.priorAnsweredCount > 0
                       || conversation.continuity.pastPositiveTeamMomentsWithPartner > 0) ? (

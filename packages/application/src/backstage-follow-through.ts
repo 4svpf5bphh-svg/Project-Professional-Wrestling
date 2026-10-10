@@ -6,6 +6,7 @@
  * heat are already simulated elsewhere; no second bonus is applied here.
  */
 import type { Id, PpwDate } from "../../domain/src/types.js";
+import type { Programme } from "../../domain/src/programmes.js";
 import { comparePpwDates } from "../../sim-core/src/clock.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 import type { BackstageConversation } from "./engagement.js";
@@ -23,10 +24,7 @@ function strictlyAfter(a:PpwDate,b:PpwDate,yearWeeks:number):boolean {
 function matchPair(refs: {kind:string;entityId:Id}[],id:Id):boolean {
   return refs.some(ref=>ref.kind==="PERSON" && ref.entityId===id);
 }
-function opposed(
-  programme: ApplicationWorldAggregate["state"]["programmes"] extends (infer E)[]|undefined ? E:never,
-  a:Id,b:Id,
-): boolean {
+function opposed(programme:Programme,a:Id,b:Id):boolean {
   return (matchPair(programme.sideA,a)&&matchPair(programme.sideB,b))
     || (matchPair(programme.sideA,b)&&matchPair(programme.sideB,a));
 }
@@ -52,7 +50,9 @@ export function creativeBaselineAtResponse(
     existingProgrammeIds:(state.programmes??[]).filter(p=>
       p.promotionId===conversation.promotionId).map(p=>p.id),
     existingCompletedMatchIds:state.matches.filter(m=>
-      m.promotionId===conversation.promotionId&&m.status==="COMPLETED").map(m=>m.id),
+      m.promotionId===conversation.promotionId&&m.status==="COMPLETED"
+      &&state.events.some(e=>e.id===m.eventId&&comparePpwDates(
+        e.date,state.world.currentDate,state.ruleset.weeksPerYear)===0)).map(m=>m.id),
     lastPresentationRevision:Math.max(0,...(record?.history??[]).map(x=>x.revision)),
   };
 }

@@ -140,6 +140,7 @@ export interface PlayerWrestlerProfileView {
     createdDate: PpwDate;
     status: "OPEN" | "ANSWERED" | "NOTED";
     response: import("./engagement.js").BackstageResponse | null;
+    creativeFollowThrough: import("./engagement.js").BackstageConversation["creativeFollowThrough"] | null;
     counterpartName: string | null;
   }>;
   activeTeams: Array<{
@@ -483,6 +484,7 @@ export function buildPlayerWrestlerProfileView(
           createdDate:{...item.createdDate},
           status:item.status,
           response:item.response,
+          creativeFollowThrough:item.creativeFollowThrough?structuredClone(item.creativeFollowThrough):null,
           counterpartName: item.partnerPersonId || item.rivalPersonId
             ? aggregate.state.people.find(other=>other.id===(
                 item.wrestlerId===personId ? (item.partnerPersonId ?? item.rivalPersonId) : item.wrestlerId

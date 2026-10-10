@@ -312,6 +312,11 @@ export default function WrestlerProfileClient({
                 </div>
                 <div className={styles.right}>
                   <b>{item.response ? label(item.response) : label(item.status)}</b>
+                  {item.creativeFollowThrough ? (
+                    <span style={{display:"block",fontSize:11,color:"#5de9ce"}}>
+                      {label(item.creativeFollowThrough.kind)}
+                    </span>
+                  ) : null}
                 </div>
               </div>
             ))}
