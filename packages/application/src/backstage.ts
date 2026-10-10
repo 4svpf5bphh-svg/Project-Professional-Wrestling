@@ -194,6 +194,7 @@ export function respondBackstageConversationCommand(
         }
         const endDate = aggregate.state.contracts.find((entry) => entry.id === conversation.sourceContractId)!.endDate;
         const fourWeeks = addPpwWeeks(aggregate.state.world.currentDate, 4, aggregate.state.ruleset.weeksPerYear);
+        fourWeeks.day = 7; // Promise covers all show days in the fourth PPW week.
         const dueDate = comparePpwDates(endDate, fourWeeks, aggregate.state.ruleset.weeksPerYear) < 0
           ? endDate : fourWeeks;
         promise = {

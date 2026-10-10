@@ -274,6 +274,7 @@ test("A deliberate promise is persistent, has a bounded deadline and is fulfille
     "no explicit tracked promise");
   ok(created.promise?.dueDate.week === addPpwWeeks(start, 4, f.aggregate.state.ruleset.weeksPerYear).week,
     "promise did not specify the four-week deadline");
+  ok(created.promise?.dueDate.day === 7, "promise excluded later show days in deadline week");
   const replay = respondBackstageConversationCommand(f.aggregate, command);
   ok(replay.promise?.status === "PENDING", "idempotent replay mutated promise");
   ok(JSON.stringify(f.aggregate.state) === initialWorld, "making a promise changed match, morale or trust state");
@@ -281,8 +282,11 @@ test("A deliberate promise is persistent, has a bounded deadline and is fulfille
   ok(persisted.engagement?.backstageConversations[0]?.promise?.status === "PENDING",
     "promise was lost on persistence restore");
 
-  addFutureShow(f, "promised-featured-show", 2, 3);
-  f.aggregate.state.world.currentDate = addPpwWeeks(start, 3, f.aggregate.state.ruleset.weeksPerYear);
+  // A completed match on Friday of the deadline week must still count.
+  addFutureShow(f, "promised-featured-show", 4, 3);
+  f.aggregate.state.events.find((event) => event.id === "promised-featured-show")!.date.day = 5;
+  f.aggregate.state.scheduledAppearances.find((entry) => entry.eventId === "promised-featured-show")!.date.day = 5;
+  f.aggregate.state.world.currentDate = addPpwWeeks(start, 5, f.aggregate.state.ruleset.weeksPerYear);
   const beforeEvaluation = JSON.stringify(f.aggregate.state);
   ok(evaluateBackstagePromises(f.aggregate) === 1, "promised main event not recognised");
   ok(item.promise?.status === "FULFILLED" && item.promise.fulfilledEventId === "promised-featured-show",
