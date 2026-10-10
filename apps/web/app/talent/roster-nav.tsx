@@ -1,6 +1,6 @@
 import styles from "./talent.module.css";
 
-export type RosterSection = "SINGLES" | "TAG_TEAMS";
+export type RosterSection = "SINGLES" | "TAG_TEAMS" | "STABLES";
 
 export default function RosterNav({ active }: { active: RosterSection }): React.JSX.Element {
   return (
@@ -17,10 +17,10 @@ export default function RosterNav({ active }: { active: RosterSection }): React.
         <strong>Trios</strong>
         <span>Planned</span>
       </span>
-      <span className={styles.rosterModeDisabled} aria-disabled="true">
+      <a className={active === "STABLES" ? styles.rosterModeActive : styles.rosterMode} href="/talent/stables">
         <strong>Stables</strong>
-        <span>Planned</span>
-      </span>
+        <span>Groups & membership</span>
+      </a>
     </nav>
   );
 }

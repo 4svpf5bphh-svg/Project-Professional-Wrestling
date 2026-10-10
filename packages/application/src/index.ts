@@ -28,6 +28,8 @@ export * from "./stewardship-caretaker.js";
 export * from "./stewardship-release.js";
 export * from "./talent-view.js";
 export * from "./team-history-view.js";
+export * from "./stable-commands.js";
+export * from "./stable-view.js";
 export * from "./world-aggregate.js";
 export * from "./world-calendar-view.js";
 export * from "./world-results-view.js";
