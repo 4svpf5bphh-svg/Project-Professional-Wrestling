@@ -14,6 +14,7 @@ import { executeIdempotentCommand, type ApplicationCommandEnvelope } from "./com
 import { activePromotionControlForPlayer, activePromotionControls, activeWorldMembership } from "./ownership.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 import type { GimmickArchetype } from "./wrestler-creative.js";
+import { buildBackstageDialogue, type BackstageDialogue } from "./backstage-dialogue.js";
 
 export const BACKSTAGE_NEW_CONVERSATIONS_PER_PROMOTION_WEEK = 1;
 export const BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION = 3;
@@ -94,6 +95,8 @@ export interface PlayerBackstageConversation {
   conversationId: Id;
   wrestlerId: Id;
   wrestlerName: string;
+  /** Factual, non-authoritative line in a fictional voice; not an event or a booking decision. */
+  dialogue: BackstageDialogue;
   createdDate: PpwDate;
   status: "OPEN" | "ANSWERED" | "NOTED";
   kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH";
@@ -139,6 +142,7 @@ export function buildPlayerBackstageView(
       || comparePpwDates(b.createdDate, a.createdDate, aggregate.state.ruleset.weeksPerYear)
       || b.conversationId.localeCompare(a.conversationId)
     ));
+  const persons = new Map(aggregate.state.people.map((person) => [person.id, person]));
   const names = new Map(aggregate.state.people.map((person) => [person.id, person.name]));
   return {
     worldId: aggregate.state.world.id,
@@ -149,6 +153,7 @@ export function buildPlayerBackstageView(
       conversationId: entry.conversationId,
       wrestlerId: entry.wrestlerId,
       wrestlerName: names.get(entry.wrestlerId) ?? "Former roster member",
+      dialogue: buildBackstageDialogue(entry, persons.get(entry.wrestlerId), names),
       createdDate: { ...entry.createdDate },
       status: entry.status,
       kind: entry.kind,

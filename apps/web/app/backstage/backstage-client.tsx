@@ -137,16 +137,12 @@ export default function BackstageClient(): React.JSX.Element {
                     </div>
                     <span className="revision">Y{conversation.createdDate.year} W{conversation.createdDate.week}</span>
                   </div>
+                  <p className="body-copy" style={{fontStyle:"italic",borderLeft:"3px solid #5de9ce",paddingLeft:12}}>
+                    “{conversation.dialogue.speech}”
+                  </p>
                   {gimmick ? (
                     <>
-                      <p className="body-copy">
-                        The crowd hasn't really been connecting with what I'm doing lately.
-                        After {conversation.observedMatchShows} matches, maybe it's time we tried
-                        a different character direction. I've been thinking about
-                        {" "}<strong>{(conversation.suggestedGimmickArchetype ?? "OTHER").toLowerCase().replaceAll("_", " ")}</strong>
-                        {" "}instead of the current
-                        {" "}{(conversation.currentGimmickArchetype ?? "AUTHENTIC").toLowerCase().replaceAll("_", " ")}.
-                      </p>
+
                       <p className="muted micro-copy">
                         Actual completed appearances: {conversation.observedMatchShows} ·
                         Average match crowd response: {conversation.observedCrowdResponse?.toFixed(1) ?? "—"}/100.
@@ -160,11 +156,7 @@ export default function BackstageClient(): React.JSX.Element {
                     </>
                   ) : moment ? (
                     <>
-                      <p className="body-copy">
-                        {conversation.wrestlerName} and {conversation.partnerName ?? "their tag partner"}
-                        have settled into a rhythm. They are delivering together and the crowd is responding.
-                        That's a good sign for the locker room.
-                      </p>
+
                       <p className="muted micro-copy">
                         {conversation.sharedTagMatches} verified recent tag matches · Average crowd response:
                         {" "}{conversation.averageCrowdResponse?.toFixed(1) ?? "—"}/100 ·
@@ -174,10 +166,7 @@ export default function BackstageClient(): React.JSX.Element {
                     </>
                   ) : rivalry ? (
                     <>
-                      <p className="body-copy">
-                        I've had a couple of great matches with {conversation.rivalName ?? "that opponent"}.
-                        There's something there for the crowd. What if we worked a proper programme against each other?
-                      </p>
+
                       <p className="muted micro-copy">
                         {conversation.sharedSinglesMatches} completed singles matches · Average crowd response:
                         {" "}{conversation.averageCrowdResponse?.toFixed(1) ?? "—"}/100 ·
@@ -191,11 +180,7 @@ export default function BackstageClient(): React.JSX.Element {
                     </>
                   ) : pitch ? (
                     <>
-                      <p className="body-copy">
-                        I reckon {conversation.partnerName ?? "my partner"} and I have something together.
-                        We've worked well in the ring and the crowd is getting behind us.
-                        How about giving us a run as a proper team?
-                      </p>
+
                       <p className="muted micro-copy">
                         {conversation.sharedTagMatches} completed tag matches together · Average crowd response: {conversation.averageCrowdResponse?.toFixed(1) ?? "—"}/100.
                       </p>
@@ -206,10 +191,7 @@ export default function BackstageClient(): React.JSX.Element {
                     </>
                   ) : (
                     <>
-                      <p className="body-copy">
-                        I signed for a {roleLabel(conversation.promisedRole ?? "UPPER_CARD")} role, but I've worked {conversation.observedMatchShows} matches
-                        without being given that featured position. I'd like to understand where I stand.
-                      </p>
+
                       <p className="muted micro-copy">Contract role: {roleLabel(conversation.promisedRole ?? "UPPER_CARD")} · Last {conversation.observedMatchShows} completed in-ring appearances were not in that position.</p>
                     </>
                   )}
