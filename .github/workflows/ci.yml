@@ -60,6 +60,8 @@ jobs:
         run: node dist/tests/run-programme-signal-tests.js
       - name: Run Programme segment coverage
         run: node dist/tests/run-programme-segment-tests.js
+      - name: Run talent story-memory coverage
+        run: node dist/tests/run-talent-story-memory-tests.js
       - name: Build Alpha web app
         run: npm run web:build
       - name: Run Alpha HTTP integration
