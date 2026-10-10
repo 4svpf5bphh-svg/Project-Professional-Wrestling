@@ -1424,7 +1424,7 @@ test("Character repackaging requires an actual presentation change, not merely a
     requestId:"follow:real-repackage",worldId:a.state.world.id,playerId:"backstage-owner",
     commandType:"SET_WRESTLER_CREATIVE_PROFILE",
     payload:{promotionId:f.promotion.id,personId:f.person.id,
-      fields:{...initial,ringName:"The People's Outlaw",gimmickArchetype:"REBEL"}}},
+      fields:{...initial,ringName:"The People's Outlaw",gimmickArchetype:"REBEL"}},
   });
   const state=JSON.stringify(a.state);
   ok(assessCreativeFollowThrough(a)===1
