@@ -489,6 +489,39 @@ try {
   ok(weekKey(afterAdvance) === weekKey(advanced), "stale HTTP retry advanced the World a second time");
   ok(afterAdvance.world.revision === advanced.world.revision, "stale HTTP retry changed the persisted World revision");
 
+
+  // Real browser boundary regression: profile edit must survive POST and GET,
+  // never rely only on direct TypeScript service tests.
+  const currentTalent=await json(await fetch(`${baseUrl}/api/talent`,{cache:"no-store"}));
+  const rosterPerson=currentTalent.roster.find(person=>person.datesRemaining>0);
+  ok(rosterPerson,"HTTP character edit needs a contracted roster wrestler");
+  const editable=await json(await fetch(
+    `${baseUrl}/api/talent/profile?personId=${encodeURIComponent(rosterPerson.personId)}`,{cache:"no-store"}));
+  ok(editable.creativeProfile?.canEdit,"HTTP wrestler page did not expose promotion-specific editing");
+  const creativeFields={...editable.creativeProfile.fields,
+    ringName:"The HTTP Headliner",gimmickArchetype:"REBEL",
+    gimmickDescription:"A fiercely independent competitor.",
+    primaryStyle:"BRAWLER",secondaryStyle:"STRIKER",
+    signatureMove:{name:"The Spotlight",category:"STRIKE"},
+    finishingMove:{name:"Curtain Call",category:"GRAPPLE"},
+  };
+  const creativeBody={requestId:"ci-http-creative-save-1",expectedRevision:editable.world.revision,
+    personId:rosterPerson.personId,fields:creativeFields};
+  const creativeSaved=await json(await fetch(`${baseUrl}/api/talent/profile`,{
+    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(creativeBody),
+  }));
+  ok(creativeSaved.creativeProfile?.fields.finishingMove?.name==="Curtain Call"
+    && creativeSaved.creativeProfile.history.length===1,"HTTP edited finisher or history missing");
+  const creativeReload=await json(await fetch(
+    `${baseUrl}/api/talent/profile?personId=${encodeURIComponent(rosterPerson.personId)}`,{cache:"no-store"}));
+  ok(creativeReload.creativeProfile?.fields.ringName==="The HTTP Headliner"
+    && creativeReload.creativeProfile.fields.secondaryStyle==="STRIKER","HTTP reload lost creative fields");
+  const creativeRetry=await json(await fetch(`${baseUrl}/api/talent/profile`,{
+    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(creativeBody),
+  }));
+  ok(creativeRetry.world.revision===creativeSaved.world.revision
+    && creativeRetry.creativeProfile.history.length===1,"HTTP creative retry duplicated a revision or edit");
+
   console.log("PASS Alpha Next HTTP full player journey, public history views and stale-retry safety");
 } finally {
   if (server.exitCode === null) server.kill("SIGTERM");
