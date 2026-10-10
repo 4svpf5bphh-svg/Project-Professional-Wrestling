@@ -7,6 +7,7 @@ import {
   cloneApplicationWorld,
   createPersistedApplicationWorld,
   generateBackstageConversations,
+  evaluateBackstagePromises,
   respondBackstageConversationCommand,
 } from "../packages/application/src/index.js";
 import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
@@ -219,6 +220,132 @@ test("A full unanswered Backstage inbox preserves further eligible concerns for 
   ok(generateBackstageConversations(f.aggregate) === 0, "fourth unanswered concern was generated");
   ok(engagement.backstageConversations.length === BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION,
     "cap silently deleted existing conversations");
+});
+
+
+/** One synthetic completed show after a conversation, with the test wrestler
+ * working a given part of the ordered card under an explicit contract date. */
+function addFutureShow(
+  f: ReturnType<typeof fixture>,
+  id: string,
+  weeksAhead: number,
+  cardOrder: 1 | 2 | 3,
+  usedContractId = f.contract.id,
+): void {
+  const state = f.aggregate.state;
+  const date = addPpwWeeks(state.world.currentDate, weeksAhead, state.ruleset.weeksPerYear);
+  const original = state.events.find((entry) => entry.id === "backstage-show-1")!;
+  state.events.push({ ...original, id, date: { ...date }, status: "COMPLETED" });
+  const originalAppearance = state.scheduledAppearances.find((entry) => entry.eventId === original.id)!;
+  state.scheduledAppearances.push({
+    ...originalAppearance, id: id + "-appearance", eventId: id,
+    contractId: usedContractId, date: { ...date }, status: "COMPLETED",
+  });
+  const originalMatches = state.matches.filter((entry) => entry.eventId === original.id)
+    .sort((a, b) => a.order - b.order);
+  for (let n = 1; n <= 3; n++) {
+    const oldMatch = originalMatches[n - 1]!;
+    const newMatch = { ...oldMatch, id: id + "-match-" + n, eventId: id, order: n, status: "COMPLETED" as const };
+    state.matches.push(newMatch);
+    if (n === cardOrder) state.matchParticipants.push({
+      id: id + "-participant",
+      worldId: state.world.id, matchId: newMatch.id, eventId: id,
+      personId: f.person.id, side: "A", won: true,
+    });
+  }
+}
+
+test("A deliberate promise is persistent, has a bounded deadline and is fulfilled by the promised match position", () => {
+  const f = fixture();
+  ok(generateBackstageConversations(f.aggregate) === 1, "no conversation for promise");
+  const item = f.aggregate.engagement!.backstageConversations[0]!;
+  ok(buildPlayerBackstageView(f.aggregate, "backstage-owner").conversations[0]?.canPromiseFeaturedBooking,
+    "booker was not offered an eligible promise");
+  const start = { ...f.aggregate.state.world.currentDate };
+  const initialWorld = JSON.stringify(f.aggregate.state);
+  const command = {
+    requestId: "promise-match", worldId: f.aggregate.state.world.id,
+    playerId: "backstage-owner", commandType: "RESPOND_BACKSTAGE_CONVERSATION" as const,
+    payload: { conversationId: item.conversationId, response: "PROMISE_FEATURED_BOOKING" as const },
+  };
+  const created = respondBackstageConversationCommand(f.aggregate, command);
+  ok(created.promise?.status === "PENDING" && created.promise.kind === "FEATURED_MATCH",
+    "no explicit tracked promise");
+  ok(created.promise.dueDate.week === addPpwWeeks(start, 4, f.aggregate.state.ruleset.weeksPerYear).week,
+    "promise did not specify the four-week deadline");
+  const replay = respondBackstageConversationCommand(f.aggregate, command);
+  ok(replay.promise?.status === "PENDING", "idempotent replay mutated promise");
+  ok(JSON.stringify(f.aggregate.state) === initialWorld, "making a promise changed match, morale or trust state");
+  const persisted = cloneApplicationWorld(f.aggregate);
+  ok(persisted.engagement?.backstageConversations[0]?.promise?.status === "PENDING",
+    "promise was lost on persistence restore");
+
+  addFutureShow(f, "promised-featured-show", 2, 3);
+  f.aggregate.state.world.currentDate = addPpwWeeks(start, 3, f.aggregate.state.ruleset.weeksPerYear);
+  const beforeEvaluation = JSON.stringify(f.aggregate.state);
+  ok(evaluateBackstagePromises(f.aggregate) === 1, "promised main event not recognised");
+  ok(item.promise?.status === "FULFILLED" && item.promise.fulfilledEventId === "promised-featured-show",
+    "actual qualifying show was not attached to fulfilled promise");
+  ok(evaluateBackstagePromises(f.aggregate) === 0, "promise evaluation repeated");
+  ok(JSON.stringify(f.aggregate.state) === beforeEvaluation, "promise completion changed wrestler simulation");
+  const followUp = buildPlayerAttention(f.aggregate, "backstage-owner")
+    .find((entry) => entry.attentionId === "backstage-promise:" + item.conversationId + ":FULFILLED");
+  ok(followUp?.dismissible && followUp.deepLink === "/backstage", "fulfilled promise did not reach Home");
+});
+
+test("Main-event promises cannot be fulfilled by undercard, angle-only or another contract", () => {
+  const f = fixture();
+  generateBackstageConversations(f.aggregate);
+  const item = f.aggregate.engagement!.backstageConversations[0]!;
+  const now = { ...f.aggregate.state.world.currentDate };
+  respondBackstageConversationCommand(f.aggregate, {
+    requestId: "promise-underplayed", worldId: f.aggregate.state.world.id,
+    playerId: "backstage-owner", commandType: "RESPOND_BACKSTAGE_CONVERSATION",
+    payload: { conversationId: item.conversationId, response: "PROMISE_FEATURED_BOOKING" },
+  });
+  addFutureShow(f, "undercard-only", 1, 1);
+  addFutureShow(f, "wrong-deal-main-event", 2, 3, "some-other-contract");
+  f.aggregate.state.world.currentDate = addPpwWeeks(now, 5, f.aggregate.state.ruleset.weeksPerYear);
+  const before = JSON.stringify(f.aggregate.state);
+  ok(evaluateBackstagePromises(f.aggregate) === 1, "elapsed promise was not assessed");
+  ok(item.promise?.status === "NOT_DELIVERED" && item.promise.fulfilledEventId === null,
+    "an undercard or another deal wrongly satisfied a promised main event");
+  ok(evaluateBackstagePromises(f.aggregate) === 0, "failed promise not idempotent");
+  ok(JSON.stringify(f.aggregate.state) === before, "missed promise automatically punished sim state");
+});
+
+test("No completed promotion show is recorded as no opportunity, not a punitive breach", () => {
+  const f = fixture();
+  generateBackstageConversations(f.aggregate);
+  const item = f.aggregate.engagement!.backstageConversations[0]!;
+  const now = { ...f.aggregate.state.world.currentDate };
+  respondBackstageConversationCommand(f.aggregate, {
+    requestId: "no-show-promise", worldId: f.aggregate.state.world.id,
+    playerId: "backstage-owner", commandType: "RESPOND_BACKSTAGE_CONVERSATION",
+    payload: { conversationId: item.conversationId, response: "PROMISE_FEATURED_BOOKING" },
+  });
+  f.aggregate.state.world.currentDate = addPpwWeeks(now, 5, f.aggregate.state.ruleset.weeksPerYear);
+  ok(evaluateBackstagePromises(f.aggregate) === 1, "unavailable-window promise remained pending");
+  ok(item.promise?.status === "NO_OPPORTUNITY", "no completed show was misreported as a broken promise");
+});
+
+test("An expired or out-of-dates contract cannot be used to forge a booking promise", () => {
+  const f = fixture();
+  generateBackstageConversations(f.aggregate);
+  const item = f.aggregate.engagement!.backstageConversations[0]!;
+  f.contract.datesUsed = f.contract.dateEntitlement;
+  ok(!buildPlayerBackstageView(f.aggregate, "backstage-owner").conversations[0]?.canPromiseFeaturedBooking,
+    "out-of-dates contract still offers a promise");
+  let rejected = false;
+  try {
+    respondBackstageConversationCommand(f.aggregate, {
+      requestId: "invalid-promise", worldId: f.aggregate.state.world.id,
+      playerId: "backstage-owner", commandType: "RESPOND_BACKSTAGE_CONVERSATION",
+      payload: { conversationId: item.conversationId, response: "PROMISE_FEATURED_BOOKING" },
+    });
+  } catch { rejected = true; }
+  ok(rejected && item.status === "OPEN" && item.promise === null,
+    "unfulfillable booking promise was accepted");
 });
 
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");
