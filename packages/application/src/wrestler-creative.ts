@@ -23,7 +23,7 @@ export const WRESTLING_STYLES = [
 ] as const;
 export type WrestlingStyle = (typeof WRESTLING_STYLES)[number];
 
-import { GIMMICK_ARCHETYPES } from "./gimmick-catalog.js";
+import { GIMMICK_ARCHETYPES, gimmickUsableBy } from "./gimmick-catalog.js";
 import type { GimmickId } from "./gimmick-catalog.js";
 import { curatedCharacterFor } from "../../content/src/real-wrestler-characters.js";
 
@@ -183,9 +183,12 @@ export function setWrestlerCreativeProfileCommand(
       throw new Error("creative presentation requires a wrestler on your active roster");
     }
     const next = normalizeWrestlerCreativeFields(envelope.payload.fields);
+    const person = state.people.find((entry) => entry.id === personId)!;
+    if (!gimmickUsableBy(next.gimmickArchetype,person.name)) {
+      throw new Error("this named wrestling persona belongs to another wrestler");
+    }
     const record = (engagement.wrestlerCreativeProfiles ??= [])
       .find((candidate) => candidate.promotionId === promotionId && candidate.personId === personId);
-    const person = state.people.find((entry) => entry.id === personId)!;
     const previous = wrestlerCreativeProfileFor(engagement,promotionId,person);
     if (JSON.stringify(previous) === JSON.stringify(next)) return record ? structuredClone(record) : null;
     const update: WrestlerCreativeChange = {

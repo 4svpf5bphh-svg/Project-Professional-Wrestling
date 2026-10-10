@@ -18,7 +18,7 @@ import {
   joinPlayerToWorld,
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
-import { GIMMICK_CATALOG, gimmickDefinition } from "../packages/application/src/gimmick-catalog.js";
+import { GIMMICK_CATALOG, gimmickDefinition, gimmickUsableBy } from "../packages/application/src/gimmick-catalog.js";
 import { CURATED_WRESTLER_CHARACTERS } from "../packages/content/src/real-wrestler-characters.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { activeContractsForPromotion, createWorld } from "../packages/sim-core/src/index.js";
@@ -473,6 +473,10 @@ test("Gimmick catalogue is substantial, consistent and uses authored definitions
     "character catalogue lacks variety or duplicates template IDs");
   ok(new Set(GIMMICK_CATALOG.map(entry=>entry.family)).size>=9,
     "historical categories have too few families");
+  ok(!gimmickUsableBy("TRIBAL_CHIEF","Samoa Joe")
+    &&gimmickUsableBy("TRIBAL_CHIEF","Roman Reigns")
+    &&gimmickUsableBy("REBEL","Samoa Joe"),
+    "unique real-world personas were offered as generic gimmick templates");
   ok(GIMMICK_CATALOG.every(entry=>entry.description.length>12
     &&entry.label.length>2 && gimmickDefinition(entry.id).id===entry.id),
     "missing predetermined catalogue descriptions");

@@ -6,7 +6,7 @@ import {
   MOVE_CATEGORIES, WRESTLING_STYLES,
   type WrestlerCreativeFields, type WrestlingStyle, type GimmickArchetype, type MoveCategory,
 } from "../../../../../dist/packages/application/src/wrestler-creative.js";
-import { GIMMICK_CATALOG, gimmickDefinition } from "../../../../../dist/packages/application/src/gimmick-catalog.js";
+import { GIMMICK_CATALOG, gimmickDefinition, gimmickUsableBy } from "../../../../../dist/packages/application/src/gimmick-catalog.js";
 import styles from "./wrestler-profile.module.css";
 
 type ErrorPayload = { error?: string };
@@ -246,7 +246,7 @@ export default function WrestlerProfileClient({
                 {GIMMICK_CATALOG.filter(entry=>
                   (gimmickFamily==="CURRENT"
                     ? entry.id===creativeDraft.gimmickArchetype
-                    : entry.family===gimmickFamily)
+                    : entry.family===gimmickFamily && gimmickUsableBy(entry.id,view.person.name))
                   && (!gimmickSearch
                     || `${entry.label} ${entry.description}`.toLowerCase().includes(gimmickSearch.toLowerCase()))
                 ).map(entry=>(
