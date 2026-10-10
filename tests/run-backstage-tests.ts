@@ -27,7 +27,7 @@ import { chooseCreativePitchSpeaker, wrestlerCreativeInterestScores } from "../p
 import { buildBackstageDialogue } from "../packages/application/src/backstage-dialogue.js";
 import { setWrestlerCreativeProfileCommand, defaultWrestlerCreativeFields } from "../packages/application/src/wrestler-creative.js";
 import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
-import { claimIndependentPromotionForPlayer } from "../packages/application/src/ownership.js";
+import { claimIndependentPromotionForPlayer, joinPlayerToWorld } from "../packages/application/src/ownership.js";
 import type { Match, WrestlingEvent } from "../packages/domain/src/types.js";
 
 let passed = 0; let failed = 0;
@@ -1777,6 +1777,36 @@ test("Unanswered old working concern stays singular; new pair gets temperament-d
     "another pair's private history leaked into the new conversation");
   ok(JSON.stringify(f.aggregate.state)===before,
     "conversation priority modified the wrestling simulation");
+});
+
+
+test("Two human bookers see only their own Backstage history in the same shared World",()=>{
+  const {aggregate,promotion}=fixture();
+  const {state,ownership}=aggregate;
+  ownership.humanSeatLimit=2;
+  joinPlayerToWorld(ownership,"other-human-owner",state.world.currentDate);
+  const other=state.promotions.find(p=>p.id!==promotion.id
+    &&p.playerTakeoverEligibility==="STANDARD"&&p.lifecycle==="ACTIVE")!;
+  claimIndependentPromotionForPlayer(state,ownership,"other-human-owner",other.id);
+  ok(generateBackstageConversations(aggregate)===1,
+    "original promotion needs a private Backstage interaction");
+  const stored=aggregate.engagement!.backstageConversations[0]!;
+  const sibling=buildPlayerBackstageView(aggregate,"other-human-owner");
+  ok(sibling.promotionId===other.id &&sibling.openCount===0
+    &&sibling.conversations.length===0,
+    "another real World controller could read the first promotion's private work");
+  ok(!buildPlayerAttention(aggregate,"other-human-owner").some(a=>
+    a.attentionId==="backstage:"+stored.conversationId),
+    "private concern leaked into another controller's home attention");
+  const before=JSON.stringify(aggregate.engagement);
+  let blocked=false;
+  try{respondBackstageConversationCommand(aggregate,{
+    requestId:"other-human-must-not-answer",worldId:state.world.id,
+    playerId:"other-human-owner",commandType:"RESPOND_BACKSTAGE_CONVERSATION",
+    payload:{conversationId:stored.conversationId,response:"HEAR_OUT"},
+  });}catch{blocked=true;}
+  ok(blocked&&JSON.stringify(aggregate.engagement)===before,
+    "other human controller answered or mutated an unauthorized concern");
 });
 
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");
