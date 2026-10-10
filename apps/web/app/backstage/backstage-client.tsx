@@ -17,6 +17,8 @@ const REPLIES: Array<{ value: BackstageResponse; label: string; detail: string }
   { value: "PROMISE_FEATURED_BOOKING", label: "Promise a featured match", detail: "Commit to a suitable main-event or upper-card match within four PPW weeks (or before the contract ends). The World checks actual results." },
   { value: "CONSIDER_TAG_TEAM", label: "Explore the pairing", detail: "Keep this suggestion in mind. Only you decide whether to make an actual tag team or book them together." },
   { value: "PASS_TAG_TEAM", label: "Not right now", detail: "Pass on the pitch without affecting contracts, morale or wrestling results." },
+  { value: "CONSIDER_RIVALRY", label: "Explore the programme", detail: "Consider building an on-screen feud. You still author every segment and outcome." },
+  { value: "PASS_RIVALRY", label: "Not the right feud", detail: "Pass on this idea without changing relationships or any scripted wrestling." },
 ];
 
 function roleLabel(role: string): string {
@@ -87,8 +89,9 @@ export default function BackstageClient(): React.JSX.Element {
           <a href="/" className="secondary-button">Home</a>
         </div>
         <p className="muted body-copy">
-          Wrestlers can raise concerns about their treatment. Your decisions are recorded, but this first version does not change morale or contractual terms.
-          Booking outcomes remain yours to script. Explicit booking promises are checked against completed matches, with no automatic morale or trust penalties yet.
+          Hear your wrestlers out, assess their creative ideas, and follow through on any booking commitments.
+          Only an unexcused broken promise can cost promotion-specific trust; ordinary conversations do not change morale.
+          You script the wrestling. Backstage cannot create a team, feud or match on its own.
         </p>
       </section>
 
@@ -107,20 +110,42 @@ export default function BackstageClient(): React.JSX.Element {
           <div className="choice-grid">
             {view.conversations.map((conversation) => {
               const pitch = conversation.kind === "TAG_TEAM_PITCH";
+              const rivalry = conversation.kind === "RIVALRY_PITCH";
               const replies = REPLIES.filter((reply) => pitch
                 ? reply.value === "CONSIDER_TAG_TEAM" || reply.value === "PASS_TAG_TEAM"
-                : reply.value !== "CONSIDER_TAG_TEAM" && reply.value !== "PASS_TAG_TEAM");
-              const selected = choices[conversation.conversationId] ?? (pitch ? "CONSIDER_TAG_TEAM" : "HEAR_OUT");
+                : rivalry
+                  ? reply.value === "CONSIDER_RIVALRY" || reply.value === "PASS_RIVALRY"
+                  : !["CONSIDER_TAG_TEAM","PASS_TAG_TEAM","CONSIDER_RIVALRY","PASS_RIVALRY"].includes(reply.value));
+              const selected = choices[conversation.conversationId] ?? (
+                pitch ? "CONSIDER_TAG_TEAM" : rivalry ? "CONSIDER_RIVALRY" : "HEAR_OUT"
+              );
               return (
                 <article className="choice-card" key={conversation.conversationId}>
                   <div className="choice-card-top">
                     <div>
-                      <span className="eyebrow">{pitch ? "CREATIVE PITCH" : conversation.status === "OPEN" ? "WANTS A WORD" : "CONVERSATION RECORDED"}</span>
+                      <span className="eyebrow">{pitch ? "TAG-TEAM PITCH" : rivalry ? "RIVALRY PITCH" : conversation.status === "OPEN" ? "WANTS A WORD" : "CONVERSATION RECORDED"}</span>
                       <h3>{conversation.wrestlerName}</h3>
                     </div>
                     <span className="revision">Y{conversation.createdDate.year} W{conversation.createdDate.week}</span>
                   </div>
-                  {pitch ? (
+                  {rivalry ? (
+                    <>
+                      <p className="body-copy">
+                        I've had a couple of great matches with {conversation.rivalName ?? "that opponent"}.
+                        There's something there for the crowd. What if we worked a proper programme against each other?
+                      </p>
+                      <p className="muted micro-copy">
+                        {conversation.sharedSinglesMatches} completed singles matches · Average crowd response:
+                        {" "}{conversation.averageCrowdResponse?.toFixed(1) ?? "—"}/100 ·
+                        Professional trust: {conversation.professionalTrustAtPitch?.toFixed(1) ?? "—"}/100.
+                      </p>
+                      <a href="/programmes" style={{ color: "#5de9ce", fontWeight: 850 }}>Open Programmes →</a>
+                      <p className="muted micro-copy">
+                        They work well together backstage. Any on-screen hostility is scripted by you.
+                        No feud is started automatically.
+                      </p>
+                    </>
+                  ) : pitch ? (
                     <>
                       <p className="body-copy">
                         I reckon {conversation.partnerName ?? "my partner"} and I have something together.
@@ -188,7 +213,7 @@ export default function BackstageClient(): React.JSX.Element {
                     </div>
                   ) : (
                     <p className="muted body-copy">You responded: {REPLIES.find((reply) => reply.value === conversation.response)?.label ?? "Response recorded"}.
-                      This conversation is now part of your promotion history. {pitch ? "No team has been created automatically." : ""}</p>
+                      This conversation is now part of your promotion history. {pitch ? "No team has been created automatically." : rivalry ? "No Programme has been created automatically." : ""}</p>
                   )}
                 </article>
               );
