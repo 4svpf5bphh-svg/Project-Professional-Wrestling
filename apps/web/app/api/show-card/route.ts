@@ -165,7 +165,7 @@ function segments(value: unknown): AlphaCardSegmentView[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) throw new Error("segments must be an array");
   // Keep the HTTP schema in step with the playable Card and service layer.
-  const supported = new Set<AlphaCardSegmentView["type"]>([
+  const supported = new Set<string>([
     "PROMO", "INTERVIEW", "CONFRONTATION", "INTERRUPTION", "CHALLENGE",
     "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION",
     "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN",
