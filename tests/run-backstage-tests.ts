@@ -19,6 +19,7 @@ import { generateTagTeamPitches } from "../packages/application/src/backstage-pi
 import { generateRivalryPitches } from "../packages/application/src/backstage-rivalries.js";
 import { generateTeamMoments } from "../packages/application/src/backstage-moments.js";
 import { generateGimmickChangePitches } from "../packages/application/src/backstage-gimmicks.js";
+import { buildBackstageDialogue } from "../packages/application/src/backstage-dialogue.js";
 import { setWrestlerCreativeProfileCommand, defaultWrestlerCreativeFields } from "../packages/application/src/wrestler-creative.js";
 import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
 import { claimIndependentPromotionForPlayer } from "../packages/application/src/ownership.js";
@@ -1036,6 +1037,93 @@ test("Creative pitches respect the existing Backstage weekly limit and unanswere
   const newNote=f.aggregate.engagement?.backstageConversations.find(x=>x.kind==="GIMMICK_CHANGE_PITCH");
   ok(newNote?.createdDate.week===f.aggregate.state.world.currentDate.week,
     "wrong week persisted on deferred pitch");
+});
+
+
+test("Backstage voice is stable, wrestler-specific and backed by real conversation evidence", () => {
+  const f=fixture();
+  f.person.backstageTemperament="AMBITIOUS";
+  ok(generateBackstageConversations(f.aggregate)===1,"contract issue should exist");
+  const before=JSON.stringify(f.aggregate.state);
+  const view=buildPlayerBackstageView(f.aggregate,"backstage-owner");
+  const line=view.conversations[0]!.dialogue;
+  ok(line.voice==="AMBITIOUS" && line.speech.includes("4 matches")
+    && line.speech.includes("main-event") && line.speech.includes("plan"),
+    "ambitious tone omitted contract evidence");
+  const persisted=cloneApplicationWorld(f.aggregate);
+  const historical=buildPlayerBackstageView(persisted,"backstage-owner");
+  ok(historical.conversations[0]!.dialogue.speech===line.speech,
+    "dialogue changed after snapshot/restore");
+  ok(JSON.stringify(f.aggregate.state)===before,
+    "read-only dialogue changed the simulation state");
+  f.person.backstageTemperament="METHODICAL";
+  const different=buildPlayerBackstageView(f.aggregate,"backstage-owner").conversations[0]!.dialogue;
+  ok(different.voice==="METHODICAL" && different.speech!==line.speech
+    && different.speech.includes("4 matches"),"personality did not affect grounded wrestler voice");
+  // This is only a presentational voice, not an immutable historical audio recording.
+  // The facts (frozen on the conversation) never shift with tone.
+  ok(view.conversations[0]!.observedMatchShows===4
+    && view.conversations[0]!.promisedRole===historical.conversations[0]!.promisedRole,
+    "personality rewrote the historical deal");
+});
+
+test("All Backstage dialogue kinds mention only their evidenced counterpart or role", () => {
+  const f=fixture();
+  const engage=f.aggregate.engagement=createWorldEngagementState(f.aggregate.state.world.id);
+  const now={...f.aggregate.state.world.currentDate};
+  const partner=f.aggregate.state.people.find(p=>p.id!==f.person.id)!;
+  const rival=f.aggregate.state.people.find(p=>p.id!==f.person.id && p.id!==partner.id)!;
+  const examples=[
+    {
+      id:"voice-tag",kind:"TAG_TEAM_PITCH" as const,partnerPersonId:partner.id,
+      sharedTagMatches:3,averageCrowdResponse:75,promisedRole:null,
+      observedMatchShows:0,observedFeaturedShows:0,
+    },
+    {
+      id:"voice-rival",kind:"RIVALRY_PITCH" as const,rivalPersonId:rival.id,
+      sharedSinglesMatches:2,averageCrowdResponse:82,professionalTrustAtPitch:82,
+      promisedRole:null,observedMatchShows:0,observedFeaturedShows:0,
+    },
+    {
+      id:"voice-moment",kind:"TEAM_MOMENT" as const,partnerPersonId:partner.id,
+      sharedTagMatches:3,averageCrowdResponse:74,professionalTrustAtPitch:80,
+      promisedRole:null,observedMatchShows:0,observedFeaturedShows:0,
+    },
+    {
+      id:"voice-gimmick",kind:"GIMMICK_CHANGE_PITCH" as const,
+      observedMatchShows:4,observedFeaturedShows:0,observedCrowdResponse:44,
+      currentGimmickArchetype:"AUTHENTIC" as const,suggestedGimmickArchetype:"REBEL" as const,
+      promisedRole:null,
+    },
+  ];
+  for(const [index,item] of examples.entries()){
+    openBackstageConversation(engage,{
+      conversationId:item.id,worldId:f.aggregate.state.world.id,
+      promotionId:f.promotion.id,wrestlerId:f.person.id,sourceContractId:f.contract.id,
+      createdDate:now,status:item.kind==="TEAM_MOMENT"?"NOTED":"OPEN",response:null,responseDate:null,
+      ...item,
+    });
+    const rendered=buildPlayerBackstageView(f.aggregate,"backstage-owner")
+      .conversations.find(c=>c.conversationId===item.id)!;
+    ok(rendered.dialogue.speech.length>60,
+      "kind "+item.kind+" did not render a meaningful line");
+    ok(!rendered.dialogue.speech.includes("undefined")
+      && !rendered.dialogue.speech.includes("NaN"),"incomplete dialogue for "+item.kind);
+    if(index===0||index===2)ok(rendered.dialogue.speech.includes(partner.name),
+      "forgot real tag partner identity");
+    if(index===1)ok(rendered.dialogue.speech.includes(rival.name),
+      "forgot real rivalry opponent");
+    if(index===3)ok(rendered.dialogue.speech.includes("rebel")
+      && rendered.dialogue.speech.includes("authentic"),"gimmick dialogue invented a different choice");
+    if(index===2)ok(!rendered.dialogue.speech.includes("I want to earn")
+      && !rendered.dialogue.speech.includes("dates we're working count"),
+      "passive good news became a contract/push demand");
+  }
+  const erased=engage.backstageConversations.find(c=>c.conversationId==="voice-tag")!;
+  const names=new Map(f.aggregate.state.people.map(p=>[p.id,p.name]));
+  const neutral=buildBackstageDialogue(erased,undefined,names);
+  ok(neutral.voice==="NEUTRAL"&&neutral.speech.includes(partner.name),
+    "old conversation without an available wrestler lost its grounded facts");
 });
 
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");
