@@ -111,6 +111,7 @@ export default function BackstageClient(): React.JSX.Element {
             {view.conversations.map((conversation) => {
               const pitch = conversation.kind === "TAG_TEAM_PITCH";
               const rivalry = conversation.kind === "RIVALRY_PITCH";
+              const moment = conversation.kind === "TEAM_MOMENT";
               const replies = REPLIES.filter((reply) => pitch
                 ? reply.value === "CONSIDER_TAG_TEAM" || reply.value === "PASS_TAG_TEAM"
                 : rivalry
@@ -123,12 +124,26 @@ export default function BackstageClient(): React.JSX.Element {
                 <article className="choice-card" key={conversation.conversationId}>
                   <div className="choice-card-top">
                     <div>
-                      <span className="eyebrow">{pitch ? "TAG-TEAM PITCH" : rivalry ? "RIVALRY PITCH" : conversation.status === "OPEN" ? "WANTS A WORD" : "CONVERSATION RECORDED"}</span>
+                      <span className="eyebrow">{moment ? "LOCKER-ROOM GOOD NEWS" : pitch ? "TAG-TEAM PITCH" : rivalry ? "RIVALRY PITCH" : conversation.status === "OPEN" ? "WANTS A WORD" : "CONVERSATION RECORDED"}</span>
                       <h3>{conversation.wrestlerName}</h3>
                     </div>
                     <span className="revision">Y{conversation.createdDate.year} W{conversation.createdDate.week}</span>
                   </div>
-                  {rivalry ? (
+                  {moment ? (
+                    <>
+                      <p className="body-copy">
+                        {conversation.wrestlerName} and {conversation.partnerName ?? "their tag partner"}
+                        have settled into a rhythm. They are delivering together and the crowd is responding.
+                        That's a good sign for the locker room.
+                      </p>
+                      <p className="muted micro-copy">
+                        {conversation.sharedTagMatches} verified recent tag matches · Average crowd response:
+                        {" "}{conversation.averageCrowdResponse?.toFixed(1) ?? "—"}/100 ·
+                        Professional trust: {conversation.professionalTrustAtPitch?.toFixed(1) ?? "—"}/100.
+                      </p>
+                      <p className="muted micro-copy">For your information only. No reply or booking action required.</p>
+                    </>
+                  ) : rivalry ? (
                     <>
                       <p className="body-copy">
                         I've had a couple of great matches with {conversation.rivalName ?? "that opponent"}.
@@ -188,7 +203,9 @@ export default function BackstageClient(): React.JSX.Element {
                           </span> : null}
                     </p>
                   ) : null}
-                  {conversation.status === "OPEN" ? (
+                  {conversation.status === "NOTED" ? (
+                    <p className="muted body-copy">Good news noted in your Backstage history. You can carry on booking as normal.</p>
+                  ) : conversation.status === "OPEN" ? (
                     <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
                       {replies.map((reply) => (
                         <button key={reply.value} type="button"

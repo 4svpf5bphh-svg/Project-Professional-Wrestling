@@ -134,7 +134,24 @@ export function buildPlayerAttention(
     }
 
     for (const conversation of aggregate.engagement?.backstageConversations ?? []) {
-      if (conversation.promotionId !== promotion.id || conversation.status !== "OPEN") continue;
+      if (conversation.promotionId !== promotion.id) continue;
+      if (conversation.kind === "TEAM_MOMENT" && conversation.status === "NOTED") {
+        const name = personName(aggregate, conversation.wrestlerId);
+        const partner = conversation.partnerPersonId
+          ? personName(aggregate, conversation.partnerPersonId) : "their partner";
+        pushIfVisible(aggregate, playerId, items, {
+          attentionId: `backstage-moment:${conversation.conversationId}`,
+          category: "WATCHING",
+          title: `${name} and ${partner} are clicking`,
+          summary: `Their ${conversation.sharedTagMatches ?? 0} recent tag matches have gone over well. A positive locker-room development; no action required.`,
+          deadline: null,
+          deepLink: "/backstage",
+          dismissible: true,
+          sourceOpportunityCategory: null,
+        });
+        continue;
+      }
+      if (conversation.status !== "OPEN") continue;
       const name = personName(aggregate, conversation.wrestlerId);
       const isPitch = conversation.kind === "TAG_TEAM_PITCH";
       const isRivalry = conversation.kind === "RIVALRY_PITCH";
