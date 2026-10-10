@@ -1,6 +1,7 @@
 import type { Id } from "../../domain/src/types.js";
 import { generateWorldOpportunities } from "./opportunity-generation.js";
 import { evaluateBackstagePromises, generateBackstageConversations } from "./backstage.js";
+import { generateTagTeamPitches } from "./backstage-pitches.js";
 import { applyBackstagePromiseConsequences } from "./backstage-consequences.js";
 import {
   closeCurrentWeekReservationsAtCommitmentLock,
@@ -111,6 +112,7 @@ export async function resolvePersistedWorldWeek(
     evaluateBackstagePromises(aggregate);
     applyBackstagePromiseConsequences(aggregate);
     generateBackstageConversations(aggregate);
+    generateTagTeamPitches(aggregate);
     generateWorldOpportunities(aggregate);
   });
   return committed.revision;

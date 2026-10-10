@@ -136,11 +136,15 @@ export function buildPlayerAttention(
     for (const conversation of aggregate.engagement?.backstageConversations ?? []) {
       if (conversation.promotionId !== promotion.id || conversation.status !== "OPEN") continue;
       const name = personName(aggregate, conversation.wrestlerId);
+      const isPitch = conversation.kind === "TAG_TEAM_PITCH";
+      const partner = conversation.partnerPersonId ? personName(aggregate, conversation.partnerPersonId) : "";
       items.push({
         attentionId: `backstage:${conversation.conversationId}`,
         category: "IMPORTANT",
-        title: `${name} wants a word`,
-        summary: `${name} is questioning their ${conversation.promisedRole === "MAIN_EVENT" ? "main-event" : "upper-card"} booking. ${conversation.observedMatchShows} completed matches have not delivered a promised featured position. You can hear them out in Backstage.`,
+        title: isPitch ? `${name} has a tag-team idea` : `${name} wants a word`,
+        summary: isPitch
+          ? `${name} suggests teaming with ${partner} after ${conversation.sharedTagMatches ?? 0} promising tag matches. You decide whether to explore it.`
+          : `${name} is questioning their ${conversation.promisedRole === "MAIN_EVENT" ? "main-event" : "upper-card"} booking. ${conversation.observedMatchShows} completed matches have not delivered a promised featured position. You can hear them out in Backstage.`,
         deadline: null,
         deepLink: "/backstage",
         dismissible: false,
