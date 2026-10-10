@@ -23,7 +23,7 @@ function ok(value: unknown, msg: string): void { if (!value) throw Error(msg); }
 function fixture() {
   const aggregate = createAlphaWorldAggregate({seed: 9213, playerId: "backstage-owner"});
   const state = aggregate.state;
-  const promotion = state.promotions.find((p) => p.tier === "INDEPENDENT" && p.lifecycle === "ACTIVE");
+  const promotion = state.promotions.find((p) => p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
   if (!promotion) throw Error("missing Indie promotion");
   claimIndependentPromotionForPlayer(state, aggregate.ownership, "backstage-owner", promotion.id);
   const contract = activeContractsForPromotion(state, promotion.id)[0];
