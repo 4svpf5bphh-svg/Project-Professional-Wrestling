@@ -27,6 +27,7 @@ import {
   type AttackObjective,
   type TurnPresentation,
   type SigningOutcome,
+  type StableInvitationOutcome,
   type ChallengeResponse,
   type InterruptionOutcome,
   type DetailedShowSlotRef,
@@ -120,6 +121,8 @@ export interface AlphaCardSegmentView {
   initiatorPersonId?: Id | null;
   targetPersonId?: Id | null;
   signingOutcome?: SigningOutcome | null;
+  stableId?: Id | null;
+  stableInvitationOutcome?: StableInvitationOutcome | null;
   challengeResponse?: ChallengeResponse | null;
   interruptionOutcome?: InterruptionOutcome | null;
   attackPresentation?: AttackPresentation | null;
@@ -173,6 +176,12 @@ export interface AlphaCardTeamView {
   memberNames: [string, string];
 }
 
+export interface AlphaCardStableView {
+  stableId: Id;
+  name: string;
+  memberIds: Id[];
+}
+
 export interface AlphaCurrentWeekCardView {
   world: {
     worldId: Id;
@@ -198,6 +207,7 @@ export interface AlphaCurrentWeekCardView {
   participants: AlphaCardParticipantView[];
   availableParticipants: AlphaCardParticipantView[];
   availableTeams: AlphaCardTeamView[];
+  availableStables: AlphaCardStableView[];
   matches: AlphaCardMatchView[];
   segments: AlphaCardSegmentView[];
   runningOrder: AlphaCardSlotView[];
@@ -237,6 +247,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "INTERRUPTION",
   "CHALLENGE",
   "CONTRACT_SIGNING",
+  "STABLE_INVITATION",
   "ATTACK",
   "RESCUE",
   "POST_MATCH_ASSAULT",
@@ -449,7 +460,7 @@ function normalizeSegments(
       requiredText(personId, `segments[${index}].participantIds[${personIndex}]`, 128)
     ));
     if (new Set(people).size !== people.length) throw new Error("segment cannot include the same wrestler twice");
-    if (["CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "ATTACK"].includes(segment.type) && people.length < 2) {
+    if (["CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "STABLE_INVITATION", "ATTACK"].includes(segment.type) && people.length < 2) {
       throw new Error(`${segment.type.toLowerCase()} segment requires at least two wrestlers`);
     }
     if (segment.type === "POST_MATCH_ASSAULT" && people.length < 2) {
@@ -488,7 +499,7 @@ function normalizeSegments(
       rescuerPersonId === attackerPersonId || rescuerPersonId === victimPersonId
       || !people.includes(rescuerPersonId!)
     )) throw new Error("RESCUE requires a distinct rescuer among segment participants");
-    const isDirected = segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING";
+    const isDirected = segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING" || segment.type === "STABLE_INVITATION";
     const initiatorPersonId = isDirected && segment.initiatorPersonId != null
       ? requiredText(segment.initiatorPersonId, `segments[${index}].initiatorPersonId`, 128) : null;
     const targetPersonId = isDirected && segment.targetPersonId != null
@@ -506,6 +517,24 @@ function normalizeSegments(
       !initiatorPersonId || !targetPersonId
       || !["VERBAL_EXCHANGE", "INTERRUPTER_PREVAILS", "SPEAKER_PREVAILS", "BRAWL"].includes(interruptionOutcome!)
     )) throw new Error("INTERRUPTION requires interrupter, original speaker and a scripted outcome");
+    const stableId = segment.type === "STABLE_INVITATION"
+      ? (segment.stableId ? requiredText(segment.stableId, `segments[${index}].stableId`, 128) : null) : null;
+    const stableInvitationOutcome = segment.type === "STABLE_INVITATION" ? (segment.stableInvitationOutcome ?? "REFUSED") : null;
+    if (segment.type === "STABLE_INVITATION") {
+      const stable = (state.stables ?? []).find((entry) => entry.id === stableId
+        && entry.promotionId === promotionId && entry.status === "ACTIVE");
+      if (!stable) throw new Error("STABLE_INVITATION requires an active stable in this promotion");
+      if (!initiatorPersonId || !targetPersonId || !["ACCEPTED", "REFUSED"].includes(stableInvitationOutcome!)) {
+        throw new Error("STABLE_INVITATION needs recruiter, recruit and scripted acceptance or refusal");
+      }
+      const members = (state.stableMemberships ?? []).filter((entry) => entry.stableId === stable.id && entry.active);
+      if (!members.some((entry) => entry.personId === initiatorPersonId)) {
+        throw new Error("stable recruiter must be a current member of the selected stable");
+      }
+      if (members.some((entry) => entry.personId === targetPersonId)) {
+        throw new Error("stable recruit already belongs to the selected stable");
+      }
+    }
     const signingOutcome = segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null;
     if (segment.type === "CONTRACT_SIGNING" && (
       !initiatorPersonId || !targetPersonId
@@ -556,6 +585,7 @@ function normalizeSegments(
       plannedLengthMinutes: segment.plannedLengthMinutes,
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
+      ...(segment.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
       ...(segment.type === "CHALLENGE" && challengeResponse ? { challengeResponse } : {}),
       ...(segment.type === "INTERRUPTION" ? { interruptionOutcome } : {}),
       ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
@@ -939,6 +969,17 @@ export async function loadAlphaShowCard(
     .filter((team): team is AlphaCardTeamView => team !== null)
     .sort((left, right) => left.name.localeCompare(right.name));
 
+  const availableStables = (aggregate.state.stables ?? [])
+    .filter((stable) => stable.promotionId === promotion.id && stable.status === "ACTIVE")
+    .map((stable): AlphaCardStableView => ({
+      stableId: stable.id,
+      name: stable.name,
+      memberIds: (aggregate.state.stableMemberships ?? [])
+        .filter((member) => member.stableId === stable.id && member.active)
+        .map((member) => member.personId),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   const participants = draft.participantIds.map((personId) => {
     const available = availableById.get(personId);
     if (available) return { ...available };
@@ -979,9 +1020,11 @@ export async function loadAlphaShowCard(
       victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
       sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
-      initiatorPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
-      targetPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
+      initiatorPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING", "STABLE_INVITATION"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
+      targetPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING", "STABLE_INVITATION"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
       signingOutcome: segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
+      stableId: segment.type === "STABLE_INVITATION" ? (segment.stableId ?? null) : null,
+      stableInvitationOutcome: segment.type === "STABLE_INVITATION" ? (segment.stableInvitationOutcome ?? "REFUSED") : null,
       challengeResponse: segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : null,
       interruptionOutcome: segment.type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null,
       attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
@@ -1060,6 +1103,7 @@ export async function loadAlphaShowCard(
     participants,
     availableParticipants,
     availableTeams,
+    availableStables,
     matches: draft.matches.flatMap((match) => (
       match.intendedWinnerSide !== null && match.intent !== null && match.plannedLengthMinutes !== null
         ? [{

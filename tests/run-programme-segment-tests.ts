@@ -360,6 +360,60 @@ test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the
     "assault altered a completed match finish");
 });
 
+for (const [response, seed] of [["ACCEPTED", 9183], ["REFUSED", 9184]] as const) {
+  test(`STABLE_INVITATION records scripted ${response} without silently changing group membership`, () => {
+    const setup = fixture(seed);
+    const [representative, recruit, memberTwo, memberThree] = setup.rosterIds;
+    setup.state.stables = [{
+      id: "test-stable", worldId: setup.state.world.id,
+      promotionId: setup.promotion.id, name: "Test faction",
+      status: "ACTIVE", formedDate: { ...setup.state.world.currentDate }, disbandedDate: null,
+    }];
+    setup.state.stableMemberships = [representative!, memberTwo!, memberThree!].map((personId, index) => ({
+      id: `test-stable-member-${index}`, worldId: setup.state.world.id,
+      stableId: "test-stable", personId,
+      joinedDate: { ...setup.state.world.currentDate }, leftDate: null, active: true,
+    }));
+    const base = {
+      draftId: "invite-show", promotionId: setup.promotion.id,
+      targetDate: setup.targetDate, marketId: null, venueId: null, ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+    };
+    const angle = {
+      draftSegmentId: "invite-angle", type: "STABLE_INVITATION" as const,
+      participantIds: [recruit!, representative!],
+      initiatorPersonId: representative!, targetPersonId: recruit!,
+      stableId: "test-stable", stableInvitationOutcome: response,
+      programmeId: setup.programme.id, plannedLengthMinutes: 6,
+    };
+    // This is a distinct bookkeeping action: recruiting cannot invent group membership.
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, stableId: "missing-stable" }],
+    }), "active stable");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, initiatorPersonId: recruit, targetPersonId: representative }],
+    }), "recruiter must be a current member");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, stableInvitationOutcome: "RANDOM" as typeof response }],
+    }), "scripted acceptance or refusal");
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [angle],
+    });
+    const membershipsBefore = JSON.stringify(setup.state.stableMemberships);
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "invitation not recorded");
+    const resolved = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(resolved.stableId === "test-stable" && resolved.stableName === "Test faction"
+      && resolved.stableInvitationOutcome === response, "scripted faction event lost name, identity or outcome");
+    ok(resolved.initiatorPersonId === representative && resolved.targetPersonId === recruit,
+      "recruiter and recruit roles changed");
+    ok(resolved.crowdResponse !== null, "segment was not evaluated for crowd reception");
+    ok(JSON.stringify(setup.state.stableMemberships) === membershipsBefore,
+      "on-screen invitation silently changed stable membership");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0, "invitation duplicated on replay");
+  });
+}
+
 for (const [outcome, seed] of [
   ["VERBAL_EXCHANGE", 9179], ["INTERRUPTER_PREVAILS", 9180],
   ["SPEAKER_PREVAILS", 9181], ["BRAWL", 9182],

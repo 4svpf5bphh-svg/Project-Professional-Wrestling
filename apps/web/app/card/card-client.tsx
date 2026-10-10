@@ -39,7 +39,7 @@ const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
 ];
 const MATCH_FINISHES: BookableFinish[] = ["CLEAN_PIN", "SUBMISSION", "FLASH_PIN", "PROTECTED_FINISH"];
 const SEGMENT_TYPES: AlphaCardSegmentView["type"][] = [
-  "PROMO", "INTERVIEW", "CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN",
+  "PROMO", "INTERVIEW", "CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "STABLE_INVITATION", "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN",
 ];
 const ATTACK_FORMATS = ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"] as const;
 const ATTACK_OBJECTIVES = ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"] as const;
@@ -114,11 +114,11 @@ function cloneAssignments(assignments: AlphaChampionshipAssignmentView[]): Alpha
 }
 
 function isDirectedSegment(type: AlphaCardSegmentView["type"]): boolean {
-  return type === "CHALLENGE" || type === "CONFRONTATION" || type === "INTERRUPTION" || type === "CONTRACT_SIGNING";
+  return type === "CHALLENGE" || type === "CONFRONTATION" || type === "INTERRUPTION" || type === "CONTRACT_SIGNING" || type === "STABLE_INVITATION";
 }
 
 function segmentMinimum(type: AlphaCardSegmentView["type"]): number {
-  return type === "RESCUE" ? 3 : type === "POST_MATCH_ASSAULT" || type === "CONFRONTATION" || type === "INTERRUPTION" || type === "CHALLENGE" || type === "CONTRACT_SIGNING" || type === "ATTACK" ? 2 : 1;
+  return type === "RESCUE" ? 3 : type === "POST_MATCH_ASSAULT" || type === "CONFRONTATION" || type === "INTERRUPTION" || type === "CHALLENGE" || type === "CONTRACT_SIGNING" || type === "STABLE_INVITATION" || type === "ATTACK" ? 2 : 1;
 }
 
 function MinuteField(props: {
@@ -409,6 +409,12 @@ export default function CardClient(): React.JSX.Element {
       && segment.participantIds.includes(segment.initiatorPersonId ?? "")
       && segment.participantIds.includes(segment.targetPersonId ?? "")
     ))
+    && (segment.type !== "STABLE_INVITATION" || Boolean(
+      view?.availableStables.some((stable) => stable.stableId === segment.stableId
+        && stable.memberIds.includes(segment.initiatorPersonId ?? "")
+        && !stable.memberIds.includes(segment.targetPersonId ?? ""))
+      && (segment.stableInvitationOutcome === "ACCEPTED" || segment.stableInvitationOutcome === "REFUSED")
+    ))
     && (segment.type !== "ATTACK" && segment.type !== "RESCUE" && segment.type !== "POST_MATCH_ASSAULT" || (
       Boolean(segment.attackerPersonId) && Boolean(segment.victimPersonId)
       && segment.attackerPersonId !== segment.victimPersonId
@@ -517,6 +523,8 @@ export default function CardClient(): React.JSX.Element {
       initiatorPersonId: null,
       targetPersonId: null,
       signingOutcome: type === "CONTRACT_SIGNING" ? "SIGNED" : null,
+      stableId: null,
+      stableInvitationOutcome: type === "STABLE_INVITATION" ? "REFUSED" : null,
       interruptionOutcome: type === "INTERRUPTION" ? "VERBAL_EXCHANGE" : null,
       challengeResponse: type === "CHALLENGE" ? "LEFT_OPEN" : null,
       attackPresentation: type === "ATTACK" ? "BLINDSIDE" : null,
@@ -722,6 +730,8 @@ export default function CardClient(): React.JSX.Element {
       targetPersonId: isDirectedSegment(type) && type === segment.type && participantIds.includes(segment.targetPersonId ?? "")
         ? (segment.targetPersonId ?? null) : null,
       signingOutcome: type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
+      stableId: type === "STABLE_INVITATION" && type === segment.type ? (segment.stableId ?? null) : null,
+      stableInvitationOutcome: type === "STABLE_INVITATION" ? (segment.stableInvitationOutcome ?? "REFUSED") : null,
       interruptionOutcome: type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null,
       challengeResponse: type === "CHALLENGE"
         ? (segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : "LEFT_OPEN") : null,
@@ -1025,6 +1035,10 @@ export default function CardClient(): React.JSX.Element {
           : segment.interruptionOutcome === "SPEAKER_PREVAILS" ? "speaker prevails"
           : segment.interruptionOutcome === "BRAWL" ? "brawl" : "verbal exchange";
         return `Interruption · ${initiator} interrupts ${target} · ${beat} · ${segment.plannedLengthMinutes} min`;
+      }
+      if (segment.type === "STABLE_INVITATION") {
+        const stable = view?.availableStables.find((item) => item.stableId === segment.stableId);
+        return `Stable invitation · ${initiator} invites ${target} to ${stable?.name ?? "choose stable"} · ${(segment.stableInvitationOutcome ?? "REFUSED").toLowerCase()} · ${segment.plannedLengthMinutes} min`;
       }
       if (segment.type === "CONTRACT_SIGNING") {
         return `Contract signing · ${initiator} & ${target} · ${(segment.signingOutcome ?? "SIGNED").toLowerCase()} · ${segment.plannedLengthMinutes} min`;
@@ -1524,6 +1538,37 @@ export default function CardClient(): React.JSX.Element {
                   </div>
                 ) : null}
 
+                {segment.type === "STABLE_INVITATION" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Script a stable invitation</span>
+                      <small>A current stable member offers another wrestler a place. You script their response; accepted on-screen does not automatically change World membership. Manage the actual roster in Stables.</small>
+                    </div>
+                    <div className={styles.control}>
+                      <label>Inviting stable</label>
+                      <select value={segment.stableId ?? ""} disabled={!view.canEdit}
+                        onChange={(event) => updateSegment(segment.draftSegmentId, { stableId: event.target.value || null })}>
+                        <option value="">Choose a stable</option>
+                        {view.availableStables.map((stable) => (
+                          <option key={stable.stableId} value={stable.stableId}>{stable.name}</option>
+                        ))}
+                      </select>
+                      {(view.availableStables.length === 0) ? <small>No stables yet. Create one on Roster → Stables first.</small> : null}
+                      {segment.stableId && !view.availableStables.some((stable) => stable.stableId === segment.stableId && stable.memberIds.includes(segment.initiatorPersonId ?? "")) ? <small>The recruiter must already belong to this stable.</small> : null}
+                    </div>
+                    <div className={styles.control}>
+                      <label>Scripted response</label>
+                      <select value={segment.stableInvitationOutcome ?? "REFUSED"} disabled={!view.canEdit}
+                        onChange={(event) => updateSegment(segment.draftSegmentId, {
+                          stableInvitationOutcome: event.target.value as "ACCEPTED" | "REFUSED",
+                        })}>
+                        <option value="ACCEPTED">Recruit accepts the invitation</option>
+                        <option value="REFUSED">Recruit refuses the invitation</option>
+                      </select>
+                    </div>
+                  </div>
+                ) : null}
+
                 {segment.type === "CONTRACT_SIGNING" ? (
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
@@ -1691,7 +1736,7 @@ export default function CardClient(): React.JSX.Element {
                             {segment.type === "RESCUE" ? (personIndex === 0 ? "Aggressor" : personIndex === 1 ? "Victim" : personIndex === 2 ? "Rescuer" : "Also involved")
                               : segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT"
                               ? (personIndex === 0 ? "Attacker" : personIndex === 1 ? "Victim" : "Also involved")
-                              : (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Challenger" : segment.type === "CONTRACT_SIGNING" ? "Proposer" : segment.type === "INTERRUPTION" ? "Interrupter" : "Instigator") : personIndex === 1 ? (segment.type === "CONTRACT_SIGNING" ? "Responder" : segment.type === "INTERRUPTION" ? "Original speaker" : "Target") : "Also involved")}
+                              : (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Challenger" : segment.type === "CONTRACT_SIGNING" ? "Proposer" : segment.type === "INTERRUPTION" ? "Interrupter" : segment.type === "STABLE_INVITATION" ? "Stable representative" : "Instigator") : personIndex === 1 ? (segment.type === "CONTRACT_SIGNING" ? "Responder" : segment.type === "INTERRUPTION" ? "Original speaker" : segment.type === "STABLE_INVITATION" ? "Recruit" : "Target") : "Also involved")}
                           </span>
                         ) : null}
                         <WrestlerSlotButton
@@ -1713,7 +1758,7 @@ export default function CardClient(): React.JSX.Element {
                               : segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT"
                               ? (personIndex === 0 ? "Choose attacker" : personIndex === 1 ? "Choose victim" : "Also involved")
                               : isDirectedSegment(segment.type)
-                                ? (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Choose challenger" : segment.type === "CONTRACT_SIGNING" ? "Choose proposer" : segment.type === "INTERRUPTION" ? "Choose interrupter" : "Choose instigator") : personIndex === 1 ? (segment.type === "CONTRACT_SIGNING" ? "Choose responder" : segment.type === "INTERRUPTION" ? "Choose original speaker" : "Choose target") : "Also involved")
+                                ? (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Choose challenger" : segment.type === "CONTRACT_SIGNING" ? "Choose proposer" : segment.type === "INTERRUPTION" ? "Choose interrupter" : segment.type === "STABLE_INVITATION" ? "Choose stable representative" : "Choose instigator") : personIndex === 1 ? (segment.type === "CONTRACT_SIGNING" ? "Choose responder" : segment.type === "INTERRUPTION" ? "Choose original speaker" : segment.type === "STABLE_INVITATION" ? "Choose recruit" : "Choose target") : "Also involved")
                                 : `${pretty(segment.type)} · Wrestler ${personIndex + 1}`,
                           })}
                         />

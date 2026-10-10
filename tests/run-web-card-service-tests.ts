@@ -17,6 +17,7 @@ import {
   type AlphaCardSegmentView,
 } from "../packages/web-adapter/src/card-service.js";
 import { wrestlerAlignmentForPromotion } from "../packages/sim-core/src/alignment.js";
+import { mutateAlphaStable } from "../packages/web-adapter/src/stable-service.js";
 import { startAlphaManagedProgramme } from "../packages/web-adapter/src/programme-management-service.js";
 import {
   loadAlphaPlayerPlanner,
@@ -501,6 +502,54 @@ await test("Run-in saves, reloads, resolves and records the actual finish withou
     && entry.personId === interferer);
   ok(appearance?.status === "COMPLETED", "run-in wrestler did not fulfil their booked appearance");
 });
+
+for (const [response, seed] of [["ACCEPTED", 61142], ["REFUSED", 61143]] as const) {
+  await test(`Card saves ${response} stable invitation and World Lock preserves the roster`, async () => {
+    const fixture = await reservedShowFixture(seed);
+    const [representative, recruit, memberTwo, memberThree] = fixture.participantIds;
+    if (!representative || !recruit || !memberTwo || !memberThree) throw new Error("stable fixture requires four wrestlers");
+    const earlier = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    const created = await mutateAlphaStable(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: `create-actual-stable-${seed}`,
+      expectedRevision: earlier.world.revision,
+      action: "CREATE", name: "Onscreen Inviting Stable",
+      personIds: [representative, memberTwo, memberThree],
+    });
+    const stableId = created.stables[0]!.stableId;
+    const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    ok(before.availableStables.some((stable) => stable.stableId === stableId
+      && stable.memberIds.includes(representative)), "Card did not expose the real stable");
+    const angle: AlphaCardSegmentView = {
+      draftSegmentId: "stable-story", type: "STABLE_INVITATION",
+      participantIds: [representative, recruit], initiatorPersonId: representative,
+      targetPersonId: recruit, stableId, stableInvitationOutcome: response,
+      programmeId: null, plannedLengthMinutes: 6,
+    };
+    const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: `save-stable-angle-${seed}`,
+      expectedRevision: before.world.revision, expectedPlanVersion: before.workspaceVersion,
+      matches: singlesCard(fixture.participantIds), segments: [angle], championshipAssignments: [],
+    });
+    const reloaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    ok(reloaded.segments[0]?.stableId === stableId
+      && reloaded.segments[0]?.stableInvitationOutcome === response
+      && reloaded.segments[0]?.targetPersonId === recruit, "Card changed scripted invitation");
+    await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+      expectedRevision: saved.world.revision,
+    });
+    const finished = await fixture.repository.load(fixture.worldId);
+    const entry = finished.state.ledger.find((item) => item.type === "SHOW_SEGMENT_COMPLETED"
+      && item.payload.draftSegmentId === angle.draftSegmentId);
+    ok(entry?.payload.stableId === stableId
+      && entry.payload.stableName === "Onscreen Inviting Stable"
+      && entry.payload.stableInvitationOutcome === response,
+      "World Ledger lost the authored stable invitation");
+    ok(!(finished.state.stableMemberships ?? []).some((member) =>
+      member.stableId === stableId && member.personId === recruit && member.active),
+      "on-screen acceptance silently changed real stable membership");
+    ok(typeof entry?.payload.segmentCrowdResponse === "number", "stable invitation did not receive a rating");
+  });
+}
 
 for (const [outcome, seed] of [
   ["INTERRUPTER_PREVAILS", 61135], ["SPEAKER_PREVAILS", 61136], ["BRAWL", 61137],

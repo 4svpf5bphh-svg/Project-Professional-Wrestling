@@ -74,6 +74,9 @@ export interface PlayerWorldResultSegmentView {
   signingOutcome: "SIGNED" | "REJECTED" | "WALKOUT" | "BRAWL" | null;
   challengeResponse: "ACCEPTED" | "REFUSED" | "LEFT_OPEN" | null;
   interruptionOutcome: "VERBAL_EXCHANGE" | "INTERRUPTER_PREVAILS" | "SPEAKER_PREVAILS" | "BRAWL" | null;
+  stableId: Id | null;
+  stableName: string | null;
+  stableInvitationOutcome: "ACCEPTED" | "REFUSED" | null;
   attackPresentation: AttackPresentation | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
@@ -311,6 +314,9 @@ export function buildPlayerWorldResultsView(
         signingOutcome: segment.signingOutcome,
         challengeResponse: segment.challengeResponse,
         interruptionOutcome: segment.interruptionOutcome,
+        stableId: segment.stableId,
+        stableName: segment.stableName,
+        stableInvitationOutcome: segment.stableInvitationOutcome,
         attackPresentation: segment.attackPresentation,
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,
