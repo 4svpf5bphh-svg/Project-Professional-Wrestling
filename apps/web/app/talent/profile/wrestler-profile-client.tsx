@@ -327,6 +327,23 @@ export default function WrestlerProfileClient({
       </section>
 
       <section className={styles.panel}>
+        <div className={styles.sectionHeading}>
+          <div><span className={styles.eyebrow}>ON THE MIC / BEHIND THE CURTAIN</span><h2>Persona &amp; promos</h2></div>
+        </div>
+        <div className={styles.skillGrid}>
+          <div><span>Microphone</span><strong>{Math.round(view.person.personality.microphoneAbility)}</strong></div>
+          <div><span>Backstage tendency</span><strong style={{fontSize: 13}}>{label(view.person.personality.temperament)}</strong></div>
+        </div>
+        <p className={styles.note}>
+          Motivated by: {view.person.personality.motivations.map(label).join(" · ")}.
+          {" "}{view.person.personality.microphoneSource === "ESTIMATED"
+            ? "Mic ability is an initial game estimate."
+            : "Mic ability uses a curated game value."}
+          {" "}These are fictional in-game descriptors, not biographical claims or automatic booking powers.
+        </p>
+      </section>
+
+      <section className={styles.panel}>
         <div className={styles.sectionHeading}><div><span className={styles.eyebrow}>ABILITY</span><h2>Skills</h2></div></div>
         <div className={styles.skillGrid}>
           <div><span>In-ring</span><strong>{Math.round(view.person.skills.inRingQuality)}</strong></div>

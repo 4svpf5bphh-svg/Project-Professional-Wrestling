@@ -40,3 +40,4 @@ export * from "./world-results-view.js";
 export * from "./world-transactions.js";
 export * from "./wrestler-profile-view.js";
 export * from "./wrestler-creative.js";
+export * from "./wrestler-personality.js";

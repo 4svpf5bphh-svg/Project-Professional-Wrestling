@@ -356,5 +356,37 @@ test("Creative presentation requires control and an actual current roster contra
   ok(aggregate.engagement.wrestlerCreativeProfiles?.length===0,"failed edits left partial records");
 });
 
+
+test("Mic ability and backstage tendency are deterministic, independent descriptive foundations",()=>{
+  const {aggregate,promotionAId,promotionBId}=fixture(73141);
+  const wrestler=activeContractsForPromotion(aggregate.state,promotionAId)[0]!;
+  const original=JSON.stringify(aggregate.state);
+  const one=buildPlayerWrestlerProfileView(aggregate,"player-a",wrestler.personId);
+  const p=one.person.personality;
+  ok(p.microphoneAbility>=0&&p.microphoneAbility<=100&&p.microphoneSource==="ESTIMATED",
+    "historical roster lacks a bounded seeded microphone estimate");
+  ok(p.motivations.length===2&&p.motivations[0]!==p.motivations[1],
+    "backstage persona incorrectly reused identical priorities");
+  const cloned=cloneApplicationWorld(aggregate);
+  const again=buildPlayerWrestlerProfileView(cloned,"player-b",wrestler.personId);
+  ok(JSON.stringify(again.person.personality)===JSON.stringify(p),
+    "global wrestler persona differs between multiplayer viewers or restored save");
+  ok(JSON.stringify(aggregate.state)===original,
+    "wrestler profile derived stats mutated simulation or persistent state");
+  const person=aggregate.state.people.find(x=>x.id===wrestler.personId)!;
+  person.microphoneAbility=93;
+  person.backstageTemperament="COLLABORATIVE";
+  const curated=buildPlayerWrestlerProfileView(aggregate,"player-a",wrestler.personId).person.personality;
+  ok(curated.microphoneAbility===93&&curated.microphoneSource==="CURATED"
+    && curated.temperament==="COLLABORATIVE"&&curated.temperamentSource==="CURATED",
+    "explicit talent overrides were ignored");
+  person.microphoneAbility=Number.NaN;
+  person.backstageTemperament="NOT_A_TEMPERAMENT" as typeof person.backstageTemperament;
+  const fallback=buildPlayerWrestlerProfileView(aggregate,"player-a",wrestler.personId).person.personality;
+  ok(fallback.microphoneSource==="ESTIMATED"&&fallback.temperamentSource==="DERIVED",
+    "corrupted overrides should fall back rather than presenting invalid ratings");
+  void promotionBId;
+});
+
 console.log(`\nApplication wrestler-profile tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;

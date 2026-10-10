@@ -299,6 +299,10 @@ export interface Person {
   popularity: number;
   skills: WrestlerSkills;
   priorities: WrestlerPriorities;
+  /** Optional future-curated mic ability. Historical Worlds receive a stable estimate. */
+  microphoneAbility?: number;
+  /** Fictional in-game temperament, never a claim about a real person. */
+  backstageTemperament?: "COLLABORATIVE" | "AMBITIOUS" | "INDEPENDENT" | "METHODICAL" | "SHOWMAN" | "STEADY";
 }
 
 export interface ContractTerms {
