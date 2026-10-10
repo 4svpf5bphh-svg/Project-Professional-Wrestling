@@ -1,5 +1,6 @@
 import type { Id } from "../../domain/src/types.js";
 import { generateWorldOpportunities } from "./opportunity-generation.js";
+import { generateBackstageConversations } from "./backstage.js";
 import {
   closeCurrentWeekReservationsAtCommitmentLock,
   materializeCurrentWeekReservations,
@@ -106,6 +107,7 @@ export async function resolvePersistedWorldWeek(
         applyResolvedShowTurns(state);
       },
     });
+    generateBackstageConversations(aggregate);
     generateWorldOpportunities(aggregate);
   });
   return committed.revision;

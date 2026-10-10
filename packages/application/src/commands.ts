@@ -43,7 +43,8 @@ export type ApplicationCommandType =
   | "REMOVE_STABLE_MEMBER"
   | "DISBAND_STABLE"
   | "UPSERT_PROMOTION_SHOW_SERIES"
-  | "ARCHIVE_PROMOTION_SHOW_SERIES";
+  | "ARCHIVE_PROMOTION_SHOW_SERIES"
+  | "RESPOND_BACKSTAGE_CONVERSATION";
 
 export interface ApplicationCommandEnvelope<TPayload> {
   requestId: string;

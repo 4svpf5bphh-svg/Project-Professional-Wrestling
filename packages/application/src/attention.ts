@@ -133,6 +133,21 @@ export function buildPlayerAttention(
       });
     }
 
+    for (const conversation of aggregate.engagement?.backstageConversations ?? []) {
+      if (conversation.promotionId !== promotion.id || conversation.status !== "OPEN") continue;
+      const name = personName(aggregate, conversation.wrestlerId);
+      items.push({
+        attentionId: `backstage:${conversation.conversationId}`,
+        category: "IMPORTANT",
+        title: `${name} wants a word`,
+        summary: `${name} is questioning their ${conversation.promisedRole === "MAIN_EVENT" ? "main-event" : "upper-card"} booking. ${conversation.observedMatchShows} completed matches have not delivered a promised featured position. You can hear them out in Backstage.`,
+        deadline: null,
+        deepLink: "/backstage",
+        dismissible: false,
+        sourceOpportunityCategory: null,
+      });
+    }
+
     const workspace = aggregate.planning.workspaces.find((candidate) => candidate.promotionId === promotion.id);
     for (const draft of workspace?.detailedShowDrafts ?? []) {
       const status = playerShowPlanningStatus(aggregate.state, aggregate.planning, aggregate.runtime, promotion.id, draft.draftId);

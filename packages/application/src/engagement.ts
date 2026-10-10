@@ -3,6 +3,25 @@ import type { Id, PpwDate } from "../../domain/src/types.js";
 export type PlayerActivityStatus = "ACTIVE" | "WARNING" | "STEWARDED";
 export type OpportunityCategory = "TALENT" | "MARKET" | "BUSINESS" | "WORLD";
 export type StewardshipExitRequestStatus = "OPEN" | "SETTLED" | "WITHDRAWN";
+export type BackstageConversationStatus = "OPEN" | "ANSWERED";
+export type BackstageResponse = "HEAR_OUT" | "EXPLAIN_PLAN" | "STAND_FIRM";
+
+export interface BackstageConversation {
+  conversationId: string;
+  worldId: Id;
+  promotionId: Id;
+  wrestlerId: Id;
+  sourceContractId: Id;
+  kind: "ROLE_USAGE_CONCERN";
+  createdDate: PpwDate;
+  status: BackstageConversationStatus;
+  response: BackstageResponse | null;
+  responseDate: PpwDate | null;
+  /** The evidence at creation is frozen for an intelligible historical conversation. */
+  promisedRole: "MAIN_EVENT" | "UPPER_CARD";
+  observedMatchShows: number;
+  observedFeaturedShows: number;
+}
 
 export interface PlayerActivityRecord {
   playerId: string;
@@ -58,6 +77,7 @@ export interface WorldEngagementState {
   talentWatchlist: TalentWatchRecord[];
   opportunities: OpportunityRecord[];
   stewardshipExitRequests: StewardshipExitRequest[];
+  backstageConversations: BackstageConversation[];
 }
 
 export interface InactivityThresholds {
@@ -116,6 +136,7 @@ export function createWorldEngagementState(worldId: Id): WorldEngagementState {
     talentWatchlist: [],
     opportunities: [],
     stewardshipExitRequests: [],
+    backstageConversations: [],
   };
 }
 
@@ -147,6 +168,11 @@ export function normalizeWorldEngagementState(
     stewardshipExitRequests: (input.stewardshipExitRequests ?? []).map((record) => ({
       ...record,
       requestedDate: cloneDate(record.requestedDate),
+    })),
+    backstageConversations: (input.backstageConversations ?? []).map((record) => ({
+      ...record,
+      createdDate: cloneDate(record.createdDate),
+      responseDate: record.responseDate ? cloneDate(record.responseDate) : null,
     })),
   };
 }
@@ -339,4 +365,45 @@ export function setTalentWatched(
     personId: normalizedPersonId,
     addedAtRevision: worldRevision,
   });
+}
+
+export function openBackstageConversation(
+  engagement: WorldEngagementState,
+  conversation: BackstageConversation,
+): BackstageConversation {
+  if (conversation.worldId !== engagement.worldId) throw new Error("Backstage conversation crosses World boundary");
+  const conversationId = normalizedNonEmpty(conversation.conversationId, "conversationId", 240);
+  if (engagement.backstageConversations.some((entry) => entry.conversationId === conversationId)) {
+    throw new Error("Backstage conversation already exists");
+  }
+  if (conversation.status !== "OPEN" || conversation.response !== null || conversation.responseDate !== null) {
+    throw new Error("new Backstage conversation must be unanswered");
+  }
+  if (!["MAIN_EVENT", "UPPER_CARD"].includes(conversation.promisedRole)
+    || !Number.isSafeInteger(conversation.observedMatchShows) || conversation.observedMatchShows < 4
+    || !Number.isSafeInteger(conversation.observedFeaturedShows) || conversation.observedFeaturedShows !== 0) {
+    throw new Error("Backstage concern requires eligible role-usage evidence");
+  }
+  const stored = { ...conversation, conversationId, createdDate: cloneDate(conversation.createdDate) };
+  engagement.backstageConversations.push(stored);
+  return stored;
+}
+
+export function answerBackstageConversation(
+  engagement: WorldEngagementState,
+  conversationId: string,
+  response: BackstageResponse,
+  date: PpwDate,
+): BackstageConversation {
+  const id = normalizedNonEmpty(conversationId, "conversationId", 240);
+  if (!["HEAR_OUT", "EXPLAIN_PLAN", "STAND_FIRM"].includes(response)) {
+    throw new Error("unsupported Backstage response");
+  }
+  const conversation = engagement.backstageConversations.find((entry) => entry.conversationId === id);
+  if (!conversation) throw new Error("Backstage conversation not found");
+  if (conversation.status !== "OPEN") throw new Error("Backstage conversation already answered");
+  conversation.status = "ANSWERED";
+  conversation.response = response;
+  conversation.responseDate = cloneDate(date);
+  return conversation;
 }
