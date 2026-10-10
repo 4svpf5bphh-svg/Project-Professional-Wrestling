@@ -502,6 +502,40 @@ await test("Run-in saves, reloads, resolves and records the actual finish withou
   ok(appearance?.status === "COMPLETED", "run-in wrestler did not fulfil their booked appearance");
 });
 
+for (const [response, seed] of [["ACCEPTED", 61130], ["REFUSED", 61131], ["LEFT_OPEN", 61132]] as const) {
+  await test(`Card persists scripted CHALLENGE ${response} through World Lock`, async () => {
+    const fixture = await reservedShowFixture(seed);
+    const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    const [target, challenger] = fixture.participantIds;
+    if (!challenger || !target) throw new Error("challenge response needs two wrestlers");
+    const segment: AlphaCardSegmentView = {
+      draftSegmentId: "scripted-challenge", type: "CHALLENGE", participantIds: [target, challenger],
+      initiatorPersonId: challenger, targetPersonId: target, challengeResponse: response,
+      programmeId: null, plannedLengthMinutes: 5,
+    };
+    const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: `challenge-response-${seed}`, expectedRevision: before.world.revision,
+      expectedPlanVersion: before.workspaceVersion, matches: singlesCard(fixture.participantIds),
+      segments: [segment], championshipAssignments: [],
+    });
+    ok(saved.segments[0]?.challengeResponse === response, "save replaced scripted response");
+    const reloaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    ok(reloaded.segments[0]?.challengeResponse === response
+      && reloaded.segments[0]?.initiatorPersonId === challenger
+      && reloaded.segments[0]?.targetPersonId === target,
+      "Card reload lost authored reply or roles");
+    await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+      expectedRevision: saved.world.revision,
+    });
+    const finished = await fixture.repository.load(fixture.worldId);
+    const event = finished.state.ledger.find((entry) => entry.type === "SHOW_SEGMENT_COMPLETED"
+      && entry.payload.draftSegmentId === segment.draftSegmentId);
+    ok(event?.payload.challengeResponse === response
+      && event.payload.initiatorPersonId === challenger && event.payload.targetPersonId === target,
+      "World Lock changed the scripted challenge reply");
+  });
+}
+
 for (const [signingOutcome, seed] of [["SIGNED", 61128], ["BRAWL", 61129]] as const) {
   await test(`Card preserves the scripted ${signingOutcome} signing through World Lock`, async () => {
     const fixture = await reservedShowFixture(seed);

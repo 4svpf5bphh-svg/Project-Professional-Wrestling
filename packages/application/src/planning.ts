@@ -59,6 +59,7 @@ export type AttackPresentation = "BLINDSIDE" | "BEATDOWN" | "PULL_APART_BRAWL";
 export type AttackObjective = "GENERATE_HEAT" | "BUILD_SYMPATHY" | "ESCALATE_RIVALRY";
 export type TurnPresentation = "REVEAL" | "BETRAYAL";
 export type SigningOutcome = "SIGNED" | "REJECTED" | "WALKOUT" | "BRAWL";
+export type ChallengeResponse = "ACCEPTED" | "REFUSED" | "LEFT_OPEN";
 
 export interface DetailedShowSegmentDraft {
   draftSegmentId: string;
@@ -77,6 +78,7 @@ export interface DetailedShowSegmentDraft {
   initiatorPersonId?: Id | null;
   targetPersonId?: Id | null;
   signingOutcome?: SigningOutcome | null;
+  challengeResponse?: ChallengeResponse | null;
   attackPresentation?: AttackPresentation | null;
   attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
@@ -377,6 +379,11 @@ function validateShowSegmentDraft(
     || !draft.participantIds.includes(initiatorPersonId)
     || !draft.participantIds.includes(targetPersonId)
   )) throw new Error("directed segment requires distinct initiator and target among participants");
+  // Null represents legacy challenges recorded before authored responses.
+  const challengeResponse = draft.type === "CHALLENGE" ? (draft.challengeResponse ?? null) : null;
+  if (challengeResponse !== null && !["ACCEPTED", "REFUSED", "LEFT_OPEN"].includes(challengeResponse)) {
+    throw new Error("CHALLENGE has an unsupported scripted response");
+  }
   const signingOutcome = draft.type === "CONTRACT_SIGNING" ? (draft.signingOutcome ?? "SIGNED") : null;
   if (draft.type === "CONTRACT_SIGNING" && (
     !initiatorPersonId || !targetPersonId
@@ -432,6 +439,7 @@ function validateShowSegmentDraft(
     plannedLengthMinutes: draft.plannedLengthMinutes,
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
+    ...(draft.type === "CHALLENGE" && challengeResponse ? { challengeResponse } : {}),
     ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
     ...(draft.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
     ...(draft.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),

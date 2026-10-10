@@ -360,6 +360,37 @@ test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the
     "assault altered a completed match finish");
 });
 
+for (const [response, seed] of [["ACCEPTED", 9175], ["REFUSED", 9176], ["LEFT_OPEN", 9177]] as const) {
+  test(`CHALLENGE saves player-selected ${response} without overriding it`, () => {
+    const setup = fixture(seed);
+    const [first, second] = setup.rosterIds;
+    const base = {
+      draftId: "challenge-response", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+      marketId: null, venueId: null, ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+    };
+    const challenge = {
+      draftSegmentId: "challenge-response-1", type: "CHALLENGE" as const,
+      participantIds: [second!, first!], programmeId: null, plannedLengthMinutes: 5,
+      initiatorPersonId: first!, targetPersonId: second!, challengeResponse: response,
+    };
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [challenge],
+    });
+    ok(setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments?.[0]?.challengeResponse === response,
+      "draft lost the authored response");
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "challenge not recorded");
+    const resolved = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(resolved.challengeResponse === response, "challenge response changed during resolution");
+    ok(resolved.initiatorPersonId === first && resolved.targetPersonId === second,
+      "challenge roles were reordered");
+    ok(resolved.crowdResponse !== null, "scripted challenge received no crowd score");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+      "challenge history duplicated");
+  });
+}
+
 for (const [signingOutcome, seed] of [
   ["SIGNED", 9171], ["REJECTED", 9172], ["WALKOUT", 9173], ["BRAWL", 9174],
 ] as const) {

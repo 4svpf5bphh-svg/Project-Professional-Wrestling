@@ -517,6 +517,7 @@ export default function CardClient(): React.JSX.Element {
       initiatorPersonId: null,
       targetPersonId: null,
       signingOutcome: type === "CONTRACT_SIGNING" ? "SIGNED" : null,
+      challengeResponse: type === "CHALLENGE" ? "LEFT_OPEN" : null,
       attackPresentation: type === "ATTACK" ? "BLINDSIDE" : null,
       attackObjective: type === "ATTACK" ? "GENERATE_HEAT" : null,
       turnPersonId: null,
@@ -720,6 +721,8 @@ export default function CardClient(): React.JSX.Element {
       targetPersonId: isDirectedSegment(type) && type === segment.type && participantIds.includes(segment.targetPersonId ?? "")
         ? (segment.targetPersonId ?? null) : null,
       signingOutcome: type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
+      challengeResponse: type === "CHALLENGE"
+        ? (segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : "LEFT_OPEN") : null,
       attackPresentation: type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
       attackObjective: type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null,
       turnPersonId: type === "TURN"
@@ -1018,8 +1021,13 @@ export default function CardClient(): React.JSX.Element {
       if (segment.type === "CONTRACT_SIGNING") {
         return `Contract signing · ${initiator} & ${target} · ${(segment.signingOutcome ?? "SIGNED").toLowerCase()} · ${segment.plannedLengthMinutes} min`;
       }
-      const action = segment.type === "CHALLENGE" ? "challenges" : "confronts";
-      return `${initiator} ${action} ${target} · ${segment.plannedLengthMinutes} min`;
+      if (segment.type === "CHALLENGE") {
+        const response = segment.challengeResponse
+          ? ` · ${segment.challengeResponse === "ACCEPTED" ? "accepted" : segment.challengeResponse === "REFUSED" ? "refused" : "left open"}`
+          : "";
+        return `${initiator} challenges ${target}${response} · ${segment.plannedLengthMinutes} min`;
+      }
+      return `${initiator} confronts ${target} · ${segment.plannedLengthMinutes} min`;
     }
     if (segment.type === "POST_MATCH_ASSAULT") {
       const attacker = segment.attackerPersonId ? personName(segment.attackerPersonId) : "Choose aggressor";
@@ -1462,6 +1470,27 @@ export default function CardClient(): React.JSX.Element {
                         ))}
                       </select>
                       <small className={styles.sideLabel}>Automatically places this assault immediately after the match. The victim must have competed in it; the aggressor may be an outsider.</small>
+                    </div>
+                  </div>
+                ) : null}
+
+                {segment.type === "CHALLENGE" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Script the challenge response</span>
+                      <small>You decide how the opponent responds. Acceptance does not automatically book a match.</small>
+                    </div>
+                    <div className={styles.control}>
+                      <label>On-screen reply</label>
+                      <select value={segment.challengeResponse ?? ""} disabled={!view.canEdit}
+                        onChange={(event) => updateSegment(segment.draftSegmentId, {
+                          challengeResponse: (event.target.value || null) as AlphaCardSegmentView["challengeResponse"],
+                        })}>
+                        <option value="">Not recorded (older booking)</option>
+                        <option value="ACCEPTED">Challenge accepted</option>
+                        <option value="REFUSED">Challenge refused</option>
+                        <option value="LEFT_OPEN">Challenge left unresolved</option>
+                      </select>
                     </div>
                   </div>
                 ) : null}

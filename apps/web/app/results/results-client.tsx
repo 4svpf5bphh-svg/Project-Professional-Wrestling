@@ -259,7 +259,9 @@ export default function ResultsClient(): React.JSX.Element {
                               ) : null}
                               {(slot.segment.type === "CHALLENGE" || slot.segment.type === "CONFRONTATION") && slot.segment.initiatorPersonId && slot.segment.targetPersonId ? (
                                   <div className={styles.matchMeta}>
-                                    <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Wrestler"} {slot.segment.type === "CHALLENGE" ? "challenged" : "confronted"} {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "opponent"}</span>
+                                    <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Wrestler"} {slot.segment.type === "CHALLENGE" ? "challenged" : "confronted"} {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "opponent"}{slot.segment.type === "CHALLENGE" && slot.segment.challengeResponse
+                                      ? ` · ${slot.segment.challengeResponse === "ACCEPTED" ? "Challenge accepted" : slot.segment.challengeResponse === "REFUSED" ? "Challenge refused" : "Challenge left open"}`
+                                      : ""}</span>
                                   </div>
                                 ) : null}
                               {slot.segment.type === "POST_MATCH_ASSAULT" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.sourceMatchId ? (
@@ -482,7 +484,9 @@ export default function ResultsClient(): React.JSX.Element {
                               ) : null}
                               {(slot.segment.type === "CHALLENGE" || slot.segment.type === "CONFRONTATION") && slot.segment.initiatorPersonId && slot.segment.targetPersonId ? (
                                   <div className={styles.matchMeta}>
-                                    <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Wrestler"} {slot.segment.type === "CHALLENGE" ? "challenged" : "confronted"} {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "opponent"}</span>
+                                    <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Wrestler"} {slot.segment.type === "CHALLENGE" ? "challenged" : "confronted"} {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "opponent"}{slot.segment.type === "CHALLENGE" && slot.segment.challengeResponse
+                                      ? ` · ${slot.segment.challengeResponse === "ACCEPTED" ? "Challenge accepted" : slot.segment.challengeResponse === "REFUSED" ? "Challenge refused" : "Challenge left open"}`
+                                      : ""}</span>
                                   </div>
                                 ) : null}
                               {slot.segment.type === "POST_MATCH_ASSAULT" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.sourceMatchId ? (

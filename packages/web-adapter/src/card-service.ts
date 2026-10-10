@@ -27,6 +27,7 @@ import {
   type AttackObjective,
   type TurnPresentation,
   type SigningOutcome,
+  type ChallengeResponse,
   type DetailedShowSlotRef,
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
@@ -118,6 +119,7 @@ export interface AlphaCardSegmentView {
   initiatorPersonId?: Id | null;
   targetPersonId?: Id | null;
   signingOutcome?: SigningOutcome | null;
+  challengeResponse?: ChallengeResponse | null;
   attackPresentation?: AttackPresentation | null;
   attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
@@ -492,6 +494,10 @@ function normalizeSegments(
       !initiatorPersonId || !targetPersonId || initiatorPersonId === targetPersonId
       || !people.includes(initiatorPersonId) || !people.includes(targetPersonId)
     )) throw new Error("directed segment requires distinct initiator and target among participants");
+    const challengeResponse = segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : null;
+    if (challengeResponse !== null && !["ACCEPTED", "REFUSED", "LEFT_OPEN"].includes(challengeResponse)) {
+      throw new Error("CHALLENGE has an unsupported scripted response");
+    }
     const signingOutcome = segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null;
     if (segment.type === "CONTRACT_SIGNING" && (
       !initiatorPersonId || !targetPersonId
@@ -542,6 +548,7 @@ function normalizeSegments(
       plannedLengthMinutes: segment.plannedLengthMinutes,
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
+      ...(segment.type === "CHALLENGE" && challengeResponse ? { challengeResponse } : {}),
       ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
       ...(segment.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
       ...(segment.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),
@@ -966,6 +973,7 @@ export async function loadAlphaShowCard(
       initiatorPersonId: ["CHALLENGE", "CONFRONTATION", "CONTRACT_SIGNING"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
       targetPersonId: ["CHALLENGE", "CONFRONTATION", "CONTRACT_SIGNING"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
       signingOutcome: segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
+      challengeResponse: segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : null,
       attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
       attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null,
       turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
