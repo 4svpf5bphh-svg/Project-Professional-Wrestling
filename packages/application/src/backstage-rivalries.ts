@@ -11,6 +11,7 @@ import { createWorldEngagementState, openBackstageConversation, type BackstageCo
 import { BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION, BACKSTAGE_NEW_CONVERSATIONS_PER_PROMOTION_WEEK } from "./backstage.js";
 import { activePromotionControls } from "./ownership.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
+import { chooseCreativePitchSpeaker, wrestlerCreativeInterestScores } from "./wrestler-creative-interests.js";
 
 export function generateRivalryPitches(aggregate: ApplicationWorldAggregate): number {
   const state = aggregate.state;
@@ -24,6 +25,7 @@ export function generateRivalryPitches(aggregate: ApplicationWorldAggregate): nu
       && ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear) >= week - 12
       && ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear) <= week
   ).map((event) => [event.id, event]));
+  const peopleById = new Map(state.people.map(person=>[person.id,person]));
   const participants = new Map<Id, typeof state.matchParticipants>();
   for (const entry of state.matchParticipants) {
     if (!completed.has(entry.eventId)) continue;
@@ -78,7 +80,7 @@ export function generateRivalryPitches(aggregate: ApplicationWorldAggregate): nu
       item.responseTotal += match.crowdResponse;
       evidence.set(key, item);
     }
-    const candidates: Array<{ record: BackstageConversation; crowd: number }> = [];
+    const candidates: Array<{ record: BackstageConversation; crowd: number; pitchPriority: number }> = [];
     for (const [key, item] of evidence) {
       const average = Math.round((item.responseTotal / item.matches) * 10) / 10;
       const trust = relationships.get(key)?.professionalTrust ?? -1;
@@ -93,17 +95,25 @@ export function generateRivalryPitches(aggregate: ApplicationWorldAggregate): nu
       if (activeProgramme) continue;
       const id = `backstage:rivalry-pitch:${promotionId}:${item.a}:${item.b}`;
       if (previous.some((entry) => entry.conversationId === id)) continue;
-      candidates.push({ crowd: average, record: {
+      const wrestlerA=peopleById.get(item.a)!;
+      const wrestlerB=peopleById.get(item.b)!;
+      const proposer=chooseCreativePitchSpeaker(wrestlerA,wrestlerB,"STORY_RIVALRIES");
+      const rivalPersonId=proposer.id===item.a?item.b:item.a;
+      const interest=wrestlerCreativeInterestScores(proposer).STORY_RIVALRIES;
+      const priority=average + interest*.14 + trust*.07;
+      candidates.push({ crowd: average, pitchPriority:priority, record: {
         conversationId: id, worldId: state.world.id, promotionId,
-        wrestlerId: item.a, sourceContractId: contracts.get(item.a)!.id,
-        rivalPersonId: item.b, sharedSinglesMatches: item.matches,
+        wrestlerId: proposer.id, sourceContractId: contracts.get(proposer.id)!.id,
+        rivalPersonId, sharedSinglesMatches: item.matches,
+        creativeInterestAtPitch:"STORY_RIVALRIES",
         averageCrowdResponse: average, professionalTrustAtPitch: Math.round(trust * 10) / 10,
         kind: "RIVALRY_PITCH", createdDate: { ...state.world.currentDate },
         status: "OPEN", response: null, responseDate: null,
         promisedRole: null, observedMatchShows: 0, observedFeaturedShows: 0,
       } });
     }
-    candidates.sort((a, b) => b.crowd - a.crowd
+    candidates.sort((a, b) => b.pitchPriority - a.pitchPriority
+      || b.crowd - a.crowd
       || (b.record.sharedSinglesMatches ?? 0) - (a.record.sharedSinglesMatches ?? 0)
       || a.record.conversationId.localeCompare(b.record.conversationId));
     for (const candidate of candidates.slice(0, capacity)) {

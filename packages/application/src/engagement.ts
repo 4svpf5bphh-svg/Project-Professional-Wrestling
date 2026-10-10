@@ -1,5 +1,6 @@
 import type { Id, PpwDate } from "../../domain/src/types.js";
 import type { GimmickArchetype, WrestlerCreativeRecord } from "./wrestler-creative.js";
+import type { WrestlerCreativeInterest } from "./wrestler-creative-interests.js";
 
 export type PlayerActivityStatus = "ACTIVE" | "WARNING" | "STEWARDED";
 export type OpportunityCategory = "TALENT" | "MARKET" | "BUSINESS" | "WORLD";
@@ -56,6 +57,10 @@ export interface BackstageConversation {
   rivalPersonId?: Id | null;
   sharedSinglesMatches?: number;
   professionalTrustAtPitch?: number;
+  /** Optional observed tag partnership familiarity at the time of the idea. */
+  tagFamiliarityAtPitch?: number;
+  /** Fictional interest used to surface this idea, frozen for historical context. */
+  creativeInterestAtPitch?: WrestlerCreativeInterest;
   /** Character direction frozen when the request was made; never edits a gimmick by itself. */
   currentGimmickArchetype?: GimmickArchetype;
   suggestedGimmickArchetype?: GimmickArchetype;

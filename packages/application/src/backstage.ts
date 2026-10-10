@@ -14,6 +14,7 @@ import { executeIdempotentCommand, type ApplicationCommandEnvelope } from "./com
 import { activePromotionControlForPlayer, activePromotionControls, activeWorldMembership } from "./ownership.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 import type { GimmickArchetype } from "./wrestler-creative.js";
+import type { WrestlerCreativeInterest } from "./wrestler-creative-interests.js";
 import { buildBackstageDialogue, type BackstageDialogue } from "./backstage-dialogue.js";
 
 export const BACKSTAGE_NEW_CONVERSATIONS_PER_PROMOTION_WEEK = 1;
@@ -110,6 +111,8 @@ export interface PlayerBackstageConversation {
   rivalName: string | null;
   sharedSinglesMatches: number;
   professionalTrustAtPitch: number | null;
+  tagFamiliarityAtPitch: number | null;
+  creativeInterestAtPitch: WrestlerCreativeInterest | null;
   currentGimmickArchetype: GimmickArchetype | null;
   suggestedGimmickArchetype: GimmickArchetype | null;
   observedCrowdResponse: number | null;
@@ -167,6 +170,8 @@ export function buildPlayerBackstageView(
       rivalName: entry.rivalPersonId ? names.get(entry.rivalPersonId) ?? null : null,
       sharedSinglesMatches: entry.sharedSinglesMatches ?? 0,
       professionalTrustAtPitch: entry.professionalTrustAtPitch ?? null,
+      tagFamiliarityAtPitch: entry.tagFamiliarityAtPitch ?? null,
+      creativeInterestAtPitch: entry.creativeInterestAtPitch ?? null,
       currentGimmickArchetype: entry.currentGimmickArchetype ?? null,
       suggestedGimmickArchetype: entry.suggestedGimmickArchetype ?? null,
       observedCrowdResponse: entry.observedCrowdResponse ?? null,

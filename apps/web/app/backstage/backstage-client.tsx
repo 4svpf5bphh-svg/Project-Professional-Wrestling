@@ -195,6 +195,18 @@ export default function BackstageClient(): React.JSX.Element {
                       <p className="muted micro-copy">Contract role: {roleLabel(conversation.promisedRole ?? "UPPER_CARD")} · Last {conversation.observedMatchShows} completed in-ring appearances were not in that position.</p>
                     </>
                   )}
+                  {conversation.creativeInterestAtPitch ? (
+                    <p className="muted micro-copy">
+                      In-game creative interest: {conversation.creativeInterestAtPitch.replaceAll("_"," ").toLowerCase()}.
+                      {conversation.kind === "TAG_TEAM_PITCH" && conversation.tagFamiliarityAtPitch !== null
+                        ? ` Recorded tag familiarity: ${conversation.tagFamiliarityAtPitch.toFixed(1)}/100.`
+                        : ""}
+                      {conversation.kind === "TAG_TEAM_PITCH" && conversation.professionalTrustAtPitch !== null
+                        ? ` Recorded professional trust: ${conversation.professionalTrustAtPitch.toFixed(1)}/100.`
+                        : ""}
+                      {" "}A suggested idea is not an acceptance or a booked outcome.
+                    </p>
+                  ) : null}
                   {conversation.promise ? (
                     <p className="body-copy" style={{ borderTop: "1px solid #354459", paddingTop: 12 }}>
                       <strong>Booking promise: {conversation.promise.status.replaceAll("_", " ").toLowerCase()}.</strong>{" "}

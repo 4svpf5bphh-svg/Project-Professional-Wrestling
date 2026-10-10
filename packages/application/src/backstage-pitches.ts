@@ -9,6 +9,7 @@ import { createWorldEngagementState, openBackstageConversation, type BackstageCo
 import { BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION, BACKSTAGE_NEW_CONVERSATIONS_PER_PROMOTION_WEEK } from "./backstage.js";
 import { activePromotionControls } from "./ownership.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
+import { chooseCreativePitchSpeaker, wrestlerCreativeInterestScores } from "./wrestler-creative-interests.js";
 
 export function generateTagTeamPitches(aggregate: ApplicationWorldAggregate): number {
   const state = aggregate.state;
@@ -29,6 +30,12 @@ export function generateTagTeamPitches(aggregate: ApplicationWorldAggregate): nu
     present.add(appearance.personId + "|" + appearance.contractId);
     validAppearances.set(appearance.eventId, present);
   }
+  const people = new Map(state.people.map(person=>[person.id,person]));
+  const keyForPair = (a: Id, b: Id): string => [a,b].sort().join("|");
+  const relations = new Map((state.wrestlerRelationships ?? [])
+    .map(r=>[keyForPair(r.personAId,r.personBId),r]));
+  const familiarity = new Map(state.workingChemistry.filter(r=>r.context==="TAG")
+    .map(r=>[keyForPair(r.personAId,r.personBId),r]));
   const participants = new Map<Id, typeof state.matchParticipants>();
   for (const entry of state.matchParticipants) {
     if (!events.has(entry.eventId)) continue;
@@ -51,7 +58,8 @@ export function generateTagTeamPitches(aggregate: ApplicationWorldAggregate): nu
     if (capacity <= 0) continue;
 
     const eligible = new Map(activeContractsForPromotion(state, control.promotionId)
-      .filter((contract) => contract.datesUsed < contract.dateEntitlement)
+      .filter((contract) => contract.datesUsed < contract.dateEntitlement
+        && people.get(contract.personId)?.status === "ACTIVE")
       .map((contract) => [contract.personId, contract]));
     const pairStats = new Map<string, { people: [Id, Id]; count: number; crowd: number }>();
     for (const match of state.matches) {
@@ -59,15 +67,20 @@ export function generateTagTeamPitches(aggregate: ApplicationWorldAggregate): nu
         || match.promotionId !== control.promotionId || !events.has(match.eventId)
         || !Number.isFinite(match.crowdResponse)) continue;
       const sides = new Map<string, Id[]>();
+      // Count the *entire recorded side*, not merely the subset still eligible.
+      // In particular, two roster wrestlers among three participants must not
+      // become a fictional two-person team just because the third is unavailable.
       for (const participant of participants.get(match.id) ?? []) {
-        const contract = eligible.get(participant.personId);
-        if (!contract || !validAppearances.get(match.eventId)?.has(participant.personId + "|" + contract.id)) continue;
         const side = sides.get(participant.side) ?? [];
         side.push(participant.personId);
         sides.set(participant.side, side);
       }
       for (const side of sides.values()) {
         if (side.length !== 2 || side[0] === side[1]) continue;
+        if (!side.every(personId=>{
+          const contract=eligible.get(personId);
+          return contract && validAppearances.get(match.eventId)?.has(personId + "|" + contract.id);
+        })) continue;
         const people = [...side].sort() as [Id, Id];
         const key = people.join("|");
         const stats = pairStats.get(key) ?? { people, count: 0, crowd: 0 };
@@ -77,7 +90,7 @@ export function generateTagTeamPitches(aggregate: ApplicationWorldAggregate): nu
       }
     }
 
-    const candidates: Array<{ record: BackstageConversation; crowd: number }> = [];
+    const candidates: Array<{ record: BackstageConversation; crowd: number; pitchPriority: number }> = [];
     for (const stats of pairStats.values()) {
       const [a,b] = stats.people;
       const average = Math.round((stats.crowd / stats.count) * 10) / 10;
@@ -92,16 +105,32 @@ export function generateTagTeamPitches(aggregate: ApplicationWorldAggregate): nu
       if (existingTeam) continue;
       const id = `backstage:tag-pitch:${control.promotionId}:${a}:${b}`;
       if (previous.some((conversation) => conversation.conversationId === id)) continue;
-      candidates.push({ crowd: average, record: {
+      const wrestlerA=people.get(a)!;
+      const wrestlerB=people.get(b)!;
+      const proposer=chooseCreativePitchSpeaker(wrestlerA,wrestlerB,"TEAM_PARTNERSHIPS");
+      const otherId=proposer.id===a?b:a;
+      const relation=relations.get(key);
+      const tagChemistry=familiarity.get(key);
+      const interest=wrestlerCreativeInterestScores(proposer).TEAM_PARTNERSHIPS;
+      // Actual chemistry/trust only supplies evidence and priority. A missing
+      // relationship is unknown, not a fabricated low or high relationship.
+      const priority=average + interest*.12
+        + (relation?.professionalTrust ?? 0)*.075
+        + (tagChemistry?.familiarity ?? 0)*.04;
+      candidates.push({ crowd: average, pitchPriority:priority, record: {
         conversationId: id, worldId: state.world.id, promotionId: control.promotionId,
-        wrestlerId: a, sourceContractId: eligible.get(a)!.id,
-        partnerPersonId: b, sharedTagMatches: stats.count, averageCrowdResponse: average,
+        wrestlerId: proposer.id, sourceContractId: eligible.get(proposer.id)!.id,
+        partnerPersonId: otherId, sharedTagMatches: stats.count, averageCrowdResponse: average,
+        creativeInterestAtPitch:"TEAM_PARTNERSHIPS",
+        ...(relation ? {professionalTrustAtPitch: Math.round(relation.professionalTrust*10)/10} : {}),
+        ...(tagChemistry ? {tagFamiliarityAtPitch: Math.round(tagChemistry.familiarity*10)/10} : {}),
         kind: "TAG_TEAM_PITCH", createdDate: { ...state.world.currentDate },
         status: "OPEN", response: null, responseDate: null,
         promisedRole: null, observedMatchShows: 0, observedFeaturedShows: 0,
       } });
     }
-    candidates.sort((a,b) => b.crowd - a.crowd
+    candidates.sort((a,b) => b.pitchPriority - a.pitchPriority
+      || b.crowd - a.crowd
       || (b.record.sharedTagMatches ?? 0) - (a.record.sharedTagMatches ?? 0)
       || a.record.conversationId.localeCompare(b.record.conversationId));
     for (const candidate of candidates.slice(0, capacity)) {

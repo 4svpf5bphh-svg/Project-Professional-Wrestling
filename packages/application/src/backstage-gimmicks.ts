@@ -17,20 +17,29 @@ import {
   wrestlerCreativeProfileFor, type GimmickArchetype, type WrestlerCreativeFields,
 } from "./wrestler-creative.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
+import { wrestlerCreativeInterestScores } from "./wrestler-creative-interests.js";
+import { wrestlerPersonalityFor } from "./wrestler-personality.js";
+import type { Person } from "../../domain/src/types.js";
 
 const EVIDENCE_WEEKS = 12;
 const MIN_CHARACTER_WEEKS = 6;
 const MIN_MATCHES = 4;
 const MAX_CROWD_RESPONSE = 55;
 
-function proposedArchetype(fields: WrestlerCreativeFields): GimmickArchetype {
-  // Direction is illustrative, not a claimed causal improvement or power-up.
-  if (fields.gimmickArchetype === "SPORTING") return "SHOWMAN";
-  if (fields.gimmickArchetype === "REBEL") return "MYSTERY";
-  if (fields.gimmickArchetype === "AUTHENTIC") {
-    return ["TECHNICAL", "SUBMISSION", "STRONG_STYLE"].includes(fields.primaryStyle) ? "SPORTING" : "REBEL";
-  }
-  return "SPORTING";
+function proposedArchetype(fields: WrestlerCreativeFields, person: Person): GimmickArchetype {
+  // A suggested fictional direction reflects character interest and style,
+  // NOT a claim that this gimmick caused past poor responses or will improve results.
+  const disposition=wrestlerPersonalityFor(person).temperament;
+  const scores=wrestlerCreativeInterestScores(person);
+  const technical=["TECHNICAL","SUBMISSION","STRONG_STYLE"].includes(fields.primaryStyle);
+  const preferences: GimmickArchetype[] = [
+    ...(scores.PROMO_SPOTLIGHT > scores.CHARACTER_REINVENTION ? ["SHOWMAN" as const] : []),
+    ...(disposition==="INDEPENDENT" ? ["REBEL" as const] : []),
+    ...(disposition==="SHOWMAN" ? ["SHOWMAN" as const] : []),
+    ...(technical ? ["SPORTING" as const] : ["REBEL" as const]),
+    "MYSTERY", "SPORTING", "SHOWMAN", "AUTHENTIC",
+  ];
+  return preferences.find(candidate=>candidate !== fields.gimmickArchetype)!;
 }
 
 export function generateGimmickChangePitches(aggregate: ApplicationWorldAggregate): number {
@@ -75,7 +84,7 @@ export function generateGimmickChangePitches(aggregate: ApplicationWorldAggregat
       BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION - unanswered,
     );
     if (capacity <= 0) continue;
-    const candidates: Array<{ pitch: BackstageConversation; response: number }> = [];
+    const candidates: Array<{ pitch: BackstageConversation; response: number; priority: number }> = [];
     for (const contract of activeContractsForPromotion(state, promotionId)) {
       if (contract.datesUsed >= contract.dateEntitlement) continue;
       const person = state.people.find((entry) => entry.id === contract.personId);
@@ -104,7 +113,8 @@ export function generateGimmickChangePitches(aggregate: ApplicationWorldAggregat
       const average = Math.round(totalCrowd / matches * 10) / 10;
       if (average > MAX_CROWD_RESPONSE || average < 0) continue;
       const fields = wrestlerCreativeProfileFor(engagement, promotionId, person);
-      candidates.push({ response: average, pitch: {
+      const personalInterest=wrestlerCreativeInterestScores(person).CHARACTER_REINVENTION;
+      candidates.push({ response: average, priority: (MAX_CROWD_RESPONSE-average)+personalInterest*.15, pitch: {
         conversationId: id, worldId: state.world.id, promotionId,
         wrestlerId: person.id, sourceContractId: contract.id,
         kind: "GIMMICK_CHANGE_PITCH",
@@ -113,10 +123,12 @@ export function generateGimmickChangePitches(aggregate: ApplicationWorldAggregat
         promisedRole: null, observedMatchShows: matches, observedFeaturedShows: 0,
         observedCrowdResponse: average,
         currentGimmickArchetype: fields.gimmickArchetype,
-        suggestedGimmickArchetype: proposedArchetype(fields),
+        suggestedGimmickArchetype: proposedArchetype(fields, person),
+        creativeInterestAtPitch:"CHARACTER_REINVENTION",
       } });
     }
-    candidates.sort((a,b) => a.response - b.response
+    candidates.sort((a,b) => b.priority - a.priority
+      || a.response - b.response
       || b.pitch.observedMatchShows - a.pitch.observedMatchShows
       || a.pitch.sourceContractId.localeCompare(b.pitch.sourceContractId));
     for (const candidate of candidates.slice(0, capacity)) {
