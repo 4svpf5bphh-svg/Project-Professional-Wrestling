@@ -7,7 +7,7 @@
  */
 import type { Id, PpwDate } from "../../domain/src/types.js";
 import type { Programme } from "../../domain/src/programmes.js";
-import { comparePpwDates } from "../../sim-core/src/clock.js";
+import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 import type { BackstageConversation } from "./engagement.js";
 import { activePromotionControlForPromotion } from "./ownership.js";
@@ -48,12 +48,14 @@ export function creativeBaselineAtResponse(
     x.promotionId===conversation.promotionId&&x.personId===conversation.wrestlerId);
   return {
     existingProgrammeIds:(state.programmes??[]).filter(p=>
-      p.promotionId===conversation.promotionId).map(p=>p.id),
+      p.promotionId===conversation.promotionId
+      &&comparePpwDates(p.startedDate,state.world.currentDate,
+        state.ruleset.weeksPerYear)===0).map(p=>p.id),
     existingCompletedMatchIds:state.matches.filter(m=>
       m.promotionId===conversation.promotionId&&m.status==="COMPLETED"
       &&state.events.some(e=>e.id===m.eventId&&comparePpwDates(
         e.date,state.world.currentDate,state.ruleset.weeksPerYear)===0)).map(m=>m.id),
-    lastPresentationRevision:Math.max(0,...(record?.history??[]).map(x=>x.revision)),
+    lastPresentationRevision:(record?.history??[]).reduce((best,entry)=>Math.max(best,entry.revision),0),
   };
 }
 
@@ -132,6 +134,12 @@ export function assessCreativeFollowThrough(aggregate:ApplicationWorldAggregate)
       conversation.response??""))continue;
     // No credit for subsequent AI booking after a promotion lost human control.
     if(!activePromotionControlForPromotion(aggregate.ownership,conversation.promotionId))continue;
+    const today=ppwDateToWeekIndex(aggregate.state.world.currentDate,aggregate.state.ruleset.weeksPerYear);
+    const responded=conversation.responseDate
+      ?ppwDateToWeekIndex(conversation.responseDate,aggregate.state.ruleset.weeksPerYear):today;
+    // A casual "consider" is not an indefinitely outstanding promise.
+    // Bound the audit window so 100-year Worlds don't rescan ancient offers.
+    if(today-responded>26)continue;
     const result=evidenceFor(aggregate,conversation);
     if(!result)continue;
     conversation.creativeFollowThrough=result;
