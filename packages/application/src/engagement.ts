@@ -83,6 +83,15 @@ export interface BackstageConversation {
     happenedDate: PpwDate;
     recordedDate: PpwDate;
   } | null;
+  /** Observed later match evidence; no promised outcome, booking or trust effect. */
+  workingFollowThrough?: {
+    kind: "PARTNERS_REBOOKED" | "ALTERNATE_PARTNER_APPEARED";
+    evidenceMatchId: Id;
+    counterpartPersonId: Id;
+    executionQuality: number;
+    happenedDate: PpwDate;
+    recordedDate: PpwDate;
+  } | null;
   /** Immutable context, frozen when this message is created, for later continuity. */
   continuity?: BackstageContinuitySnapshot;
   /** Optional for snapshots created before promise tracking existed. */
@@ -263,10 +272,19 @@ export function normalizeWorldEngagementState(
         happenedDate: cloneDate(record.creativeFollowThrough.happenedDate),
         recordedDate: cloneDate(record.creativeFollowThrough.recordedDate),
       } : undefined,
+      workingFollowThrough: record.workingFollowThrough ? {
+        ...record.workingFollowThrough,
+        happenedDate: cloneDate(record.workingFollowThrough.happenedDate),
+        recordedDate: cloneDate(record.workingFollowThrough.recordedDate),
+      } : undefined,
       continuity: record.continuity ? {
         ...record.continuity,
         lastCreativeDecisionDate: record.continuity.lastCreativeDecisionDate
           ? cloneDate(record.continuity.lastCreativeDecisionDate) : null,
+        lastWorkingDecision: record.continuity.lastWorkingDecision ? {
+          ...record.continuity.lastWorkingDecision,
+          responseDate: cloneDate(record.continuity.lastWorkingDecision.responseDate),
+        } : null,
       } : undefined,
       promise: record.promise ? {
         ...record.promise,

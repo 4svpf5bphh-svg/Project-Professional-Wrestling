@@ -42,7 +42,21 @@ function continuityLine(entry: BackstageConversation): string {
   const partnership=entry.kind==="TAG_TEAM_PITCH" && context.pastPositiveTeamMomentsWithPartner>0
     ? " We've had good nights together as a team before." : "";
   // A previous "consider" was not an actual agreement or booked action.
-  return last+partnership;
+  const working=context.lastWorkingDecision;
+  const workingLine=working && (entry.kind==="WORKING_PARTNERSHIP_CONCERN"
+    ||entry.kind==="TAG_TEAM_PITCH"||entry.kind==="TEAM_MOMENT")
+    ? " Last time we discussed working together, you "
+      +(working.response==="DISCUSS_WORKING_PLAN"?"wanted to review the partnership"
+        :working.response==="KEEP_WORKING_PAIR"?"said we should keep the pairing"
+        :"were open to trying different tag partners")
+      +"."
+      +(working.observedLaterKind==="PARTNERS_REBOOKED"
+        ?" We later worked another completed tag match together."
+        :working.observedLaterKind==="ALTERNATE_PARTNER_APPEARED"
+          ?" A later completed tag match featured a different partner."
+          :"")
+    :"";
+  return last+partnership+workingLine;
 }
 
 function scene(

@@ -46,7 +46,7 @@
     "test:application-business": "node dist/tests/run-application-business-view-tests.js",
     "test:application-talent": "node dist/tests/run-application-talent-view-tests.js",
     "test:application-wrestler-profile": "node dist/tests/run-application-wrestler-profile-tests.js",
-    "test:working-relationships": "node dist/tests/run-working-relationship-evolution-tests.js",
+    "test:working-relationships": "node dist/tests/run-working-relationship-evolution-tests.js && node dist/tests/run-working-concern-follow-through-tests.js",
     "test:application-industry": "node dist/tests/run-application-industry-view-tests.js",
     "test:application-championship-history": "node dist/tests/run-application-championship-history-view-tests.js",
     "test:application-team-history": "node dist/tests/run-application-team-history-view-tests.js",

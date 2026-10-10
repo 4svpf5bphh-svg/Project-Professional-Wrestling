@@ -147,3 +147,24 @@ history, not character consent or scripted outcomes. No branch of this
 conversation directly changes confidence, morale, roster membership, show
 plans, champions, chemistry or another promotion's World state. Actual later
 collaboration and its separately verified World Lock result govern progression.
+
+## Player decision, factual follow-through, and next-conversation memory
+
+Private working concerns retain one observed subsequent completed match after
+the booker answers. A discussion or decision to keep the pair observes the
+first actual return tag match with that pair. Considering another partner
+observes only a completed tag match with a different partner, **never** a
+speculative roster or contract change. The World verifies the source wrestler's
+actual contract appearance and both wrestlers' completed appearances in the
+same promotion, valid exactly-two-person sides, match completion and date.
+At-response baselines prevent claiming earlier completed work, including
+ambiguous same-day matches; old saves without a baseline require later dates.
+Follow-through is bounded to 26 PPW weeks, once per concern, and merely
+records match identity, counterpart and observed execution: it creates no
+trust, morale, booking or stable/team effect.
+
+A subsequent conversation about the *same pair and promotion* can freeze the
+booker's earlier choice, plus a verified subsequent match if the evidence
+was already recorded by that time. It cannot see the histories of other
+promotions, assume that a requested team change took place, or rewrite
+the context of an earlier conversation when something happens in the future.

@@ -102,6 +102,8 @@ export interface PlayerBackstageConversation {
   dialogue: BackstageDialogue;
   continuity: BackstageContinuitySnapshot | null;
   creativeFollowThrough: NonNullable<BackstageConversation["creativeFollowThrough"]> | null;
+  workingFollowThrough: NonNullable<BackstageConversation["workingFollowThrough"]> | null;
+  workingFollowThroughPartnerName: string | null;
   createdDate: PpwDate;
   status: "OPEN" | "ANSWERED" | "NOTED";
   kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH" | "WORKING_PARTNERSHIP_CONCERN";
@@ -165,6 +167,9 @@ export function buildPlayerBackstageView(
       dialogue: buildBackstageDialogue(entry, persons.get(entry.wrestlerId), names),
       continuity: entry.continuity ? structuredClone(entry.continuity) : null,
       creativeFollowThrough: entry.creativeFollowThrough ? structuredClone(entry.creativeFollowThrough) : null,
+      workingFollowThrough: entry.workingFollowThrough ? structuredClone(entry.workingFollowThrough) : null,
+      workingFollowThroughPartnerName: entry.workingFollowThrough
+        ? names.get(entry.workingFollowThrough.counterpartPersonId) ?? "Another wrestler" : null,
       createdDate: { ...entry.createdDate },
       status: entry.status,
       kind: entry.kind,
@@ -253,7 +258,8 @@ export function respondBackstageConversationCommand(
           fulfilledEventId: null,
         };
       }
-      const considered=["CONSIDER_TAG_TEAM","CONSIDER_RIVALRY","CONSIDER_GIMMICK_CHANGE"]
+      const considered=["CONSIDER_TAG_TEAM","CONSIDER_RIVALRY","CONSIDER_GIMMICK_CHANGE",
+        "DISCUSS_WORKING_PLAN","KEEP_WORKING_PAIR","CONSIDER_PARTNER_CHANGE"]
         .includes(envelope.payload.response);
       const baseline=considered ? creativeBaselineAtResponse(aggregate,conversation) : null;
       const recorded=answerBackstageConversation(

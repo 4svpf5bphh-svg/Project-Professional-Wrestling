@@ -26,6 +26,12 @@ export interface BackstageContinuitySnapshot {
   lastCreativeDecisionDate: PpwDate | null;
   /** Past verified positive team notes involving both these wrestlers. */
   pastPositiveTeamMomentsWithPartner: number;
+  /** Frozen, promotion-scoped history for this exact two-person pairing. */
+  lastWorkingDecision?: {
+    response: "DISCUSS_WORKING_PLAN" | "KEEP_WORKING_PAIR" | "CONSIDER_PARTNER_CHANGE";
+    responseDate: PpwDate;
+    observedLaterKind: "PARTNERS_REBOOKED" | "ALTERNATE_PARTNER_APPEARED" | null;
+  } | null;
 }
 
 function before(a: PpwDate,b: PpwDate): boolean {
@@ -75,13 +81,36 @@ export function backstageContinuityAtCreation(
     });
   const last=creative[0];
   const pairId=incoming.kind==="TAG_TEAM_PITCH" || incoming.kind==="TEAM_MOMENT"
+    || incoming.kind==="WORKING_PARTNERSHIP_CONCERN"
     ? incoming.partnerPersonId : null;
   const previousMoments=pairId
     ? prior.filter(other=>pairIncludes(other,incoming.wrestlerId,pairId)).length : 0;
+  const priorWorking=pairId ? prior.filter(other=>
+    other.kind==="WORKING_PARTNERSHIP_CONCERN" && other.status==="ANSWERED"
+    && !!other.responseDate
+    && !before(incoming.createdDate,other.responseDate)
+    && [other.wrestlerId,other.partnerPersonId].includes(incoming.wrestlerId)
+    && [other.wrestlerId,other.partnerPersonId].includes(pairId)
+    && ["DISCUSS_WORKING_PLAN","KEEP_WORKING_PAIR","CONSIDER_PARTNER_CHANGE"].includes(other.response??"")
+  ).sort((a,b)=>{
+    const x=a.responseDate!,y=b.responseDate!;
+    return (y.year-x.year)||(y.week-x.week)||(y.day-x.day)
+      ||b.conversationId.localeCompare(a.conversationId);
+  })[0] : undefined;
+  const previousFollowThrough=priorWorking?.workingFollowThrough;
+  const frozenObservedKind=previousFollowThrough
+    && !before(incoming.createdDate,previousFollowThrough.happenedDate)
+    && !before(incoming.createdDate,previousFollowThrough.recordedDate)
+    ? previousFollowThrough.kind : null;
   return {
     priorAnsweredCount: responses.length,
     lastCreativeDecision: last && isCreativeDecision(last.response) ? last.response : null,
     lastCreativeDecisionDate:last?.responseDate ? {...last.responseDate} : null,
     pastPositiveTeamMomentsWithPartner:previousMoments,
+    lastWorkingDecision: priorWorking ? {
+      response: priorWorking.response as "DISCUSS_WORKING_PLAN" | "KEEP_WORKING_PAIR" | "CONSIDER_PARTNER_CHANGE",
+      responseDate: {...priorWorking.responseDate!},
+      observedLaterKind: frozenObservedKind,
+    } : null,
   };
 }

@@ -230,15 +230,33 @@ export default function BackstageClient(): React.JSX.Element {
                       No new points or trust modifier has been applied.
                     </p>
                   ) : null}
+                  {conversation.workingFollowThrough ? (
+                    <p className="body-copy">
+                      <strong>Verified later booking:</strong>{" "}
+                      {conversation.workingFollowThrough.kind === "PARTNERS_REBOOKED"
+                        ? "These wrestlers worked together again in a completed tag match."
+                        : `A completed tag match featured ${conversation.wrestlerName} alongside ${conversation.workingFollowThroughPartnerName ?? "another wrestler"}.`}
+                      {" "}Execution {conversation.workingFollowThrough.executionQuality.toFixed(1)}/100 ·
+                      {" "}Y{conversation.workingFollowThrough.happenedDate.year}
+                      {" "}W{conversation.workingFollowThrough.happenedDate.week}.
+                      This records the booking and performance, not the cause,
+                      consent or a guaranteed improvement. No additional trust or morale effect.
+                    </p>
+                  ) : null}
                   {conversation.continuity
                     && (conversation.continuity.priorAnsweredCount > 0
-                      || conversation.continuity.pastPositiveTeamMomentsWithPartner > 0) ? (
+                      || conversation.continuity.pastPositiveTeamMomentsWithPartner > 0
+                      || conversation.continuity.lastWorkingDecision) ? (
                     <p className="muted micro-copy">
                       <strong>Working history:</strong>
                       {" "}{conversation.continuity.priorAnsweredCount} earlier answered conversation(s)
                       with this promotion.
                       {conversation.continuity.pastPositiveTeamMomentsWithPartner > 0
                         ? ` ${conversation.continuity.pastPositiveTeamMomentsWithPartner} previous verified positive team note(s) with this partner.`
+                        : ""}
+                      {conversation.continuity.lastWorkingDecision
+                        ? ` Earlier working-pair discussion: ${conversation.continuity.lastWorkingDecision.response
+                            .replaceAll("_"," ").toLowerCase()}.`
                         : ""}
                       {" "}Suggestions are not promises, and scripted decisions remain yours.
                     </p>
