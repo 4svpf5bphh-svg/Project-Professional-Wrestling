@@ -79,15 +79,16 @@ test("Repeated real tag work gradually builds professional trust once, preservin
   const measured = workingConnectionsForWrestler(state, a!).find(entry => entry.personId === b);
   ok(measured?.recentTagMatchesTogether === 2,
     "read-side match provenance disagrees: " + JSON.stringify(measured));
-  ok(evolveCompletedWorkingPartnerships(state) === 1,
-    "two verified tag shows should qualify exactly once; audit records="
+  ok(evolveCompletedWorkingPartnerships(state) === 2,
+    "both legitimate tag teams should progress, exactly once each; audit records="
       + state.ledger.filter(entry => entry.type === WORKING_PARTNERSHIP_LEDGER_TYPE).length);
   ok(base.professionalTrust === 55.8 && base.familiarity === 22,
     "bounded professional trust or familiarity growth incorrect");
   ok(base.affinity === -35 && base.rivalryHeat === 92
     && JSON.stringify(base.tags) === JSON.stringify(["FORMER_PARTNERS"]),
     "scripted feud/background tags or personal affinity were rewritten");
-  const entry = state.ledger.filter(item => item.type === WORKING_PARTNERSHIP_LEDGER_TYPE);
+  const entry = state.ledger.filter(item => item.type === WORKING_PARTNERSHIP_LEDGER_TYPE
+    && item.entityIds.includes(a!) && item.entityIds.includes(b!));
   ok(entry.length === 1 && entry[0]!.payload.trustDelta === 0.8
     && entry[0]!.payload.sourceMatchId === "now-team",
     "auditable match provenance or exact applied delta was not persisted");
@@ -114,7 +115,7 @@ test("Cooldown, multiple promotions, and the trust ceiling are World-wide", () =
   });
   addMatch(state, ids, promotionId, 2, "p2");
   addMatch(state, ids, promotionId, 3, "p3");
-  ok(evolveCompletedWorkingPartnerships(state) === 1, "initial progress not applied");
+  ok(evolveCompletedWorkingPartnerships(state) === 2, "both tag sides must receive earned initial progress");
   ok(record.professionalTrust === 75 && record.familiarity === 98,
     "trust must saturate at 75 and preserve the difference from chemistry");
   state.world.currentDate = { year: 1, week: 4, day: 1 };
@@ -123,14 +124,17 @@ test("Cooldown, multiple promotions, and the trust ceiling are World-wide", () =
     "other promotion circumvented the global eight-week cooldown");
   state.world.currentDate = { year: 1, week: 11, day: 1 };
   addMatch(state, ids, promotionId, 11, "p11");
-  ok(evolveCompletedWorkingPartnerships(state) === 1,
-    "genuine later collaboration should be eligible after eight weeks");
+  ok(evolveCompletedWorkingPartnerships(state) === 2,
+    "genuine later collaboration should be eligible for both pairs after eight weeks");
   ok(record.professionalTrust === 75 && record.familiarity === 100,
     "high trust must not drop to the soft ceiling and familiarity should saturate");
   state.world.currentDate = { year: 1, week: 19, day: 1 };
   addMatch(state, ids, promotionId, 19, "p19");
-  ok(evolveCompletedWorkingPartnerships(state) === 0,
-    "fully saturated pair must not produce gratuitous growth events");
+  ok(evolveCompletedWorkingPartnerships(state) === 1,
+    "only the opposing pair should still progress once the first pair has fully saturated");
+  ok(state.ledger.filter(item => item.type === WORKING_PARTNERSHIP_LEDGER_TYPE
+    && item.entityIds.includes(a!) && item.entityIds.includes(b!)).length === 2,
+    "fully saturated pair generated extra events after reaching both ceilings");
 });
 
 test("No friendship from scripted defeats, singles opponents, low-quality or incomplete tag shows", () => {
@@ -164,7 +168,7 @@ test("Newly verified work creates a neutral, portable pair, never a forced allia
     "fixture unexpectedly contains a seeded personal relationship");
   addMatch(state, ids, promotionId, 2, "new-first");
   addMatch(state, ids, promotionId, 3, "new-second");
-  ok(evolveCompletedWorkingPartnerships(state) === 1, "new pair was not created");
+  ok(evolveCompletedWorkingPartnerships(state) === 2, "both new tag-side pairs should be created");
   const relation = wrestlerRelationshipBetween(state, a!, b!);
   if (!relation) throw new Error("new pair missing after World development");
   ok(relation.professionalTrust === 50.8 && relation.familiarity === 2,
