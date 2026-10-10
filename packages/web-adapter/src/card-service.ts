@@ -28,6 +28,7 @@ import {
   type TurnPresentation,
   type SigningOutcome,
   type StableInvitationOutcome,
+  type StableExitOutcome,
   type ChallengeResponse,
   type InterruptionOutcome,
   type DetailedShowSlotRef,
@@ -123,6 +124,7 @@ export interface AlphaCardSegmentView {
   signingOutcome?: SigningOutcome | null;
   stableId?: Id | null;
   stableInvitationOutcome?: StableInvitationOutcome | null;
+  stableExitOutcome?: StableExitOutcome | null;
   challengeResponse?: ChallengeResponse | null;
   interruptionOutcome?: InterruptionOutcome | null;
   attackPresentation?: AttackPresentation | null;
@@ -248,6 +250,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CHALLENGE",
   "CONTRACT_SIGNING",
   "STABLE_INVITATION",
+  "STABLE_EXIT",
   "ATTACK",
   "RESCUE",
   "POST_MATCH_ASSAULT",
@@ -460,7 +463,7 @@ function normalizeSegments(
       requiredText(personId, `segments[${index}].participantIds[${personIndex}]`, 128)
     ));
     if (new Set(people).size !== people.length) throw new Error("segment cannot include the same wrestler twice");
-    if (["CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "STABLE_INVITATION", "ATTACK"].includes(segment.type) && people.length < 2) {
+    if (["CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "ATTACK"].includes(segment.type) && people.length < 2) {
       throw new Error(`${segment.type.toLowerCase()} segment requires at least two wrestlers`);
     }
     if (segment.type === "POST_MATCH_ASSAULT" && people.length < 2) {
@@ -499,7 +502,7 @@ function normalizeSegments(
       rescuerPersonId === attackerPersonId || rescuerPersonId === victimPersonId
       || !people.includes(rescuerPersonId!)
     )) throw new Error("RESCUE requires a distinct rescuer among segment participants");
-    const isDirected = segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING" || segment.type === "STABLE_INVITATION";
+    const isDirected = segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING" || segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT";
     const initiatorPersonId = isDirected && segment.initiatorPersonId != null
       ? requiredText(segment.initiatorPersonId, `segments[${index}].initiatorPersonId`, 128) : null;
     const targetPersonId = isDirected && segment.targetPersonId != null
@@ -517,9 +520,23 @@ function normalizeSegments(
       !initiatorPersonId || !targetPersonId
       || !["VERBAL_EXCHANGE", "INTERRUPTER_PREVAILS", "SPEAKER_PREVAILS", "BRAWL"].includes(interruptionOutcome!)
     )) throw new Error("INTERRUPTION requires interrupter, original speaker and a scripted outcome");
-    const stableId = segment.type === "STABLE_INVITATION"
+    const stableId = segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT"
       ? (segment.stableId ? requiredText(segment.stableId, `segments[${index}].stableId`, 128) : null) : null;
     const stableInvitationOutcome = segment.type === "STABLE_INVITATION" ? (segment.stableInvitationOutcome ?? "REFUSED") : null;
+    const stableExitOutcome = segment.type === "STABLE_EXIT" ? (segment.stableExitOutcome ?? "EXPELLED") : null;
+    if (segment.type === "STABLE_EXIT") {
+      const stable = (state.stables ?? []).find((entry) => entry.id === stableId
+        && entry.promotionId === promotionId && entry.status === "ACTIVE");
+      if (!stable) throw new Error("STABLE_EXIT requires an active stable in this promotion");
+      if (!initiatorPersonId || !targetPersonId || !["EXPELLED", "WALKED_OUT"].includes(stableExitOutcome!)) {
+        throw new Error("STABLE_EXIT needs representative, departing wrestler and a scripted exit");
+      }
+      const memberIds = new Set((state.stableMemberships ?? [])
+        .filter((entry) => entry.stableId === stable.id && entry.active).map((entry) => entry.personId));
+      if (!memberIds.has(initiatorPersonId) || !memberIds.has(targetPersonId)) {
+        throw new Error("stable exit requires two current members of the selected stable");
+      }
+    }
     if (segment.type === "STABLE_INVITATION") {
       const stable = (state.stables ?? []).find((entry) => entry.id === stableId
         && entry.promotionId === promotionId && entry.status === "ACTIVE");
@@ -586,6 +603,7 @@ function normalizeSegments(
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
       ...(segment.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
+      ...(segment.type === "STABLE_EXIT" ? { stableId, stableExitOutcome } : {}),
       ...(segment.type === "CHALLENGE" && challengeResponse ? { challengeResponse } : {}),
       ...(segment.type === "INTERRUPTION" ? { interruptionOutcome } : {}),
       ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
@@ -1020,11 +1038,12 @@ export async function loadAlphaShowCard(
       victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
       sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
-      initiatorPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING", "STABLE_INVITATION"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
-      targetPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING", "STABLE_INVITATION"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
+      initiatorPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
+      targetPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
       signingOutcome: segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
-      stableId: segment.type === "STABLE_INVITATION" ? (segment.stableId ?? null) : null,
+      stableId: segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" ? (segment.stableId ?? null) : null,
       stableInvitationOutcome: segment.type === "STABLE_INVITATION" ? (segment.stableInvitationOutcome ?? "REFUSED") : null,
+      stableExitOutcome: segment.type === "STABLE_EXIT" ? (segment.stableExitOutcome ?? "EXPELLED") : null,
       challengeResponse: segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : null,
       interruptionOutcome: segment.type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null,
       attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,

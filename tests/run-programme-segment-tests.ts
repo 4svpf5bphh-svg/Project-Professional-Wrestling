@@ -360,6 +360,61 @@ test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the
     "assault altered a completed match finish");
 });
 
+for (const [outcome, seed] of [["EXPELLED", 9185], ["WALKED_OUT", 9186]] as const) {
+  test(`STABLE_EXIT preserves scripted ${outcome} without silently altering stable membership`, () => {
+    const setup = fixture(seed);
+    const [representative, departing, third] = setup.rosterIds;
+    const stableId = "active-stable-exit";
+    setup.state.stables = [{
+      id: stableId, worldId: setup.state.world.id,
+      promotionId: setup.promotion.id, name: "Exit Test Faction",
+      status: "ACTIVE", formedDate: { ...setup.state.world.currentDate }, disbandedDate: null,
+    }];
+    setup.state.stableMemberships = [representative!, departing!, third!].map((personId, index) => ({
+      id: `exit-member-${index}`, worldId: setup.state.world.id, stableId,
+      personId, joinedDate: { ...setup.state.world.currentDate }, leftDate: null, active: true,
+    }));
+    const base = {
+      draftId: "stable-exit-show", promotionId: setup.promotion.id,
+      targetDate: setup.targetDate, marketId: null, venueId: null, ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+    };
+    const exit = {
+      draftSegmentId: "stable-exit-angle", type: "STABLE_EXIT" as const,
+      participantIds: [departing!, representative!],
+      initiatorPersonId: representative!, targetPersonId: departing!,
+      stableId, stableExitOutcome: outcome, programmeId: setup.programme.id,
+      plannedLengthMinutes: 6,
+    };
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...exit, stableId: "no-such-stable" }],
+    }), "requires an active stable");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...exit, stableExitOutcome: "RANDOM" as typeof outcome }],
+    }), "scripted exit");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...exit, targetPersonId: setup.rosterIds[3], participantIds: [representative!, setup.rosterIds[3]!] }],
+    }), "two current members");
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [exit],
+    });
+    const original = JSON.stringify(setup.state.stableMemberships);
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "stable exit not recorded");
+    const resolved = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(resolved.stableId === stableId && resolved.stableName === "Exit Test Faction"
+      && resolved.stableExitOutcome === outcome, "World history changed the scripted exit");
+    ok(resolved.initiatorPersonId === representative && resolved.targetPersonId === departing,
+      "World history changed the representative or departing wrestler");
+    ok(resolved.crowdResponse !== null && resolved.executionQuality !== null,
+      "on-screen exit did not receive simulated delivery and crowd response");
+    ok(JSON.stringify(setup.state.stableMemberships) === original,
+      "scripted stable exit silently changed World membership");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+      "replaying World resolution duplicated the exit");
+  });
+}
+
 for (const [response, seed] of [["ACCEPTED", 9183], ["REFUSED", 9184]] as const) {
   test(`STABLE_INVITATION records scripted ${response} without silently changing group membership`, () => {
     const setup = fixture(seed);

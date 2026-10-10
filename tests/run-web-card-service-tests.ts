@@ -503,6 +503,53 @@ await test("Run-in saves, reloads, resolves and records the actual finish withou
   ok(appearance?.status === "COMPLETED", "run-in wrestler did not fulfil their booked appearance");
 });
 
+for (const [outcome, seed] of [["EXPELLED", 61144], ["WALKED_OUT", 61145]] as const) {
+  await test(`Card preserves scripted stable exit ${outcome} without removing members`, async () => {
+    const fixture = await reservedShowFixture(seed);
+    const [representative, departing, third] = fixture.participantIds;
+    if (!representative || !departing || !third) throw new Error("stable exit fixture needs three wrestlers");
+    const first = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    const created = await mutateAlphaStable(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: `stable-exit-create-${seed}`, expectedRevision: first.world.revision,
+      action: "CREATE", name: "Scripted Exit Stable",
+      personIds: [representative, departing, third],
+    });
+    const stableId = created.stables[0]!.stableId;
+    const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    const angle: AlphaCardSegmentView = {
+      draftSegmentId: "booked-stable-exit", type: "STABLE_EXIT",
+      participantIds: [departing, representative],
+      initiatorPersonId: representative, targetPersonId: departing,
+      stableId, stableExitOutcome: outcome, programmeId: null, plannedLengthMinutes: 6,
+    };
+    const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: `stable-exit-save-${seed}`,
+      expectedRevision: before.world.revision, expectedPlanVersion: before.workspaceVersion,
+      matches: singlesCard(fixture.participantIds), segments: [angle], championshipAssignments: [],
+    });
+    const again = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    ok(again.segments[0]?.stableExitOutcome === outcome
+      && again.segments[0]?.stableId === stableId && again.segments[0]?.targetPersonId === departing,
+      "Card reload changed the authored stable exit");
+    await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+      expectedRevision: saved.world.revision,
+    });
+    const finished = await fixture.repository.load(fixture.worldId);
+    const entry = finished.state.ledger.find((item) => item.type === "SHOW_SEGMENT_COMPLETED"
+      && item.payload.draftSegmentId === angle.draftSegmentId);
+    ok(entry?.payload.stableExitOutcome === outcome
+      && entry.payload.stableId === stableId && entry.payload.stableName === "Scripted Exit Stable"
+      && entry.payload.initiatorPersonId === representative
+      && entry.payload.targetPersonId === departing,
+      "World Lock rewrote the on-screen stable exit");
+    ok((finished.state.stableMemberships ?? []).some((member) =>
+      member.stableId === stableId && member.personId === departing && member.active),
+      "World Lock silently removed the wrestler from the real stable");
+    ok(typeof entry?.payload.segmentCrowdResponse === "number",
+      "scripted stable exit did not receive an execution rating");
+  });
+}
+
 for (const [response, seed] of [["ACCEPTED", 61142], ["REFUSED", 61143]] as const) {
   await test(`Card saves ${response} stable invitation and World Lock preserves the roster`, async () => {
     const fixture = await reservedShowFixture(seed);

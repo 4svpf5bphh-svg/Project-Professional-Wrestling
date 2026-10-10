@@ -257,6 +257,11 @@ export default function ResultsClient(): React.JSX.Element {
                                   <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Interrupter"} interrupts {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "speaker"} · {slot.segment.interruptionOutcome === "VERBAL_EXCHANGE" ? "Verbal exchange" : slot.segment.interruptionOutcome === "INTERRUPTER_PREVAILS" ? "Interrupter gets the better of them" : slot.segment.interruptionOutcome === "SPEAKER_PREVAILS" ? "Original speaker gets the better of them" : "Brawl erupts"}</span>
                                 </div>
                               ) : null}
+                              {slot.segment.type === "STABLE_EXIT" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.stableExitOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Departing member"} {slot.segment.stableExitOutcome === "EXPELLED" ? "expelled from" : "walks out of"} {slot.segment.stableName ?? "the stable"} · {slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Representative"} represents the group</span>
+                                </div>
+                              ) : null}
                               {slot.segment.type === "STABLE_INVITATION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.stableInvitationOutcome ? (
                                 <div className={styles.matchMeta}>
                                   <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Representative"} invites {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Recruit"} to {slot.segment.stableName ?? "stable"} · {slot.segment.stableInvitationOutcome === "ACCEPTED" ? "Accepted on-screen" : "Refused on-screen"}</span>
@@ -490,6 +495,11 @@ export default function ResultsClient(): React.JSX.Element {
                                   {slot.segment.type === "INTERRUPTION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.interruptionOutcome ? (
                                 <div className={styles.matchMeta}>
                                   <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Interrupter"} interrupts {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "speaker"} · {slot.segment.interruptionOutcome === "VERBAL_EXCHANGE" ? "Verbal exchange" : slot.segment.interruptionOutcome === "INTERRUPTER_PREVAILS" ? "Interrupter gets the better of them" : slot.segment.interruptionOutcome === "SPEAKER_PREVAILS" ? "Original speaker gets the better of them" : "Brawl erupts"}</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "STABLE_EXIT" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.stableExitOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Departing member"} {slot.segment.stableExitOutcome === "EXPELLED" ? "expelled from" : "walks out of"} {slot.segment.stableName ?? "the stable"} · {slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Representative"} represents the group</span>
                                 </div>
                               ) : null}
                               {slot.segment.type === "STABLE_INVITATION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.stableInvitationOutcome ? (

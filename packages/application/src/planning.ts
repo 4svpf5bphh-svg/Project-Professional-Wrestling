@@ -51,6 +51,7 @@ export type DetailedShowSegmentType =
   | "CHALLENGE"
   | "CONTRACT_SIGNING"
   | "STABLE_INVITATION"
+  | "STABLE_EXIT"
   | "ATTACK"
   | "RESCUE"
   | "POST_MATCH_ASSAULT"
@@ -63,6 +64,7 @@ export type TurnPresentation = "REVEAL" | "BETRAYAL";
 export type SigningOutcome = "SIGNED" | "REJECTED" | "WALKOUT" | "BRAWL";
 export type ChallengeResponse = "ACCEPTED" | "REFUSED" | "LEFT_OPEN";
 export type StableInvitationOutcome = "ACCEPTED" | "REFUSED";
+export type StableExitOutcome = "EXPELLED" | "WALKED_OUT";
 // Both outcomes are player-scripted; no random story outcome at World Lock.
 export type InterruptionOutcome = "VERBAL_EXCHANGE" | "INTERRUPTER_PREVAILS" | "SPEAKER_PREVAILS" | "BRAWL";
 
@@ -85,6 +87,7 @@ export interface DetailedShowSegmentDraft {
   signingOutcome?: SigningOutcome | null;
   stableId?: Id | null;
   stableInvitationOutcome?: StableInvitationOutcome | null;
+  stableExitOutcome?: StableExitOutcome | null;
   challengeResponse?: ChallengeResponse | null;
   interruptionOutcome?: InterruptionOutcome | null;
   attackPresentation?: AttackPresentation | null;
@@ -175,6 +178,7 @@ const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CHALLENGE",
   "CONTRACT_SIGNING",
   "STABLE_INVITATION",
+  "STABLE_EXIT",
   "ATTACK",
   "RESCUE",
   "POST_MATCH_ASSAULT",
@@ -336,7 +340,7 @@ function validateShowSegmentDraft(
   if (new Set(draft.participantIds).size !== draft.participantIds.length) {
     throw new Error("show segment cannot include the same wrestler twice");
   }
-  if (["CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "STABLE_INVITATION", "ATTACK"].includes(draft.type) && draft.participantIds.length < 2) {
+  if (["CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "ATTACK"].includes(draft.type) && draft.participantIds.length < 2) {
     throw new Error(`${draft.type} segment requires at least two wrestlers`);
   }
   if (draft.type === "POST_MATCH_ASSAULT" && draft.participantIds.length < 2) {
@@ -378,7 +382,7 @@ function validateShowSegmentDraft(
     !rescuerPersonId || rescuerPersonId === attackerPersonId || rescuerPersonId === victimPersonId
     || !draft.participantIds.includes(rescuerPersonId)
   )) throw new Error("RESCUE requires a distinct rescuer among segment participants");
-  const isDirected = draft.type === "CHALLENGE" || draft.type === "CONFRONTATION" || draft.type === "INTERRUPTION" || draft.type === "CONTRACT_SIGNING" || draft.type === "STABLE_INVITATION";
+  const isDirected = draft.type === "CHALLENGE" || draft.type === "CONFRONTATION" || draft.type === "INTERRUPTION" || draft.type === "CONTRACT_SIGNING" || draft.type === "STABLE_INVITATION" || draft.type === "STABLE_EXIT";
   const initiatorPersonId = isDirected && draft.initiatorPersonId != null
     ? normalizedId(draft.initiatorPersonId, "initiatorPersonId") : null;
   const targetPersonId = isDirected && draft.targetPersonId != null
@@ -399,9 +403,23 @@ function validateShowSegmentDraft(
     !initiatorPersonId || !targetPersonId
     || !["VERBAL_EXCHANGE", "INTERRUPTER_PREVAILS", "SPEAKER_PREVAILS", "BRAWL"].includes(interruptionOutcome!)
   )) throw new Error("INTERRUPTION requires interrupter, original speaker and a scripted outcome");
-  const stableId = draft.type === "STABLE_INVITATION"
+  const stableId = draft.type === "STABLE_INVITATION" || draft.type === "STABLE_EXIT"
     ? (draft.stableId ? normalizedId(draft.stableId, "stableId") : null) : null;
   const stableInvitationOutcome = draft.type === "STABLE_INVITATION" ? (draft.stableInvitationOutcome ?? "REFUSED") : null;
+  const stableExitOutcome = draft.type === "STABLE_EXIT" ? (draft.stableExitOutcome ?? "EXPELLED") : null;
+  if (draft.type === "STABLE_EXIT") {
+    const stable = (state.stables ?? []).find((entry) => entry.id === stableId
+      && entry.promotionId === promotionId && entry.status === "ACTIVE");
+    if (!stable) throw new Error("STABLE_EXIT requires an active stable in this promotion");
+    if (!initiatorPersonId || !targetPersonId || !["EXPELLED", "WALKED_OUT"].includes(stableExitOutcome!)) {
+      throw new Error("STABLE_EXIT needs representative, departing wrestler and a scripted exit");
+    }
+    const memberIds = new Set((state.stableMemberships ?? [])
+      .filter((entry) => entry.stableId === stable.id && entry.active).map((entry) => entry.personId));
+    if (!memberIds.has(initiatorPersonId) || !memberIds.has(targetPersonId)) {
+      throw new Error("stable exit requires two current members of the selected stable");
+    }
+  }
   if (draft.type === "STABLE_INVITATION") {
     const stable = (state.stables ?? []).find((entry) => entry.id === stableId
       && entry.promotionId === promotionId && entry.status === "ACTIVE");
@@ -473,6 +491,7 @@ function validateShowSegmentDraft(
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
     ...(draft.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
+    ...(draft.type === "STABLE_EXIT" ? { stableId, stableExitOutcome } : {}),
     ...(draft.type === "CHALLENGE" && challengeResponse ? { challengeResponse } : {}),
     ...(draft.type === "INTERRUPTION" ? { interruptionOutcome } : {}),
     ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),

@@ -77,6 +77,7 @@ export interface PlayerWorldResultSegmentView {
   stableId: Id | null;
   stableName: string | null;
   stableInvitationOutcome: "ACCEPTED" | "REFUSED" | null;
+  stableExitOutcome: "EXPELLED" | "WALKED_OUT" | null;
   attackPresentation: AttackPresentation | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
@@ -317,6 +318,7 @@ export function buildPlayerWorldResultsView(
         stableId: segment.stableId,
         stableName: segment.stableName,
         stableInvitationOutcome: segment.stableInvitationOutcome,
+        stableExitOutcome: segment.stableExitOutcome,
         attackPresentation: segment.attackPresentation,
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,
