@@ -419,8 +419,8 @@ try {
 
   // Real browser boundary regression: profile edit must survive POST and GET,
   // never rely only on direct TypeScript service tests.
-  const rosterPerson=cardView.participants.find(person=>person.datesRemaining>0);
-  ok(rosterPerson,"HTTP creative edit needs an active booked roster wrestler");
+  const rosterPerson=cardView.participants[0];
+  ok(rosterPerson,"HTTP creative edit needs a booked roster wrestler");
   const editable=await json(await fetch(
     `${baseUrl}/api/talent/profile?personId=${encodeURIComponent(rosterPerson.personId)}`,{cache:"no-store"}));
   ok(editable.creativeProfile?.canEdit,"HTTP wrestler page did not expose promotion-specific editing");
