@@ -95,13 +95,17 @@ export interface PlayerBackstageConversation {
   wrestlerName: string;
   createdDate: PpwDate;
   status: "OPEN" | "ANSWERED";
-  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH";
+  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH";
   promisedRole: "MAIN_EVENT" | "UPPER_CARD" | null;
   observedMatchShows: number;
   partnerPersonId: Id | null;
   partnerName: string | null;
   sharedTagMatches: number;
   averageCrowdResponse: number | null;
+  rivalPersonId: Id | null;
+  rivalName: string | null;
+  sharedSinglesMatches: number;
+  professionalTrustAtPitch: number | null;
   response: BackstageResponse | null;
   responseDate: PpwDate | null;
   canPromiseFeaturedBooking: boolean;
@@ -150,6 +154,10 @@ export function buildPlayerBackstageView(
       partnerName: entry.partnerPersonId ? names.get(entry.partnerPersonId) ?? null : null,
       sharedTagMatches: entry.sharedTagMatches ?? 0,
       averageCrowdResponse: entry.averageCrowdResponse ?? null,
+      rivalPersonId: entry.rivalPersonId ?? null,
+      rivalName: entry.rivalPersonId ? names.get(entry.rivalPersonId) ?? null : null,
+      sharedSinglesMatches: entry.sharedSinglesMatches ?? 0,
+      professionalTrustAtPitch: entry.professionalTrustAtPitch ?? null,
       response: entry.response,
       responseDate: entry.responseDate ? { ...entry.responseDate } : null,
       canPromiseFeaturedBooking: entry.status === "OPEN"

@@ -4,7 +4,7 @@ export type PlayerActivityStatus = "ACTIVE" | "WARNING" | "STEWARDED";
 export type OpportunityCategory = "TALENT" | "MARKET" | "BUSINESS" | "WORLD";
 export type StewardshipExitRequestStatus = "OPEN" | "SETTLED" | "WITHDRAWN";
 export type BackstageConversationStatus = "OPEN" | "ANSWERED";
-export type BackstageResponse = "HEAR_OUT" | "EXPLAIN_PLAN" | "STAND_FIRM" | "PROMISE_FEATURED_BOOKING" | "CONSIDER_TAG_TEAM" | "PASS_TAG_TEAM";
+export type BackstageResponse = "HEAR_OUT" | "EXPLAIN_PLAN" | "STAND_FIRM" | "PROMISE_FEATURED_BOOKING" | "CONSIDER_TAG_TEAM" | "PASS_TAG_TEAM" | "CONSIDER_RIVALRY" | "PASS_RIVALRY";
 
 export type BackstagePromiseStatus = "PENDING" | "FULFILLED" | "NOT_DELIVERED" | "NO_OPPORTUNITY" | "EXCUSED";
 
@@ -39,7 +39,7 @@ export interface BackstageConversation {
   promotionId: Id;
   wrestlerId: Id;
   sourceContractId: Id;
-  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH";
+  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH";
   createdDate: PpwDate;
   status: BackstageConversationStatus;
   response: BackstageResponse | null;
@@ -52,6 +52,9 @@ export interface BackstageConversation {
   partnerPersonId?: Id | null;
   sharedTagMatches?: number;
   averageCrowdResponse?: number;
+  rivalPersonId?: Id | null;
+  sharedSinglesMatches?: number;
+  professionalTrustAtPitch?: number;
   /** Optional for snapshots created before promise tracking existed. */
   promise?: BackstageBookingPromise | null;
 }
@@ -436,6 +439,17 @@ export function openBackstageConversation(
       || conversation.averageCrowdResponse < 65 || conversation.averageCrowdResponse > 100) {
       throw new Error("Backstage tag pitch requires grounded positive team evidence");
     }
+  } else if (conversation.kind === "RIVALRY_PITCH") {
+    if (conversation.promisedRole !== null || !conversation.rivalPersonId
+      || conversation.rivalPersonId === conversation.wrestlerId
+      || !Number.isSafeInteger(conversation.sharedSinglesMatches)
+      || (conversation.sharedSinglesMatches ?? 0) < 2
+      || typeof conversation.averageCrowdResponse !== "number"
+      || conversation.averageCrowdResponse < 70 || conversation.averageCrowdResponse > 100
+      || typeof conversation.professionalTrustAtPitch !== "number"
+      || conversation.professionalTrustAtPitch < 60 || conversation.professionalTrustAtPitch > 100) {
+      throw new Error("Backstage rivalry pitch requires verified match and trust evidence");
+    }
   } else throw new Error("unsupported Backstage conversation kind");
   const stored = { ...conversation, conversationId, createdDate: cloneDate(conversation.createdDate), promise: null };
   engagement.backstageConversations.push(stored);
@@ -452,7 +466,8 @@ export function answerBackstageConversation(
   const id = normalizedNonEmpty(conversationId, "conversationId", 240);
   const concernReplies: BackstageResponse[] = ["HEAR_OUT", "EXPLAIN_PLAN", "STAND_FIRM", "PROMISE_FEATURED_BOOKING"];
   const pitchReplies: BackstageResponse[] = ["CONSIDER_TAG_TEAM", "PASS_TAG_TEAM"];
-  if (![...concernReplies, ...pitchReplies].includes(response)) throw new Error("unsupported Backstage response");
+  const rivalryReplies: BackstageResponse[] = ["CONSIDER_RIVALRY", "PASS_RIVALRY"];
+  if (![...concernReplies, ...pitchReplies, ...rivalryReplies].includes(response)) throw new Error("unsupported Backstage response");
   if ((response === "PROMISE_FEATURED_BOOKING") !== (promise !== null)) {
     throw new Error("a booking promise must have an explicit, tracked commitment");
   }
@@ -463,7 +478,7 @@ export function answerBackstageConversation(
   const conversation = engagement.backstageConversations.find((entry) => entry.conversationId === id);
   if (!conversation) throw new Error("Backstage conversation not found");
   if (conversation.status !== "OPEN") throw new Error("Backstage conversation already answered");
-  if (!(conversation.kind === "TAG_TEAM_PITCH" ? pitchReplies : concernReplies).includes(response)) {
+  if (!(conversation.kind === "TAG_TEAM_PITCH" ? pitchReplies : conversation.kind === "RIVALRY_PITCH" ? rivalryReplies : concernReplies).includes(response)) {
     throw new Error("response does not match Backstage conversation type");
   }
   conversation.status = "ANSWERED";
