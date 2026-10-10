@@ -39,9 +39,10 @@ const NAV_ITEMS: NavItem[] = [
     href: "/talent",
     label: "Talent",
     shortLabel: "T",
-    matches: (pathname) => pathname.startsWith("/talent") || pathname.startsWith("/teams"),
+    matches: (pathname) => pathname.startsWith("/talent") || pathname.startsWith("/teams") || pathname.startsWith("/backstage"),
     destinations: [
       { href: "/talent", label: "Roster", description: "Manage your contracted wrestlers, roles, alignment and renewals." },
+      { href: "/backstage", label: "Backstage", description: "Read and respond to wrestler concerns and requests." },
       { href: "/talent?view=market", label: "Talent market", description: "Search and filter wrestlers currently available to recruit." },
       { href: "/talent/teams", label: "Tag teams", description: "Manage established teams on your roster." },
       { href: "/talent?view=offers", label: "Offers", description: "Review your pending contract offers." },

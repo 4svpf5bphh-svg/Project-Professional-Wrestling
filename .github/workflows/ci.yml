@@ -66,6 +66,8 @@ jobs:
         run: node dist/tests/run-talent-expectation-tests.js
       - name: Run Backstage lifecycle coverage
         run: node dist/tests/run-backstage-tests.js
+      - name: Run Backstage server-service coverage
+        run: node dist/tests/run-web-backstage-service-tests.js
       - name: Build Alpha web app
         run: npm run web:build
       - name: Run Alpha HTTP integration
