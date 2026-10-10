@@ -8,11 +8,13 @@ import {
   createPersistedApplicationWorld,
   generateBackstageConversations,
   evaluateBackstagePromises,
+  applyBackstagePromiseConsequences,
   respondBackstageConversationCommand,
 } from "../packages/application/src/index.js";
 import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
 import { createWorldEngagementState, openBackstageConversation } from "../packages/application/src/engagement.js";
 import { activeContractsForPromotion } from "../packages/sim-core/src/index.js";
+import { promotionTalentTrustFor } from "../packages/sim-core/src/talent-trust.js";
 import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
 import { claimIndependentPromotionForPlayer } from "../packages/application/src/ownership.js";
 import type { Match, WrestlingEvent } from "../packages/domain/src/types.js";
@@ -354,6 +356,135 @@ test("An expired or out-of-dates contract cannot be used to forge a booking prom
   } catch { rejected = true; }
   ok(rejected && item.status === "OPEN" && item.promise === null,
     "unfulfillable booking promise was accepted");
+});
+
+
+function bookerPromise(f: ReturnType<typeof fixture>, requestId: string): string {
+  generateBackstageConversations(f.aggregate);
+  const id = f.aggregate.engagement!.backstageConversations[0]!.conversationId;
+  respondBackstageConversationCommand(f.aggregate, {
+    requestId, worldId: f.aggregate.state.world.id, playerId: "backstage-owner",
+    commandType: "RESPOND_BACKSTAGE_CONVERSATION",
+    payload: { conversationId: id, response: "PROMISE_FEATURED_BOOKING" },
+  });
+  return id;
+}
+
+test("An unexcused broken player promise causes one bounded trust and morale impact", () => {
+  const f = fixture();
+  const id = bookerPromise(f, "accountability-miss");
+  const state = f.aggregate.state;
+  const beforeMorale = f.person.morale;
+  const pair = promotionTalentTrustFor(state, f.promotion.id, f.person.id);
+  const beforeTrust = pair.trust;
+  const start = { ...state.world.currentDate };
+  addFutureShow(f, "late-undercard", 1, 1);
+  state.world.currentDate = addPpwWeeks(start, 5, state.ruleset.weeksPerYear);
+  ok(evaluateBackstagePromises(f.aggregate) === 1, "missed promise did not reach deadline");
+  ok(applyBackstagePromiseConsequences(f.aggregate) === 1, "missed promise was not assessed");
+  const promise = f.aggregate.engagement!.backstageConversations.find((c) => c.conversationId === id)!.promise!;
+  ok(promise.status === "NOT_DELIVERED" && promise.consequence?.reason === "COMMITMENT_BROKEN",
+    "booker's undelivered promise was incorrectly excused");
+  ok(pair.trust < beforeTrust && beforeTrust - pair.trust >= 2 && beforeTrust - pair.trust <= 4,
+    "broken word did not have a small relationship-specific cost");
+  ok(f.person.morale === beforeMorale - 1, "broken word changed morale too strongly");
+  ok(promise.consequence?.trustDelta === pair.trust - beforeTrust && promise.consequence?.moraleDelta === -1,
+    "actual penalty details were not preserved");
+  const worldAfter = JSON.stringify(state);
+  ok(applyBackstagePromiseConsequences(f.aggregate) === 0 && JSON.stringify(state) === worldAfter,
+    "repeat consequence pass stacked the penalty");
+  const saved = cloneApplicationWorld(f.aggregate);
+  ok(saved.engagement?.backstageConversations.find((c) => c.conversationId === id)?.promise?.consequence?.reason
+    === "COMMITMENT_BROKEN", "accountability decision was not persisted");
+});
+
+test("Delivering a deliberately promised match records it without granting simulation power", () => {
+  const f = fixture();
+  const id = bookerPromise(f, "accountability-keep");
+  const state = f.aggregate.state;
+  const start = { ...state.world.currentDate };
+  const pair = promotionTalentTrustFor(state, f.promotion.id, f.person.id);
+  const trust = pair.trust, morale = f.person.morale;
+  addFutureShow(f, "kept-promise-event", 2, 3);
+  state.world.currentDate = addPpwWeeks(start, 3, state.ruleset.weeksPerYear);
+  ok(evaluateBackstagePromises(f.aggregate) === 1, "kept promise did not resolve");
+  ok(applyBackstagePromiseConsequences(f.aggregate) === 1, "kept promise was not assessed");
+  const promise = f.aggregate.engagement!.backstageConversations.find((c) => c.conversationId === id)!.promise!;
+  ok(promise.consequence?.reason === "COMMITMENT_KEPT" && promise.consequence.trustDelta === 0
+    && promise.consequence.moraleDelta === 0, "keeping your word granted hidden account-activity boosts");
+  ok(pair.trust === trust && f.person.morale === morale, "kept promise unexpectedly changed sim strength");
+});
+
+test("A real injury in the promise window excuses a miss, with zero morale/trust penalties", () => {
+  const f = fixture();
+  const id = bookerPromise(f, "injury-promise");
+  const state = f.aggregate.state;
+  const start = { ...state.world.currentDate };
+  const pair = promotionTalentTrustFor(state, f.promotion.id, f.person.id);
+  const trust = pair.trust, morale = f.person.morale;
+  addFutureShow(f, "injured-undercard", 1, 1);
+  const injuryDate = addPpwWeeks(start, 2, state.ruleset.weeksPerYear);
+  state.injuries.push({
+    id: "documented-backstage-injury", worldId: state.world.id, personId: f.person.id,
+    matchId: "historical-match", eventId: "historical-event", date: injuryDate,
+    severity: "MODERATE", weeksOut: 2, weeksRemaining: 0, status: "RECOVERED",
+  });
+  state.world.currentDate = addPpwWeeks(start, 5, state.ruleset.weeksPerYear);
+  ok(evaluateBackstagePromises(f.aggregate) === 1, "injured promise was not evaluated");
+  ok(applyBackstagePromiseConsequences(f.aggregate) === 1, "injured promise was not assessed");
+  const promise = f.aggregate.engagement!.backstageConversations.find((c) => c.conversationId === id)!.promise!;
+  ok(promise.status === "EXCUSED" && promise.consequence?.reason === "WRESTLER_INJURED",
+    "injury was incorrectly blamed on the booker");
+  ok(pair.trust === trust && f.person.morale === morale, "injury incurred a hidden penalty");
+  ok(buildPlayerAttention(f.aggregate, "backstage-owner").some((entry) =>
+    entry.title.includes("excused") && entry.summary.includes("Injury")),
+    "the Home alert failed to explain the exemption");
+});
+
+test("Terminated contract and AI stewardship are not treated as booker failures", () => {
+  for (const kind of ["CONTRACT", "STEWARDSHIP"] as const) {
+    const f = fixture();
+    const id = bookerPromise(f, "external-excuse-" + kind);
+    const state = f.aggregate.state;
+    const pair = promotionTalentTrustFor(state, f.promotion.id, f.person.id);
+    const trust = pair.trust, morale = f.person.morale;
+    const start = { ...state.world.currentDate };
+    addFutureShow(f, "outside-booking-" + kind, 1, 1);
+    if (kind === "CONTRACT") f.contract.status = "TERMINATED";
+    else {
+      f.aggregate.engagement!.playerActivity.push({
+        playerId: "backstage-owner", lastActivePpwDate: { ...start },
+        lastActiveRevision: 0, lastActiveCycleKey: null, status: "STEWARDED",
+        statusSinceCycleKey: null,
+      });
+    }
+    state.world.currentDate = addPpwWeeks(start, 5, state.ruleset.weeksPerYear);
+    evaluateBackstagePromises(f.aggregate);
+    applyBackstagePromiseConsequences(f.aggregate);
+    const promise = f.aggregate.engagement!.backstageConversations.find((c) => c.conversationId === id)!.promise!;
+    const expected = kind === "CONTRACT" ? "CONTRACT_TERMINATED" : "OWNER_STEWARDED";
+    ok(promise.status === "EXCUSED" && promise.consequence?.reason === expected,
+      "an external interruption was reported as deliberate booking negligence");
+    ok(pair.trust === trust && f.person.morale === morale, "external interruption changed trust or morale");
+  }
+});
+
+test("An unanswered concern and a conversation without an explicit promise have no consequences", () => {
+  const f = fixture();
+  generateBackstageConversations(f.aggregate);
+  const state = f.aggregate.state;
+  const pair = promotionTalentTrustFor(state, f.promotion.id, f.person.id);
+  const before = JSON.stringify(state);
+  ok(applyBackstagePromiseConsequences(f.aggregate) === 0, "unanswered concern altered wrestler");
+  const id = f.aggregate.engagement!.backstageConversations[0]!.conversationId;
+  respondBackstageConversationCommand(f.aggregate, {
+    requestId: "no-hidden-consequence", worldId: state.world.id,
+    playerId: "backstage-owner", commandType: "RESPOND_BACKSTAGE_CONVERSATION",
+    payload: { conversationId: id, response: "STAND_FIRM" },
+  });
+  ok(applyBackstagePromiseConsequences(f.aggregate) === 0 && JSON.stringify(state) === before,
+    "a plain conversation generated a penalty or bonus");
+  ok(pair.promotionId === f.promotion.id, "test trust context shifted unexpectedly");
 });
 
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");

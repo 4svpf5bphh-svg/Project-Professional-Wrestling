@@ -153,19 +153,28 @@ export function buildPlayerAttention(
         || conversation.promise.status === "PENDING") continue;
       const status = conversation.promise.status;
       const name = personName(aggregate, conversation.wrestlerId);
+      const reason = conversation.promise.consequence?.reason ?? null;
       pushIfVisible(aggregate, playerId, items, {
         attentionId: `backstage-promise:${conversation.conversationId}:${status}`,
         category: "IMPORTANT",
         title: status === "FULFILLED"
           ? `You delivered on your word to ${name}`
-          : status === "NOT_DELIVERED"
-            ? `Your booking promise to ${name} wasn't delivered`
-            : `No eligible show took place for ${name}'s booking promise`,
+          : status === "EXCUSED"
+            ? `${name}'s booking promise was excused`
+            : status === "NOT_DELIVERED"
+              ? `Your booking promise to ${name} wasn't delivered`
+              : `No eligible show took place for ${name}'s booking promise`,
         summary: status === "FULFILLED"
           ? "The promised featured match took place. Your commitment is recorded in Backstage."
-          : status === "NOT_DELIVERED"
-            ? "The agreed window passed without the promised featured match. Review the booking history in Backstage."
-            : "The promised window passed without a completed promotion show. No breach or morale consequence is assumed.",
+          : status === "EXCUSED"
+            ? reason === "WRESTLER_INJURED"
+              ? "Injury affected the promise window. No booking breach or trust penalty was applied."
+              : reason === "OWNER_STEWARDED"
+                ? "AI stewardship covered the promotion. Your absence did not count as a broken promise."
+                : "Contract or roster circumstances prevented a fair booking expectation. No penalty was applied."
+            : status === "NOT_DELIVERED"
+              ? "The player-authored featured match was not delivered despite completed shows. The small trust impact is recorded in Backstage."
+              : "No completed show took place in the promise window; no breach or trust penalty was applied.",
         deadline: null,
         deepLink: "/backstage",
         dismissible: true,

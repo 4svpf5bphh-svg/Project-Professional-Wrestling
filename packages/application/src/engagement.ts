@@ -6,7 +6,20 @@ export type StewardshipExitRequestStatus = "OPEN" | "SETTLED" | "WITHDRAWN";
 export type BackstageConversationStatus = "OPEN" | "ANSWERED";
 export type BackstageResponse = "HEAR_OUT" | "EXPLAIN_PLAN" | "STAND_FIRM" | "PROMISE_FEATURED_BOOKING";
 
-export type BackstagePromiseStatus = "PENDING" | "FULFILLED" | "NOT_DELIVERED" | "NO_OPPORTUNITY";
+export type BackstagePromiseStatus = "PENDING" | "FULFILLED" | "NOT_DELIVERED" | "NO_OPPORTUNITY" | "EXCUSED";
+
+export type BackstagePromiseReason =
+  | "COMMITMENT_KEPT" | "COMMITMENT_BROKEN" | "NO_COMPLETED_SHOW"
+  | "WRESTLER_INJURED" | "CONTRACT_TERMINATED"
+  | "OWNER_STEWARDED" | "PROMOTION_UNCONTROLLED" | "WRESTLER_UNAVAILABLE";
+
+export interface BackstagePromiseConsequence {
+  assessedDate: PpwDate;
+  reason: BackstagePromiseReason;
+  /** Actual applied score change, after clamping. No free bonus for a fulfilled promise. */
+  trustDelta: number;
+  moraleDelta: number;
+}
 
 export interface BackstageBookingPromise {
   kind: "FEATURED_MATCH";
@@ -16,6 +29,8 @@ export interface BackstageBookingPromise {
   status: BackstagePromiseStatus;
   resolvedDate: PpwDate | null;
   fulfilledEventId: Id | null;
+  /** Missing on historical snapshots; assessment is applied once. */
+  consequence?: BackstagePromiseConsequence | null;
 }
 
 export interface BackstageConversation {
@@ -192,6 +207,10 @@ export function normalizeWorldEngagementState(
         madeDate: cloneDate(record.promise.madeDate),
         dueDate: cloneDate(record.promise.dueDate),
         resolvedDate: record.promise.resolvedDate ? cloneDate(record.promise.resolvedDate) : null,
+        consequence: record.promise.consequence ? {
+          ...record.promise.consequence,
+          assessedDate: cloneDate(record.promise.consequence.assessedDate),
+        } : null,
       } : null,
     })),
   };

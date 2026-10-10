@@ -1,6 +1,7 @@
 import type { Id } from "../../domain/src/types.js";
 import { generateWorldOpportunities } from "./opportunity-generation.js";
 import { evaluateBackstagePromises, generateBackstageConversations } from "./backstage.js";
+import { applyBackstagePromiseConsequences } from "./backstage-consequences.js";
 import {
   closeCurrentWeekReservationsAtCommitmentLock,
   materializeCurrentWeekReservations,
@@ -108,6 +109,7 @@ export async function resolvePersistedWorldWeek(
       },
     });
     evaluateBackstagePromises(aggregate);
+    applyBackstagePromiseConsequences(aggregate);
     generateBackstageConversations(aggregate);
     generateWorldOpportunities(aggregate);
   });

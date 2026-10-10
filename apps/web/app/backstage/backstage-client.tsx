@@ -126,6 +126,16 @@ export default function BackstageClient(): React.JSX.Element {
                       {conversation.promise.fulfilledEventId ? " Delivered through completed show results." : ""}
                       {conversation.promise.status === "NOT_DELIVERED" ? " No suitable featured match was completed in that window." : ""}
                       {conversation.promise.status === "NO_OPPORTUNITY" ? " No promotion show took place in that window." : ""}
+                      {conversation.promise.status === "EXCUSED" ? " The missed commitment was excused due to circumstances outside normal booking control." : ""}
+                      {conversation.promise.consequence
+                        ? <span style={{ display: "block", marginTop: 8 }}>
+                            <strong>Follow-through:</strong>{" "}
+                            {conversation.promise.consequence.reason.replaceAll("_", " ").toLowerCase()} ·
+                            Trust {conversation.promise.consequence.trustDelta > 0 ? "+" : ""}
+                            {conversation.promise.consequence.trustDelta} · Morale{" "}
+                            {conversation.promise.consequence.moraleDelta > 0 ? "+" : ""}
+                            {conversation.promise.consequence.moraleDelta}.
+                          </span> : null}
                     </p>
                   ) : null}
                   {conversation.status === "OPEN" ? (
