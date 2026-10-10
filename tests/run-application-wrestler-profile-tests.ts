@@ -21,7 +21,7 @@ import {
 import { GIMMICK_CATALOG, gimmickDefinition, gimmickUsableBy } from "../packages/application/src/gimmick-catalog.js";
 import { CURATED_WRESTLER_CHARACTERS } from "../packages/content/src/real-wrestler-characters.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
-import { activeContractsForPromotion, createWorld } from "../packages/sim-core/src/index.js";
+import { activeContractsForPromotion, createWorld, upsertWrestlerRelationship } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -467,6 +467,78 @@ test("Wrestler profiles expose only controller-owned Backstage history, includin
     "partner history leaked to rival promotion");
 });
 
+
+test("Owned wrestler working connections require complete factual matches and cannot mutate the World", () => {
+  const { aggregate, promotionAId, promotionBId } = fixture(73186);
+  const state = aggregate.state;
+  const ownContract = activeContractsForPromotion(state, promotionAId)[0]!;
+  const personId = ownContract.personId;
+  const others = state.people.filter(person => person.id !== personId).slice(0, 3);
+  ok(others.length === 3, "relationship fixture needs three other wrestlers");
+  const [partner, left, right] = others;
+  const promotion = state.promotions.find(p => p.id === promotionAId)!;
+  const venue = state.venues.find(v => v.marketId === promotion.homeMarketId)!;
+  upsertWrestlerRelationship(state, {
+    personAId: personId, personBId: partner!.id,
+    professionalTrust: 82, familiarity: 30, tags: ["ALLY"],
+  });
+  state.events.push({
+    id: "verified-relationship-event", worldId: state.world.id, promotionId: promotionAId,
+    marketId: promotion.homeMarketId, venueId: venue.id, date: { ...state.world.currentDate },
+    type: "REGULAR", status: "COMPLETED", ticketStrategy: "STANDARD",
+    expectedDemand: 100, attendance: 90, ticketYield: 25, gateRevenue: 2250,
+    totalCost: 1000, netResult: 1250, eventImportance: 50, matchCount: 1,
+    averageMatchRating: 3.5, bestMatchRating: 3.5, crowdResponse: 76,
+  });
+  const makeMatch = (id: string) => state.matches.push({
+    id, worldId: state.world.id, eventId: "verified-relationship-event", promotionId: promotionAId,
+    order: 1, type: "TAG", status: "COMPLETED", intent: "COMPETITIVE",
+    plannedLengthMinutes: 12, actualLengthMinutes: 12,
+    intendedWinnerSide: "A", actualWinnerSide: "A",
+    finishChangedDueToInjury: false, executionQuality: 78,
+    criticalRatingStars: 3.5, crowdResponse: 76,
+  });
+  makeMatch("verified-relationship-tag");
+  state.matchParticipants.push(
+    { id: "rel-a", worldId: state.world.id, matchId: "verified-relationship-tag",
+      eventId: "verified-relationship-event", personId, side: "A", won: true },
+    { id: "rel-b", worldId: state.world.id, matchId: "verified-relationship-tag",
+      eventId: "verified-relationship-event", personId: partner!.id, side: "A", won: true },
+    { id: "rel-c", worldId: state.world.id, matchId: "verified-relationship-tag",
+      eventId: "verified-relationship-event", personId: left!.id, side: "B", won: false },
+    { id: "rel-d", worldId: state.world.id, matchId: "verified-relationship-tag",
+      eventId: "verified-relationship-event", personId: right!.id, side: "B", won: false },
+  );
+  const before = JSON.stringify(state);
+  const view = buildPlayerWrestlerProfileView(aggregate, "player-a", personId);
+  const connection = view.workingConnections.find(entry => entry.personId === partner!.id);
+  ok(connection?.recentTagMatchesTogether === 1 && connection.recentSinglesOppositions === 0,
+    "only the actual two-person partnership should be counted");
+  ok(connection?.relationship?.professionalTrust === 82
+    && connection.relationship.tags.includes("ALLY"),
+    "curated professional history should be separate from match evidence");
+  ok(connection?.tagChemistry === null, "working history must not invent chemistry records");
+  const repeated = buildPlayerWrestlerProfileView(aggregate, "player-a", personId);
+  ok(JSON.stringify(repeated.workingConnections) === JSON.stringify(view.workingConnections),
+    "profile reads must be reproducible");
+  ok(JSON.stringify(state) === before, "working connections modified authoritative World state");
+  ok(buildPlayerWrestlerProfileView(aggregate, "player-b", personId).workingConnections.length === 0,
+    "other promotion must not see this wrestler's owner-only working-connections view");
+
+  makeMatch("incomplete-relationship-tag");
+  state.matchParticipants.push(
+    { id: "incomplete-a", worldId: state.world.id, matchId: "incomplete-relationship-tag",
+      eventId: "verified-relationship-event", personId, side: "A", won: true },
+    { id: "incomplete-b", worldId: state.world.id, matchId: "incomplete-relationship-tag",
+      eventId: "verified-relationship-event", personId: partner!.id, side: "A", won: true },
+    { id: "incomplete-c", worldId: state.world.id, matchId: "incomplete-relationship-tag",
+      eventId: "verified-relationship-event", personId: left!.id, side: "B", won: false },
+  );
+  const afterIncomplete = buildPlayerWrestlerProfileView(aggregate, "player-a", personId);
+  ok(afterIncomplete.workingConnections.find(entry => entry.personId === partner!.id)
+    ?.recentTagMatchesTogether === 1, "incomplete tag match fabricated extra relationship evidence");
+  ok(promotionBId !== promotionAId, "fixture controls are not separate");
+});
 
 test("Gimmick catalogue is substantial, consistent and uses authored definitions",()=>{
   ok(GIMMICK_CATALOG.length>=65 && new Set(GIMMICK_CATALOG.map(entry=>entry.id)).size===GIMMICK_CATALOG.length,
