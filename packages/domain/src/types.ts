@@ -58,6 +58,7 @@ export type InjurySeverity = "MINOR" | "MODERATE" | "MAJOR" | "SEVERE";
 export type InjuryStatus = "ACTIVE" | "RECOVERED";
 export type ChemistryContext = "SINGLES" | "TAG";
 export type TeamStatus = "ACTIVE" | "DISBANDED";
+export type StableStatus = "ACTIVE" | "DISBANDED";
 export type WrestlerRelationshipTag =
   | "FAMILY"
   | "TAG_PARTNERS"
@@ -466,6 +467,26 @@ export interface TeamMembership {
   active: boolean;
 }
 
+/** Promotion-owned stables have their own membership history, separate from tag teams. */
+export interface Stable {
+  id: Id;
+  worldId: Id;
+  promotionId: Id;
+  name: string;
+  status: StableStatus;
+  formedDate: PpwDate;
+  disbandedDate: PpwDate | null;
+}
+export interface StableMembership {
+  id: Id;
+  worldId: Id;
+  stableId: Id;
+  personId: Id;
+  joinedDate: PpwDate;
+  leftDate: PpwDate | null;
+  active: boolean;
+}
+
 export interface Championship {
   id: Id;
   worldId: Id;
@@ -558,6 +579,8 @@ export interface WorldState {
   wrestlerPromotionAffiliations?: WrestlerPromotionAffiliation[];
   teams?: Team[];
   teamMemberships?: TeamMembership[];
+  stables?: Stable[];
+  stableMemberships?: StableMembership[];
   championships?: Championship[];
   championshipReigns?: ChampionshipReign[];
   championshipContests?: ChampionshipContest[];

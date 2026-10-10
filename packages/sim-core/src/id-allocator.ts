@@ -15,6 +15,8 @@ export type EntityIdKind =
   | "workingChemistry"
   | "team"
   | "teamMembership"
+  | "stable"
+  | "stableMembership"
   | "championship"
   | "championshipReign"
   | "championshipContest"
@@ -46,6 +48,8 @@ const ENTITY_ID_SPECS: Record<EntityIdKind, EntityIdSpec> = {
   workingChemistry: { prefix: "chemistry-", width: 7, ids: (state) => state.workingChemistry.map((entry) => entry.id) },
   team: { prefix: "team-", width: 7, ids: (state) => (state.teams ?? []).map((entry) => entry.id) },
   teamMembership: { prefix: "team-membership-", width: 8, ids: (state) => (state.teamMemberships ?? []).map((entry) => entry.id) },
+  stable: { prefix: "stable-", width: 7, ids: (state) => (state.stables ?? []).map((entry) => entry.id) },
+  stableMembership: { prefix: "stable-membership-", width: 8, ids: (state) => (state.stableMemberships ?? []).map((entry) => entry.id) },
   championship: { prefix: "championship-", width: 6, ids: (state) => (state.championships ?? []).map((entry) => entry.id) },
   championshipReign: { prefix: "championship-reign-", width: 7, ids: (state) => (state.championshipReigns ?? []).map((entry) => entry.id) },
   championshipContest: { prefix: "championship-contest-", width: 8, ids: (state) => (state.championshipContests ?? []).map((entry) => entry.id) },
