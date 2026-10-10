@@ -2,6 +2,11 @@ declare const process: { exitCode?: number };
 
 import {
   buildPlayerWrestlerProfileView,
+  cloneApplicationWorld,
+  createWorldEngagementState,
+  setWrestlerCreativeProfileCommand,
+  wrestlerCreativeProfileFor,
+  defaultWrestlerCreativeFields,
   claimIndependentPromotionForPlayer,
   createWorldCommandState,
   createWorldOwnershipState,
@@ -104,7 +109,11 @@ test("wrestler profile does not leak a rival's private contract or internal cond
   ok(view.relationship?.employmentStatus === "EXCLUSIVE_ELSEWHERE", "rival exclusive employment was not represented safely");
   ok(view.relationship?.ourContract === null, "rival contract was exposed as our contract");
   ok(view.relationship?.morale === null && view.relationship?.fatigue === null && view.relationship?.wear === null, "rival internal condition leaked");
-  ok(view.relationship?.bookingEvidence === null, "a rival\'s private contract-role expectations leaked");
+  ok(view.relationship?.bookingEvidence === null, "a rival's private contract-role expectations leaked");
+  ok(view.person.baselinePresentation.ringName === rival!.name
+    && view.person.baselinePresentation.gimmickArchetype === "AUTHENTIC"
+    && view.person.baselinePresentation.finishingMove === null,
+    "all wrestlers need a neutral public presentation without invented finishing moves");
   const serialized = JSON.stringify(view);
   ok(!serialized.includes("999888777"), "rival weekly guarantee leaked into profile");
   ok(!serialized.includes("888777666"), "rival appearance fee leaked into profile");
@@ -269,6 +278,82 @@ test("wrestler profile rejects unknown wrestlers and non-members", () => {
     strangerRejected = error instanceof Error && error.message.includes("not an active member");
   }
   ok(strangerRejected, "non-member could read wrestler profile");
+});
+
+
+test("Creative gimmicks and finishers are promotion-scoped, persistent and have no sim effect", () => {
+  const { aggregate, promotionAId, promotionBId } = fixture(73120);
+  const contract = activeContractsForPromotion(aggregate.state,promotionAId)[0]!;
+  const person = aggregate.state.people.find((entry)=>entry.id===contract.personId)!;
+  const beforeState = JSON.stringify(aggregate.state);
+  const original = defaultWrestlerCreativeFields(person);
+  const next = { ...original,
+    ringName:"The Midnight Mechanic",
+    gimmickArchetype:"MYSTERY" as const,
+    gimmickDescription:"A calculating ring general with unfinished business.",
+    primaryStyle:"TECHNICAL" as const,
+    secondaryStyle:"STRIKER" as const,
+    signatureMove:{name:"Midnight Driver",category:"GRAPPLE" as const},
+    finishingMove:{name:"Final Chapter",category:"SUBMISSION" as const},
+  };
+  aggregate.engagement=createWorldEngagementState(aggregate.state.world.id);
+  const args=[aggregate.state,aggregate.engagement,aggregate.ownership,aggregate.commands,aggregate.runtime] as const;
+  const command={requestId:"character-first-edit",worldId:aggregate.state.world.id,playerId:"player-a",
+    commandType:"SET_WRESTLER_CREATIVE_PROFILE" as const,
+    payload:{promotionId:promotionAId,personId:person.id,fields:next}};
+  const record=setWrestlerCreativeProfileCommand(...args,command);
+  ok(record?.history.length===1 && record.fields.finishingMove?.name==="Final Chapter","first edit not stored");
+  ok(JSON.stringify(aggregate.state)===beforeState,"aesthetic changes modified authoritative simulation state");
+  const view=buildPlayerWrestlerProfileView(aggregate,"player-a",person.id);
+  ok(view.creativeProfile?.fields.ringName==="The Midnight Mechanic"
+    && view.creativeProfile.fields.signatureMove?.name==="Midnight Driver"
+    && view.creativeProfile.history.length===1, "profile did not expose editable presentation and history");
+  const rivalView=buildPlayerWrestlerProfileView(aggregate,"player-b",person.id);
+  ok(rivalView.creativeProfile===null || rivalView.creativeProfile.promotionId===promotionBId,
+    "rival controller could see our promotion's internal character-edit history");
+  ok(wrestlerCreativeProfileFor(aggregate.engagement,promotionBId,person).ringName===person.name,
+    "one promotion's ring name overwrote the rival presentation");
+  const revision=aggregate.runtime.revision;
+  setWrestlerCreativeProfileCommand(...args,command);
+  ok(aggregate.runtime.revision===revision
+    && aggregate.engagement.wrestlerCreativeProfiles?.[0]?.history.length===1,
+    "retry duplicated the same edit or changed World revision");
+  const saved=cloneApplicationWorld(aggregate);
+  const restored=buildPlayerWrestlerProfileView(saved,"player-a",person.id);
+  ok(restored.creativeProfile?.fields.finishingMove?.name==="Final Chapter"
+    && restored.creativeProfile.history[0]?.previous.ringName===person.name,
+    "character changes did not survive a persistent World roundtrip");
+});
+
+test("Creative presentation requires control and an actual current roster contract", () => {
+  const {aggregate,promotionAId,promotionBId}=fixture(73121);
+  const contract=activeContractsForPromotion(aggregate.state,promotionAId)[0]!;
+  aggregate.engagement=createWorldEngagementState(aggregate.state.world.id);
+  const args=[aggregate.state,aggregate.engagement,aggregate.ownership,aggregate.commands,aggregate.runtime] as const;
+  const fields=defaultWrestlerCreativeFields(aggregate.state.people.find(p=>p.id===contract.personId)!);
+  const checks=[
+    {playerId:"player-b",promotionId:promotionAId,personId:contract.personId},
+    {playerId:"player-a",promotionId:promotionBId,personId:contract.personId},
+    {playerId:"player-a",promotionId:promotionAId,personId:"wrestler-does-not-exist"},
+  ];
+  for (const [index,entry] of checks.entries()) {
+    let denied=false;
+    try{setWrestlerCreativeProfileCommand(...args,{
+      requestId:"reject-creative-"+index,worldId:aggregate.state.world.id,playerId:entry.playerId,
+      commandType:"SET_WRESTLER_CREATIVE_PROFILE",
+      payload:{promotionId:entry.promotionId,personId:entry.personId,fields},
+    });}catch{denied=true;}
+    ok(denied,"unauthorised creative edit succeeded");
+  }
+  const existing=aggregate.state.people.find(p=>p.id===contract.personId)!;
+  let deniedInvalid=false;
+  try{setWrestlerCreativeProfileCommand(...args,{
+    requestId:"reject-same-style",worldId:aggregate.state.world.id,playerId:"player-a",
+    commandType:"SET_WRESTLER_CREATIVE_PROFILE",
+    payload:{promotionId:promotionAId,personId:existing.id,fields:{...fields,secondaryStyle:fields.primaryStyle}},
+  });}catch{deniedInvalid=true;}
+  ok(deniedInvalid,"invalid secondary style was saved");
+  ok(aggregate.engagement.wrestlerCreativeProfiles?.length===0,"failed edits left partial records");
 });
 
 console.log(`\nApplication wrestler-profile tests: ${passed} passed, ${failed} failed`);

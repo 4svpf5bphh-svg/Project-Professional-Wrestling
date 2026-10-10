@@ -417,6 +417,37 @@ try {
       && segment.sourceDraftMatchId === firstMatch.draftMatchId),
     "HTTP reload lost new segments or their match links");
 
+  // Real browser boundary regression: profile edit must survive POST and GET,
+  // never rely only on direct TypeScript service tests.
+  const rosterPerson=cardView.participants[0];
+  ok(rosterPerson,"HTTP creative edit needs a booked roster wrestler");
+  const editable=await json(await fetch(
+    `${baseUrl}/api/talent/profile?personId=${encodeURIComponent(rosterPerson.personId)}`,{cache:"no-store"}));
+  ok(editable.creativeProfile?.canEdit,"HTTP wrestler page did not expose promotion-specific editing");
+  const creativeFields={...editable.creativeProfile.fields,
+    ringName:"The HTTP Headliner",gimmickArchetype:"REBEL",
+    gimmickDescription:"A fiercely independent competitor.",
+    primaryStyle:"BRAWLER",secondaryStyle:"STRIKER",
+    signatureMove:{name:"The Spotlight",category:"STRIKE"},
+    finishingMove:{name:"Curtain Call",category:"GRAPPLE"},
+  };
+  const creativeBody={requestId:"ci-http-creative-save-1",expectedRevision:editable.world.revision,
+    personId:rosterPerson.personId,fields:creativeFields};
+  const creativeSaved=await json(await fetch(`${baseUrl}/api/talent/profile`,{
+    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(creativeBody),
+  }));
+  ok(creativeSaved.creativeProfile?.fields.finishingMove?.name==="Curtain Call"
+    && creativeSaved.creativeProfile.history.length===1,"HTTP edited finisher or history missing");
+  const creativeReload=await json(await fetch(
+    `${baseUrl}/api/talent/profile?personId=${encodeURIComponent(rosterPerson.personId)}`,{cache:"no-store"}));
+  ok(creativeReload.creativeProfile?.fields.ringName==="The HTTP Headliner"
+    && creativeReload.creativeProfile.fields.secondaryStyle==="STRIKER","HTTP reload lost creative fields");
+  const creativeRetry=await json(await fetch(`${baseUrl}/api/talent/profile`,{
+    method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(creativeBody),
+  }));
+  ok(creativeRetry.world.revision===creativeSaved.world.revision
+    && creativeRetry.creativeProfile.history.length===1,"HTTP creative retry duplicated a revision or edit");
+
   const ready = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
   ok(ready.promotion?.showPlanning?.currentPlan?.state === "RESERVED", "HTTP booked show lost its reserved planning state before lock");
   ok(ready.promotion?.showPlanning?.currentPlan?.reservationId, "HTTP booked show lost its committed reservation before lock");
@@ -488,6 +519,8 @@ try {
   const afterAdvance = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
   ok(weekKey(afterAdvance) === weekKey(advanced), "stale HTTP retry advanced the World a second time");
   ok(afterAdvance.world.revision === advanced.world.revision, "stale HTTP retry changed the persisted World revision");
+
+
 
   console.log("PASS Alpha Next HTTP full player journey, public history views and stale-retry safety");
 } finally {

@@ -1,4 +1,5 @@
 import type { Id, PpwDate } from "../../domain/src/types.js";
+import type { WrestlerCreativeRecord } from "./wrestler-creative.js";
 
 export type PlayerActivityStatus = "ACTIVE" | "WARNING" | "STEWARDED";
 export type OpportunityCategory = "TALENT" | "MARKET" | "BUSINESS" | "WORLD";
@@ -114,6 +115,8 @@ export interface WorldEngagementState {
   opportunities: OpportunityRecord[];
   stewardshipExitRequests: StewardshipExitRequest[];
   backstageConversations: BackstageConversation[];
+  /** Promotion-owned creative presentation, not simulation strength. */
+  wrestlerCreativeProfiles?: WrestlerCreativeRecord[];
 }
 
 export interface InactivityThresholds {
@@ -173,6 +176,7 @@ export function createWorldEngagementState(worldId: Id): WorldEngagementState {
     opportunities: [],
     stewardshipExitRequests: [],
     backstageConversations: [],
+    wrestlerCreativeProfiles: [],
   };
 }
 
@@ -204,6 +208,17 @@ export function normalizeWorldEngagementState(
     stewardshipExitRequests: (input.stewardshipExitRequests ?? []).map((record) => ({
       ...record,
       requestedDate: cloneDate(record.requestedDate),
+    })),
+    wrestlerCreativeProfiles: (input.wrestlerCreativeProfiles ?? []).map((record) => ({
+      ...record,
+      fields: structuredClone(record.fields),
+      changedDate: cloneDate(record.changedDate),
+      history: (record.history ?? []).map((entry) => ({
+        ...entry,
+        date: cloneDate(entry.date),
+        previous: structuredClone(entry.previous),
+        next: structuredClone(entry.next),
+      })),
     })),
     backstageConversations: (input.backstageConversations ?? []).map((record) => ({
       ...record,

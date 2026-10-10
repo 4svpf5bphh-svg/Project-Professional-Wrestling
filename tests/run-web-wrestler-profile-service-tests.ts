@@ -4,7 +4,7 @@ import {
   createAlphaWorldAggregate,
   claimAlphaPromotion,
 } from "../packages/web-adapter/src/alpha-service.js";
-import { loadAlphaWrestlerProfile } from "../packages/web-adapter/src/wrestler-profile-service.js";
+import { loadAlphaWrestlerProfile, saveAlphaWrestlerCreative } from "../packages/web-adapter/src/wrestler-profile-service.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 
 let passed = 0;
@@ -59,5 +59,33 @@ await test("Wrestler profile service rejects invalid person IDs before projectio
   ok(rejected, "blank personId was accepted by profile service");
 });
 
+
+await test("Wrestler presentation persists via web service without touching match simulation",async()=>{
+  const playerId="creative-service-owner";
+  const repository=new InMemoryApplicationWorldRepository();
+  const aggregate=createAlphaWorldAggregate({seed:73130,playerId});
+  await repository.initialize(aggregate);
+  const promotion=aggregate.state.promotions.find(p=>p.playerTakeoverEligibility==="STANDARD" && p.lifecycle==="ACTIVE")!;
+  await claimAlphaPromotion(repository,aggregate.state.world.id,playerId,{
+    promotionId:promotion.id,requestId:"creative-claim"});
+  const initial=await repository.load(aggregate.state.world.id);
+  const ownContract=initial.state.contracts.find(c=>c.promotionId===promotion.id && c.status==="SIGNED")!;
+  const before=await loadAlphaWrestlerProfile(repository,aggregate.state.world.id,playerId,ownContract.personId);
+  ok(before.creativeProfile?.canEdit && before.creativeProfile.fields.ringName===before.person.name,
+    "initial character profile not available to booker");
+  if (!before.creativeProfile) throw new Error("owned wrestler has no editable creative profile");
+  const fields={...before.creativeProfile.fields,ringName:"The Night Shift",
+    finishingMove:{name:"The Last Bell",category:"STRIKE" as const}};
+  const command={requestId:"creative-web-save",expectedRevision:before.world.revision,
+    personId:before.person.personId,fields};
+  const next=await saveAlphaWrestlerCreative(repository,aggregate.state.world.id,playerId,command);
+  ok(next.creativeProfile?.fields.finishingMove?.name==="The Last Bell"
+    && next.creativeProfile.history.length===1,"service lost editable finisher");
+  const retry=await saveAlphaWrestlerCreative(repository,aggregate.state.world.id,playerId,command);
+  ok(retry.world.revision===next.world.revision
+    && retry.creativeProfile?.history.length===1,"idempotent profile POST made duplicate updates");
+  const restored=await loadAlphaWrestlerProfile(repository,aggregate.state.world.id,playerId,ownContract.personId);
+  ok(restored.creativeProfile?.fields.ringName==="The Night Shift","reload lost the ring name");
+});
 console.log(`\nWeb wrestler-profile service tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
