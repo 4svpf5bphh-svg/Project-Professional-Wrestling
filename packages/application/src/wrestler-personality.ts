@@ -17,7 +17,7 @@ export const BACKSTAGE_TEMPERAMENTS = [
 export type BackstageTemperament = (typeof BACKSTAGE_TEMPERAMENTS)[number];
 
 export const PERSONALITY_MOTIVATIONS = [
-  "CREATIVE_FREEDOM", "TOP_BILLING", "MONEY", "PRESTIGE", "ROUTINE", "LOYALTY", "EXPOSURE",
+  "TOP_BILLING", "MONEY", "PRESTIGE", "ROUTINE", "LOYALTY", "EXPOSURE",
 ] as const;
 export type PersonalityMotivation = (typeof PERSONALITY_MOTIVATIONS)[number];
 

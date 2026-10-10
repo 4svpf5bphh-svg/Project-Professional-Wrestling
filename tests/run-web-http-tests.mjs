@@ -514,6 +514,12 @@ try {
   const profile = await json(await fetch(`${baseUrl}/api/talent/profile?personId=${encodeURIComponent(profilePersonId)}`, { cache: "no-store" }));
   ok(profile.person?.personId === profilePersonId, "HTTP wrestler profile did not load the requested wrestler");
   ok(profile.careerStats?.completedMatches >= 1, "HTTP wrestler profile did not reflect the resolved show");
+  ok(Number.isFinite(profile.person.personality?.microphoneAbility)
+    && profile.person.personality.microphoneAbility >= 0
+    && profile.person.personality.microphoneAbility <= 100
+    && profile.person.personality.microphoneSource === "ESTIMATED"
+    && profile.person.personality.motivations.length === 2,
+    "HTTP wrestler profile dropped stable microphone ability or backstage tendencies");
 
   await assertPage("/results", "Results");
   await assertPage("/industry", "Industry");
