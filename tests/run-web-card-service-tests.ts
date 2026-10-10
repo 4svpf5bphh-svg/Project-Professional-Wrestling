@@ -485,8 +485,8 @@ await test("Run-in saves, reloads, resolves and records the actual finish withou
     && match.order === 1 && match.status === "COMPLETED" && match.interference?.personId === interferer);
   ok(relevant, "run-in was not preserved on the completed match");
   ok(relevant?.actualWinnerSide === "A", "run-in reversed the player's winner choice");
-  ok(relevant?.interference?.outcome === "SUCCESS" || relevant?.interference?.outcome === "THWARTED",
-    "run-in was not resolved deterministically");
+  ok(relevant?.interference?.outcome === "SUCCESS" || relevant?.interference?.outcome === "ABORTED",
+    "simulation changed the scripted run-in outcome");
   const evidence = finished.state.ledger.find((entry) => entry.type === "MATCH_COMPLETED"
     && entry.entityIds.includes(relevant!.id));
   ok(evidence?.payload.interferencePersonId === interferer

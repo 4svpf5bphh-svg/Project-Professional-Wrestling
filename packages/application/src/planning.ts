@@ -29,6 +29,7 @@ export interface DetailedMatchDraft {
   plannedFinish?: MatchFinish;
   interfererPersonId?: Id | null;
   interferenceSide?: MatchSide | null;
+  interferenceOutcome?: "SUCCESS" | "THWARTED" | null;
 }
 
 export interface ChampionshipDraftAssignment {
@@ -232,9 +233,16 @@ function validateMatchDraft(
   const style = draft.style === undefined ? undefined : normalizeMatchStyle(draft.style);
   const interfererPersonId = draft.interfererPersonId == null ? null : normalizedId(draft.interfererPersonId, "interfererPersonId");
   const interferenceSide = draft.interferenceSide ?? null;
+  const interferenceOutcome = interfererPersonId ? (draft.interferenceOutcome ?? "SUCCESS") : null;
   if ((interfererPersonId === null) !== (interferenceSide === null)
     || (interferenceSide !== null && !MATCH_SIDES.has(interferenceSide))) {
     throw new Error("run-in requires an outside wrestler and an aided match side");
+  }
+  if (interferenceOutcome !== null && interferenceOutcome !== "SUCCESS" && interferenceOutcome !== "THWARTED") {
+    throw new Error("run-in outcome must be successful or thwarted");
+  }
+  if (interferenceOutcome === "SUCCESS" && draft.intendedWinnerSide !== null && interferenceSide !== draft.intendedWinnerSide) {
+    throw new Error("successful run-in must aid the booked winning side");
   }
   if (interfererPersonId !== null && sideIds.includes(interfererPersonId)) {
     throw new Error("run-in wrestler cannot compete in the same match");
@@ -253,7 +261,7 @@ function validateMatchDraft(
     ...(style === undefined ? {} : { style }),
     plannedLengthMinutes: draft.plannedLengthMinutes,
     ...(draft.plannedFinish === undefined ? {} : { plannedFinish: draft.plannedFinish }),
-    ...(interfererPersonId === null ? {} : { interfererPersonId, interferenceSide }),
+    ...(interfererPersonId === null ? {} : { interfererPersonId, interferenceSide, interferenceOutcome }),
   };
 }
 

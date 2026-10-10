@@ -390,8 +390,12 @@ export default function CardClient(): React.JSX.Element {
     const ids = [...match.sideAIds, ...match.sideBIds];
     return ids.every(Boolean) && (
       !match.interfererPersonId
-        ? !match.interferenceSide
+        ? !match.interferenceSide && !match.interferenceOutcome
         : Boolean(match.interferenceSide) && !ids.includes(match.interfererPersonId)
+          && (match.interferenceOutcome === "THWARTED" || (
+            (match.interferenceOutcome ?? "SUCCESS") === "SUCCESS"
+            && match.interferenceSide === match.intendedWinnerSide
+          ))
     );
   });
   const completeSegments = segments.every((segment) => (
@@ -534,7 +538,8 @@ export default function CardClient(): React.JSX.Element {
     if (!match) return;
     updateMatch(matchId, {
       interfererPersonId: personId || null,
-      interferenceSide: personId ? (match.interferenceSide ?? "A") : null,
+      interferenceSide: personId ? (match.interferenceSide ?? match.intendedWinnerSide) : null,
+      interferenceOutcome: personId ? (match.interferenceOutcome ?? "SUCCESS") : null,
     });
   }
 
@@ -1296,7 +1301,7 @@ export default function CardClient(): React.JSX.Element {
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
                       <span>Run-in / Match interference</span>
-                      <small>Optional. The outside wrestler tries to help one side. Success can protect the finish, but never secretly overrides your chosen winner.</small>
+                      <small>Optional scripted spot. Choose who interferes, who they help, and whether the run-in works. The simulation judges delivery, not your storyline choice.</small>
                     </div>
                     <div className={styles.segmentPersonRow}>
                       <WrestlerSlotButton
@@ -1312,9 +1317,19 @@ export default function CardClient(): React.JSX.Element {
                     {match.interfererPersonId ? (
                       <div className={styles.control}>
                         <label>Who are they helping?</label>
-                        <select value={match.interferenceSide ?? "A"} disabled={!view.canEdit}
+                        <select value={match.interferenceSide ?? match.intendedWinnerSide} disabled={!view.canEdit}
                           onChange={(event) => updateMatch(match.draftMatchId, { interferenceSide: event.target.value as "A" | "B" })}>
                           <option value="A">Side A</option><option value="B">Side B</option>
+                        </select>
+                      </div>
+                    ) : null}
+                    {match.interfererPersonId ? (
+                      <div className={styles.control}>
+                        <label>Scripted result</label>
+                        <select value={match.interferenceOutcome ?? "SUCCESS"} disabled={!view.canEdit}
+                          onChange={(event) => updateMatch(match.draftMatchId, { interferenceOutcome: event.target.value as "SUCCESS" | "THWARTED" })}>
+                          <option value="SUCCESS">Run-in succeeds</option>
+                          <option value="THWARTED">Run-in is thwarted</option>
                         </select>
                       </div>
                     ) : null}

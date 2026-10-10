@@ -112,7 +112,7 @@ export interface PlayerShowMatchView {
   finishChangedDueToInjury: boolean;
   participants: PlayerShowParticipantView[];
   winnerNames: string[];
-  interference: { personId: Id; name: string; aidedSide: "A" | "B"; outcome: "SUCCESS" | "THWARTED" | null } | null;
+  interference: { personId: Id; name: string; aidedSide: "A" | "B"; outcome: "SUCCESS" | "THWARTED" | "ABORTED" | null } | null;
   titleOutcomes: PlayerShowTitleOutcomeView[];
   injuries: PlayerShowInjuryView[];
   crowdFlowFactors: PlayerShowCrowdFactorView[];

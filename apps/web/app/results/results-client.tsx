@@ -325,7 +325,7 @@ export default function ResultsClient(): React.JSX.Element {
                             </div>
                             {match.interference ? (
                               <div className={styles.matchMeta}>
-                                <span>Run-in: {match.interference.name} assisted Side {match.interference.aidedSide} · {match.interference.outcome === "SUCCESS" ? "Succeeded (protected finish)" : "Thwarted"}</span>
+                                <span>Run-in: {match.interference.name} assisted Side {match.interference.aidedSide} · {match.interference.outcome === "SUCCESS" ? "Succeeded (protected finish)" : match.interference.outcome === "ABORTED" ? "Aborted" : "Thwarted"}</span>
                               </div>
                             ) : null}
                             {match.styleResult ? (
@@ -531,7 +531,7 @@ export default function ResultsClient(): React.JSX.Element {
                                 </div>
                                 {match.interference ? (
                                   <div className={styles.matchMeta}>
-                                    <span>Run-in: {match.interference.name} assisted Side {match.interference.aidedSide} · {match.interference.outcome === "SUCCESS" ? "Succeeded" : "Thwarted"}</span>
+                                    <span>Run-in: {match.interference.name} assisted Side {match.interference.aidedSide} · {match.interference.outcome === "SUCCESS" ? "Succeeded" : match.interference.outcome === "ABORTED" ? "Aborted" : "Thwarted"}</span>
                                   </div>
                                 ) : null}
                                 {match.titleOutcomes.map((title) => (

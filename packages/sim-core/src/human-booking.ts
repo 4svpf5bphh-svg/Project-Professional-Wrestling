@@ -29,6 +29,7 @@ export interface HumanMatchPlan {
   plannedFinish?: MatchFinish;
   interfererPersonId?: string | null;
   interferenceSide?: MatchSide | null;
+  interferenceOutcome?: "SUCCESS" | "THWARTED" | null;
 }
 
 function validateSideSize(type: MatchType, sideAIds: string[], sideBIds: string[]): void {
@@ -108,8 +109,15 @@ export function prepareHumanMatchCard(
     const ids = [...plan.sideAIds, ...plan.sideBIds];
     const interfererId = plan.interfererPersonId ?? null;
     const aidedSide = plan.interferenceSide ?? null;
+    const scriptedOutcome = interfererId ? (plan.interferenceOutcome ?? "SUCCESS") : null;
     if ((interfererId === null) !== (aidedSide === null) || (aidedSide !== null && aidedSide !== "A" && aidedSide !== "B")) {
       throw new Error("run-in requires an outside wrestler and an aided side");
+    }
+    if (scriptedOutcome !== null && scriptedOutcome !== "SUCCESS" && scriptedOutcome !== "THWARTED") {
+      throw new Error("run-in outcome must be successful or thwarted");
+    }
+    if (scriptedOutcome === "SUCCESS" && aidedSide !== plan.intendedWinnerSide) {
+      throw new Error("successful run-in must aid the booked winning side");
     }
     if (interfererId !== null) {
       if (ids.includes(interfererId)) throw new Error("run-in wrestler cannot compete in the same match");
@@ -160,7 +168,8 @@ export function prepareHumanMatchCard(
       actualWinnerSide: null,
       finishChangedDueToInjury: false,
       ...(plan.interfererPersonId && plan.interferenceSide
-        ? { interference: { personId: plan.interfererPersonId, aidedSide: plan.interferenceSide, outcome: null } } : {}),
+        ? { interference: { personId: plan.interfererPersonId, aidedSide: plan.interferenceSide,
+            plannedOutcome: plan.interferenceOutcome ?? "SUCCESS", outcome: null } } : {}),
       executionQuality: 0,
       criticalRatingStars: 0,
       crowdResponse: 0,

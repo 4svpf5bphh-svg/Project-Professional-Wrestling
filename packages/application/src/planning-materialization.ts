@@ -330,7 +330,8 @@ function completeCardPlans(
       plannedLengthMinutes: match.plannedLengthMinutes,
       plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
       ...(match.interfererPersonId && match.interferenceSide
-        ? { interfererPersonId: match.interfererPersonId, interferenceSide: match.interferenceSide } : {}),
+        ? { interfererPersonId: match.interfererPersonId, interferenceSide: match.interferenceSide,
+          interferenceOutcome: match.interferenceOutcome ?? "SUCCESS" } : {}),
     });
     if (match.interfererPersonId && match.interferenceSide) {
       if (!reservedIds.has(match.interfererPersonId)) return null;

@@ -376,7 +376,8 @@ export interface ScheduledAppearance {
 export interface MatchInterference {
   personId: Id;
   aidedSide: MatchSide;
-  outcome: "SUCCESS" | "THWARTED" | null;
+  plannedOutcome: "SUCCESS" | "THWARTED";
+  outcome: "SUCCESS" | "THWARTED" | "ABORTED" | null;
 }
 
 export interface Match {

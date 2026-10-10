@@ -54,7 +54,7 @@ export interface PlayerWorldResultMatchView {
   crowdResponse: number;
   participants: PlayerWorldResultParticipantView[];
   winnerNames: string[];
-  interference: { personId: Id; name: string; aidedSide: "A" | "B"; outcome: "SUCCESS" | "THWARTED" | null } | null;
+  interference: { personId: Id; name: string; aidedSide: "A" | "B"; outcome: "SUCCESS" | "THWARTED" | "ABORTED" | null } | null;
   titleOutcomes: PlayerWorldResultTitleOutcomeView[];
   injuries: PlayerWorldResultInjuryView[];
 }

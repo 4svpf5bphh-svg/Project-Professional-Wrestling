@@ -481,18 +481,18 @@ function resolveMatch(state: WorldState, planned: PlannedMatch, event: Wrestling
         && appearance.personId === interferer.id
         && appearance.status === "COMMITTED"
       ));
-    const roll = new DeterministicRng(
-      deterministicSeedFromText(`${state.world.seed}:${match.id}:${match.interference.personId}:run-in`),
-    );
-    const chance = interferer
-      ? clamp(0.43 + (interferer.skills.presentation - 50) * 0.004, 0.25, 0.73) : 0;
-    const landed = eligible
-      && actualFinish !== "INJURY_STOPPAGE"
-      && match.interference.aidedSide === actualWinnerSide
-      && roll.chance(chance);
-    match.interference.outcome = landed ? "SUCCESS" : "THWARTED";
-    if (landed) actualFinish = "PROTECTED_FINISH";
-    match.crowdResponse = Math.round(clamp(match.crowdResponse + (landed ? 2 : -1.5), 0, 100) * 10) / 10;
+    const interrupted = !eligible || actualFinish === "INJURY_STOPPAGE";
+    // The player scripts success/failure. Simulation evaluates delivery and
+    // permits real injury/unavailability to cancel, never randomize the spot.
+    const outcome = interrupted ? "ABORTED" : (match.interference.plannedOutcome ?? "SUCCESS");
+    match.interference.outcome = outcome;
+    if (outcome === "SUCCESS") actualFinish = "PROTECTED_FINISH";
+    const delivery = interferer ? clamp((interferer.skills.presentation - 50) * 0.045, -2.25, 2.25) : 0;
+    match.crowdResponse = Math.round(clamp(
+      match.crowdResponse + (outcome === "SUCCESS" ? 1.5 : outcome === "THWARTED" ? -0.5 : -2)
+        + (outcome === "ABORTED" ? 0 : delivery),
+      0, 100,
+    ) * 10) / 10;
   }
   match.actualWinnerSide = actualWinnerSide;
   setActualMatchFinish(match, actualFinish);
@@ -561,6 +561,7 @@ function resolveMatch(state: WorldState, planned: PlannedMatch, event: Wrestling
         interferencePersonId: match.interference.personId,
         interferenceAidedSide: match.interference.aidedSide,
         interferenceOutcome: match.interference.outcome,
+        interferencePlannedOutcome: match.interference.plannedOutcome,
       } : {}),
       finishChangedDueToInjury: match.finishChangedDueToInjury,
       ...(styleEvaluation === null ? {} : {
