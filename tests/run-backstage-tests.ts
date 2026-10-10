@@ -17,6 +17,7 @@ import { activeContractsForPromotion } from "../packages/sim-core/src/index.js";
 import { promotionTalentTrustFor } from "../packages/sim-core/src/talent-trust.js";
 import { generateTagTeamPitches } from "../packages/application/src/backstage-pitches.js";
 import { generateRivalryPitches } from "../packages/application/src/backstage-rivalries.js";
+import { generateTeamMoments } from "../packages/application/src/backstage-moments.js";
 import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
 import { claimIndependentPromotionForPlayer } from "../packages/application/src/ownership.js";
 import type { Match, WrestlingEvent } from "../packages/domain/src/types.js";
@@ -802,6 +803,110 @@ test("Rivalry pitches cannot bypass shared Backstage pacing and remain available
   ok(generateRivalryPitches(f.aggregate) === 1, "eligible rivalry was not reconsidered next week");
   ok(f.aggregate.engagement?.backstageConversations.length === 2,
     "deferred rivalry overwrote earlier conversation");
+});
+
+
+function establishedSuccessfulTeam(f: ReturnType<typeof fixture>, crowd = 81, professionalTrust = 78): string {
+  const partnerId = successfulTagPair(f, crowd);
+  const state = f.aggregate.state;
+  f.contract.roleExpectation = "REGULAR";
+  const teamId = "established-positive-chemistry-team";
+  state.teams ??= [];
+  state.teamMemberships ??= [];
+  state.teams.push({
+    id: teamId,worldId:state.world.id,name:"The Working Pair",
+    status:"ACTIVE",formedDate:{...state.world.currentDate},disbandedDate:null,
+  });
+  for (const id of [f.person.id,partnerId]) {
+    state.teamMemberships.push({
+      id:"working-partnership-member-"+id,worldId:state.world.id,
+      teamId,personId:id,joinedDate:{...state.world.currentDate},leftDate:null,active:true,
+    });
+  }
+  const ordered = [f.person.id, partnerId].sort();
+  const relation = (state.wrestlerRelationships ?? []).find((entry) =>
+    [entry.personAId,entry.personBId].sort().join("|")===ordered.join("|")
+  );
+  state.wrestlerRelationships ??= [];
+  if (relation) relation.professionalTrust = professionalTrust;
+  else state.wrestlerRelationships.push({
+    id:"working-partnership-relation",worldId:state.world.id,
+    personAId:ordered[0]!,personBId:ordered[1]!,
+    affinity:70,professionalTrust,rivalryHeat:10,familiarity:60,tags:["TAG_PARTNERS"],
+  });
+  const record = state.workingChemistry.find((entry) => entry.context==="TAG"
+    && [entry.personAId,entry.personBId].sort().join("|")===ordered.join("|"));
+  if (record) { record.matchesTogether = 4; record.familiarity = 60; }
+  else state.workingChemistry.push({
+    id:"working-partnership-chemistry",worldId:state.world.id,
+    personAId:ordered[0]!,personBId:ordered[1]!,
+    context:"TAG",compatibility:76,familiarity:60,matchesTogether:4,
+  });
+  return partnerId;
+}
+
+test("Established successful pair generates positive locker-room note without demanding action", () => {
+  const f = fixture();
+  const partnerId = establishedSuccessfulTeam(f);
+  const before = JSON.stringify(f.aggregate.state);
+  ok(generateTeamMoments(f.aggregate) === 1,"positive partnership note was missing");
+  ok(generateTeamMoments(f.aggregate) === 0,"same team generated duplicate note");
+  ok(JSON.stringify(f.aggregate.state) === before,"team note mutated simulation state");
+  const note=f.aggregate.engagement!.backstageConversations[0]!;
+  ok(note.kind==="TEAM_MOMENT" && note.status==="NOTED"
+    && note.partnerPersonId===partnerId && note.averageCrowdResponse===81
+    && note.sharedTagMatches===2 && note.response===null,
+    "note lacked matching evidence or wrongly needed a reply");
+  const view=buildPlayerBackstageView(f.aggregate,"backstage-owner");
+  ok(view.openCount===0 && view.conversations[0]?.status==="NOTED"
+    && view.conversations[0]?.partnerName !== null,
+    "positive note was counted as an unanswered demand");
+  const alert=buildPlayerAttention(f.aggregate,"backstage-owner")
+    .find((item)=>item.attentionId==="backstage-moment:"+note.conversationId);
+  ok(alert?.category==="WATCHING" && alert.dismissible
+    && alert.deepLink==="/backstage" && alert.summary.includes("no action required"),
+    "Home did not treat good news as an optional dismissible note");
+  const restored=cloneApplicationWorld(f.aggregate);
+  ok(restored.engagement?.backstageConversations[0]?.status==="NOTED",
+    "positive note lost on persistence round-trip");
+  let rejected=false;
+  try {
+    respondBackstageConversationCommand(f.aggregate,{
+      requestId:"no-reply-to-news",worldId:f.aggregate.state.world.id,
+      playerId:"backstage-owner",commandType:"RESPOND_BACKSTAGE_CONVERSATION",
+      payload:{conversationId:note.conversationId,response:"CONSIDER_TAG_TEAM"},
+    });
+  }catch{rejected=true;}
+  ok(rejected && note.status==="NOTED","informational note accepted an unwanted action");
+});
+
+test("Positive notes require active team, verified matches, chemistry and real trust", () => {
+  for (const reason of ["NO_TEAM","LOW_RESPONSE","TRUST","NO_APPEARANCES","WEAK_CHEMISTRY"] as const) {
+    const f=fixture();
+    establishedSuccessfulTeam(f,reason==="LOW_RESPONSE"?50:81,reason==="TRUST"?35:78);
+    if(reason==="NO_TEAM")f.aggregate.state.teams!.find((x)=>x.id==="established-positive-chemistry-team")!.status="DISBANDED";
+    if(reason==="NO_APPEARANCES")f.aggregate.state.scheduledAppearances=f.aggregate.state.scheduledAppearances.filter(
+      (x)=>!x.id.startsWith("tag-partner-appearance-"));
+    if(reason==="WEAK_CHEMISTRY")f.aggregate.state.workingChemistry.find(
+      (x)=>x.id==="working-partnership-chemistry" || x.context==="TAG" &&
+        [x.personAId,x.personBId].includes(f.person.id)
+    )!.familiarity=20;
+    ok(generateTeamMoments(f.aggregate)===0,"weak relationship generated a positive note: "+reason);
+  }
+});
+
+test("Positive updates never bypass weekly cap or compete for an open reply slot", () => {
+  const f=fixture();
+  establishedSuccessfulTeam(f);
+  f.contract.roleExpectation="MAIN_EVENT";
+  ok(generateBackstageConversations(f.aggregate)===1,"need first booking concern");
+  ok(generateTeamMoments(f.aggregate)===0,"positive note exceeded conversation throttle");
+  f.aggregate.state.world.currentDate=addPpwWeeks(
+    f.aggregate.state.world.currentDate,1,f.aggregate.state.ruleset.weeksPerYear,
+  );
+  ok(generateTeamMoments(f.aggregate)===1,"good news was not deferred until next week");
+  ok(f.aggregate.engagement?.backstageConversations.filter((c)=>c.status==="OPEN").length===1,
+    "informational note stole an open decision slot");
 });
 
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");
