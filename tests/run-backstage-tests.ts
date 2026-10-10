@@ -289,7 +289,10 @@ test("A deliberate promise is persistent, has a bounded deadline and is fulfille
   f.aggregate.state.world.currentDate = addPpwWeeks(start, 5, f.aggregate.state.ruleset.weeksPerYear);
   const beforeEvaluation = JSON.stringify(f.aggregate.state);
   ok(evaluateBackstagePromises(f.aggregate) === 1, "promised main event not recognised");
-  ok(item.promise?.status === "FULFILLED" && item.promise.fulfilledEventId === "promised-featured-show",
+  const currentPromise = f.aggregate.engagement?.backstageConversations.find(
+    (conversation) => conversation.conversationId === item.conversationId,
+  )?.promise;
+  ok(currentPromise?.status === "FULFILLED" && currentPromise.fulfilledEventId === "promised-featured-show",
     "actual qualifying show was not attached to fulfilled promise");
   ok(evaluateBackstagePromises(f.aggregate) === 0, "promise evaluation repeated");
   ok(JSON.stringify(f.aggregate.state) === beforeEvaluation, "promise completion changed wrestler simulation");
