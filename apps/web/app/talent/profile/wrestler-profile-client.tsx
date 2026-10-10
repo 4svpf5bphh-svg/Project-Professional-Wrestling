@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PlayerWrestlerProfileView } from "../../../../../dist/packages/application/src/wrestler-profile-view.js";
+import {
+  GIMMICK_ARCHETYPES, MOVE_CATEGORIES, WRESTLING_STYLES,
+  type WrestlerCreativeFields, type WrestlingStyle, type GimmickArchetype, type MoveCategory,
+} from "../../../../../dist/packages/application/src/wrestler-creative.js";
 import styles from "./wrestler-profile.module.css";
 
 type ErrorPayload = { error?: string };
@@ -52,6 +56,10 @@ export default function WrestlerProfileClient({
   origin: WrestlerProfileOrigin;
 }): React.JSX.Element {
   const [view, setView] = useState<PlayerWrestlerProfileView | null>(null);
+  const [creativeDraft, setCreativeDraft] = useState<WrestlerCreativeFields | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const saveRequestId = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(personId ? null : "No wrestler was selected.");
   const back = backDestination(origin);
 
@@ -65,9 +73,50 @@ export default function WrestlerProfileClient({
           throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to load wrestler profile");
         }
         setView(payload);
+        setCreativeDraft(payload.creativeProfile ? structuredClone(payload.creativeProfile.fields) : null);
+        setSaved(false);
+        saveRequestId.current = null;
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Unable to load wrestler profile"));
   }, [personId]);
+
+  function updateCreative(patch: Partial<WrestlerCreativeFields>): void {
+    setCreativeDraft((current) => current ? { ...current, ...patch } : null);
+    setSaved(false);
+    saveRequestId.current = null;
+  }
+
+  async function saveCreative(): Promise<void> {
+    if (!view?.creativeProfile?.canEdit || !creativeDraft || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      saveRequestId.current ??= crypto.randomUUID();
+      const result = await fetch("/api/talent/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: saveRequestId.current,
+          expectedRevision: view.world.revision,
+          personId: view.person.personId,
+          fields: creativeDraft,
+        }),
+      });
+      const payload = await result.json() as PlayerWrestlerProfileView | ErrorPayload;
+      if (!result.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error
+          ? payload.error : "Unable to save wrestler presentation");
+      }
+      setView(payload);
+      setCreativeDraft(payload.creativeProfile ? structuredClone(payload.creativeProfile.fields) : null);
+      setSaved(true);
+      saveRequestId.current = null;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to save wrestler presentation");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   function returnToOrigin(): void {
     if (typeof window !== "undefined" && document.referrer) {
@@ -99,6 +148,29 @@ export default function WrestlerProfileClient({
 
   const relationship = view.relationship;
   const contract = relationship?.ourContract ?? null;
+  const creative = view.creativeProfile;
+  const hasCreativeChanges = creativeDraft && creative &&
+    JSON.stringify(creativeDraft) !== JSON.stringify(creative.fields);
+
+  const chip = <T extends string>(
+    values: readonly T[],
+    selected: T | null,
+    onSelect: (choice: T) => void,
+  ): React.JSX.Element => (
+    <div className={styles.chips}>
+      {values.map((choice) => (
+        <button
+          key={choice}
+          type="button"
+          className={choice === selected ? styles.chipActive : styles.chip}
+          aria-pressed={choice === selected}
+          onClick={() => onSelect(choice)}
+        >
+          {label(choice)}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <main className={styles.shell}>
@@ -112,6 +184,8 @@ export default function WrestlerProfileClient({
         {relationship ? <span className={styles.statusPill}>{label(relationship.employmentStatus)}</span> : null}
       </header>
 
+      {error ? <section className={styles.error} role="alert">{error}</section> : null}
+
       {view.person.currentInjury ? (
         <section className={styles.injuryBanner}>{label(view.person.currentInjury.severity)} injury · {view.person.currentInjury.weeksRemaining} PPW weeks remaining</section>
       ) : null}
@@ -121,6 +195,92 @@ export default function WrestlerProfileClient({
         <div><span>Recognition</span><strong>{Math.round(view.person.recognition)}</strong></div>
         <div><span>Momentum</span><strong>{Math.round(view.person.momentum)}</strong></div>
         <div><span>Market value</span><strong>{money(view.person.estimatedWeeklyValue)}</strong></div>
+      </section>
+
+      <section className={styles.panel}>
+        <div className={styles.sectionHeading}>
+          <div><span className={styles.eyebrow}>THE CHARACTER</span><h2>Gimmick, style &amp; moves</h2></div>
+          {creative ? <strong>{creative.promotionName}</strong> : null}
+        </div>
+        <p className={styles.note}>
+          Shared-world wrestling style: <strong>{label(view.person.baselineStyle)}</strong>.
+          {creative ? " Your promotion can set its own character and style emphasis. Nothing here changes match ratings yet."
+            : " Promotional gimmicks and move lists can be edited by the promotion booking this wrestler."}
+        </p>
+        {creativeDraft && creative ? (
+          <div className={styles.creativeEditor}>
+            <label className={styles.field}>
+              <span>Ring name</span>
+              <input value={creativeDraft.ringName} maxLength={60}
+                onChange={(event) => updateCreative({ ringName: event.target.value })}/>
+            </label>
+            <div className={styles.field}>
+              <span>Character archetype</span>
+              {chip<GimmickArchetype>(GIMMICK_ARCHETYPES, creativeDraft.gimmickArchetype,
+                (gimmickArchetype) => updateCreative({gimmickArchetype}))}
+            </div>
+            <label className={styles.field}>
+              <span>Gimmick description</span>
+              <textarea rows={3} maxLength={240} value={creativeDraft.gimmickDescription}
+                placeholder="What makes this character stand out?"
+                onChange={(event) => updateCreative({gimmickDescription:event.target.value})}/>
+            </label>
+            <div className={styles.field}>
+              <span>Primary wrestling style</span>
+              {chip<WrestlingStyle>(WRESTLING_STYLES,creativeDraft.primaryStyle,(primaryStyle) =>
+                updateCreative({
+                  primaryStyle,
+                  secondaryStyle: creativeDraft.secondaryStyle === primaryStyle ? null : creativeDraft.secondaryStyle,
+                }))}
+            </div>
+            <div className={styles.field}>
+              <span>Secondary style (optional)</span>
+              <div className={styles.chips}>
+                <button type="button" className={creativeDraft.secondaryStyle === null ? styles.chipActive : styles.chip}
+                  onClick={() => updateCreative({secondaryStyle:null})}>None</button>
+              </div>
+              {chip<WrestlingStyle>(WRESTLING_STYLES.filter((entry) => entry !== creativeDraft.primaryStyle),
+                creativeDraft.secondaryStyle,(secondaryStyle) => updateCreative({secondaryStyle}))}
+            </div>
+            {(["signatureMove","finishingMove"] as const).map((moveKey) => {
+              const move = creativeDraft[moveKey];
+              return (
+                <div className={styles.field} key={moveKey}>
+                  <span>{moveKey === "signatureMove" ? "Signature move" : "Finishing move"}</span>
+                  <input value={move?.name ?? ""} maxLength={80}
+                    placeholder={moveKey === "signatureMove" ? "Enter signature move" : "Enter finisher"}
+                    onChange={(event) => updateCreative({
+                      [moveKey]: event.target.value
+                        ? {name:event.target.value,category:move?.category ?? "GRAPPLE"} : null,
+                    })}/>
+                  {move ? chip<MoveCategory>(MOVE_CATEGORIES,move.category,(category) =>
+                    updateCreative({ [moveKey]: { ...move,category } })) : null}
+                </div>
+              );
+            })}
+            <div className={styles.editorActions}>
+              <button type="button" className={styles.saveButton} disabled={saving || !hasCreativeChanges}
+                onClick={() => void saveCreative()}>{saving ? "Saving…" : "Save presentation"}</button>
+              <button type="button" className={styles.cancelButton} disabled={saving || !hasCreativeChanges}
+                onClick={() => {setCreativeDraft(structuredClone(creative.fields));setSaved(false);saveRequestId.current=null;}}>
+                Discard edits
+              </button>
+            </div>
+            {saved ? <p className={styles.saved} role="status">Presentation saved to this promotion.</p> : null}
+            {creative.history.length > 0 ? (
+              <details className={styles.history}>
+                <summary>Presentation changes ({creative.history.length})</summary>
+                <div className={styles.stack}>{[...creative.history].reverse().slice(0,10).map((entry) => (
+                  <p key={entry.revision}>{ppwDate(entry.date)} · {entry.previous.ringName} → {entry.next.ringName}
+                    {" · "}{label(entry.next.gimmickArchetype)} · {label(entry.next.primaryStyle)}
+                  </p>
+                ))}</div>
+              </details>
+            ) : null}
+          </div>
+        ) : (
+          <p className={styles.note}>A controlled active roster contract is required to edit this wrestler's presentation.</p>
+        )}
       </section>
 
       <section className={styles.panel}>

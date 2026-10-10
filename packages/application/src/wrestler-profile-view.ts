@@ -71,6 +71,7 @@ export interface PlayerWrestlerProfileView {
     worldId: Id;
     name: string;
     currentDate: PpwDate;
+    revision: number;
   };
   player: {
     playerId: string;
@@ -420,6 +421,7 @@ export function buildPlayerWrestlerProfileView(
       worldId: aggregate.state.world.id,
       name: aggregate.state.world.name,
       currentDate: { ...aggregate.state.world.currentDate },
+      revision: aggregate.runtime.revision,
     },
     player: {
       playerId: membership.playerId,
