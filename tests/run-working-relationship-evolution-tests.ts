@@ -1,7 +1,7 @@
 declare const process: { exitCode?: number };
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import type { Match, MatchParticipant, PpwDate, WorldState } from "../packages/domain/src/types.js";
-import { createWorld, upsertWrestlerRelationship, wrestlerRelationshipBetween } from "../packages/sim-core/src/index.js";
+import { createWorld, upsertWrestlerRelationship, wrestlerRelationshipBetween, resolveWorldWeek, deterministicWorldHash } from "../packages/sim-core/src/index.js";
 import {
   evolveCompletedWorkingPartnerships, WORKING_PARTNERSHIP_LEDGER_TYPE,
   WORKING_PARTNERSHIP_STRAIN_LEDGER_TYPE,
@@ -258,6 +258,39 @@ test("World-wide strain cooldown and confidence floor cannot be evaded through a
     && e.entityIds.includes(a!) && e.entityIds.includes(b!));
   ok(strainEntries.length === 1 && strainEntries[0]!.payload.trustDelta === -0.2,
     "floor cap or cross-promotion provenance was not recorded faithfully");
+});
+
+
+test("Headless World resolution applies the identical authoritative working-pair pass", () => {
+  const f = world(94128);
+  const { state, ids, promotionId } = f;
+  const [a, b] = ids;
+  const pair = upsertWrestlerRelationship(state, {
+    personAId: a!, personBId: b!, professionalTrust: 56,
+    familiarity: 22, affinity: -15, rivalryHeat: 80, tags: ["FORMER_PARTNERS"],
+  });
+  addMatch(state, ids, promotionId, 2, "canonical-previous", { quality: 82 });
+  addMatch(state, ids, promotionId, 3, "canonical-current", { quality: 82 });
+  const replay = structuredClone(state);
+  let priorDuringHook = 0;
+  resolveWorldWeek(state, {
+    afterShowFlow: draft => {
+      priorDuringHook = wrestlerRelationshipBetween(draft, a!, b!)?.professionalTrust ?? 0;
+    },
+  });
+  ok(priorDuringHook === 56, "interpersonal trust was mutated in a presentation-only hook");
+  ok(pair.professionalTrust === 56.8 && pair.familiarity === 24,
+    "headless World week omitted the partnership evidence pass");
+  const recorded = state.ledger.filter(entry => entry.type === WORKING_PARTNERSHIP_LEDGER_TYPE
+    && entry.entityIds.includes(a!) && entry.entityIds.includes(b!));
+  ok(recorded.length === 1 && recorded[0]!.payload.sourceMatchId === "canonical-current",
+    "canonical World did not record a source-linked shared relationship change");
+  resolveWorldWeek(replay);
+  ok(deterministicWorldHash(state) === deterministicWorldHash(replay),
+    "headless and persisted-hook World resolution diverged in authoritative state");
+  ok(pair.affinity === -15 && pair.rivalryHeat === 80
+    && JSON.stringify(pair.tags) === JSON.stringify(["FORMER_PARTNERS"]),
+    "headless progression reinterpreted a kayfabe rivalry as personal hostility");
 });
 
 console.log("\nWorking relationship evolution tests: " + pass + " passed, " + fail + " failed");

@@ -19,6 +19,7 @@ import { processPromotionStandingForWeek } from "./reputation.js";
 import { applyRenewalRelationshipResistance } from "./renewal-resistance.js";
 import { applyCurrentWeekShowFlow } from "./show-flow.js";
 import { processTalentTrustForWeek } from "./talent-trust.js";
+import { evolveCompletedWorkingPartnerships } from "./working-relationship-evolution.js";
 
 export interface WorldResolutionHooks {
   afterProgrammeMatches?: (state: WorldState) => void;
@@ -49,6 +50,9 @@ export function resolveWorldWeek(state: WorldState, hooks: WorldResolutionHooks 
   applyCurrentWeekShowFlow(state);
   applyCurrentWeekShowFlowAudienceConsequences(state);
   hooks.afterShowFlow?.(state);
+  // Every World advances relationship state through the same canonical pass,
+  // whether simulated headlessly, AI-run or resolved through a persisted lock.
+  evolveCompletedWorkingPartnerships(state);
   updateProgrammeSignalsForCurrentWeek(state);
 
   processCompetitionForWeek(state);

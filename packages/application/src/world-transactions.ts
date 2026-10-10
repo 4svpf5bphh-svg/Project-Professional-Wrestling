@@ -8,7 +8,6 @@ import { generateGimmickChangePitches } from "./backstage-gimmicks.js";
 import { applyBackstagePromiseConsequences } from "./backstage-consequences.js";
 import { assessCreativeFollowThrough } from "./backstage-follow-through.js";
 import { assessWorkingConcernFollowThrough } from "./backstage-working-follow-through.js";
-import { evolveCompletedWorkingPartnerships } from "./working-relationship-evolution.js";
 import { generateWorkingPartnershipConcerns } from "./backstage-working-concerns.js";
 import {
   closeCurrentWeekReservationsAtCommitmentLock,
@@ -114,7 +113,6 @@ export async function resolvePersistedWorldWeek(
       },
       afterShowFlow: (state) => {
         applyResolvedShowTurns(state);
-        evolveCompletedWorkingPartnerships(state);
       },
     });
     evaluateBackstagePromises(aggregate);

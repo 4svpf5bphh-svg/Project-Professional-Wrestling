@@ -28,6 +28,7 @@ export * from "./promotion-source.js";
 export * from "./reputation.js";
 export * from "./renewal-resistance.js";
 export * from "./relationships.js";
+export * from "./working-relationship-evolution.js";
 export * from "./resolution.js";
 export * from "./rng.js";
 export * from "./roster-source.js";
