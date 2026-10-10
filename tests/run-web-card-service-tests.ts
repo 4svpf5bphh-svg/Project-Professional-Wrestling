@@ -522,6 +522,46 @@ await test("Card post-match assault links to completed match without changing it
     "post-match assault fabricated the victim's match outcome");
 });
 
+await test("Post-match outsider aggressor can advance a feud without joining it", async () => {
+  const fixture = await reservedShowFixture(61107);
+  const beforeProgramme = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const card = singlesCard(fixture.participantIds);
+  if (card.length < 2) throw new Error("outsider assault fixture needs two matches");
+  const victim = card[0]!.sideAIds[0]!;
+  const opponent = card[0]!.sideBIds[0]!;
+  const attacker = card[1]!.sideAIds[0]!;
+  await startAlphaManagedProgramme(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "outsider-assault-programme",
+    expectedRevision: beforeProgramme.world.revision,
+    sideA: [{ kind: "PERSON", entityId: victim }],
+    sideB: [{ kind: "PERSON", entityId: opponent }],
+    championshipId: null,
+  });
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const programme = before.programmes[0]!;
+  ok(!programme.participantIds.includes(attacker), "attacker should be outside the feud");
+  const assault: AlphaCardSegmentView = {
+    draftSegmentId: "post-match-outsider", type: "POST_MATCH_ASSAULT",
+    participantIds: [attacker, victim], attackerPersonId: attacker, victimPersonId: victim,
+    sourceDraftMatchId: card[0]!.draftMatchId,
+    programmeId: programme.programmeId, plannedLengthMinutes: 5,
+  };
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "outsider-assault-save", expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion, matches: card, segments: [assault],
+    runningOrder: [{ kind: "MATCH", refId: card[0]!.draftMatchId },
+      { kind: "SEGMENT", refId: assault.draftSegmentId },
+      ...card.slice(1).map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId }))],
+    championshipAssignments: [],
+  });
+  ok(saved.segments[0]?.attackerPersonId === attacker
+    && saved.segments[0]?.programmeId === programme.programmeId, "outsider attack lost feud context");
+  const reloaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(reloaded.segments[0]?.attackerPersonId === attacker, "outside aggressor did not survive Card reload");
+  ok(!reloaded.programmes[0]?.participantIds.includes(attacker),
+    "Card silently enrolled attacker into the feud");
+});
+
 await test("Card requires attack roles and preserves them on reload", async () => {
   const fixture = await reservedShowFixture(61098);
   const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");

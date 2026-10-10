@@ -717,9 +717,12 @@ export default function CardClient(): React.JSX.Element {
     const programme = view.programmes.find((candidate) => candidate.programmeId === programmeId);
     const allowed = new Set(programme?.participantIds ?? []);
     const minimum = segmentMinimum(segment.type);
-    let participantIds = segment.type === "RESCUE"
+    let participantIds = segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
       ? segment.participantIds.map((personId, index) => (
-          !personId || allowed.has(personId) || index === 2 ? personId : ""
+          !personId || allowed.has(personId)
+            || (segment.type === "RESCUE" && index === 2)
+            || (segment.type === "POST_MATCH_ASSAULT" && index === 0)
+            ? personId : ""
         ))
       : segment.participantIds.filter((personId) => !personId || allowed.has(personId));
     while (participantIds.length < minimum) participantIds.push("");
@@ -1012,7 +1015,10 @@ export default function CardClient(): React.JSX.Element {
       : null;
     const allowed = programme ? new Set(programme.participantIds) : null;
     return view.availableParticipants.filter((person) => (
-      !allowed || (segment.type === "RESCUE" && slotIndex === 2) || allowed.has(person.personId)
+      !allowed
+      || (segment.type === "RESCUE" && slotIndex === 2)
+      || (segment.type === "POST_MATCH_ASSAULT" && slotIndex === 0)
+      || allowed.has(person.personId)
     ));
   }
 
@@ -1519,7 +1525,9 @@ export default function CardClient(): React.JSX.Element {
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
                       <span>{segment.type === "RESCUE" ? "Who attacks, who is saved, and who makes the save?" : segment.type === "POST_MATCH_ASSAULT" ? "Who attacks after the match?" : segment.type === "ATTACK" ? "Who attacks whom?" : isDirectedSegment(segment.type) ? "Who starts it?" : "Who is involved?"}</span>
-                      {segment.programmeId ? <small>{segment.type === "RESCUE" ? "Aggressor and victim from Programme; rescuer can be an outsider" : "Limited to this Programme"}</small> : <small>Any contracted wrestler</small>}
+                      {segment.programmeId ? <small>{segment.type === "RESCUE" ? "Aggressor and victim from Programme; rescuer can be an outsider"
+                        : segment.type === "POST_MATCH_ASSAULT" ? "Victim belongs to the Programme; aggressor may be an outsider"
+                        : "Limited to this Programme"}</small> : <small>Any contracted wrestler</small>}
                     </div>
                     {segment.participantIds.map((personId, personIndex) => (
                       <div className={(segment.type === "RESCUE" && personIndex < 3) || ((segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT" || isDirectedSegment(segment.type)) && personIndex < 2) ? styles.attackFixedPersonRow : styles.segmentPersonRow} key={personIndex}>

@@ -498,7 +498,8 @@ function normalizeSegments(
       usedProgrammes.add(programmeId);
       const storyPeople = new Set(programmeParticipantIds(state, programmeId));
       for (const personId of people) {
-        if (segment.type === "RESCUE" && personId === rescuerPersonId) continue;
+        if ((segment.type === "RESCUE" && personId === rescuerPersonId)
+          || (segment.type === "POST_MATCH_ASSAULT" && personId === attackerPersonId)) continue;
         if (!storyPeople.has(personId)) throw new Error(`${personId} does not belong to Programme ${programmeId}`);
       }
     }
@@ -925,8 +926,8 @@ export async function loadAlphaShowCard(
       participantIds: [...segment.participantIds],
       programmeId: segment.programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
-      attackerPersonId: ["ATTACK", "RESCUE"].includes(segment.type) ? (segment.attackerPersonId ?? null) : null,
-      victimPersonId: ["ATTACK", "RESCUE"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
+      attackerPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.attackerPersonId ?? null) : null,
+      victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
       sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
       initiatorPersonId: ["CHALLENGE", "CONFRONTATION"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,

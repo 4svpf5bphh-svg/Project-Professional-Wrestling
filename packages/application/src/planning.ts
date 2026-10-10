@@ -386,7 +386,8 @@ function validateShowSegmentDraft(
     for (const personId of draft.participantIds) {
       // A rescuer can intervene in an existing feud without becoming a
       // Programme participant. Aggressor and victim still belong to it.
-      if (draft.type === "RESCUE" && personId === rescuerPersonId) continue;
+      if ((draft.type === "RESCUE" && personId === rescuerPersonId)
+        || (draft.type === "POST_MATCH_ASSAULT" && personId === attackerPersonId)) continue;
       if (!storyPeople.has(personId)) throw new Error(`${personId} does not belong to Programme ${programmeId}`);
     }
   }
