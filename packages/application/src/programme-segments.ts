@@ -30,6 +30,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CONFRONTATION",
   "CHALLENGE",
   "ATTACK",
+  "RESCUE",
   "CELEBRATION",
   "TURN",
 ]);
@@ -49,6 +50,7 @@ export interface ResolvedShowSegment {
   plannedLengthMinutes: number;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
+  rescuerPersonId: Id | null;
   initiatorPersonId: Id | null;
   targetPersonId: Id | null;
   attackPresentation: AttackPresentation | null;
@@ -76,6 +78,7 @@ interface NormalizedDraftSegment {
   plannedLengthMinutes: number;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
+  rescuerPersonId: Id | null;
   initiatorPersonId: Id | null;
   targetPersonId: Id | null;
   attackPresentation: AttackPresentation | null;
@@ -142,8 +145,9 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     participantIds: [...segment.participantIds],
     programmeId: segment.programmeId,
     plannedLengthMinutes: segment.plannedLengthMinutes,
-    attackerPersonId: segment.type === "ATTACK" ? (segment.attackerPersonId ?? null) : null,
-    victimPersonId: segment.type === "ATTACK" ? (segment.victimPersonId ?? null) : null,
+    attackerPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" ? (segment.attackerPersonId ?? null) : null,
+    victimPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" ? (segment.victimPersonId ?? null) : null,
+    rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
     initiatorPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" ? (segment.initiatorPersonId ?? null) : null,
     targetPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" ? (segment.targetPersonId ?? null) : null,
     attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? null) : null,
@@ -165,6 +169,7 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       plannedLengthMinutes: 6,
       attackerPersonId: null,
       victimPersonId: null,
+      rescuerPersonId: null,
       initiatorPersonId: null,
       targetPersonId: null,
       attackPresentation: null,
@@ -209,6 +214,7 @@ function segmentOutcome(
     CONFRONTATION: [0.50, 0.32, 0.18],
     CHALLENGE: [0.56, 0.28, 0.16],
     ATTACK: [0.38, 0.34, 0.28],
+    RESCUE: [0.42, 0.30, 0.28],
     CELEBRATION: [0.40, 0.45, 0.15],
     TURN: [0.55, 0.25, 0.20],
   };
@@ -248,6 +254,23 @@ function segmentOutcome(
           ? (victimAlignment === "FACE" && attackerAlignment !== "FACE" ? 2.5 : -1.5)
           : programme ? 1.5 : -2.5;
       angleFitModifier = round1(clamp(formatFit + objectiveFit, -5, 5));
+    }
+  }
+  if (segment.type === "RESCUE" && segment.attackerPersonId && segment.victimPersonId && segment.rescuerPersonId) {
+    const rescuer = people.find((person) => person.id === segment.rescuerPersonId);
+    const aggressor = people.find((person) => person.id === segment.attackerPersonId);
+    const victim = people.find((person) => person.id === segment.victimPersonId);
+    if (rescuer && aggressor && victim) {
+      const rescuerAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, rescuer.id);
+      const aggressorAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, aggressor.id);
+      const victimAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, victim.id);
+      // The save is not automatically successful: presentation, alignment and
+      // storyline context determine how convincingly it lands.
+      const clarity = rescuerAlignment === "FACE" && aggressorAlignment === "HEEL" && victimAlignment === "FACE"
+        ? 2.5 : rescuerAlignment === "HEEL" && victimAlignment === "FACE" ? -2 : 0;
+      const credibility = clamp((rescuer.skills.presentation - 50) / 20, -2.5, 2.5);
+      const stakes = programme ? clamp(((programme.heat ?? 50) - 50) / 15, -2, 2) : -0.5;
+      angleFitModifier = round1(clamp(clarity + credibility + stakes, -5, 5));
     }
   }
   const alignmentVolatilityModifier = segment.type === "TURN" && segment.turnPersonId
@@ -304,6 +327,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const plannedLengthMinutes = entry.payload.plannedLengthMinutes;
   const attackerPersonId = entry.payload.attackerPersonId ?? null;
   const victimPersonId = entry.payload.victimPersonId ?? null;
+  const rescuerPersonId = entry.payload.rescuerPersonId ?? null;
   const initiatorPersonId = entry.payload.initiatorPersonId ?? null;
   const targetPersonId = entry.payload.targetPersonId ?? null;
   const attackPresentation = entry.payload.attackPresentation ?? null;
@@ -340,6 +364,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || !Number.isInteger(plannedLengthMinutes)
     || (attackerPersonId !== null && typeof attackerPersonId !== "string")
     || (victimPersonId !== null && typeof victimPersonId !== "string")
+    || (rescuerPersonId !== null && typeof rescuerPersonId !== "string")
     || (initiatorPersonId !== null && typeof initiatorPersonId !== "string")
     || (targetPersonId !== null && typeof targetPersonId !== "string")
     || (attackPresentation !== null && !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(String(attackPresentation)))
@@ -364,6 +389,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     plannedLengthMinutes,
     attackerPersonId: attackerPersonId as Id | null,
     victimPersonId: victimPersonId as Id | null,
+    rescuerPersonId: rescuerPersonId as Id | null,
     initiatorPersonId: initiatorPersonId as Id | null,
     targetPersonId: targetPersonId as Id | null,
     attackPresentation: attackPresentation as AttackPresentation | null,
@@ -447,6 +473,7 @@ export function recordResolvedShowSegments(
             plannedLengthMinutes: segment.plannedLengthMinutes,
             attackerPersonId: segment.attackerPersonId,
             victimPersonId: segment.victimPersonId,
+            rescuerPersonId: segment.rescuerPersonId,
             initiatorPersonId: segment.initiatorPersonId,
             targetPersonId: segment.targetPersonId,
             attackPresentation: segment.attackPresentation,

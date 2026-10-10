@@ -65,6 +65,7 @@ export interface PlayerWorldResultSegmentView {
   participants: Array<{ personId: Id; name: string }>;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
+  rescuerPersonId: Id | null;
   initiatorPersonId: Id | null;
   targetPersonId: Id | null;
   attackPresentation: AttackPresentation | null;
@@ -290,6 +291,7 @@ export function buildPlayerWorldResultsView(
         })),
         attackerPersonId: segment.attackerPersonId,
         victimPersonId: segment.victimPersonId,
+        rescuerPersonId: segment.rescuerPersonId,
         initiatorPersonId: segment.initiatorPersonId,
         targetPersonId: segment.targetPersonId,
         attackPresentation: segment.attackPresentation,

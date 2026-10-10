@@ -46,6 +46,7 @@ export type DetailedShowSegmentType =
   | "CONFRONTATION"
   | "CHALLENGE"
   | "ATTACK"
+  | "RESCUE"
   | "CELEBRATION"
   | "TURN";
 
@@ -62,6 +63,8 @@ export interface DetailedShowSegmentDraft {
   // Roles are authored intent; participants alone must not invent attack direction.
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
+  // RESCUE is an attack interrupted by a third, explicitly identified wrestler.
+  rescuerPersonId?: Id | null;
   // CHALLENGE/CONFRONTATION direction is authored, never inferred from participant order.
   initiatorPersonId?: Id | null;
   targetPersonId?: Id | null;
@@ -151,6 +154,7 @@ const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CONFRONTATION",
   "CHALLENGE",
   "ATTACK",
+  "RESCUE",
   "CELEBRATION",
   "TURN",
 ]);
@@ -292,6 +296,9 @@ function validateShowSegmentDraft(
   if (["CONFRONTATION", "CHALLENGE", "ATTACK"].includes(draft.type) && draft.participantIds.length < 2) {
     throw new Error(`${draft.type} segment requires at least two wrestlers`);
   }
+  if (draft.type === "RESCUE" && draft.participantIds.length < 3) {
+    throw new Error("RESCUE segment requires three distinct wrestlers");
+  }
   if (!Number.isInteger(draft.plannedLengthMinutes) || draft.plannedLengthMinutes < 2 || draft.plannedLengthMinutes > 20) {
     throw new Error("show segment length must be an integer from 2 to 20 minutes");
   }
@@ -306,15 +313,22 @@ function validateShowSegmentDraft(
       : normalizedId(draft.turnPersonId, "turnPersonId"))
     : null;
   const turnTargetAlignment = draft.type === "TURN" ? (draft.turnTargetAlignment ?? null) : null;
-  const attackerPersonId = draft.type === "ATTACK"
+  const attackerPersonId = (draft.type === "ATTACK" || draft.type === "RESCUE")
     ? (draft.attackerPersonId == null ? null : normalizedId(draft.attackerPersonId, "attackerPersonId")) : null;
-  const victimPersonId = draft.type === "ATTACK"
+  const victimPersonId = (draft.type === "ATTACK" || draft.type === "RESCUE")
     ? (draft.victimPersonId == null ? null : normalizedId(draft.victimPersonId, "victimPersonId")) : null;
-  if (draft.type === "ATTACK" && (
+  const rescuerPersonId = draft.type === "RESCUE"
+    ? (draft.rescuerPersonId == null ? null : normalizedId(draft.rescuerPersonId, "rescuerPersonId"))
+    : null;
+  if ((draft.type === "ATTACK" || draft.type === "RESCUE") && (
     !attackerPersonId || !victimPersonId || attackerPersonId === victimPersonId
     || !draft.participantIds.includes(attackerPersonId)
     || !draft.participantIds.includes(victimPersonId)
-  )) throw new Error("ATTACK segment requires distinct attacker and victim among its participants");
+  )) throw new Error("attack angle requires distinct attacker and victim among its participants");
+  if (draft.type === "RESCUE" && (
+    !rescuerPersonId || rescuerPersonId === attackerPersonId || rescuerPersonId === victimPersonId
+    || !draft.participantIds.includes(rescuerPersonId)
+  )) throw new Error("RESCUE requires a distinct rescuer among segment participants");
   const isDirected = draft.type === "CHALLENGE" || draft.type === "CONFRONTATION";
   const initiatorPersonId = isDirected && draft.initiatorPersonId != null
     ? normalizedId(draft.initiatorPersonId, "initiatorPersonId") : null;
@@ -372,6 +386,7 @@ function validateShowSegmentDraft(
     plannedLengthMinutes: draft.plannedLengthMinutes,
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
+    ...(draft.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
     ...(draft.type === "TURN" ? { turnPersonId, turnTargetAlignment, turnPresentation, betrayedPersonId } : {}),
   };
 }

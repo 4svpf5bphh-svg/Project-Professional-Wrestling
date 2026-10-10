@@ -137,6 +137,7 @@ export interface PlayerShowSegmentView {
   programmeId: Id | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
+  rescuerPersonId: Id | null;
   initiatorPersonId: Id | null;
   targetPersonId: Id | null;
   attackPresentation: AttackPresentation | null;
@@ -356,7 +357,9 @@ function segmentFactors(segment: ReturnType<typeof resolvedShowSegmentsForEvent>
   }
   if (Math.abs(segment.angleFitModifier) >= 0.45) {
     factors.push({
-      label: segment.angleFitModifier > 0 ? "Attack angle connected with the crowd" : "Attack angle struggled to land",
+      label: segment.type === "RESCUE"
+        ? (segment.angleFitModifier > 0 ? "Rescue drew a positive reaction" : "Rescue lacked credibility")
+        : (segment.angleFitModifier > 0 ? "Attack angle connected with the crowd" : "Attack angle struggled to land"),
       impact: segment.angleFitModifier,
     });
   }
@@ -575,6 +578,7 @@ export function buildPlayerShowHistory(
         programmeId: segment.programmeId,
         attackerPersonId: segment.attackerPersonId,
         victimPersonId: segment.victimPersonId,
+        rescuerPersonId: segment.rescuerPersonId,
         initiatorPersonId: segment.initiatorPersonId,
         targetPersonId: segment.targetPersonId,
         attackPresentation: segment.attackPresentation,

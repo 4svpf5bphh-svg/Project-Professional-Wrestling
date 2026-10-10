@@ -379,6 +379,43 @@ for (const [kind, seed] of [["CHALLENGE", 61100], ["CONFRONTATION", 61101]] as c
   });
 }
 
+await test("RESCUE Card preserves all three named roles through reload", async () => {
+  const fixture = await reservedShowFixture(61104);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const [aggressor, victim, rescuer] = fixture.participantIds;
+  if (!aggressor || !victim || !rescuer) throw new Error("rescue fixture needs three people");
+  const segment: AlphaCardSegmentView = {
+    draftSegmentId: "card-rescue", type: "RESCUE",
+    participantIds: [victim, aggressor, rescuer], programmeId: null,
+    plannedLengthMinutes: 6,
+    attackerPersonId: aggressor, victimPersonId: victim, rescuerPersonId: rescuer,
+  };
+  let refused = false;
+  try {
+    await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: "card-invalid-rescue", expectedRevision: before.world.revision,
+      expectedPlanVersion: before.workspaceVersion,
+      matches: singlesCard(fixture.participantIds), segments: [{ ...segment, rescuerPersonId: victim }],
+      championshipAssignments: [],
+    });
+  } catch (error) {
+    refused = String(error).includes("distinct rescuer");
+  }
+  ok(refused, "Card allowed the victim to rescue themselves");
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "card-rescue-valid", expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion,
+    matches: singlesCard(fixture.participantIds), segments: [segment],
+    championshipAssignments: [],
+  });
+  ok(saved.segments[0]?.attackerPersonId === aggressor
+    && saved.segments[0]?.victimPersonId === victim
+    && saved.segments[0]?.rescuerPersonId === rescuer, "Card reordered rescue roles");
+  const reloaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(reloaded.segments[0]?.type === "RESCUE" && reloaded.segments[0]?.rescuerPersonId === rescuer,
+    "Card reload lost the rescuer");
+});
+
 await test("Card requires attack roles and preserves them on reload", async () => {
   const fixture = await reservedShowFixture(61098);
   const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");

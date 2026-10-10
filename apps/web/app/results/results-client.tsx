@@ -257,6 +257,11 @@ export default function ResultsClient(): React.JSX.Element {
                                     <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Wrestler"} {slot.segment.type === "CHALLENGE" ? "challenged" : "confronted"} {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "opponent"}</span>
                                   </div>
                                 ) : null}
+                              {slot.segment.type === "RESCUE" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.rescuerPersonId ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.rescuerPersonId)?.name ?? "Rescuer"} saved {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} from {slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "aggressor"}</span>
+                                </div>
+                              ) : null}
                               {slot.segment.type === "ATTACK" && slot.segment.attackerPersonId && slot.segment.victimPersonId ? (
                                 <div className={styles.matchMeta}>
                                   <span>{slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "Attacker"} attacked {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"}</span>
@@ -460,6 +465,11 @@ export default function ResultsClient(): React.JSX.Element {
                                     <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Wrestler"} {slot.segment.type === "CHALLENGE" ? "challenged" : "confronted"} {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "opponent"}</span>
                                   </div>
                                 ) : null}
+                              {slot.segment.type === "RESCUE" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.rescuerPersonId ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.rescuerPersonId)?.name ?? "Rescuer"} saved {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} from {slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "aggressor"}</span>
+                                </div>
+                              ) : null}
                               {slot.segment.type === "ATTACK" && slot.segment.attackerPersonId && slot.segment.victimPersonId ? (
                                     <div className={styles.matchMeta}>
                                       <span>{slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "Attacker"} attacked {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"}</span>

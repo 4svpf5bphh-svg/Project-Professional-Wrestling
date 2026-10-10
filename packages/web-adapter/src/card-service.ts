@@ -109,6 +109,7 @@ export interface AlphaCardSegmentView {
   plannedLengthMinutes: number;
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
+  rescuerPersonId?: Id | null;
   initiatorPersonId?: Id | null;
   targetPersonId?: Id | null;
   attackPresentation?: AttackPresentation | null;
@@ -225,6 +226,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CONFRONTATION",
   "CHALLENGE",
   "ATTACK",
+  "RESCUE",
   "CELEBRATION",
   "TURN",
 ]);
@@ -419,6 +421,9 @@ function normalizeSegments(
     if (["CONFRONTATION", "CHALLENGE", "ATTACK"].includes(segment.type) && people.length < 2) {
       throw new Error(`${segment.type.toLowerCase()} segment requires at least two wrestlers`);
     }
+    if (segment.type === "RESCUE" && people.length < 3) {
+      throw new Error("RESCUE segment requires three distinct wrestlers");
+    }
     if (!Number.isInteger(segment.plannedLengthMinutes) || segment.plannedLengthMinutes < 2 || segment.plannedLengthMinutes > 20) {
       throw new Error("segment length must be an integer from 2 to 20 minutes");
     }
@@ -434,13 +439,19 @@ function normalizeSegments(
     const betrayedPersonId = segment.type === "TURN" && turnPresentation === "BETRAYAL"
       ? requiredText(segment.betrayedPersonId ?? "", `segments[${index}].betrayedPersonId`, 128)
       : null;
-    const attackerPersonId = segment.type === "ATTACK"
+    const attackerPersonId = (segment.type === "ATTACK" || segment.type === "RESCUE")
       ? requiredText(segment.attackerPersonId ?? "", `segments[${index}].attackerPersonId`, 128) : null;
-    const victimPersonId = segment.type === "ATTACK"
+    const victimPersonId = (segment.type === "ATTACK" || segment.type === "RESCUE")
       ? requiredText(segment.victimPersonId ?? "", `segments[${index}].victimPersonId`, 128) : null;
-    if (segment.type === "ATTACK" && (
+    const rescuerPersonId = segment.type === "RESCUE"
+      ? requiredText(segment.rescuerPersonId ?? "", `segments[${index}].rescuerPersonId`, 128) : null;
+    if ((segment.type === "ATTACK" || segment.type === "RESCUE") && (
       attackerPersonId === victimPersonId || !people.includes(attackerPersonId!) || !people.includes(victimPersonId!)
-    )) throw new Error("ATTACK segment requires distinct attacker and victim among its participants");
+    )) throw new Error("attack angle requires distinct attacker and victim among its participants");
+    if (segment.type === "RESCUE" && (
+      rescuerPersonId === attackerPersonId || rescuerPersonId === victimPersonId
+      || !people.includes(rescuerPersonId!)
+    )) throw new Error("RESCUE requires a distinct rescuer among segment participants");
     const isDirected = segment.type === "CHALLENGE" || segment.type === "CONFRONTATION";
     const initiatorPersonId = isDirected && segment.initiatorPersonId != null
       ? requiredText(segment.initiatorPersonId, `segments[${index}].initiatorPersonId`, 128) : null;
@@ -493,6 +504,7 @@ function normalizeSegments(
       plannedLengthMinutes: segment.plannedLengthMinutes,
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
+      ...(segment.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
       ...(segment.type === "TURN" ? { turnPersonId, turnTargetAlignment, turnPresentation, betrayedPersonId } : {}),
     } satisfies DetailedShowSegmentDraft;
   });
@@ -904,8 +916,9 @@ export async function loadAlphaShowCard(
       participantIds: [...segment.participantIds],
       programmeId: segment.programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
-      attackerPersonId: segment.type === "ATTACK" ? (segment.attackerPersonId ?? null) : null,
-      victimPersonId: segment.type === "ATTACK" ? (segment.victimPersonId ?? null) : null,
+      attackerPersonId: ["ATTACK", "RESCUE"].includes(segment.type) ? (segment.attackerPersonId ?? null) : null,
+      victimPersonId: ["ATTACK", "RESCUE"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
+      rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
       initiatorPersonId: ["CHALLENGE", "CONFRONTATION"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
       targetPersonId: ["CHALLENGE", "CONFRONTATION"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
       attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,

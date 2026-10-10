@@ -202,6 +202,73 @@ for (const [kind, seed] of [["CHALLENGE", 9156], ["CONFRONTATION", 9157]] as con
   });
 }
 
+test("RESCUE freezes the aggressor, victim and rescuer as distinct characters", () => {
+  const setup = fixture(9167);
+  const [aggressor, victim, rescuer] = setup.rosterIds;
+  const base = {
+    draftId: "rescue-show", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+  };
+  const segment = {
+    draftSegmentId: "rescue-1", type: "RESCUE" as const,
+    participantIds: [victim!, aggressor!, rescuer!],
+    attackerPersonId: aggressor!, victimPersonId: victim!, rescuerPersonId: rescuer!,
+    programmeId: null, plannedLengthMinutes: 5,
+  };
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...segment, participantIds: [aggressor!, victim!] }],
+  }), "three distinct wrestlers");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...segment, rescuerPersonId: aggressor! }],
+  }), "distinct rescuer");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...segment, rescuerPersonId: setup.rosterIds[3]! }],
+  }), "distinct rescuer");
+  setPromotionWrestlerAlignment(setup.state, setup.promotion.id, aggressor!, "HEEL");
+  setPromotionWrestlerAlignment(setup.state, setup.promotion.id, victim!, "FACE");
+  setPromotionWrestlerAlignment(setup.state, setup.promotion.id, rescuer!, "FACE");
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, { ...base, segments: [segment] });
+  const stored = setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!;
+  ok(stored.attackerPersonId === aggressor && stored.victimPersonId === victim
+    && stored.rescuerPersonId === rescuer, "rescuer roles were inferred from participant order");
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "rescue did not resolve");
+  const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(frozen.type === "RESCUE" && frozen.attackerPersonId === aggressor
+    && frozen.victimPersonId === victim && frozen.rescuerPersonId === rescuer,
+    "rescue direction was not frozen in ledger");
+  ok(frozen.crowdResponse !== null && frozen.outcomeBand !== null, "rescue missing crowd outcome");
+  ok(Number.isFinite(frozen.angleFitModifier), "rescue fit was not deterministic");
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 0, "rescue duplicated on retry");
+});
+
+test("RESCUE crowd fit responds to a rescuer changing from face to heel", () => {
+  const resolve = (rescuerAlignment: "HEEL" | "FACE") => {
+    const setup = fixture(9168);
+    const [aggressor, victim, rescuer] = setup.rosterIds;
+    setPromotionWrestlerAlignment(setup.state, setup.promotion.id, aggressor!, "HEEL");
+    setPromotionWrestlerAlignment(setup.state, setup.promotion.id, victim!, "FACE");
+    setPromotionWrestlerAlignment(setup.state, setup.promotion.id, rescuer!, rescuerAlignment);
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      draftId: "rescue-fit", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+      marketId: null, venueId: null, ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+      segments: [{ draftSegmentId: "save", type: "RESCUE",
+        participantIds: [aggressor!, victim!, rescuer!],
+        attackerPersonId: aggressor!, victimPersonId: victim!, rescuerPersonId: rescuer!,
+        programmeId: null, plannedLengthMinutes: 6 }],
+    });
+    setup.state.events.push(completedEvent(setup));
+    recordResolvedShowSegments(setup.state, setup.planning);
+    return resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  };
+  const face = resolve("FACE");
+  const heel = resolve("HEEL");
+  ok(face.angleFitModifier > heel.angleFitModifier, "rescue ignored character alignment");
+  ok(face.crowdResponse! > heel.crowdResponse!, "a clearer save did not land better");
+});
+
 test("ATTACK records explicit attacker and victim into immutable show history", () => {
   const setup = fixture(9158);
   const [attacker, victim] = setup.rosterIds;
