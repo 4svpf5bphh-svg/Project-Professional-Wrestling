@@ -197,7 +197,7 @@ export const CURATED_WRESTLER_CHARACTERS = [
   {
     "name": "The Miz",
     "gimmickArchetype": "REALITY_STAR",
-    "primaryStyle": "SHOWMAN",
+    "primaryStyle": "ALL_ROUNDER",
     "secondaryStyle": null,
     "signatureMove": {
       "name": "It Kicks",
