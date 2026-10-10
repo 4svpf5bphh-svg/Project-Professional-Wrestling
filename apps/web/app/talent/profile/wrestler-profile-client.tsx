@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { PlayerWrestlerProfileView } from "../../../../../dist/packages/application/src/wrestler-profile-view.js";
 import {
-  GIMMICK_ARCHETYPES, MOVE_CATEGORIES, WRESTLING_STYLES,
+  MOVE_CATEGORIES, WRESTLING_STYLES,
   type WrestlerCreativeFields, type WrestlingStyle, type GimmickArchetype, type MoveCategory,
 } from "../../../../../dist/packages/application/src/wrestler-creative.js";
+import { GIMMICK_CATALOG, gimmickDefinition } from "../../../../../dist/packages/application/src/gimmick-catalog.js";
 import styles from "./wrestler-profile.module.css";
 
 type ErrorPayload = { error?: string };
@@ -57,6 +58,8 @@ export default function WrestlerProfileClient({
 }): React.JSX.Element {
   const [view, setView] = useState<PlayerWrestlerProfileView | null>(null);
   const [creativeDraft, setCreativeDraft] = useState<WrestlerCreativeFields | null>(null);
+  const [gimmickFamily, setGimmickFamily] = useState<string>("CURRENT");
+  const [gimmickSearch, setGimmickSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const saveRequestId = useRef<string | null>(null);
@@ -74,6 +77,8 @@ export default function WrestlerProfileClient({
         }
         setView(payload);
         setCreativeDraft(payload.creativeProfile ? structuredClone(payload.creativeProfile.fields) : null);
+        setGimmickFamily("CURRENT");
+        setGimmickSearch("");
         setSaved(false);
         saveRequestId.current = null;
       })
@@ -216,15 +221,49 @@ export default function WrestlerProfileClient({
             </label>
             <div className={styles.field}>
               <span>Character archetype</span>
-              {chip<GimmickArchetype>(GIMMICK_ARCHETYPES, creativeDraft.gimmickArchetype,
-                (gimmickArchetype) => updateCreative({gimmickArchetype}))}
+              <p className={styles.note}>
+                Selected: <strong>{gimmickDefinition(creativeDraft.gimmickArchetype).label}</strong>.
+                This is the wrestling character template; it is separate from face/heel alignment.
+              </p>
+              <p className={styles.note}>{gimmickDefinition(creativeDraft.gimmickArchetype).description}</p>
+              <div className={styles.chips}>
+                <button type="button" className={gimmickFamily==="CURRENT"?styles.chipActive:styles.chip}
+                  onClick={() => {setGimmickFamily("CURRENT");setGimmickSearch("");}}>Current gimmick</button>
+                {Array.from(new Map(GIMMICK_CATALOG.map(g => [g.family,g.familyLabel])).entries())
+                  .map(([family,caption])=>(
+                  <button key={family} type="button"
+                    className={gimmickFamily===family?styles.chipActive:styles.chip}
+                    onClick={() => {setGimmickFamily(family);setGimmickSearch("");}}>
+                    {caption}
+                  </button>
+                ))}
+              </div>
+              {gimmickFamily!=="CURRENT" ? (
+                <input aria-label="Search gimmick archetypes" placeholder="Search gimmicks" value={gimmickSearch}
+                  onChange={event=>setGimmickSearch(event.target.value)} />
+              ) : null}
+              <div className={styles.gimmickGrid}>
+                {GIMMICK_CATALOG.filter(entry=>
+                  (gimmickFamily==="CURRENT"
+                    ? entry.id===creativeDraft.gimmickArchetype
+                    : entry.family===gimmickFamily)
+                  && (!gimmickSearch
+                    || `${entry.label} ${entry.description}`.toLowerCase().includes(gimmickSearch.toLowerCase()))
+                ).map(entry=>(
+                  <button type="button" key={entry.id}
+                    className={entry.id===creativeDraft.gimmickArchetype?styles.gimmickActive:styles.gimmickChoice}
+                    aria-pressed={entry.id===creativeDraft.gimmickArchetype}
+                    onClick={()=>updateCreative({
+                      gimmickArchetype:entry.id as GimmickArchetype,
+                      gimmickDescription:"",
+                    })}>
+                    <strong>{entry.label}</strong><small>{entry.description}</small>
+                  </button>
+                ))}
+              </div>
             </div>
-            <label className={styles.field}>
-              <span>Gimmick description</span>
-              <textarea rows={3} maxLength={240} value={creativeDraft.gimmickDescription}
-                placeholder="What makes this character stand out?"
-                onChange={(event) => updateCreative({gimmickDescription:event.target.value})}/>
-            </label>
+            {/* Character definitions are authored catalogue content.
+                Legacy custom descriptions remain in historical records. */}
             <div className={styles.field}>
               <span>Primary wrestling style</span>
               {chip<WrestlingStyle>(WRESTLING_STYLES,creativeDraft.primaryStyle,(primaryStyle) =>
