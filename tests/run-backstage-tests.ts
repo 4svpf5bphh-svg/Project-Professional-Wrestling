@@ -19,6 +19,7 @@ import { generateTagTeamPitches } from "../packages/application/src/backstage-pi
 import { generateRivalryPitches } from "../packages/application/src/backstage-rivalries.js";
 import { generateTeamMoments } from "../packages/application/src/backstage-moments.js";
 import { generateGimmickChangePitches } from "../packages/application/src/backstage-gimmicks.js";
+import { chooseCreativePitchSpeaker, wrestlerCreativeInterestScores } from "../packages/application/src/wrestler-creative-interests.js";
 import { buildBackstageDialogue } from "../packages/application/src/backstage-dialogue.js";
 import { setWrestlerCreativeProfileCommand, defaultWrestlerCreativeFields } from "../packages/application/src/wrestler-creative.js";
 import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
@@ -533,11 +534,14 @@ test("Successful real tag matches generate an optional positive pitch with a nam
   ok(generateTagTeamPitches(f.aggregate) === 0, "same pitch generated twice");
   ok(JSON.stringify(f.aggregate.state) === before, "pitch mutated in-ring results or contracts");
   const message = f.aggregate.engagement!.backstageConversations[0]!;
-  ok(message.kind === "TAG_TEAM_PITCH" && message.partnerPersonId === partnerId
+  ok(message.kind === "TAG_TEAM_PITCH"
+    && [message.wrestlerId,message.partnerPersonId].sort().join("|") === [f.person.id,partnerId].sort().join("|")
+    && message.sourceContractId === activeContractsForPromotion(f.aggregate.state,f.promotion.id)
+      .find(contract=>contract.personId===message.wrestlerId)?.id
     && message.sharedTagMatches === 2 && message.averageCrowdResponse === 78,
     "positive pitch lacks evidence or correct partner");
   const view = buildPlayerBackstageView(f.aggregate, "backstage-owner");
-  ok(view.openCount === 1 && view.conversations[0]?.partnerPersonId === partnerId
+  ok(view.openCount === 1 && view.conversations[0]?.partnerPersonId === message.partnerPersonId
     && !!view.conversations[0]?.partnerName && !view.conversations[0]?.canPromiseFeaturedBooking,
     "Backstage pitch incorrectly exposes role-promise options or partner");
   const alert = buildPlayerAttention(f.aggregate, "backstage-owner")
@@ -701,11 +705,14 @@ test("Professionally trusted opponents suggest a scripted rivalry after two hot 
   ok(generateRivalryPitches(f.aggregate) === 0, "duplicate rivalry pitch was created");
   ok(JSON.stringify(f.aggregate.state) === before, "rivalry pitch changed world simulation");
   const message = f.aggregate.engagement!.backstageConversations[0]!;
-  ok(message.kind === "RIVALRY_PITCH" && message.rivalPersonId === opponentId
+  ok(message.kind === "RIVALRY_PITCH"
+    && [message.wrestlerId,message.rivalPersonId].sort().join("|") === [f.person.id,opponentId].sort().join("|")
+    && message.sourceContractId === activeContractsForPromotion(f.aggregate.state,f.promotion.id)
+      .find(contract=>contract.personId===message.wrestlerId)?.id
     && message.sharedSinglesMatches === 2 && message.averageCrowdResponse === 82
     && message.professionalTrustAtPitch === 78, "rivalry proposal lost frozen evidence");
   const view = buildPlayerBackstageView(f.aggregate, "backstage-owner");
-  ok(view.conversations[0]?.rivalPersonId === opponentId && !!view.conversations[0]?.rivalName
+  ok(view.conversations[0]?.rivalPersonId === message.rivalPersonId && !!view.conversations[0]?.rivalName
     && view.conversations[0]?.professionalTrustAtPitch === 78
     && !view.conversations[0]?.canPromiseFeaturedBooking, "rivalry view exposed incorrect choice/context");
   const alert = buildPlayerAttention(f.aggregate, "backstage-owner")
@@ -1124,6 +1131,98 @@ test("All Backstage dialogue kinds mention only their evidenced counterpart or r
   const neutral=buildBackstageDialogue(erased,undefined,names);
   ok(neutral.voice==="NEUTRAL"&&neutral.speech.includes(partner.name),
     "old conversation without an available wrestler lost its grounded facts");
+});
+
+
+test("Who suggests a team is chosen by creative preference, not wrestler ID",()=>{
+  const f=fixture();
+  f.contract.roleExpectation="REGULAR";
+  const partnerId=successfulTagPair(f);
+  const partner=f.aggregate.state.people.find(p=>p.id===partnerId)!;
+  f.person.backstageTemperament="INDEPENDENT";
+  f.person.priorities.loyalty=0;
+  f.person.priorities.schedule=0;
+  partner.backstageTemperament="COLLABORATIVE";
+  partner.priorities.loyalty=100;
+  partner.priorities.schedule=100;
+  ok(chooseCreativePitchSpeaker(f.person,partner,"TEAM_PARTNERSHIPS").id===partner.id,
+    "test failed to establish differing creative interest");
+  const relation=f.aggregate.state.wrestlerRelationships?.find(r=>
+    [r.personAId,r.personBId].includes(f.person.id)
+    && [r.personAId,r.personBId].includes(partner.id));
+  if(relation)relation.professionalTrust=82;
+  else (f.aggregate.state.wrestlerRelationships??=[]).push({
+    id:"real-tag-professional-trust",worldId:f.aggregate.state.world.id,
+    personAId:f.person.id,personBId:partner.id,affinity:55,professionalTrust:82,
+    rivalryHeat:0,familiarity:30,tags:[],
+  });
+  let working=f.aggregate.state.workingChemistry.find(x=>x.context==="TAG"
+    && [x.personAId,x.personBId].includes(f.person.id)
+    && [x.personAId,x.personBId].includes(partner.id));
+  if(working){working.familiarity=67;working.matchesTogether=3;}
+  else f.aggregate.state.workingChemistry.push({
+    id:"real-tag-working-chemistry",worldId:f.aggregate.state.world.id,
+    personAId:f.person.id,personBId:partner.id,context:"TAG",
+    compatibility:66,familiarity:67,matchesTogether:3,
+  });
+  const before=JSON.stringify(f.aggregate.state);
+  ok(generateTagTeamPitches(f.aggregate)===1,"proven tag results should produce an idea");
+  const pitch=f.aggregate.engagement!.backstageConversations[0]!;
+  ok(pitch.wrestlerId===partner.id && pitch.partnerPersonId===f.person.id
+    && pitch.sourceContractId===activeContractsForPromotion(f.aggregate.state,f.promotion.id)
+      .find(c=>c.personId===partner.id)?.id,
+    "creative speaker did not match the wrestler's actual contract");
+  ok(pitch.creativeInterestAtPitch==="TEAM_PARTNERSHIPS"
+    && pitch.professionalTrustAtPitch===82 && pitch.tagFamiliarityAtPitch===67,
+    "genuine trust/familiarity were not frozen on the private pitch");
+  const view=buildPlayerBackstageView(f.aggregate,"backstage-owner");
+  ok(view.conversations[0]?.tagFamiliarityAtPitch===67
+    && view.conversations[0]?.creativeInterestAtPitch==="TEAM_PARTNERSHIPS",
+    "read-model omitted real relationship context");
+  const cloned=cloneApplicationWorld(f.aggregate);
+  ok(cloned.engagement?.backstageConversations[0]?.wrestlerId===partner.id,
+    "persistent World changed who actually proposed the idea");
+  ok(JSON.stringify(f.aggregate.state)===before,
+    "individual interest silently changed relationship or match state");
+});
+
+test("Incomplete tag sides cannot masquerade as two-person teams",()=>{
+  const f=fixture();
+  f.contract.roleExpectation="REGULAR";
+  successfulTagPair(f);
+  // A third booked participant on the same side is incompatible with an
+  // unambiguous two-person tag pairing, even if their contract is ineligible.
+  const sideA=f.aggregate.state.matchParticipants.find(x=>x.matchId==="backstage-show-1-match-1")!;
+  const outsider=f.aggregate.state.people.find(p=>p.id!==f.person.id
+    && !f.aggregate.state.scheduledAppearances.some(a=>a.personId===p.id
+      && a.eventId==="backstage-show-1"))!;
+  f.aggregate.state.matchParticipants.push({...sideA,
+    id:"third-rosterless-tag-member",personId:outsider.id});
+  ok(generateTagTeamPitches(f.aggregate)===0,
+    "tag suggestion used two eligible people from an actual three-person side");
+});
+
+test("A trusted on-screen rival is proposed by the wrestler most interested in that story",()=>{
+  const f=fixture();
+  const partnerId=strongSinglesWorkingPair(f);
+  const partner=f.aggregate.state.people.find(p=>p.id===partnerId)!;
+  f.person.backstageTemperament="STEADY";
+  f.person.priorities.role=0;
+  f.person.priorities.prestige=0;
+  partner.backstageTemperament="AMBITIOUS";
+  partner.priorities.role=100;
+  partner.priorities.prestige=100;
+  ok(chooseCreativePitchSpeaker(f.person,partner,"STORY_RIVALRIES").id===partner.id,
+    "test did not create a wrestler-specific creative preference");
+  const before=JSON.stringify(f.aggregate.state);
+  ok(generateRivalryPitches(f.aggregate)===1,"strong in-ring evidence was ignored");
+  const pitch=f.aggregate.engagement!.backstageConversations[0]!;
+  ok(pitch.wrestlerId===partner.id && pitch.rivalPersonId===f.person.id
+    && pitch.creativeInterestAtPitch==="STORY_RIVALRIES"
+    && pitch.professionalTrustAtPitch===78,
+    "personality did not choose speaker or actual trusted opponent");
+  ok(JSON.stringify(f.aggregate.state)===before,
+    "proposal modified professional trust or forced an on-screen rivalry");
 });
 
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");

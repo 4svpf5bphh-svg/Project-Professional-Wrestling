@@ -7,6 +7,8 @@ import {
   setWrestlerCreativeProfileCommand,
   wrestlerCreativeProfileFor,
   defaultWrestlerCreativeFields,
+  wrestlerCreativeInterestFor,
+  wrestlerCreativeInterestScores,
   claimIndependentPromotionForPlayer,
   createWorldCommandState,
   createWorldOwnershipState,
@@ -386,6 +388,34 @@ test("Mic ability and backstage tendency are deterministic, independent descript
   ok(fallback.microphoneSource==="ESTIMATED"&&fallback.temperamentSource==="DERIVED",
     "corrupted overrides should fall back rather than presenting invalid ratings");
   void promotionBId;
+});
+
+
+test("Creative interests use existing priorities, are stable across viewers and never change the World",()=>{
+  const {aggregate,promotionAId}=fixture(73170);
+  const own=activeContractsForPromotion(aggregate.state,promotionAId)[0]!;
+  const person=aggregate.state.people.find(p=>p.id===own.personId)!;
+  const before=JSON.stringify(aggregate.state);
+  const left=buildPlayerWrestlerProfileView(aggregate,"player-a",person.id);
+  const right=buildPlayerWrestlerProfileView(aggregate,"player-b",person.id);
+  ok(left.person.creativeInterests.topInterests.length===2
+    && new Set(left.person.creativeInterests.topInterests).size===2
+    && left.person.creativeInterests.origin==="DERIVED",
+    "initial roster has missing or duplicated creative interests");
+  ok(JSON.stringify(left.person.creativeInterests)===JSON.stringify(right.person.creativeInterests)
+    && JSON.stringify(left.person.creativeInterests)===
+      JSON.stringify(buildPlayerWrestlerProfileView(cloneApplicationWorld(aggregate),"player-a",person.id)
+        .person.creativeInterests),
+    "same wrestler's fictional interests changed across controller or reload");
+  ok(JSON.stringify(aggregate.state)===before,"read-only preferences mutated the World");
+  const changed=structuredClone(person);
+  changed.priorities.loyalty=100;
+  changed.priorities.schedule=100;
+  changed.backstageTemperament="COLLABORATIVE";
+  ok(wrestlerCreativeInterestFor(changed).topInterests.includes("TEAM_PARTNERSHIPS")
+    && wrestlerCreativeInterestScores(changed).TEAM_PARTNERSHIPS >
+      wrestlerCreativeInterestScores(changed).CHARACTER_REINVENTION,
+    "booker's expected teamwork interest wasn't grounded in persona and priorities");
 });
 
 console.log(`\nApplication wrestler-profile tests: ${passed} passed, ${failed} failed`);
