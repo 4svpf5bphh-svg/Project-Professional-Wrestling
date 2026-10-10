@@ -178,7 +178,7 @@ function segments(value: unknown): AlphaCardSegmentView[] {
     const fieldId = (key: string): string | null => (
       optionalText(candidate[key], `segments[${index}].${key}`, 128) ?? null
     );
-    const pick = <T extends string>(key: string, values: readonly T[]): T | null => (
+    const pick = <const T extends string>(key: string, values: readonly T[]): T | null => (
       nullableChoice(candidate[key], `segments[${index}].${key}`, values)
     );
     return {
