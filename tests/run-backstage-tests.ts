@@ -504,6 +504,13 @@ function successfulTagPair(f: ReturnType<typeof fixture>, crowd = 78): string {
     const match = state.matches.find((entry) => entry.eventId === eventId && entry.order === 1)!;
     match.type = "TAG";
     match.crowdResponse = crowd;
+    const originalAppearance = state.scheduledAppearances.find((appearance) => (
+      appearance.eventId === eventId && appearance.personId === f.person.id
+    ))!;
+    state.scheduledAppearances.push({
+      ...originalAppearance, id: "tag-partner-appearance-" + i,
+      personId: partnerContract.personId, contractId: partnerContract.id,
+    });
     state.matchParticipants.push({
       id: "tag-pitch-partner-" + i, worldId: state.world.id,
       eventId, matchId: match.id, personId: partnerContract.personId, side: "A", won: true,
@@ -610,6 +617,18 @@ test("Weak, one-off or already established teams do not flood Backstage pitches"
     });
   }
   ok(generateTagTeamPitches(onlyOne.aggregate) === 0, "established team generated redundant pitch");
+});
+
+
+test("A tag pitch requires actual completed contract-specific dates for both wrestlers", () => {
+  const f = fixture();
+  f.contract.roleExpectation = "REGULAR";
+  successfulTagPair(f);
+  f.aggregate.state.scheduledAppearances = f.aggregate.state.scheduledAppearances.filter(
+    (appearance) => !appearance.id.startsWith("tag-partner-appearance-"),
+  );
+  ok(generateTagTeamPitches(f.aggregate) === 0,
+    "in-ring participant record without a completed contractual appearance produced a pitch");
 });
 
 test("Complaints and creative pitches share the same strict per-promotion weekly budget", () => {

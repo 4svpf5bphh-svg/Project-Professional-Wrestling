@@ -22,6 +22,13 @@ export function generateTagTeamPitches(aggregate: ApplicationWorldAggregate): nu
     && ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear) >= currentWeek - 12
     && ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear) <= currentWeek
   )).map((event) => [event.id, event]));
+  const validAppearances = new Map<Id, Set<string>>();
+  for (const appearance of state.scheduledAppearances) {
+    if (appearance.status !== "COMPLETED" || !events.has(appearance.eventId)) continue;
+    const present = validAppearances.get(appearance.eventId) ?? new Set<string>();
+    present.add(appearance.personId + "|" + appearance.contractId);
+    validAppearances.set(appearance.eventId, present);
+  }
   const participants = new Map<Id, typeof state.matchParticipants>();
   for (const entry of state.matchParticipants) {
     if (!events.has(entry.eventId)) continue;
@@ -53,7 +60,8 @@ export function generateTagTeamPitches(aggregate: ApplicationWorldAggregate): nu
         || !Number.isFinite(match.crowdResponse)) continue;
       const sides = new Map<string, Id[]>();
       for (const participant of participants.get(match.id) ?? []) {
-        if (!eligible.has(participant.personId)) continue;
+        const contract = eligible.get(participant.personId);
+        if (!contract || !validAppearances.get(match.eventId)?.has(participant.personId + "|" + contract.id)) continue;
         const side = sides.get(participant.side) ?? [];
         side.push(participant.personId);
         sides.set(participant.side, side);
