@@ -543,3 +543,20 @@ export const GIMMICK_ARCHETYPES: readonly GimmickId[] = GIMMICK_CATALOG.map(entr
 export function gimmickDefinition(id: string) {
   return GIMMICK_CATALOG.find(entry=>entry.id===id)??GIMMICK_CATALOG[0]!;
 }
+
+/** Named wrestling personas must not become generic dress-up presets.
+ * Current featured owners are just identity references, not real-life IP rights.
+ * This list will move to full person-level persona history in the next wave.
+ */
+export const NAMED_PERSONA_OWNERS: Readonly<Record<string,string>> = {
+  TRIBAL_CHIEF: "Roman Reigns",
+  AMERICAN_NIGHTMARE: "Cody Rhodes",
+  DEADMAN: "The Undertaker",
+  LEGEND_KILLER: "Randy Orton",
+  BEST_BOUT_MACHINE: "Kenny Omega",
+};
+
+export function gimmickUsableBy(gimmickId:string,wrestlerName:string):boolean {
+  const reserved=NAMED_PERSONA_OWNERS[gimmickId];
+  return !reserved || reserved.toLocaleLowerCase("en-GB")===wrestlerName.toLocaleLowerCase("en-GB");
+}
