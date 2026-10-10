@@ -443,6 +443,11 @@ export default function WrestlerProfileClient({
                   {connection.relationship ? (
                     <span>In-game professional trust {Math.round(connection.relationship.professionalTrust)}</span>
                   ) : null}
+                  {connection.lastDevelopment ? (
+                    <span>Recent cooperation: respect +{connection.lastDevelopment.trustDelta.toFixed(1)},
+                      familiarity +{connection.lastDevelopment.familiarityDelta}
+                      {" · "}{ppwDate(connection.lastDevelopment.date)}</span>
+                  ) : null}
                 </div>
               </article>
             ))}

@@ -8,6 +8,7 @@
 import type { Id, PpwDate, WrestlerRelationship, WorkingChemistry, WorldState } from "../../domain/src/types.js";
 import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { eventsForWeek, matchesForEvent, participantsForMatch } from "../../sim-core/src/indexes.js";
+import { WORKING_PARTNERSHIP_LEDGER_TYPE } from "./working-relationship-evolution.js";
 
 export interface WrestlerWorkingConnectionView {
   personId: Id;
@@ -26,6 +27,8 @@ export interface WrestlerWorkingConnectionView {
   recentTagMatchesTogether: number;
   recentSinglesOppositions: number;
   latestSharedMatchDate: PpwDate | null;
+  /** Most recent proven collaboration improvement, not an asserted friendship. */
+  lastDevelopment: { date: PpwDate; trustDelta: number; familiarityDelta: number } | null;
 }
 
 interface ConnectionDraft {
@@ -35,6 +38,7 @@ interface ConnectionDraft {
   recentTagMatchesTogether: number;
   recentSinglesOppositions: number;
   latestSharedMatchDate: PpwDate | null;
+  lastDevelopment: { date: PpwDate; trustDelta: number; familiarityDelta: number } | null;
 }
 
 const LOOKBACK_WEEKS = 12;
@@ -51,7 +55,7 @@ export function workingConnectionsForWrestler(
     if (otherId === personId || !names.has(otherId)) return null;
     let draft = drafts.get(otherId);
     if (!draft) {
-      draft = { recentTagMatchesTogether: 0, recentSinglesOppositions: 0, latestSharedMatchDate: null };
+      draft = { recentTagMatchesTogether: 0, recentSinglesOppositions: 0, latestSharedMatchDate: null, lastDevelopment: null };
       drafts.set(otherId, draft);
     }
     return draft;
@@ -72,14 +76,32 @@ export function workingConnectionsForWrestler(
     else if (record.context === "SINGLES") draft.singlesChemistry = record;
   }
 
+  // Historical reasons are frozen with the authoritative change; newest first.
+  // This short ledger suffix is enough to explain the latest recent change.
+  const nowForLedger = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
+  for (let i = state.ledger.length - 1; i >= 0; i--) {
+    const entry = state.ledger[i]!;
+    const age = nowForLedger - ppwDateToWeekIndex(entry.date, state.ruleset.weeksPerYear);
+    if (age >= 26) break;
+    if (age < 0 || entry.type !== WORKING_PARTNERSHIP_LEDGER_TYPE) continue;
+    const [a, b] = entry.entityIds;
+    const other = a === personId ? b : b === personId ? a : null;
+    if (!other || !names.has(other)) continue;
+    const draft = get(other)!;
+    if (draft.lastDevelopment) continue;
+    const trustDelta = entry.payload.trustDelta;
+    const familiarityDelta = entry.payload.familiarityDelta;
+    if (typeof trustDelta !== "number" || typeof familiarityDelta !== "number") continue;
+    draft.lastDevelopment = { date: { ...entry.date }, trustDelta, familiarityDelta };
+  }
+
   // The index only visits the last 12 PPW weeks; no unbounded ledger scan.
   const weeksPerYear = state.ruleset.weeksPerYear;
   const nowWeek = ppwDateToWeekIndex(state.world.currentDate, weeksPerYear);
   for (let index = Math.max(0, nowWeek - LOOKBACK_WEEKS + 1); index <= nowWeek; index++) {
     const date = { year: Math.floor(index / weeksPerYear) + 1, week: index % weeksPerYear + 1, day: 1 };
     for (const event of eventsForWeek(state, date)) {
-      if (event.status !== "COMPLETED"
-        || comparePpwDates(event.date, state.world.currentDate, weeksPerYear) > 0) continue;
+      if (event.status !== "COMPLETED") continue;
       for (const match of matchesForEvent(state, event.id)) {
         if (match.status !== "COMPLETED" || match.eventId !== event.id
           || match.promotionId !== event.promotionId) continue;
@@ -131,6 +153,7 @@ export function workingConnectionsForWrestler(
       recentTagMatchesTogether: draft.recentTagMatchesTogether,
       recentSinglesOppositions: draft.recentSinglesOppositions,
       latestSharedMatchDate: draft.latestSharedMatchDate,
+      lastDevelopment: draft.lastDevelopment,
     }))
     .sort((a, b) =>
       b.recentTagMatchesTogether - a.recentTagMatchesTogether

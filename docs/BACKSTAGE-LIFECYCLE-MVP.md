@@ -82,3 +82,27 @@ Each *new* Backstage conversation now freezes a promotion-scoped continuity snap
 Following a **CONSIDER** reply, PPW records factual evidence of follow-through only when the player subsequently books a completed two-person tag match (same promotion and correct source contract), creates an opposing-person Programme in that promotion, or edits that wrestler's ring name, gimmick archetype or gimmick description in that promotion. A move-name-only edit does *not* pretend to be a repackaging; an offer, idle click, response or uncompleted match does not count. A small at-response baseline excludes prior actions, including ones already on the same PPW day. Older saves without baseline only credit events on later dates, never ambiguous same-day history. Follow-through is a one-time, promotion-scoped, immutable factual record visible in Backstage; it is NOT a guaranteed promise, team formation (a tag match is just a match), creative consent, trust bonus or match-strength change. The existing simulation already evolves partnership familiarity and chemistry from match resolution. No double reward.
 
 The UI shows the real follow-through explicitly on the Backstage conversation and the wrestler's private working-history card. It is a factual milestone rather than an automatic character/story change. The matching baseline stores only already-completed same-day matches because matches from older dates cannot satisfy the response date; this bounds save size across long-running Worlds.
+
+
+## Verified professional partnerships: first relationship-evolution rule (development only)
+
+After completed-show results have been frozen inside the persisted World Lock,
+two distinct, completed, adequately executed TAG shows featuring the *same
+two-person side* in the past twelve PPW weeks can improve fictional professional
+working trust by at most 0.8 points (capped at a conservative 75 for automatic
+growth) and pair familiarity by at most 2 points. A qualifying match in the
+currently resolving week is required. Both human and AI promotions participate
+under the same World-wide eight-week cooldown per pair; booking multiple shows
+or booking the same pair across promotions cannot bypass this cap. A pair without
+seeded personal history starts with a neutral 50 professional-trust baseline,
+not an invented friendship. Each change is recorded as an immutable, sourced
+World ledger event with its actual applied deltas.
+
+This pass does not alter affinity, rivalry heat, friendship/alliance tags,
+chemistry, promotion trust, morale, contracts, cash, in-ring ratings, scripted
+winners or story results. Badly executed matches are not automatically
+personal grudges. The owned wrestler profile exposes the most recent factual
+professional-respect development. Historical saves are not backfilled, and
+reads/retries cannot apply rewards. Full negative interpersonal consequences
+require independent evidence and separate balancing; this is only the first
+bounded positive working-cooperation consequence.
