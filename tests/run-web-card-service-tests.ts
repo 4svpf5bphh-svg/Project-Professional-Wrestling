@@ -503,6 +503,66 @@ await test("Run-in saves, reloads, resolves and records the actual finish withou
   ok(appearance?.status === "COMPLETED", "run-in wrestler did not fulfil their booked appearance");
 });
 
+for (const [outcome, seed] of [["RECONCILED", 61146], ["REBUFFED", 61147]] as const) {
+  await test(`Card freezes scripted stable ${outcome} and preserves former-member history`, async () => {
+    const fixture = await reservedShowFixture(seed);
+    const [representative, former, third] = fixture.participantIds;
+    if (!representative || !former || !third) throw new Error("reunion fixture needs three wrestlers");
+    const first = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    const created = await mutateAlphaStable(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: `reunion-create-${seed}`, expectedRevision: first.world.revision,
+      action: "CREATE", name: "Former Member Stable",
+      personIds: [representative, former, third],
+    });
+    const stableId = created.stables[0]!.stableId;
+    const removed = await mutateAlphaStable(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: `reunion-history-${seed}`, expectedRevision: created.world.revision,
+      action: "REMOVE", stableId, personId: former,
+    });
+    ok(removed.stables[0]?.memberHistory.some((member) =>
+      member.personId === former && !member.active), "World membership history was not retained");
+    const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    ok(before.availableStables.some((stable) => stable.stableId === stableId
+      && stable.memberIds.includes(representative)
+      && stable.formerMemberIds.includes(former)), "Card cannot identify former stable members");
+    const segment: AlphaCardSegmentView = {
+      draftSegmentId: "reconciliation-segment", type: "STABLE_RECONCILIATION",
+      participantIds: [former, representative],
+      initiatorPersonId: representative, targetPersonId: former,
+      stableId, stableReconciliationOutcome: outcome, programmeId: null,
+      plannedLengthMinutes: 6,
+    };
+    const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: `reunion-save-${seed}`, expectedRevision: before.world.revision,
+      expectedPlanVersion: before.workspaceVersion,
+      matches: singlesCard(fixture.participantIds),
+      segments: [segment], championshipAssignments: [],
+    });
+    const reloaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+    ok(reloaded.segments[0]?.stableReconciliationOutcome === outcome
+      && reloaded.segments[0]?.stableId === stableId
+      && reloaded.segments[0]?.targetPersonId === former,
+      "Card reload changed the authored reconciliation");
+    await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+      expectedRevision: saved.world.revision,
+    });
+    const finished = await fixture.repository.load(fixture.worldId);
+    const entry = finished.state.ledger.find((item) => item.type === "SHOW_SEGMENT_COMPLETED"
+      && item.payload.draftSegmentId === segment.draftSegmentId);
+    ok(entry?.payload.stableReconciliationOutcome === outcome
+      && entry.payload.stableId === stableId && entry.payload.stableName === "Former Member Stable"
+      && entry.payload.initiatorPersonId === representative
+      && entry.payload.targetPersonId === former,
+      "World Lock rewrote the authored reunion outcome");
+    ok((finished.state.stableMemberships ?? []).some((member) =>
+      member.stableId === stableId && member.personId === former && !member.active),
+      "scripted reconciliation silently reinstated a former member");
+    ok(!(finished.state.stableMemberships ?? []).some((member) =>
+      member.stableId === stableId && member.personId === former && member.active),
+      "sim created active stable membership from a scripted segment");
+  });
+}
+
 for (const [outcome, seed] of [["EXPELLED", 61144], ["WALKED_OUT", 61145]] as const) {
   await test(`Card preserves scripted stable exit ${outcome} without removing members`, async () => {
     const fixture = await reservedShowFixture(seed);

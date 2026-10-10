@@ -39,7 +39,7 @@ const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
 ];
 const MATCH_FINISHES: BookableFinish[] = ["CLEAN_PIN", "SUBMISSION", "FLASH_PIN", "PROTECTED_FINISH"];
 const SEGMENT_TYPES: AlphaCardSegmentView["type"][] = [
-  "PROMO", "INTERVIEW", "CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN",
+  "PROMO", "INTERVIEW", "CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION", "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN",
 ];
 const ATTACK_FORMATS = ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"] as const;
 const ATTACK_OBJECTIVES = ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"] as const;
@@ -114,11 +114,11 @@ function cloneAssignments(assignments: AlphaChampionshipAssignmentView[]): Alpha
 }
 
 function isDirectedSegment(type: AlphaCardSegmentView["type"]): boolean {
-  return type === "CHALLENGE" || type === "CONFRONTATION" || type === "INTERRUPTION" || type === "CONTRACT_SIGNING" || type === "STABLE_INVITATION" || type === "STABLE_EXIT";
+  return type === "CHALLENGE" || type === "CONFRONTATION" || type === "INTERRUPTION" || type === "CONTRACT_SIGNING" || type === "STABLE_INVITATION" || type === "STABLE_EXIT" || type === "STABLE_RECONCILIATION";
 }
 
 function segmentMinimum(type: AlphaCardSegmentView["type"]): number {
-  return type === "RESCUE" ? 3 : type === "POST_MATCH_ASSAULT" || type === "CONFRONTATION" || type === "INTERRUPTION" || type === "CHALLENGE" || type === "CONTRACT_SIGNING" || type === "STABLE_INVITATION" || type === "STABLE_EXIT" || type === "ATTACK" ? 2 : 1;
+  return type === "RESCUE" ? 3 : type === "POST_MATCH_ASSAULT" || type === "CONFRONTATION" || type === "INTERRUPTION" || type === "CHALLENGE" || type === "CONTRACT_SIGNING" || type === "STABLE_INVITATION" || type === "STABLE_EXIT" || type === "STABLE_RECONCILIATION" || type === "ATTACK" ? 2 : 1;
 }
 
 function MinuteField(props: {
@@ -409,6 +409,12 @@ export default function CardClient(): React.JSX.Element {
       && segment.participantIds.includes(segment.initiatorPersonId ?? "")
       && segment.participantIds.includes(segment.targetPersonId ?? "")
     ))
+    && (segment.type !== "STABLE_RECONCILIATION" || Boolean(
+      view?.availableStables.some((stable) => stable.stableId === segment.stableId
+        && stable.memberIds.includes(segment.initiatorPersonId ?? "")
+        && stable.formerMemberIds.includes(segment.targetPersonId ?? ""))
+      && (segment.stableReconciliationOutcome === "RECONCILED" || segment.stableReconciliationOutcome === "REBUFFED")
+    ))
     && (segment.type !== "STABLE_EXIT" || Boolean(
       view?.availableStables.some((stable) => stable.stableId === segment.stableId
         && stable.memberIds.includes(segment.initiatorPersonId ?? "")
@@ -532,6 +538,7 @@ export default function CardClient(): React.JSX.Element {
       stableId: null,
       stableInvitationOutcome: type === "STABLE_INVITATION" ? "REFUSED" : null,
       stableExitOutcome: type === "STABLE_EXIT" ? "EXPELLED" : null,
+      stableReconciliationOutcome: type === "STABLE_RECONCILIATION" ? "RECONCILED" : null,
       interruptionOutcome: type === "INTERRUPTION" ? "VERBAL_EXCHANGE" : null,
       challengeResponse: type === "CHALLENGE" ? "LEFT_OPEN" : null,
       attackPresentation: type === "ATTACK" ? "BLINDSIDE" : null,
@@ -737,9 +744,10 @@ export default function CardClient(): React.JSX.Element {
       targetPersonId: isDirectedSegment(type) && type === segment.type && participantIds.includes(segment.targetPersonId ?? "")
         ? (segment.targetPersonId ?? null) : null,
       signingOutcome: type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
-      stableId: (type === "STABLE_INVITATION" || type === "STABLE_EXIT") && type === segment.type ? (segment.stableId ?? null) : null,
+      stableId: (type === "STABLE_INVITATION" || type === "STABLE_EXIT" || type === "STABLE_RECONCILIATION") && type === segment.type ? (segment.stableId ?? null) : null,
       stableInvitationOutcome: type === "STABLE_INVITATION" ? (segment.stableInvitationOutcome ?? "REFUSED") : null,
       stableExitOutcome: type === "STABLE_EXIT" ? (segment.stableExitOutcome ?? "EXPELLED") : null,
+      stableReconciliationOutcome: type === "STABLE_RECONCILIATION" ? (segment.stableReconciliationOutcome ?? "RECONCILED") : null,
       interruptionOutcome: type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null,
       challengeResponse: type === "CHALLENGE"
         ? (segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : "LEFT_OPEN") : null,
@@ -1043,6 +1051,10 @@ export default function CardClient(): React.JSX.Element {
           : segment.interruptionOutcome === "SPEAKER_PREVAILS" ? "speaker prevails"
           : segment.interruptionOutcome === "BRAWL" ? "brawl" : "verbal exchange";
         return `Interruption · ${initiator} interrupts ${target} · ${beat} · ${segment.plannedLengthMinutes} min`;
+      }
+      if (segment.type === "STABLE_RECONCILIATION") {
+        const stable = view?.availableStables.find((item) => item.stableId === segment.stableId);
+        return `Stable reconciliation · ${initiator} & ${target} · ${stable?.name ?? "choose stable"} · ${(segment.stableReconciliationOutcome ?? "RECONCILED").toLowerCase()} · ${segment.plannedLengthMinutes} min`;
       }
       if (segment.type === "STABLE_EXIT") {
         const stable = view?.availableStables.find((item) => item.stableId === segment.stableId);
@@ -1551,6 +1563,41 @@ export default function CardClient(): React.JSX.Element {
                   </div>
                 ) : null}
 
+                {segment.type === "STABLE_RECONCILIATION" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Script a reunion attempt</span>
+                      <small>An active stable member approaches a former member. You choose the response, not the simulation. Reunion on-screen does not reinstate membership.</small>
+                    </div>
+                    <div className={styles.control}>
+                      <label>Stable history</label>
+                      <select value={segment.stableId ?? ""} disabled={!view.canEdit}
+                        onChange={(event) => updateSegment(segment.draftSegmentId, { stableId: event.target.value || null })}>
+                        <option value="">Choose stable</option>
+                        {view.availableStables.filter((stable) => stable.formerMemberIds.length > 0).map((stable) => (
+                          <option key={stable.stableId} value={stable.stableId}>{stable.name}</option>
+                        ))}
+                      </select>
+                      {!view.availableStables.some((stable) => stable.formerMemberIds.length > 0)
+                        ? <small>First remove a member from an active stable through Roster → Stables to establish real history.</small> : null}
+                      {segment.stableId && !view.availableStables.some((stable) => stable.stableId === segment.stableId
+                        && stable.memberIds.includes(segment.initiatorPersonId ?? "")
+                        && stable.formerMemberIds.includes(segment.targetPersonId ?? ""))
+                        ? <small>Choose a current stable representative and a former member of that stable.</small> : null}
+                    </div>
+                    <div className={styles.control}>
+                      <label>On-screen response</label>
+                      <select value={segment.stableReconciliationOutcome ?? "RECONCILED"} disabled={!view.canEdit}
+                        onChange={(event) => updateSegment(segment.draftSegmentId, {
+                          stableReconciliationOutcome: event.target.value as "RECONCILED" | "REBUFFED",
+                        })}>
+                        <option value="RECONCILED">They reconcile</option>
+                        <option value="REBUFFED">The former member rebuffs the approach</option>
+                      </select>
+                    </div>
+                  </div>
+                ) : null}
+
                 {segment.type === "STABLE_EXIT" ? (
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
@@ -1782,7 +1829,7 @@ export default function CardClient(): React.JSX.Element {
                             {segment.type === "RESCUE" ? (personIndex === 0 ? "Aggressor" : personIndex === 1 ? "Victim" : personIndex === 2 ? "Rescuer" : "Also involved")
                               : segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT"
                               ? (personIndex === 0 ? "Attacker" : personIndex === 1 ? "Victim" : "Also involved")
-                              : (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Challenger" : segment.type === "CONTRACT_SIGNING" ? "Proposer" : segment.type === "INTERRUPTION" ? "Interrupter" : segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" ? "Stable representative" : "Instigator") : personIndex === 1 ? (segment.type === "CONTRACT_SIGNING" ? "Responder" : segment.type === "INTERRUPTION" ? "Original speaker" : segment.type === "STABLE_INVITATION" ? "Recruit" : segment.type === "STABLE_EXIT" ? "Departing member" : "Target") : "Also involved")}
+                              : (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Challenger" : segment.type === "CONTRACT_SIGNING" ? "Proposer" : segment.type === "INTERRUPTION" ? "Interrupter" : segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" || segment.type === "STABLE_RECONCILIATION" ? "Stable representative" : "Instigator") : personIndex === 1 ? (segment.type === "CONTRACT_SIGNING" ? "Responder" : segment.type === "INTERRUPTION" ? "Original speaker" : segment.type === "STABLE_INVITATION" ? "Recruit" : segment.type === "STABLE_EXIT" ? "Departing member" : segment.type === "STABLE_RECONCILIATION" ? "Former member" : "Target") : "Also involved")}
                           </span>
                         ) : null}
                         <WrestlerSlotButton
@@ -1804,7 +1851,7 @@ export default function CardClient(): React.JSX.Element {
                               : segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT"
                               ? (personIndex === 0 ? "Choose attacker" : personIndex === 1 ? "Choose victim" : "Also involved")
                               : isDirectedSegment(segment.type)
-                                ? (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Choose challenger" : segment.type === "CONTRACT_SIGNING" ? "Choose proposer" : segment.type === "INTERRUPTION" ? "Choose interrupter" : segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" ? "Choose stable representative" : "Choose instigator") : personIndex === 1 ? (segment.type === "CONTRACT_SIGNING" ? "Choose responder" : segment.type === "INTERRUPTION" ? "Choose original speaker" : segment.type === "STABLE_INVITATION" ? "Choose recruit" : segment.type === "STABLE_EXIT" ? "Choose departing member" : "Choose target") : "Also involved")
+                                ? (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Choose challenger" : segment.type === "CONTRACT_SIGNING" ? "Choose proposer" : segment.type === "INTERRUPTION" ? "Choose interrupter" : segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" || segment.type === "STABLE_RECONCILIATION" ? "Choose stable representative" : "Choose instigator") : personIndex === 1 ? (segment.type === "CONTRACT_SIGNING" ? "Choose responder" : segment.type === "INTERRUPTION" ? "Choose original speaker" : segment.type === "STABLE_INVITATION" ? "Choose recruit" : segment.type === "STABLE_EXIT" ? "Choose departing member" : segment.type === "STABLE_RECONCILIATION" ? "Choose former member" : "Choose target") : "Also involved")
                                 : `${pretty(segment.type)} · Wrestler ${personIndex + 1}`,
                           })}
                         />

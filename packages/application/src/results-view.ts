@@ -150,6 +150,7 @@ export interface PlayerShowSegmentView {
   stableName: string | null;
   stableInvitationOutcome: "ACCEPTED" | "REFUSED" | null;
   stableExitOutcome: "EXPELLED" | "WALKED_OUT" | null;
+  stableReconciliationOutcome: "RECONCILED" | "REBUFFED" | null;
   attackPresentation: AttackPresentation | null;
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
@@ -606,6 +607,7 @@ export function buildPlayerShowHistory(
         stableName: segment.stableName,
         stableInvitationOutcome: segment.stableInvitationOutcome,
         stableExitOutcome: segment.stableExitOutcome,
+        stableReconciliationOutcome: segment.stableReconciliationOutcome,
         attackPresentation: segment.attackPresentation,
         attackObjective: segment.attackObjective,
         turnPersonId: segment.turnPersonId,

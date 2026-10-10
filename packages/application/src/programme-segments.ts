@@ -25,6 +25,7 @@ import type {
   InterruptionOutcome,
   StableInvitationOutcome,
   StableExitOutcome,
+  StableReconciliationOutcome,
   WorldPlanningState,
 } from "./planning.js";
 
@@ -38,6 +39,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CONTRACT_SIGNING",
   "STABLE_INVITATION",
   "STABLE_EXIT",
+  "STABLE_RECONCILIATION",
   "ATTACK",
   "RESCUE",
   "POST_MATCH_ASSAULT",
@@ -73,6 +75,7 @@ export interface ResolvedShowSegment {
   stableName: string | null;
   stableInvitationOutcome: StableInvitationOutcome | null;
   stableExitOutcome: StableExitOutcome | null;
+  stableReconciliationOutcome: StableReconciliationOutcome | null;
   attackPresentation: AttackPresentation | null;
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
@@ -109,6 +112,7 @@ interface NormalizedDraftSegment {
   stableName: string | null;
   stableInvitationOutcome: StableInvitationOutcome | null;
   stableExitOutcome: StableExitOutcome | null;
+  stableReconciliationOutcome: StableReconciliationOutcome | null;
   attackPresentation: AttackPresentation | null;
   attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
@@ -179,15 +183,16 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       ? (segment.victimPersonId ?? null) : null,
     rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
     sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
-    initiatorPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING" || segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" ? (segment.initiatorPersonId ?? null) : null,
-    targetPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING" || segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" ? (segment.targetPersonId ?? null) : null,
+    initiatorPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING" || segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" || segment.type === "STABLE_RECONCILIATION" ? (segment.initiatorPersonId ?? null) : null,
+    targetPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING" || segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" || segment.type === "STABLE_RECONCILIATION" ? (segment.targetPersonId ?? null) : null,
     signingOutcome: segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
     challengeResponse: segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : null,
     interruptionOutcome: segment.type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null,
-    stableId: segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" ? (segment.stableId ?? null) : null,
+    stableId: segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" || segment.type === "STABLE_RECONCILIATION" ? (segment.stableId ?? null) : null,
     stableName: null,
     stableInvitationOutcome: segment.type === "STABLE_INVITATION" ? (segment.stableInvitationOutcome ?? "REFUSED") : null,
     stableExitOutcome: segment.type === "STABLE_EXIT" ? (segment.stableExitOutcome ?? "EXPELLED") : null,
+    stableReconciliationOutcome: segment.type === "STABLE_RECONCILIATION" ? (segment.stableReconciliationOutcome ?? "RECONCILED") : null,
     attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? null) : null,
     attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? null) : null,
     turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
@@ -218,6 +223,7 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       stableName: null,
       stableInvitationOutcome: null,
       stableExitOutcome: null,
+      stableReconciliationOutcome: null,
       attackPresentation: null,
       attackObjective: null,
       turnPersonId: null,
@@ -264,6 +270,7 @@ function segmentOutcome(
     CONTRACT_SIGNING: [0.53, 0.31, 0.16],
     STABLE_INVITATION: [0.59, 0.24, 0.17],
     STABLE_EXIT: [0.51, 0.27, 0.22],
+    STABLE_RECONCILIATION: [0.58, 0.23, 0.19],
     ATTACK: [0.38, 0.34, 0.28],
     RESCUE: [0.42, 0.30, 0.28],
     POST_MATCH_ASSAULT: [0.38, 0.35, 0.27],
@@ -355,6 +362,14 @@ function segmentOutcome(
     const responseFit = segment.challengeResponse === "ACCEPTED" ? 0.5
       : segment.challengeResponse === "REFUSED" ? (challenged === "HEEL" ? 1 : -0.5) : 0;
     angleFitModifier = round1(clamp(contrast + context + responseFit, -5, 5));
+  }
+  if (segment.type === "STABLE_RECONCILIATION" && segment.initiatorPersonId && segment.targetPersonId) {
+    // The booker scripts reconciliation or rejection; the World judges delivery.
+    const representative = wrestlerAlignmentForPromotion(state, event.promotionId, segment.initiatorPersonId);
+    const formerMember = wrestlerAlignmentForPromotion(state, event.promotionId, segment.targetPersonId);
+    const characterFit = representative === formerMember ? 1 : -0.5;
+    const programmeFit = programme ? clamp(((programme.heat ?? 50) - 50) / 16, -2, 2) : -0.5;
+    angleFitModifier = round1(clamp(characterFit + programmeFit + (segment.stableReconciliationOutcome === "REBUFFED" ? 0.4 : 0.7), -5, 5));
   }
   if (segment.type === "STABLE_EXIT" && segment.initiatorPersonId && segment.targetPersonId) {
     // Which wrestler leaves, and whether by expulsion or walkout, is scripted.
@@ -455,6 +470,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const stableName = entry.payload.stableName ?? null;
   const stableInvitationOutcome = entry.payload.stableInvitationOutcome ?? null;
   const stableExitOutcome = entry.payload.stableExitOutcome ?? null;
+  const stableReconciliationOutcome = entry.payload.stableReconciliationOutcome ?? null;
   const attackPresentation = entry.payload.attackPresentation ?? null;
   const attackObjective = entry.payload.attackObjective ?? null;
   const turnPersonId = entry.payload.turnPersonId === undefined ? null : entry.payload.turnPersonId;
@@ -502,6 +518,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || (stableName !== null && typeof stableName !== "string")
     || (stableInvitationOutcome !== null && !["ACCEPTED", "REFUSED"].includes(String(stableInvitationOutcome)))
     || (stableExitOutcome !== null && !["EXPELLED", "WALKED_OUT"].includes(String(stableExitOutcome)))
+    || (stableReconciliationOutcome !== null && !["RECONCILED", "REBUFFED"].includes(String(stableReconciliationOutcome)))
     || (attackPresentation !== null && !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(String(attackPresentation)))
     || (attackObjective !== null && !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(String(attackObjective)))
     || (turnPersonId !== null && typeof turnPersonId !== "string")
@@ -537,6 +554,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     stableName: stableName as string | null,
     stableInvitationOutcome: stableInvitationOutcome as StableInvitationOutcome | null,
     stableExitOutcome: stableExitOutcome as StableExitOutcome | null,
+    stableReconciliationOutcome: stableReconciliationOutcome as StableReconciliationOutcome | null,
     attackPresentation: attackPresentation as AttackPresentation | null,
     attackObjective: attackObjective as AttackObjective | null,
     turnPersonId,
@@ -663,6 +681,7 @@ export function recordResolvedShowSegments(
             stableName: segment.stableId ? (state.stables ?? []).find((stable) => stable.id === segment.stableId)?.name ?? null : null,
             stableInvitationOutcome: segment.stableInvitationOutcome,
             stableExitOutcome: segment.stableExitOutcome,
+            stableReconciliationOutcome: segment.stableReconciliationOutcome,
             attackPresentation: segment.attackPresentation,
             attackObjective: segment.attackObjective,
             turnPersonId: segment.turnPersonId,

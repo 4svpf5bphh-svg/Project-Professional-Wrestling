@@ -360,6 +360,68 @@ test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the
     "assault altered a completed match finish");
 });
 
+for (const [outcome, seed] of [["RECONCILED", 9187], ["REBUFFED", 9188]] as const) {
+  test(`STABLE_RECONCILIATION freezes scripted ${outcome} without restoring old membership`, () => {
+    const setup = fixture(seed);
+    const [representative, former, third, outsider] = setup.rosterIds;
+    const stableId = "reunion-stable";
+    setup.state.stables = [{
+      id: stableId, worldId: setup.state.world.id, promotionId: setup.promotion.id,
+      name: "Reunion History Stable", status: "ACTIVE",
+      formedDate: { ...setup.state.world.currentDate }, disbandedDate: null,
+    }];
+    setup.state.stableMemberships = [representative!, former!, third!].map((personId, index) => ({
+      id: `reunion-member-${index}`, worldId: setup.state.world.id, stableId,
+      personId, joinedDate: { ...setup.state.world.currentDate },
+      leftDate: index === 1 ? { ...setup.state.world.currentDate } : null,
+      active: index !== 1,
+    }));
+    const base = {
+      draftId: "reconciliation-show", promotionId: setup.promotion.id,
+      targetDate: setup.targetDate, marketId: null, venueId: null,
+      ticketStrategy: null, participantIds: setup.rosterIds.slice(0, 4),
+      matches: [], championshipAssignments: [],
+    };
+    const angle = {
+      draftSegmentId: "reunion-angle", type: "STABLE_RECONCILIATION" as const,
+      participantIds: [former!, representative!],
+      initiatorPersonId: representative!, targetPersonId: former!,
+      stableId, stableReconciliationOutcome: outcome,
+      programmeId: setup.programme.id, plannedLengthMinutes: 6,
+    };
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, stableId: "not-a-stable" }],
+    }), "requires an active stable");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, stableReconciliationOutcome: "RANDOM" as typeof outcome }],
+    }), "scripted outcome");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, targetPersonId: third, participantIds: [representative!, third!] }],
+    }), "former, not current");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, targetPersonId: outsider, participantIds: [representative!, outsider!] }],
+    }), "former, not current");
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [angle],
+    });
+    const before = JSON.stringify(setup.state.stableMemberships);
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "reconciliation not recorded");
+    const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(frozen.stableReconciliationOutcome === outcome
+      && frozen.stableId === stableId && frozen.stableName === "Reunion History Stable",
+      "scripted reconciliation or stable identity changed");
+    ok(frozen.initiatorPersonId === representative && frozen.targetPersonId === former,
+      "representative and former member roles were lost");
+    ok(frozen.crowdResponse !== null && frozen.executionQuality !== null,
+      "reconciliation was not scored separately from its authored story");
+    ok(JSON.stringify(setup.state.stableMemberships) === before,
+      "scripted reconciliation changed actual stable membership");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+      "replayed World Lock duplicated reconciliation");
+  });
+}
+
 for (const [outcome, seed] of [["EXPELLED", 9185], ["WALKED_OUT", 9186]] as const) {
   test(`STABLE_EXIT preserves scripted ${outcome} without silently altering stable membership`, () => {
     const setup = fixture(seed);
