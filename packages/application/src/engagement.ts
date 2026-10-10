@@ -4,7 +4,7 @@ export type PlayerActivityStatus = "ACTIVE" | "WARNING" | "STEWARDED";
 export type OpportunityCategory = "TALENT" | "MARKET" | "BUSINESS" | "WORLD";
 export type StewardshipExitRequestStatus = "OPEN" | "SETTLED" | "WITHDRAWN";
 export type BackstageConversationStatus = "OPEN" | "ANSWERED";
-export type BackstageResponse = "HEAR_OUT" | "EXPLAIN_PLAN" | "STAND_FIRM" | "PROMISE_FEATURED_BOOKING";
+export type BackstageResponse = "HEAR_OUT" | "EXPLAIN_PLAN" | "STAND_FIRM" | "PROMISE_FEATURED_BOOKING" | "CONSIDER_TAG_TEAM" | "PASS_TAG_TEAM";
 
 export type BackstagePromiseStatus = "PENDING" | "FULFILLED" | "NOT_DELIVERED" | "NO_OPPORTUNITY" | "EXCUSED";
 
@@ -39,15 +39,19 @@ export interface BackstageConversation {
   promotionId: Id;
   wrestlerId: Id;
   sourceContractId: Id;
-  kind: "ROLE_USAGE_CONCERN";
+  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH";
   createdDate: PpwDate;
   status: BackstageConversationStatus;
   response: BackstageResponse | null;
   responseDate: PpwDate | null;
   /** The evidence at creation is frozen for an intelligible historical conversation. */
-  promisedRole: "MAIN_EVENT" | "UPPER_CARD";
+  promisedRole: "MAIN_EVENT" | "UPPER_CARD" | null;
   observedMatchShows: number;
   observedFeaturedShows: number;
+  /** Positive pitch facts, absent on older concerns. */
+  partnerPersonId?: Id | null;
+  sharedTagMatches?: number;
+  averageCrowdResponse?: number;
   /** Optional for snapshots created before promise tracking existed. */
   promise?: BackstageBookingPromise | null;
 }
@@ -418,11 +422,21 @@ export function openBackstageConversation(
   if (conversation.status !== "OPEN" || conversation.response !== null || conversation.responseDate !== null) {
     throw new Error("new Backstage conversation must be unanswered");
   }
-  if (!["MAIN_EVENT", "UPPER_CARD"].includes(conversation.promisedRole)
-    || !Number.isSafeInteger(conversation.observedMatchShows) || conversation.observedMatchShows < 4
-    || !Number.isSafeInteger(conversation.observedFeaturedShows) || conversation.observedFeaturedShows !== 0) {
-    throw new Error("Backstage concern requires eligible role-usage evidence");
-  }
+  if (conversation.kind === "ROLE_USAGE_CONCERN") {
+    if (!["MAIN_EVENT", "UPPER_CARD"].includes(conversation.promisedRole ?? "")
+      || !Number.isSafeInteger(conversation.observedMatchShows) || conversation.observedMatchShows < 4
+      || !Number.isSafeInteger(conversation.observedFeaturedShows) || conversation.observedFeaturedShows !== 0) {
+      throw new Error("Backstage concern requires eligible role-usage evidence");
+    }
+  } else if (conversation.kind === "TAG_TEAM_PITCH") {
+    if (conversation.promisedRole !== null || !conversation.partnerPersonId
+      || conversation.partnerPersonId === conversation.wrestlerId
+      || !Number.isSafeInteger(conversation.sharedTagMatches) || (conversation.sharedTagMatches ?? 0) < 2
+      || typeof conversation.averageCrowdResponse !== "number"
+      || conversation.averageCrowdResponse < 65 || conversation.averageCrowdResponse > 100) {
+      throw new Error("Backstage tag pitch requires grounded positive team evidence");
+    }
+  } else throw new Error("unsupported Backstage conversation kind");
   const stored = { ...conversation, conversationId, createdDate: cloneDate(conversation.createdDate), promise: null };
   engagement.backstageConversations.push(stored);
   return stored;
@@ -436,9 +450,9 @@ export function answerBackstageConversation(
   promise: BackstageBookingPromise | null = null,
 ): BackstageConversation {
   const id = normalizedNonEmpty(conversationId, "conversationId", 240);
-  if (!["HEAR_OUT", "EXPLAIN_PLAN", "STAND_FIRM", "PROMISE_FEATURED_BOOKING"].includes(response)) {
-    throw new Error("unsupported Backstage response");
-  }
+  const concernReplies: BackstageResponse[] = ["HEAR_OUT", "EXPLAIN_PLAN", "STAND_FIRM", "PROMISE_FEATURED_BOOKING"];
+  const pitchReplies: BackstageResponse[] = ["CONSIDER_TAG_TEAM", "PASS_TAG_TEAM"];
+  if (![...concernReplies, ...pitchReplies].includes(response)) throw new Error("unsupported Backstage response");
   if ((response === "PROMISE_FEATURED_BOOKING") !== (promise !== null)) {
     throw new Error("a booking promise must have an explicit, tracked commitment");
   }
@@ -449,6 +463,9 @@ export function answerBackstageConversation(
   const conversation = engagement.backstageConversations.find((entry) => entry.conversationId === id);
   if (!conversation) throw new Error("Backstage conversation not found");
   if (conversation.status !== "OPEN") throw new Error("Backstage conversation already answered");
+  if (!(conversation.kind === "TAG_TEAM_PITCH" ? pitchReplies : concernReplies).includes(response)) {
+    throw new Error("response does not match Backstage conversation type");
+  }
   conversation.status = "ANSWERED";
   conversation.response = response;
   conversation.responseDate = cloneDate(date);

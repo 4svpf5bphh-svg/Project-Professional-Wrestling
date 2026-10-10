@@ -95,9 +95,13 @@ export interface PlayerBackstageConversation {
   wrestlerName: string;
   createdDate: PpwDate;
   status: "OPEN" | "ANSWERED";
-  kind: "ROLE_USAGE_CONCERN";
-  promisedRole: "MAIN_EVENT" | "UPPER_CARD";
+  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH";
+  promisedRole: "MAIN_EVENT" | "UPPER_CARD" | null;
   observedMatchShows: number;
+  partnerPersonId: Id | null;
+  partnerName: string | null;
+  sharedTagMatches: number;
+  averageCrowdResponse: number | null;
   response: BackstageResponse | null;
   responseDate: PpwDate | null;
   canPromiseFeaturedBooking: boolean;
@@ -142,6 +146,10 @@ export function buildPlayerBackstageView(
       kind: entry.kind,
       promisedRole: entry.promisedRole,
       observedMatchShows: entry.observedMatchShows,
+      partnerPersonId: entry.partnerPersonId ?? null,
+      partnerName: entry.partnerPersonId ? names.get(entry.partnerPersonId) ?? null : null,
+      sharedTagMatches: entry.sharedTagMatches ?? 0,
+      averageCrowdResponse: entry.averageCrowdResponse ?? null,
       response: entry.response,
       responseDate: entry.responseDate ? { ...entry.responseDate } : null,
       canPromiseFeaturedBooking: entry.status === "OPEN"
@@ -189,8 +197,11 @@ export function respondBackstageConversationCommand(
       }
       let promise: BackstageBookingPromise | null = null;
       if (envelope.payload.response === "PROMISE_FEATURED_BOOKING") {
-        if (!canMakeFeaturedPromise(aggregate, conversation)) {
+        if (conversation.kind !== "ROLE_USAGE_CONCERN" || !canMakeFeaturedPromise(aggregate, conversation)) {
           throw new Error("cannot promise a featured match without active dates and time to book");
+        }
+        if (conversation.promisedRole !== "MAIN_EVENT" && conversation.promisedRole !== "UPPER_CARD") {
+          throw new Error("cannot promise a match without an agreed role");
         }
         const endDate = aggregate.state.contracts.find((entry) => entry.id === conversation.sourceContractId)!.endDate;
         const fourWeeks = addPpwWeeks(aggregate.state.world.currentDate, 4, aggregate.state.ruleset.weeksPerYear);
@@ -228,6 +239,7 @@ function canMakeFeaturedPromise(
   aggregate: ApplicationWorldAggregate,
   conversation: BackstageConversation,
 ): boolean {
+  if (conversation.kind !== "ROLE_USAGE_CONCERN") return false;
   const state = aggregate.state;
   const contract = state.contracts.find((entry) => entry.id === conversation.sourceContractId);
   if (!contract || contract.promotionId !== conversation.promotionId
