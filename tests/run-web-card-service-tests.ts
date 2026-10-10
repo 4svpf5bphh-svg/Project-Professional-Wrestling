@@ -508,33 +508,6 @@ await test("Card post-match assault links to completed match without changing it
   const frozen = finished.state.ledger.find((entry) => entry.type === "SHOW_SEGMENT_COMPLETED"
     && entry.payload.segmentType === "POST_MATCH_ASSAULT"
     && entry.payload.draftSegmentId === segment.draftSegmentId);
-  if (!frozen) {
-    const showEvents = finished.state.events.filter((event) => event.promotionId === saved.promotion.promotionId);
-    const eventIds = new Set(showEvents.map((event) => event.id));
-    const eventMatches = finished.state.matches.filter((match) => eventIds.has(match.eventId));
-    const participants = finished.state.matchParticipants.filter((entry) => eventMatches.some((match) => match.id === entry.matchId));
-    const draftSummaries = finished.planning.workspaces.flatMap((workspace) => workspace.detailedShowDrafts)
-      .filter((draft) => draft.promotionId === saved.promotion.promotionId)
-      .map((draft) => ({ draftId: draft.draftId, targetDate: draft.targetDate, matches: draft.matches.map((m) => ({
-        draftMatchId: m.draftMatchId, sideAIds: m.sideAIds, sideBIds: m.sideBIds,
-      })), segments: draft.segments?.map((seg) => ({
-        type: seg.type, id: seg.draftSegmentId, sourceDraftMatchId: seg.sourceDraftMatchId,
-      })) }));
-    console.error("POST_MATCH_DEBUG", JSON.stringify({
-      targetDate: saved.targetDate, events: showEvents.map((event) => ({
-        id: event.id, status: event.status, date: event.date, matchCount: event.matchCount,
-      })),
-      matches: eventMatches.map((match) => ({
-        id: match.id, eventId: match.eventId, status: match.status, type: match.type,
-        actualWinnerSide: match.actualWinnerSide,
-      })),
-      participants: participants.map((entry) => ({ personId: entry.personId, matchId: entry.matchId, side: entry.side })),
-      drafts: draftSummaries,
-      ledger: finished.state.ledger.filter((entry) => entry.type === "SHOW_SEGMENT_COMPLETED").map((entry) => ({
-        eventId: entry.payload.eventId, type: entry.payload.segmentType,
-      })),
-    }));
-  }
   ok(frozen, "match-linked assault did not enter the frozen show history");
   const sourceId = frozen?.payload.sourceMatchId;
   const sourceMatch = finished.state.matches.find((match) => match.id === sourceId);

@@ -150,8 +150,10 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     participantIds: [...segment.participantIds],
     programmeId: segment.programmeId,
     plannedLengthMinutes: segment.plannedLengthMinutes,
-    attackerPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" ? (segment.attackerPersonId ?? null) : null,
-    victimPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" ? (segment.victimPersonId ?? null) : null,
+    attackerPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
+      ? (segment.attackerPersonId ?? null) : null,
+    victimPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
+      ? (segment.victimPersonId ?? null) : null,
     rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
     sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
     initiatorPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" ? (segment.initiatorPersonId ?? null) : null,
