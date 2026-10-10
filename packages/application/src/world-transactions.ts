@@ -3,6 +3,7 @@ import { generateWorldOpportunities } from "./opportunity-generation.js";
 import { evaluateBackstagePromises, generateBackstageConversations } from "./backstage.js";
 import { generateTagTeamPitches } from "./backstage-pitches.js";
 import { generateRivalryPitches } from "./backstage-rivalries.js";
+import { generateTeamMoments } from "./backstage-moments.js";
 import { applyBackstagePromiseConsequences } from "./backstage-consequences.js";
 import {
   closeCurrentWeekReservationsAtCommitmentLock,
@@ -115,6 +116,7 @@ export async function resolvePersistedWorldWeek(
     generateBackstageConversations(aggregate);
     generateTagTeamPitches(aggregate);
     generateRivalryPitches(aggregate);
+    generateTeamMoments(aggregate);
     generateWorldOpportunities(aggregate);
   });
   return committed.revision;
