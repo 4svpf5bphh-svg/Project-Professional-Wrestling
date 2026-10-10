@@ -336,6 +336,7 @@ export default function WrestlerProfileClient({
         </div>
         <p className={styles.note}>
           Motivated by: {view.person.personality.motivations.map(label).join(" · ")}.
+          {" "}Creative interests: {view.person.creativeInterests.topInterests.map(label).join(" · ")}.
           {" "}{view.person.personality.microphoneSource === "ESTIMATED"
             ? "Mic ability is an initial game estimate."
             : "Mic ability uses a curated game value."}
