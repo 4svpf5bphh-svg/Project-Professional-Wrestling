@@ -370,7 +370,7 @@ function bookerPromise(f: ReturnType<typeof fixture>, requestId: string): string
   return id;
 }
 
-test("An unexcused broken player promise causes one bounded trust and morale impact", () => {
+test("An unexcused broken player promise changes trust without double-counting weekly morale", () => {
   const f = fixture();
   const id = bookerPromise(f, "accountability-miss");
   const state = f.aggregate.state;
@@ -387,8 +387,8 @@ test("An unexcused broken player promise causes one bounded trust and morale imp
     "booker's undelivered promise was incorrectly excused");
   ok(pair.trust < beforeTrust && beforeTrust - pair.trust >= 2 && beforeTrust - pair.trust <= 4,
     "broken word did not have a small relationship-specific cost");
-  ok(f.person.morale === beforeMorale - 1, "broken word changed morale too strongly");
-  ok(promise.consequence?.trustDelta === pair.trust - beforeTrust && promise.consequence?.moraleDelta === -1,
+  ok(f.person.morale === beforeMorale, "broken word was double-counted in weekly morale");
+  ok(promise.consequence?.trustDelta === pair.trust - beforeTrust && promise.consequence?.moraleDelta === 0,
     "actual penalty details were not preserved");
   const worldAfter = JSON.stringify(state);
   ok(applyBackstagePromiseConsequences(f.aggregate) === 0 && JSON.stringify(state) === worldAfter,

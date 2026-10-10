@@ -86,15 +86,12 @@ export function applyBackstagePromiseConsequences(
       const person = state.people.find((entry) => entry.id === conversation.wrestlerId)!;
       const pair = promotionTalentTrustFor(state, conversation.promotionId, conversation.wrestlerId);
       const trustBefore = pair.trust;
-      const moraleBefore = person.morale;
       // The roster's existing role priority affects the seriousness of a
       // player's promise, without creating a new personality stat.
       const sensitivity = Math.round(1.5 + clamp(person.priorities.role, 0, 100) / 50);
       const trustLoss = clamp(sensitivity, 2, 4);
       pair.trust = rounded(clamp(pair.trust - trustLoss, 0, 100));
-      person.morale = rounded(clamp(person.morale - 1, 5, 95));
       trustDelta = rounded(pair.trust - trustBefore);
-      moraleDelta = rounded(person.morale - moraleBefore);
     } else if (promise.status === "NOT_DELIVERED") {
       promise.status = "EXCUSED";
     }
