@@ -316,8 +316,11 @@ test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the
       { kind: "MATCH" as const, refId: source.draftMatchId },
       { kind: "SEGMENT" as const, refId: assault.draftSegmentId },
     ] };
+  const outsideVictim = setup.rosterIds.find((id) => (
+    id !== victim && id !== opponent && id !== aggressor
+  ))!;
   throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
-    ...base, segments: [{ ...assault, victimPersonId: aggressor }],
+    ...base, segments: [{ ...assault, participantIds: [aggressor, outsideVictim], victimPersonId: outsideVictim }],
   }), "victim must compete");
   throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
     ...base, runningOrder: [base.runningOrder[1]!, base.runningOrder[0]!],
