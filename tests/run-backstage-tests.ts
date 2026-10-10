@@ -16,6 +16,7 @@ import { createWorldEngagementState, openBackstageConversation } from "../packag
 import { activeContractsForPromotion } from "../packages/sim-core/src/index.js";
 import { promotionTalentTrustFor } from "../packages/sim-core/src/talent-trust.js";
 import { generateTagTeamPitches } from "../packages/application/src/backstage-pitches.js";
+import { generateRivalryPitches } from "../packages/application/src/backstage-rivalries.js";
 import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
 import { claimIndependentPromotionForPlayer } from "../packages/application/src/ownership.js";
 import type { Match, WrestlingEvent } from "../packages/domain/src/types.js";
@@ -641,6 +642,166 @@ test("Complaints and creative pitches share the same strict per-promotion weekly
   );
   ok(generateTagTeamPitches(f.aggregate) === 1, "positive pitch was not deferred to next PPW week");
   ok(f.aggregate.engagement?.backstageConversations.length === 2, "pitch overwrote original concern");
+});
+
+
+function strongSinglesWorkingPair(f: ReturnType<typeof fixture>, crowd = 82, trust = 78): string {
+  const state = f.aggregate.state;
+  const secondContract = activeContractsForPromotion(state, f.promotion.id)
+    .find((contract) => contract.personId !== f.person.id);
+  if (!secondContract) throw Error("no second contracted wrestler for singles chemistry");
+  f.contract.roleExpectation = "REGULAR";
+  secondContract.roleExpectation = "REGULAR";
+  secondContract.startDate = { ...f.contract.startDate };
+  secondContract.endDate = { ...f.contract.endDate };
+  secondContract.dateEntitlement = 12;
+  secondContract.datesUsed = 2;
+  const partner = state.people.find((person) => person.id === secondContract.personId)!;
+  partner.status = "ACTIVE";
+  f.person.status = "ACTIVE";
+  for (let n = 1; n <= 2; n++) {
+    const eventId = "backstage-show-" + n;
+    const match = state.matches.find((entry) => entry.eventId === eventId && entry.order === 1)!;
+    match.type = "SINGLES";
+    match.crowdResponse = crowd;
+    const appearance = state.scheduledAppearances.find((entry) => entry.eventId === eventId)!;
+    state.scheduledAppearances.push({
+      ...appearance, id: "rivalry-appearance-" + n,
+      personId: partner.id, contractId: secondContract.id,
+    });
+    state.matchParticipants.push({
+      id: "rivalry-opponent-" + n, worldId: state.world.id,
+      eventId, matchId: match.id, personId: partner.id, side: "B", won: false,
+    });
+  }
+  state.wrestlerRelationships ??= [];
+  const relationship = state.wrestlerRelationships.find((entry) =>
+    [entry.personAId, entry.personBId].includes(f.person.id)
+      && [entry.personAId, entry.personBId].includes(partner.id)
+  );
+  if (relationship) relationship.professionalTrust = trust;
+  else state.wrestlerRelationships.push({
+    id: "working-rivalry-relationship", worldId: state.world.id,
+    personAId: f.person.id, personBId: partner.id,
+    affinity: 50, professionalTrust: trust, rivalryHeat: 40,
+    familiarity: 20, tags: [],
+  });
+  return partner.id;
+}
+
+test("Professionally trusted opponents suggest a scripted rivalry after two hot singles matches", () => {
+  const f = fixture();
+  const opponentId = strongSinglesWorkingPair(f);
+  const before = JSON.stringify(f.aggregate.state);
+  ok(generateRivalryPitches(f.aggregate) === 1, "eligible working pair did not pitch a rivalry");
+  ok(generateRivalryPitches(f.aggregate) === 0, "duplicate rivalry pitch was created");
+  ok(JSON.stringify(f.aggregate.state) === before, "rivalry pitch changed world simulation");
+  const message = f.aggregate.engagement!.backstageConversations[0]!;
+  ok(message.kind === "RIVALRY_PITCH" && message.rivalPersonId === opponentId
+    && message.sharedSinglesMatches === 2 && message.averageCrowdResponse === 82
+    && message.professionalTrustAtPitch === 78, "rivalry proposal lost frozen evidence");
+  const view = buildPlayerBackstageView(f.aggregate, "backstage-owner");
+  ok(view.conversations[0]?.rivalPersonId === opponentId && !!view.conversations[0]?.rivalName
+    && view.conversations[0]?.professionalTrustAtPitch === 78
+    && !view.conversations[0]?.canPromiseFeaturedBooking, "rivalry view exposed incorrect choice/context");
+  const alert = buildPlayerAttention(f.aggregate, "backstage-owner")
+    .find((item) => item.attentionId === "backstage:" + message.conversationId);
+  ok(alert?.category === "IMPORTANT" && alert.title.includes("on-screen rivalry")
+    && alert.deepLink === "/backstage", "Home did not link to private rivalry suggestion");
+  const snapshot = cloneApplicationWorld(f.aggregate);
+  ok(snapshot.engagement?.backstageConversations[0]?.rivalPersonId === opponentId,
+    "rivalry proposal did not persist");
+  const command = {
+    requestId: "creative-rivalry-accept", worldId: f.aggregate.state.world.id,
+    playerId: "backstage-owner", commandType: "RESPOND_BACKSTAGE_CONVERSATION" as const,
+    payload: { conversationId: message.conversationId, response: "CONSIDER_RIVALRY" as const },
+  };
+  const result = respondBackstageConversationCommand(f.aggregate, command);
+  ok(result.status === "ANSWERED" && result.response === "CONSIDER_RIVALRY",
+    "booker's decision was not recorded");
+  ok(respondBackstageConversationCommand(f.aggregate, command).status === "ANSWERED", "reply replay failed");
+  ok(buildPlayerBackstageView(f.aggregate,"backstage-owner").openCount === 0,
+    "answered rivalry still awaiting response");
+  ok(JSON.stringify(f.aggregate.state) === before, "reply scripted a feud, changed relationship or created sim power");
+  ok(generateRivalryPitches(f.aggregate) === 0, "answered rivalry was reopened");
+});
+
+test("No fabricated rivalry from one match, weak crowd or low professional trust", () => {
+  for (const reason of ["ONE_MATCH","CROWD","TRUST","APPEARANCE"] as const) {
+    const f = fixture();
+    strongSinglesWorkingPair(f,
+      reason === "CROWD" ? 55 : 82,
+      reason === "TRUST" ? 40 : 78,
+    );
+    if (reason === "ONE_MATCH") {
+      f.aggregate.state.matches.find((m) => m.id === "backstage-show-2-match-1")!.status = "CANCELLED";
+    }
+    if (reason === "APPEARANCE") {
+      f.aggregate.state.scheduledAppearances = f.aggregate.state.scheduledAppearances.filter(
+        (entry) => !entry.id.startsWith("rivalry-appearance-"),
+      );
+    }
+    ok(generateRivalryPitches(f.aggregate) === 0, "invalid evidence generated rivalry: " + reason);
+  }
+});
+
+test("An already active scripted Programme suppresses a redundant rivalry suggestion", () => {
+  const f = fixture();
+  const rival = strongSinglesWorkingPair(f);
+  f.aggregate.state.programmes ??= [];
+  f.aggregate.state.programmes.push({
+    id: "already-booked-rivalry",worldId:f.aggregate.state.world.id,promotionId:f.promotion.id,
+    status:"ACTIVE",sideA:[{kind:"PERSON",entityId:f.person.id}],sideB:[{kind:"PERSON",entityId:rival}],
+    championshipId:null,startedDate:{...f.aggregate.state.world.currentDate},endedDate:null,
+    heat:50,repetition:0,activityCount:0,matchCount:0,segmentCount:0,sideAWins:0,sideBWins:0,
+    draws:0,lastActivityDate:null,
+  });
+  ok(generateRivalryPitches(f.aggregate) === 0, "live rivalry was pitched a second time");
+});
+
+test("Only the controlling booker may consider or refuse a proposed rivalry", () => {
+  const f = fixture();
+  strongSinglesWorkingPair(f);
+  generateRivalryPitches(f.aggregate);
+  const id = f.aggregate.engagement!.backstageConversations[0]!.conversationId;
+  for (const choice of [
+    { playerId: "intruder", response: "CONSIDER_RIVALRY" },
+    { playerId: "backstage-owner", response: "PROMISE_FEATURED_BOOKING" },
+    { playerId: "backstage-owner", response: "CONSIDER_TAG_TEAM" },
+  ] as const) {
+    let denied = false;
+    try {
+      respondBackstageConversationCommand(f.aggregate, {
+        requestId: "deny-rivalry-" + choice.playerId + choice.response,
+        worldId: f.aggregate.state.world.id, playerId: choice.playerId,
+        commandType: "RESPOND_BACKSTAGE_CONVERSATION",
+        payload: { conversationId: id, response: choice.response },
+      });
+    } catch { denied = true; }
+    ok(denied, "wrong player or type was accepted: " + choice.response);
+  }
+  const before = JSON.stringify(f.aggregate.state);
+  const reply = respondBackstageConversationCommand(f.aggregate, {
+    requestId: "rivalry-pass", worldId: f.aggregate.state.world.id,
+    playerId: "backstage-owner", commandType: "RESPOND_BACKSTAGE_CONVERSATION",
+    payload: { conversationId: id, response: "PASS_RIVALRY" },
+  });
+  ok(reply.response === "PASS_RIVALRY" && JSON.stringify(f.aggregate.state) === before,
+    "passing a creative pitch modified gameplay state");
+});
+
+test("Rivalry pitches cannot bypass shared Backstage pacing and remain available later", () => {
+  const f = fixture();
+  strongSinglesWorkingPair(f);
+  f.contract.roleExpectation = "MAIN_EVENT";
+  ok(generateBackstageConversations(f.aggregate) === 1, "first grounded concern missing");
+  ok(generateRivalryPitches(f.aggregate) === 0, "rivalry ignored one-per-week limit");
+  f.aggregate.state.world.currentDate = addPpwWeeks(
+    f.aggregate.state.world.currentDate, 1, f.aggregate.state.ruleset.weeksPerYear,
+  );
+  ok(generateRivalryPitches(f.aggregate) === 1, "eligible rivalry was not reconsidered next week");
+  ok(f.aggregate.engagement?.backstageConversations.length === 2,
+    "deferred rivalry overwrote earlier conversation");
 });
 
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");
