@@ -27,7 +27,7 @@ import {
 import type { PlayerTalentSkillsView } from "./talent-view.js";
 import { talentExpectationEvidenceForContract, type TalentExpectationEvidence } from "./talent-expectations.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
-import { baselineWrestlingStyle, wrestlerCreativeProfileFor, type WrestlerCreativeFields, type WrestlerCreativeChange, type WrestlingStyle } from "./wrestler-creative.js";
+import { baselineWrestlingStyle, defaultWrestlerCreativeFields, wrestlerCreativeProfileFor, type WrestlerCreativeFields, type WrestlerCreativeChange, type WrestlingStyle } from "./wrestler-creative.js";
 
 export type WrestlerProfileEmploymentStatus =
   | "OUR_ROSTER"
@@ -92,6 +92,8 @@ export interface PlayerWrestlerProfileView {
     skills: PlayerTalentSkillsView;
     /** Shared-world baseline; never edited by a rival promotion. */
     baselineStyle: WrestlingStyle;
+    /** Visible neutral character entry even before a player books this wrestler. */
+    baselinePresentation: WrestlerCreativeFields;
     currentInjury: {
       severity: InjurySeverity;
       weeksRemaining: number;
@@ -441,6 +443,7 @@ export function buildPlayerWrestlerProfileView(
       estimatedWeeklyValue: marketWeeklyValue(person),
       skills: publicSkills(person),
       baselineStyle: baselineWrestlingStyle(person),
+      baselinePresentation: defaultWrestlerCreativeFields(person),
       currentInjury: currentInjuryFor(aggregate, person.id),
     },
     relationship,

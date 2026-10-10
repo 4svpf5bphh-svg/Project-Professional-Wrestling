@@ -279,7 +279,21 @@ export default function WrestlerProfileClient({
             ) : null}
           </div>
         ) : (
-          <p className={styles.note}>A controlled active roster contract is required to edit this wrestler's presentation.</p>
+          <div className={styles.stack}>
+            <p className={styles.note}>
+              <strong>{view.person.baselinePresentation.ringName}</strong> ·
+              {" "}{label(view.person.baselinePresentation.gimmickArchetype)} ·
+              {" "}{label(view.person.baselinePresentation.primaryStyle)}
+            </p>
+            <p className={styles.note}>
+              Signature: {view.person.baselinePresentation.signatureMove?.name ?? "Not set"} ·
+              Finisher: {view.person.baselinePresentation.finishingMove?.name ?? "Not set"}.
+            </p>
+            <p className={styles.note}>
+              Every wrestler has a character foundation. Their promotion's editable gimmick and move lists
+              are not overwritten or exposed through another booker's profile.
+            </p>
+          </div>
         )}
       </section>
 

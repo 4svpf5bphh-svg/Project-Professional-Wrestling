@@ -109,7 +109,11 @@ test("wrestler profile does not leak a rival's private contract or internal cond
   ok(view.relationship?.employmentStatus === "EXCLUSIVE_ELSEWHERE", "rival exclusive employment was not represented safely");
   ok(view.relationship?.ourContract === null, "rival contract was exposed as our contract");
   ok(view.relationship?.morale === null && view.relationship?.fatigue === null && view.relationship?.wear === null, "rival internal condition leaked");
-  ok(view.relationship?.bookingEvidence === null, "a rival\'s private contract-role expectations leaked");
+  ok(view.relationship?.bookingEvidence === null, "a rival's private contract-role expectations leaked");
+  ok(view.person.baselinePresentation.ringName === rival!.name
+    && view.person.baselinePresentation.gimmickArchetype === "AUTHENTIC"
+    && view.person.baselinePresentation.finishingMove === null,
+    "all wrestlers need a neutral public presentation without invented finishing moves");
   const serialized = JSON.stringify(view);
   ok(!serialized.includes("999888777"), "rival weekly guarantee leaked into profile");
   ok(!serialized.includes("888777666"), "rival appearance fee leaked into profile");
