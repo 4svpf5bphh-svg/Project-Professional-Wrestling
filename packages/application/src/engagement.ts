@@ -1,6 +1,7 @@
 import type { Id, PpwDate } from "../../domain/src/types.js";
 import type { GimmickArchetype, WrestlerCreativeRecord } from "./wrestler-creative.js";
 import type { WrestlerCreativeInterest } from "./wrestler-creative-interests.js";
+import { backstageContinuityAtCreation, type BackstageContinuitySnapshot } from "./backstage-continuity.js";
 
 export type PlayerActivityStatus = "ACTIVE" | "WARNING" | "STEWARDED";
 export type OpportunityCategory = "TALENT" | "MARKET" | "BUSINESS" | "WORLD";
@@ -65,6 +66,8 @@ export interface BackstageConversation {
   currentGimmickArchetype?: GimmickArchetype;
   suggestedGimmickArchetype?: GimmickArchetype;
   observedCrowdResponse?: number;
+  /** Immutable context, frozen when this message is created, for later continuity. */
+  continuity?: BackstageContinuitySnapshot;
   /** Optional for snapshots created before promise tracking existed. */
   promise?: BackstageBookingPromise | null;
 }
@@ -233,6 +236,11 @@ export function normalizeWorldEngagementState(
       ...record,
       createdDate: cloneDate(record.createdDate),
       responseDate: record.responseDate ? cloneDate(record.responseDate) : null,
+      continuity: record.continuity ? {
+        ...record.continuity,
+        lastCreativeDecisionDate: record.continuity.lastCreativeDecisionDate
+          ? cloneDate(record.continuity.lastCreativeDecisionDate) : null,
+      } : undefined,
       promise: record.promise ? {
         ...record.promise,
         madeDate: cloneDate(record.promise.madeDate),
@@ -501,7 +509,15 @@ export function openBackstageConversation(
       throw new Error("Backstage character proposal requires verified underwhelming booking evidence");
     }
   } else throw new Error("unsupported Backstage conversation kind");
-  const stored = { ...conversation, conversationId, createdDate: cloneDate(conversation.createdDate), promise: null };
+  // Frozen at conversation creation, before any new answer or future World event.
+  const continuity = backstageContinuityAtCreation(engagement,conversation);
+  const stored: BackstageConversation = {
+    ...conversation,
+    conversationId,
+    createdDate: cloneDate(conversation.createdDate),
+    promise: null,
+    continuity,
+  };
   engagement.backstageConversations.push(stored);
   return stored;
 }

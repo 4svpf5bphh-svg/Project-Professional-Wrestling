@@ -195,6 +195,19 @@ export default function BackstageClient(): React.JSX.Element {
                       <p className="muted micro-copy">Contract role: {roleLabel(conversation.promisedRole ?? "UPPER_CARD")} · Last {conversation.observedMatchShows} completed in-ring appearances were not in that position.</p>
                     </>
                   )}
+                  {conversation.continuity
+                    && (conversation.continuity.priorAnsweredCount > 0
+                      || conversation.continuity.pastPositiveTeamMomentsWithPartner > 0) ? (
+                    <p className="muted micro-copy">
+                      <strong>Working history:</strong>
+                      {" "}{conversation.continuity.priorAnsweredCount} earlier answered conversation(s)
+                      with this promotion.
+                      {conversation.continuity.pastPositiveTeamMomentsWithPartner > 0
+                        ? ` ${conversation.continuity.pastPositiveTeamMomentsWithPartner} previous verified positive team note(s) with this partner.`
+                        : ""}
+                      {" "}Suggestions are not promises, and scripted decisions remain yours.
+                    </p>
+                  ) : null}
                   {conversation.creativeInterestAtPitch ? (
                     <p className="muted micro-copy">
                       In-game creative interest: {conversation.creativeInterestAtPitch.replaceAll("_"," ").toLowerCase()}.

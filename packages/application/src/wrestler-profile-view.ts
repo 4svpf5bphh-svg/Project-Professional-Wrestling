@@ -133,6 +133,15 @@ export interface PlayerWrestlerProfileView {
     averageCriticalRating: number;
     bestCriticalRating: number;
   };
+  /** Only this player's controlled promotion's private Backstage discussion history. */
+  backstageHistory: Array<{
+    conversationId: Id;
+    kind: import("./engagement.js").BackstageConversation["kind"];
+    createdDate: PpwDate;
+    status: "OPEN" | "ANSWERED" | "NOTED";
+    response: import("./engagement.js").BackstageResponse | null;
+    counterpartName: string | null;
+  }>;
   activeTeams: Array<{
     teamId: Id;
     name: string;
@@ -462,6 +471,22 @@ export function buildPlayerWrestlerProfileView(
       history: structuredClone((aggregate.engagement?.wrestlerCreativeProfiles ?? [])
         .find((record) => record.promotionId === playerPromotion.id && record.personId === person.id)?.history ?? []),
     } : null,
+    backstageHistory: playerPromotion
+      ? (aggregate.engagement?.backstageConversations ?? [])
+        .filter(item => item.promotionId===playerPromotion.id && item.wrestlerId===personId)
+        .sort((a,b)=>comparePpwDates(b.createdDate,a.createdDate,aggregate.state.ruleset.weeksPerYear)
+          || b.conversationId.localeCompare(a.conversationId))
+        .slice(0,8).map(item=>({
+          conversationId:item.conversationId,
+          kind:item.kind,
+          createdDate:{...item.createdDate},
+          status:item.status,
+          response:item.response,
+          counterpartName: item.partnerPersonId || item.rivalPersonId
+            ? aggregate.state.people.find(other=>other.id===(item.partnerPersonId ?? item.rivalPersonId))?.name ?? null
+            : null,
+        }))
+      : [],
     careerStats: {
       completedMatches: participation.length,
       wins,

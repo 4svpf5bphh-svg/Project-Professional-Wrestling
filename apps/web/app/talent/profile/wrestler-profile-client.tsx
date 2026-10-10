@@ -297,6 +297,28 @@ export default function WrestlerProfileClient({
         )}
       </section>
 
+      {view.backstageHistory.length ? (
+        <section className={styles.panel}>
+          <div className={styles.sectionHeading}>
+            <div><span className={styles.eyebrow}>WORKING HISTORY</span><h2>Backstage dealings</h2></div>
+          </div>
+          <p className={styles.note}>Private to your promotion. An idea you considered is not a promise or a booked storyline.</p>
+          <div className={styles.stack}>
+            {view.backstageHistory.map(item => (
+              <div key={item.conversationId} className={styles.historyCard}>
+                <div>
+                  <strong>{label(item.kind)}{item.counterpartName ? ` · ${item.counterpartName}` : ""}</strong>
+                  <span>{ppwDate(item.createdDate)}</span>
+                </div>
+                <div className={styles.right}>
+                  <b>{item.response ? label(item.response) : label(item.status)}</b>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className={styles.panel}>
         <div className={styles.sectionHeading}>
           <div><span className={styles.eyebrow}>YOUR PROMOTION</span><h2>Relationship</h2></div>

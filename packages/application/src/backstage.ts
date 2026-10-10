@@ -16,6 +16,7 @@ import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 import type { GimmickArchetype } from "./wrestler-creative.js";
 import type { WrestlerCreativeInterest } from "./wrestler-creative-interests.js";
 import { buildBackstageDialogue, type BackstageDialogue } from "./backstage-dialogue.js";
+import type { BackstageContinuitySnapshot } from "./backstage-continuity.js";
 
 export const BACKSTAGE_NEW_CONVERSATIONS_PER_PROMOTION_WEEK = 1;
 export const BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION = 3;
@@ -98,6 +99,7 @@ export interface PlayerBackstageConversation {
   wrestlerName: string;
   /** Factual, non-authoritative line in a fictional voice; not an event or a booking decision. */
   dialogue: BackstageDialogue;
+  continuity: BackstageContinuitySnapshot | null;
   createdDate: PpwDate;
   status: "OPEN" | "ANSWERED" | "NOTED";
   kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH";
@@ -157,6 +159,7 @@ export function buildPlayerBackstageView(
       wrestlerId: entry.wrestlerId,
       wrestlerName: names.get(entry.wrestlerId) ?? "Former roster member",
       dialogue: buildBackstageDialogue(entry, persons.get(entry.wrestlerId), names),
+      continuity: entry.continuity ? structuredClone(entry.continuity) : null,
       createdDate: { ...entry.createdDate },
       status: entry.status,
       kind: entry.kind,

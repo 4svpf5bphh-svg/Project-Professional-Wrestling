@@ -29,6 +29,22 @@ function printableName(name: string | undefined): string {
 function title(value: string | undefined): string {
   return value?.replaceAll("_", " ").toLowerCase() || "a new character";
 }
+function continuityLine(entry: BackstageConversation): string {
+  const context=entry.continuity;
+  if (!context) return "";
+  const decision=context.lastCreativeDecision;
+  const verb=decision?.startsWith("CONSIDER_") ? "were open to exploring" : "passed on";
+  const idea=decision === "CONSIDER_TAG_TEAM" || decision === "PASS_TAG_TEAM" ? "a tag-team idea"
+    : decision === "CONSIDER_RIVALRY" || decision === "PASS_RIVALRY" ? "a rivalry idea"
+    : decision === "CONSIDER_GIMMICK_CHANGE" || decision === "PASS_GIMMICK_CHANGE"
+      ? "a character change" : null;
+  const last=idea ? ` Last time we talked creative, you ${verb} ${idea}.` : "";
+  const partnership=entry.kind==="TAG_TEAM_PITCH" && context.pastPositiveTeamMomentsWithPartner>0
+    ? " We've had good nights together as a team before." : "";
+  // A previous "consider" was not an actual agreement or booked action.
+  return last+partnership;
+}
+
 function scene(
   entry: BackstageConversation,
   names: Map<Id,string>,
@@ -96,7 +112,7 @@ export function buildBackstageDialogue(
   person: Person | undefined,
   names: Map<Id,string>,
 ): BackstageDialogue {
-  const evidence = scene(entry,names);
+  const evidence = scene(entry,names)+continuityLine(entry);
   if (!person) return {speech:evidence,voice:"NEUTRAL"};
   const personality = wrestlerPersonalityFor(person);
   const tone = personality.temperament;
