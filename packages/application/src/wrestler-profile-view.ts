@@ -27,6 +27,7 @@ import {
 import type { PlayerTalentSkillsView } from "./talent-view.js";
 import { talentExpectationEvidenceForContract, type TalentExpectationEvidence } from "./talent-expectations.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
+import { baselineWrestlingStyle, wrestlerCreativeProfileFor, type WrestlerCreativeFields, type WrestlerCreativeChange, type WrestlingStyle } from "./wrestler-creative.js";
 
 export type WrestlerProfileEmploymentStatus =
   | "OUR_ROSTER"
@@ -88,6 +89,8 @@ export interface PlayerWrestlerProfileView {
     momentum: number;
     estimatedWeeklyValue: number;
     skills: PlayerTalentSkillsView;
+    /** Shared-world baseline; never edited by a rival promotion. */
+    baselineStyle: WrestlingStyle;
     currentInjury: {
       severity: InjurySeverity;
       weeksRemaining: number;
@@ -104,6 +107,14 @@ export interface PlayerWrestlerProfileView {
     hasPendingOffer: boolean;
     ourContract: PlayerWrestlerProfileContractView | null;
     bookingEvidence: TalentExpectationEvidence | null;
+  } | null;
+  creativeProfile: {
+    /** Only the current controller's presentation of their roster wrestler. */
+    promotionId: Id;
+    promotionName: string;
+    canEdit: boolean;
+    fields: WrestlerCreativeFields;
+    history: WrestlerCreativeChange[];
   } | null;
   careerStats: {
     completedMatches: number;
@@ -427,9 +438,18 @@ export function buildPlayerWrestlerProfileView(
       momentum: person.momentum,
       estimatedWeeklyValue: marketWeeklyValue(person),
       skills: publicSkills(person),
+      baselineStyle: baselineWrestlingStyle(person),
       currentInjury: currentInjuryFor(aggregate, person.id),
     },
     relationship,
+    creativeProfile: playerPromotion && relationship?.employmentStatus === "OUR_ROSTER" ? {
+      promotionId: playerPromotion.id,
+      promotionName: playerPromotion.name,
+      canEdit: true,
+      fields: wrestlerCreativeProfileFor(aggregate.engagement, playerPromotion.id, person),
+      history: structuredClone((aggregate.engagement?.wrestlerCreativeProfiles ?? [])
+        .find((record) => record.promotionId === playerPromotion.id && record.personId === person.id)?.history ?? []),
+    } : null,
     careerStats: {
       completedMatches: participation.length,
       wins,
