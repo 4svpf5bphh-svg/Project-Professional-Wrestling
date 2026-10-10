@@ -168,3 +168,23 @@ booker's earlier choice, plus a verified subsequent match if the evidence
 was already recorded by that time. It cannot see the histories of other
 promotions, assume that a requested team change took place, or rewrite
 the context of an earlier conversation when something happens in the future.
+
+## Renewed professional expectations, priority and voice
+
+When the World has a **fresh, verified** pair-level working strain, the private
+Backstage generator now checks only past discussions of the *same pair within
+the same promotion*. An already open concern is not duplicated a year later.
+An answered prior concern can shape a subsequent grounded discussion: a past
+response and an actual recorded match afterward are distinguished from an
+unfollowed suggestion. Repeated evidence-backed concerns take precedence over
+first-time cases when a promotion has room for only one new conversation that
+week; equal cases are ordered by existing working confidence and stable IDs.
+
+For a first concern, deterministic in-game interest in team partnerships
+chooses which of the two wrestlers speaks. For follow-ups, the previous speaker
+continues the dialogue so history remains coherent. This is **voice and
+attention prioritization**, not assumed consent, real-world private opinions,
+injury blame, team breakup, a new penalty, promotion-trust change, or
+booker-enforced booking. Historical context is frozen upon conversation creation;
+a future match cannot retroactively rewrite it. Eligible roster deals, privacy,
+World Lock and the existing per-week/per-promotion concern caps still apply.

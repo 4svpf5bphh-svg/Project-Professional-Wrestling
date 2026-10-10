@@ -1684,5 +1684,100 @@ test("Outside promotion work, out-of-date strain and zero roster dates do not cr
     "out-of-date World strain created a delayed concern when no longer relevant");
 });
 
+
+function historicalStrainSetup() {
+  const f=fixture(),s=f.aggregate.state;
+  f.aggregate.engagement=createWorldEngagementState(s.world.id);
+  const cs=activeContractsForPromotion(s,f.promotion.id).slice(0,4);
+  ok(cs.length===4,"needs four active wrestlers");
+  const old={...s.world.currentDate};
+  cs.forEach(c=>{c.endDate=addPpwWeeks(old,120,s.ruleset.weeksPerYear);c.datesUsed=0;c.dateEntitlement=24;});
+  const prior=openBackstageConversation(f.aggregate.engagement,{
+    conversationId:"old:working:conversation",worldId:s.world.id,promotionId:f.promotion.id,
+    wrestlerId:cs[1]!.personId,partnerPersonId:cs[0]!.personId,
+    sourceContractId:cs[1]!.id,kind:"WORKING_PARTNERSHIP_CONCERN",
+    createdDate:old,status:"OPEN",response:null,responseDate:null,
+    promisedRole:null,observedMatchShows:3,observedFeaturedShows:0,
+    professionalTrustAtPitch:55,workingTrustDelta:-0.6,workingSourceLedgerId:"old-strain",
+  });
+  respondBackstageConversationCommand(f.aggregate,{
+    requestId:"answer:old-working",worldId:s.world.id,playerId:"backstage-owner",
+    commandType:"RESPOND_BACKSTAGE_CONVERSATION",
+    payload:{conversationId:prior.conversationId,response:"KEEP_WORKING_PAIR"},
+  });
+  prior.workingFollowThrough={
+    kind:"PARTNERS_REBOOKED",evidenceMatchId:"old:verified:match",
+    counterpartPersonId:cs[0]!.personId,executionQuality:74,
+    happenedDate:addPpwWeeks(old,3,s.ruleset.weeksPerYear),
+    recordedDate:addPpwWeeks(old,4,s.ruleset.weeksPerYear),
+  };
+  s.world.currentDate=addPpwWeeks(old,56,s.ruleset.weeksPerYear);
+  const when=addPpwWeeks(s.world.currentDate,-1,s.ruleset.weeksPerYear);
+  when.day=6;
+  const eventId="repeat:tag:event",matchId="repeat:tag:match";
+  s.events.push({...s.events[0]!,id:eventId,promotionId:f.promotion.id,date:when,
+    status:"COMPLETED",matchCount:1});
+  s.matches.push({...s.matches[0]!,id:matchId,eventId,promotionId:f.promotion.id,
+    status:"COMPLETED",type:"TAG",executionQuality:23});
+  s.matchParticipants.push(...cs.map((c,i)=>({
+    id:matchId+":participant:"+i,worldId:s.world.id,eventId,matchId,
+    personId:c.personId,side:i<2?"A" as const:"B" as const,won:false,
+  })));
+  for(let i=0;i<2;i++){
+    const ids=[cs[2*i]!.personId,cs[2*i+1]!.personId].sort();
+    upsertWrestlerRelationship(s,{personAId:ids[0]!,personBId:ids[1]!,
+      professionalTrust:i?39:59,familiarity:30});
+    s.ledger.push({id:"new:strain:"+i,worldId:s.world.id,date:when,
+      order:s.ledger.length+1,type:WORKING_PARTNERSHIP_STRAIN_LEDGER_TYPE,
+      significanceAtTime:"ROUTINE",historicalSignificance:"ROUTINE",entityIds:ids,
+      payload:{sourceMatchId:matchId,verifiedShows:3,trustDelta:-0.6},
+    });
+  }
+  return {f,cs,prior};
+}
+
+test("Renewed confirmed working problems take priority and retain the prior speaker and answer",()=>{
+  const {f,cs,prior}=historicalStrainSetup();
+  const before=JSON.stringify(f.aggregate.state);
+  ok(generateWorkingPartnershipConcerns(f.aggregate)===1,
+    "one weekly private concern expected");
+  const next=f.aggregate.engagement!.backstageConversations.find(c=>
+    c.kind==="WORKING_PARTNERSHIP_CONCERN"&&c.conversationId!==prior.conversationId)!;
+  ok(next.wrestlerId===cs[1]!.personId&&next.partnerPersonId===cs[0]!.personId,
+    "new pair displaced known repeated trouble or the original speaker changed");
+  ok(next.continuity?.lastWorkingDecision?.response==="KEEP_WORKING_PAIR"
+    &&next.continuity.lastWorkingDecision.observedLaterKind==="PARTNERS_REBOOKED",
+    "verified booker history did not survive into next private discussion");
+  ok(buildPlayerBackstageView(f.aggregate,"backstage-owner").conversations
+    .find(c=>c.conversationId===next.conversationId)?.dialogue.speech
+    .includes("keep the pairing"),"history did not affect the request's dialogue");
+  ok(generateWorkingPartnershipConcerns(f.aggregate)===0
+    &&JSON.stringify(f.aggregate.state)===before,
+    "re-reading World resolution changed relationships or duplicated a request");
+  ok(cloneApplicationWorld(f.aggregate).engagement?.backstageConversations.some(c=>
+    c.conversationId===next.conversationId
+      &&c.continuity?.lastWorkingDecision?.observedLaterKind==="PARTNERS_REBOOKED"),
+    "saved World lost frozen pair-specific history");
+});
+test("Unanswered old working concern stays singular; new pair gets temperament-derived speaker",()=>{
+  const {f,cs,prior}=historicalStrainSetup();
+  prior.status="OPEN";prior.response=null;prior.responseDate=null;prior.workingFollowThrough=undefined;
+  const before=JSON.stringify(f.aggregate.state);
+  ok(generateWorkingPartnershipConcerns(f.aggregate)===1,
+    "independent new pair should still be able to speak");
+  const next=f.aggregate.engagement!.backstageConversations.find(c=>
+    c.kind==="WORKING_PARTNERSHIP_CONCERN"&&c.conversationId!==prior.conversationId)!;
+  const a=cs[2]!.personId,b=cs[3]!.personId;
+  ok([a,b].includes(next.wrestlerId)&&[a,b].includes(next.partnerPersonId!),
+    "unanswered old pair generated a second grievance");
+  const people=[a,b].map(id=>f.aggregate.state.people.find(p=>p.id===id)!);
+  ok(next.wrestlerId===chooseCreativePitchSpeaker(people[0]!,people[1]!,"TEAM_PARTNERSHIPS").id,
+    "first-time pair speaker ignored stable creative interests");
+  ok(next.continuity?.lastWorkingDecision===null,
+    "another pair's private history leaked into the new conversation");
+  ok(JSON.stringify(f.aggregate.state)===before,
+    "conversation priority modified the wrestling simulation");
+});
+
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");
 if(failed)process.exitCode=1;

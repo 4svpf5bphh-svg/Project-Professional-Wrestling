@@ -255,9 +255,16 @@ export default function BackstageClient(): React.JSX.Element {
                         ? ` ${conversation.continuity.pastPositiveTeamMomentsWithPartner} previous verified positive team note(s) with this partner.`
                         : ""}
                       {conversation.continuity.lastWorkingDecision
-                        ? ` Earlier working-pair discussion: ${conversation.continuity.lastWorkingDecision.response
-                            .replaceAll("_"," ").toLowerCase()}.`
+                        ? ` Earlier, you ${conversation.continuity.lastWorkingDecision.response === "DISCUSS_WORKING_PLAN"
+                            ? "discussed ways to improve this pairing"
+                            : conversation.continuity.lastWorkingDecision.response === "KEEP_WORKING_PAIR"
+                              ? "chose to keep the pairing" : "considered another partner"}.`
                         : ""}
+                      {conversation.continuity.lastWorkingDecision?.observedLaterKind === "PARTNERS_REBOOKED"
+                        ? " A subsequent completed tag match used the original pair."
+                        : conversation.continuity.lastWorkingDecision?.observedLaterKind === "ALTERNATE_PARTNER_APPEARED"
+                          ? " A subsequent completed tag match featured a different partner."
+                          : ""}
                       {" "}Suggestions are not promises, and scripted decisions remain yours.
                     </p>
                   ) : null}

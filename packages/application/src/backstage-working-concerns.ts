@@ -16,6 +16,7 @@ import {
   BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION, BACKSTAGE_NEW_CONVERSATIONS_PER_PROMOTION_WEEK,
 } from "./backstage.js";
 import { activePromotionControls } from "./ownership.js";
+import { chooseCreativePitchSpeaker } from "./wrestler-creative-interests.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export function generateWorkingPartnershipConcerns(aggregate: ApplicationWorldAggregate): number {
@@ -29,6 +30,7 @@ export function generateWorkingPartnershipConcerns(aggregate: ApplicationWorldAg
   if (justResolvedWeek < 0) return 0;
   const events = new Map(state.events.map(e => [e.id, e]));
   const matches = new Map(state.matches.map(m => [m.id, m]));
+  const byPerson = new Map(state.people.map(person => [person.id, person]));
   const participants = new Map<Id, typeof state.matchParticipants>();
   let created = 0;
   const engagement = aggregate.engagement ?? createWorldEngagementState(state.world.id);
@@ -48,7 +50,11 @@ export function generateWorkingPartnershipConcerns(aggregate: ApplicationWorldAg
       .filter(c => c.datesUsed < c.dateEntitlement)
       .filter(c => state.people.some(p => p.id === c.personId && p.status === "ACTIVE"))
       .map(c => [c.personId, c]));
-    const candidates: Array<{ ledgerId: Id; conversation: BackstageConversation }> = [];
+    const candidates: Array<{
+      conversation: BackstageConversation;
+      /** Credible renewed requests take precedence when weekly capacity is tight. */
+      priority: number;
+    }> = [];
 
     for (let i = state.ledger.length - 1; i >= 0; i--) {
       const entry = state.ledger[i]!;
@@ -84,15 +90,42 @@ export function generateWorkingPartnershipConcerns(aggregate: ApplicationWorldAg
       const [first, second] = [a, b].sort();
       const id = `backstage:working-strain:${promotionId}:${first}:${second}:year${entry.date.year}`;
       if (existing.some(c => c.conversationId === id)) continue;
+      // An outstanding discussion should not become a second demand a year
+      // later. If a prior discussion was answered, remember the *same pair*
+      // regardless of which wrestler originally did the talking.
+      const priorPair = existing.filter(c =>
+        c.kind === "WORKING_PARTNERSHIP_CONCERN"
+        && [c.wrestlerId, c.partnerPersonId].includes(first)
+        && [c.wrestlerId, c.partnerPersonId].includes(second)
+      ).sort((left, right) =>
+        ppwDateToWeekIndex(right.createdDate, state.ruleset.weeksPerYear)
+        - ppwDateToWeekIndex(left.createdDate, state.ruleset.weeksPerYear)
+        || right.conversationId.localeCompare(left.conversationId));
+      if (priorPair.some(c => c.status === "OPEN")) continue;
+      const lastAnswered = priorPair.find(c => c.status === "ANSWERED") ?? null;
+      // For an original concern, fictional team-oriented motivation determines
+      // who asks for a conversation; not the alphabetical wrestler ID.
+      // Keep the historical speaker for a repeat to preserve a natural voice.
+      const firstPerson = byPerson.get(first!);
+      const secondPerson = byPerson.get(second!);
+      if (!firstPerson || !secondPerson) continue;
+      const speaker = lastAnswered
+        ? (lastAnswered.wrestlerId === first ? first! : second!)
+        : chooseCreativePitchSpeaker(firstPerson, secondPerson, "TEAM_PARTNERSHIPS").id;
+      const partner = speaker === first ? second! : first!;
       const relationship = (state.wrestlerRelationships ?? []).find(r =>
         r.personAId === first && r.personBId === second);
       if (!relationship) continue; // No invented interpersonal state for an orphaned ledger record.
       candidates.push({
-        ledgerId: entry.id,
+        // Concrete repeated poor match evidence plus verified history, not
+        // speculative personal grudges or a booker's optional conversation.
+        priority: lastAnswered
+          ? lastAnswered.workingFollowThrough ? 2 : 1
+          : 0,
         conversation: {
           conversationId: id, worldId: state.world.id, promotionId,
-          wrestlerId: first!, partnerPersonId: second!,
-          sourceContractId: eligible.get(first!)!.id,
+          wrestlerId: speaker, partnerPersonId: partner,
+          sourceContractId: eligible.get(speaker)!.id,
           kind: "WORKING_PARTNERSHIP_CONCERN",
           createdDate: { ...state.world.currentDate },
           status: "OPEN", response: null, responseDate: null,
@@ -104,7 +137,10 @@ export function generateWorkingPartnershipConcerns(aggregate: ApplicationWorldAg
         },
       });
     }
-    candidates.sort((x, y) => x.conversation.conversationId.localeCompare(y.conversation.conversationId));
+    candidates.sort((x, y) => y.priority - x.priority
+      || (x.conversation.professionalTrustAtPitch ?? 100)
+        - (y.conversation.professionalTrustAtPitch ?? 100)
+      || x.conversation.conversationId.localeCompare(y.conversation.conversationId));
     for (const { conversation } of candidates.slice(0, remaining)) {
       openBackstageConversation(engagement, conversation);
       created++;
