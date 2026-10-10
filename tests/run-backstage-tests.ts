@@ -1225,5 +1225,121 @@ test("A trusted on-screen rival is proposed by the wrestler most interested in t
     "proposal modified professional trust or forced an on-screen rivalry");
 });
 
+
+test("Private creative responses survive into the next conversation without pretending to be bookings",()=>{
+  const f=fixture();
+  f.aggregate.engagement=createWorldEngagementState(f.aggregate.state.world.id);
+  const aggregate=f.aggregate, engagement=aggregate.engagement;
+  const first=generateBackstageConversations(aggregate);
+  ok(first===1,"fixture should create a real role-usage concern");
+  const role=engagement.backstageConversations[0]!;
+  ok(role.continuity?.priorAnsweredCount===0
+    && role.continuity.lastCreativeDecision===null,
+    "first conversation invented previous private history");
+  respondBackstageConversationCommand(aggregate,{
+    requestId:"history-first-answer",worldId:aggregate.state.world.id,
+    playerId:"backstage-owner",commandType:"RESPOND_BACKSTAGE_CONVERSATION",
+    payload:{conversationId:role.conversationId,response:"EXPLAIN_PLAN"},
+  });
+  aggregate.state.world.currentDate=addPpwWeeks(aggregate.state.world.currentDate,1,aggregate.state.ruleset.weeksPerYear);
+  ok(generateGimmickChangePitches(aggregate)===1,"weak match evidence should justify a gimmick pitch");
+  const gimmick=engagement.backstageConversations.at(-1)!;
+  ok(gimmick.continuity?.priorAnsweredCount===1
+    && gimmick.continuity?.lastCreativeDecision===null,
+    "historical role concern was counted as an accepted creative pitch");
+  const simState=aggregate.state;
+  const beforeContracts=JSON.stringify(simState.contracts);
+  const beforeRelationships=JSON.stringify(simState.wrestlerRelationships);
+  const beforeMatches=JSON.stringify(simState.matches);
+  const conversation={
+    requestId:"history-character-response",worldId:aggregate.state.world.id,
+    playerId:"backstage-owner",commandType:"RESPOND_BACKSTAGE_CONVERSATION" as const,
+    payload:{conversationId:gimmick.conversationId,response:"PASS_GIMMICK_CHANGE" as const},
+  };
+  respondBackstageConversationCommand(aggregate,conversation);
+  respondBackstageConversationCommand(aggregate,conversation);
+  aggregate.state.world.currentDate=addPpwWeeks(aggregate.state.world.currentDate,1,aggregate.state.ruleset.weeksPerYear);
+  const next={
+    conversationId:"history-subsequent-conversation",worldId:aggregate.state.world.id,
+    promotionId:f.promotion.id,wrestlerId:f.person.id,sourceContractId:f.contract.id,
+    kind:"ROLE_USAGE_CONCERN" as const,
+    createdDate:{...aggregate.state.world.currentDate},
+    status:"OPEN" as const,response:null,responseDate:null,
+    promisedRole:"MAIN_EVENT" as const,observedMatchShows:4,observedFeaturedShows:0,
+  };
+  const opened=openBackstageConversation(engagement,next);
+  ok(opened.continuity?.priorAnsweredCount===2
+    && opened.continuity.lastCreativeDecision==="PASS_GIMMICK_CHANGE"
+    && opened.continuity.lastCreativeDecisionDate?.week===gimmick.responseDate?.week,
+    "new request forgot booker response or misattributed it");
+  const dialogue=buildPlayerBackstageView(aggregate,"backstage-owner")
+    .conversations.find(x=>x.conversationId===opened.conversationId)!;
+  ok(dialogue.dialogue.speech.includes("passed on a character change")
+    && dialogue.continuity?.priorAnsweredCount===2,
+    "private wrestler did not recognise prior response");
+  ok(JSON.stringify(simState.contracts)===beforeContracts
+    && JSON.stringify(simState.wrestlerRelationships)===beforeRelationships
+    && JSON.stringify(simState.matches)===beforeMatches,
+    "past creative responses changed simulation or relationships");
+  ok((engagement.wrestlerCreativeProfiles??[]).length===0,
+    "a rejected proposal secretly changed the wrestler's gimmick");
+  const saved=cloneApplicationWorld(aggregate);
+  const savedRequest=saved.engagement?.backstageConversations.find(x=>x.conversationId===opened.conversationId);
+  ok(savedRequest?.continuity?.lastCreativeDecision==="PASS_GIMMICK_CHANGE",
+    "World persistence dropped frozen creative continuity");
+  // Future replies must never reach backwards into previously stored context.
+  respondBackstageConversationCommand(aggregate,{
+    requestId:"history-next-answer",worldId:aggregate.state.world.id,
+    playerId:"backstage-owner",commandType:"RESPOND_BACKSTAGE_CONVERSATION",
+    payload:{conversationId:opened.conversationId,response:"STAND_FIRM"},
+  });
+  ok(engagement.backstageConversations[1]?.continuity?.lastCreativeDecision===null
+    && role.continuity?.priorAnsweredCount===0,
+    "future response rewrote an old conversation snapshot");
+});
+
+test("Verified positive teamwork gives continuity, a considered pitch alone never does",()=>{
+  const f=fixture();
+  f.contract.roleExpectation="REGULAR";
+  const partnerId=successfulTagPair(f);
+  const second=f.aggregate.state.people.find(p=>p.id===partnerId)!;
+  const engagement=f.aggregate.engagement=createWorldEngagementState(f.aggregate.state.world.id);
+  const date={...f.aggregate.state.world.currentDate};
+  const note=openBackstageConversation(engagement,{
+    conversationId:"team-history-verified",worldId:f.aggregate.state.world.id,
+    promotionId:f.promotion.id,wrestlerId:second.id,partnerPersonId:f.person.id,
+    sourceContractId:activeContractsForPromotion(f.aggregate.state,f.promotion.id).find(x=>x.personId===second.id)!.id,
+    kind:"TEAM_MOMENT",createdDate:date,status:"NOTED",response:null,responseDate:null,
+    promisedRole:null,observedMatchShows:0,observedFeaturedShows:0,sharedTagMatches:3,
+    averageCrowdResponse:75,professionalTrustAtPitch:80,
+  });
+  ok(note.continuity?.pastPositiveTeamMomentsWithPartner===0,"first note invented earlier successful partnership");
+  f.aggregate.state.world.currentDate=addPpwWeeks(date,1,f.aggregate.state.ruleset.weeksPerYear);
+  const idea=openBackstageConversation(engagement,{
+    conversationId:"team-history-next",worldId:f.aggregate.state.world.id,
+    promotionId:f.promotion.id,wrestlerId:f.person.id,partnerPersonId:second.id,
+    sourceContractId:f.contract.id,kind:"TAG_TEAM_PITCH",
+    createdDate:{...f.aggregate.state.world.currentDate},
+    status:"OPEN",response:null,responseDate:null,
+    promisedRole:null,observedMatchShows:0,observedFeaturedShows:0,
+    sharedTagMatches:2,averageCrowdResponse:78,
+  });
+  ok(idea.continuity?.pastPositiveTeamMomentsWithPartner===1,
+    "past positive teamwork not recognised when speaker was the former partner");
+  const dialogue=buildPlayerBackstageView(f.aggregate,"backstage-owner")
+    .conversations.find(c=>c.conversationId===idea.conversationId);
+  ok(dialogue?.dialogue.speech.includes("good nights together"),
+    "verified teamwork had no continuity in the new suggestion");
+  const thirdDate=addPpwWeeks(f.aggregate.state.world.currentDate,1,f.aggregate.state.ruleset.weeksPerYear);
+  const unrelated=openBackstageConversation(engagement,{
+    ...idea,
+    conversationId:"team-history-other-pair",createdDate:thirdDate,
+    partnerPersonId:f.aggregate.state.people.find(p=>p.id!==f.person.id&&p.id!==second.id)!.id,
+    continuity:undefined,
+  });
+  ok(unrelated.continuity?.pastPositiveTeamMomentsWithPartner===0,
+    "pair memory leaked to a wrestler who was never in the established duo");
+});
+
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");
 if(failed)process.exitCode=1;

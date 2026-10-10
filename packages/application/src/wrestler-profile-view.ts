@@ -473,7 +473,8 @@ export function buildPlayerWrestlerProfileView(
     } : null,
     backstageHistory: playerPromotion
       ? (aggregate.engagement?.backstageConversations ?? [])
-        .filter(item => item.promotionId===playerPromotion.id && item.wrestlerId===personId)
+        .filter(item => item.promotionId===playerPromotion.id
+          && (item.wrestlerId===personId || item.partnerPersonId===personId || item.rivalPersonId===personId))
         .sort((a,b)=>comparePpwDates(b.createdDate,a.createdDate,aggregate.state.ruleset.weeksPerYear)
           || b.conversationId.localeCompare(a.conversationId))
         .slice(0,8).map(item=>({
@@ -483,7 +484,9 @@ export function buildPlayerWrestlerProfileView(
           status:item.status,
           response:item.response,
           counterpartName: item.partnerPersonId || item.rivalPersonId
-            ? aggregate.state.people.find(other=>other.id===(item.partnerPersonId ?? item.rivalPersonId))?.name ?? null
+            ? aggregate.state.people.find(other=>other.id===(
+                item.wrestlerId===personId ? (item.partnerPersonId ?? item.rivalPersonId) : item.wrestlerId
+              ))?.name ?? null
             : null,
         }))
       : [],

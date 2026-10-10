@@ -418,5 +418,49 @@ test("Creative interests use existing priorities, are stable across viewers and 
     "booker's expected teamwork interest wasn't grounded in persona and priorities");
 });
 
+
+test("Wrestler profiles expose only controller-owned Backstage history, including named partners",()=>{
+  const {aggregate,promotionAId,promotionBId}=fixture(73182);
+  aggregate.engagement=createWorldEngagementState(aggregate.state.world.id);
+  const contract=activeContractsForPromotion(aggregate.state,promotionAId)[0]!;
+  const person=aggregate.state.people.find(x=>x.id===contract.personId)!;
+  const partner=aggregate.state.people.find(x=>x.id!==person.id)!;
+  const day={...aggregate.state.world.currentDate};
+  const base={
+    worldId:aggregate.state.world.id,wrestlerId:person.id,sourceContractId:contract.id,
+    createdDate:day,status:"OPEN" as const,response:null,responseDate:null,
+    promisedRole:"MAIN_EVENT" as const,observedMatchShows:4,observedFeaturedShows:0,
+    kind:"ROLE_USAGE_CONCERN" as const,
+  };
+  const ours=openBackstageConversation(aggregate.engagement,{
+    ...base,conversationId:"profile-private-owner-a",promotionId:promotionAId,
+  });
+  const theirs=openBackstageConversation(aggregate.engagement,{
+    ...base,conversationId:"profile-private-owner-b",promotionId:promotionBId,
+  });
+  ok(ours.continuity?.priorAnsweredCount===0&&theirs.continuity?.priorAnsweredCount===0,
+    "two promotions share their private booker history");
+  const a=buildPlayerWrestlerProfileView(aggregate,"player-a",person.id);
+  const b=buildPlayerWrestlerProfileView(aggregate,"player-b",person.id);
+  ok(a.backstageHistory.length===1&&a.backstageHistory[0]?.conversationId===ours.conversationId
+    && b.backstageHistory.length===1&&b.backstageHistory[0]?.conversationId===theirs.conversationId,
+    "other controller's conversation leaked through public wrestler card");
+  const partnerEntry=openBackstageConversation(aggregate.engagement,{
+    conversationId:"profile-partner-history",promotionId:promotionAId,
+    worldId:aggregate.state.world.id,wrestlerId:partner.id,
+    sourceContractId:contract.id,partnerPersonId:person.id,
+    createdDate:day,status:"NOTED",response:null,responseDate:null,
+    promisedRole:null,observedMatchShows:0,observedFeaturedShows:0,
+    kind:"TEAM_MOMENT",sharedTagMatches:2,averageCrowdResponse:77,
+    professionalTrustAtPitch:75,
+  });
+  const withPartner=buildPlayerWrestlerProfileView(aggregate,"player-a",person.id);
+  ok(withPartner.backstageHistory.some(x=>x.conversationId===partnerEntry.conversationId
+    && x.counterpartName===partner.name),"paired wrestler's known successful collaboration was hidden");
+  ok(!buildPlayerWrestlerProfileView(aggregate,"player-b",person.id)
+    .backstageHistory.some(x=>x.conversationId===partnerEntry.conversationId),
+    "partner history leaked to rival promotion");
+});
+
 console.log(`\nApplication wrestler-profile tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
