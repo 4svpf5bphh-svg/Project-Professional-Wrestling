@@ -410,6 +410,49 @@ export default function WrestlerProfileClient({
         </p>
       </section>
 
+      {relationship?.employmentStatus === "OUR_ROSTER" ? (
+        <section className={styles.panel}>
+          <div className={styles.sectionHeading}>
+            <div><span className={styles.eyebrow}>LOCKER ROOM</span><h2>Working connections</h2></div>
+            <strong>Last 12 PPW weeks</strong>
+          </div>
+          <p className={styles.note}>
+            Actual shared matches and fictional PPW World backstory are separate.
+            On-screen feuds, attacks and betrayals do not establish real personal hostility.
+          </p>
+          <div className={styles.stack}>
+            {view.workingConnections.map(connection => (
+              <article className={styles.historyCard} key={connection.personId}>
+                <div>
+                  <strong>{connection.name}</strong>
+                  <span>
+                    {connection.relationship?.tags.length
+                      ? connection.relationship.tags.map(label).join(" · ")
+                      : "Working history"}
+                  </span>
+                  <span>
+                    Last 12 weeks: {connection.recentTagMatchesTogether} tag matches together
+                    {" · "}{connection.recentSinglesOppositions} singles meetings
+                    {connection.latestSharedMatchDate ? ` · latest ${ppwDate(connection.latestSharedMatchDate)}` : ""}
+                  </span>
+                </div>
+                <div className={styles.right}>
+                  {connection.tagChemistry ? (
+                    <span>Tag chemistry: {Math.round(connection.tagChemistry.familiarity)} familiarity / {connection.tagChemistry.matchesTogether} matches</span>
+                  ) : null}
+                  {connection.relationship ? (
+                    <span>In-game professional trust {Math.round(connection.relationship.professionalTrust)}</span>
+                  ) : null}
+                </div>
+              </article>
+            ))}
+            {!view.workingConnections.length ? (
+              <p className={styles.note}>No verified shared-ring connections or established backstory yet.</p>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
       <section className={styles.panel}>
         <div className={styles.sectionHeading}><div><span className={styles.eyebrow}>ABILITY</span><h2>Skills</h2></div></div>
         <div className={styles.skillGrid}>
