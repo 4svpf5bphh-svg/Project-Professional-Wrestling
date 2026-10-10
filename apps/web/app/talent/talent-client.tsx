@@ -499,6 +499,10 @@ function RosterCard({
           </div>
         </div>
         <div className={styles.cardActions}>
+          <a className={styles.actionButton}
+            href={`/talent/profile?personId=${encodeURIComponent(wrestler.personId)}&from=talent`}>
+            Gimmick, moves &amp; profile →
+          </a>
           <p className={styles.subtle}>Age {wrestler.biologicalAge.toFixed(1)} · Fatigue {Math.round(wrestler.fatigue)} · Wear {Math.round(wrestler.wear)} · Skill {averageSkill(wrestler)}</p>
           {pending ? <span className={styles.pending}>Your offer pending</span> : contract.renewalWindowOpen ? (
             <button className={styles.actionButton} type="button" onClick={onRenew}>
