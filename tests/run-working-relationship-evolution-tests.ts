@@ -76,7 +76,12 @@ test("Repeated real tag work gradually builds professional trust once, preservin
   ok(evolveCompletedWorkingPartnerships(state) === 0,
     "old match without current completed work triggered growth");
   addMatch(state, ids, promotionId, 3, "now-team");
-  ok(evolveCompletedWorkingPartnerships(state) === 1, "two verified tag shows should qualify exactly once");
+  const measured = workingConnectionsForWrestler(state, a!).find(entry => entry.personId === b);
+  ok(measured?.recentTagMatchesTogether === 2,
+    "read-side match provenance disagrees: " + JSON.stringify(measured));
+  ok(evolveCompletedWorkingPartnerships(state) === 1,
+    "two verified tag shows should qualify exactly once; audit records="
+      + state.ledger.filter(entry => entry.type === WORKING_PARTNERSHIP_LEDGER_TYPE).length);
   ok(base.professionalTrust === 55.8 && base.familiarity === 22,
     "bounded professional trust or familiarity growth incorrect");
   ok(base.affinity === -35 && base.rivalryHeat === 92
