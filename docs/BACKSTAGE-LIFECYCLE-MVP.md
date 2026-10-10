@@ -129,3 +129,21 @@ trust, titles, contracts or booking. It cannot break teams, create feuds,
 cause a walkout, or override authored on-screen decisions. The latest
 positive/negative professional-development event is visible only in owned-roster
 working history, without cross-promotion private dialogue.
+
+## Evidence-driven Backstage working concerns (development only)
+
+When the World Lock records professional strain, the controlling booker may
+receive a private, optional working-relationship conversation *only* if the
+latest strained tag match occurred in their promotion, both wrestlers still
+have eligible active roster contracts and it was just resolved. The immutable
+World ledger supplies three distinct poor completed shows and the exact
+confidence delta. A pair generates at most one conversation per promotion per
+PPW year, obeying existing 1-new-per-week and 3-open Backstage caps.
+Other promotions' contractual details and private dealings are not exposed.
+
+Players can discuss better working practices, keep their planned pairing, or
+consider changing partners. These decisions are saved as private Backstage
+history, not character consent or scripted outcomes. No branch of this
+conversation directly changes confidence, morale, roster membership, show
+plans, champions, chemistry or another promotion's World state. Actual later
+collaboration and its separately verified World Lock result govern progression.

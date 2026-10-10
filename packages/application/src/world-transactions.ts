@@ -8,6 +8,7 @@ import { generateGimmickChangePitches } from "./backstage-gimmicks.js";
 import { applyBackstagePromiseConsequences } from "./backstage-consequences.js";
 import { assessCreativeFollowThrough } from "./backstage-follow-through.js";
 import { evolveCompletedWorkingPartnerships } from "./working-relationship-evolution.js";
+import { generateWorkingPartnershipConcerns } from "./backstage-working-concerns.js";
 import {
   closeCurrentWeekReservationsAtCommitmentLock,
   materializeCurrentWeekReservations,
@@ -118,6 +119,7 @@ export async function resolvePersistedWorldWeek(
     evaluateBackstagePromises(aggregate);
     applyBackstagePromiseConsequences(aggregate);
     assessCreativeFollowThrough(aggregate);
+    generateWorkingPartnershipConcerns(aggregate);
     generateBackstageConversations(aggregate);
     generateTagTeamPitches(aggregate);
     generateRivalryPitches(aggregate);

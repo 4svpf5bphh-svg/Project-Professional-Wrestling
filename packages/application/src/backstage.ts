@@ -104,7 +104,7 @@ export interface PlayerBackstageConversation {
   creativeFollowThrough: NonNullable<BackstageConversation["creativeFollowThrough"]> | null;
   createdDate: PpwDate;
   status: "OPEN" | "ANSWERED" | "NOTED";
-  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH";
+  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH" | "WORKING_PARTNERSHIP_CONCERN";
   promisedRole: "MAIN_EVENT" | "UPPER_CARD" | null;
   observedMatchShows: number;
   partnerPersonId: Id | null;
@@ -115,6 +115,8 @@ export interface PlayerBackstageConversation {
   rivalName: string | null;
   sharedSinglesMatches: number;
   professionalTrustAtPitch: number | null;
+  workingTrustDelta: number | null;
+  workingSourceLedgerId: Id | null;
   tagFamiliarityAtPitch: number | null;
   creativeInterestAtPitch: WrestlerCreativeInterest | null;
   currentGimmickArchetype: GimmickArchetype | null;
@@ -176,6 +178,8 @@ export function buildPlayerBackstageView(
       rivalName: entry.rivalPersonId ? names.get(entry.rivalPersonId) ?? null : null,
       sharedSinglesMatches: entry.sharedSinglesMatches ?? 0,
       professionalTrustAtPitch: entry.professionalTrustAtPitch ?? null,
+      workingTrustDelta: entry.workingTrustDelta ?? null,
+      workingSourceLedgerId: entry.workingSourceLedgerId ?? null,
       tagFamiliarityAtPitch: entry.tagFamiliarityAtPitch ?? null,
       creativeInterestAtPitch: entry.creativeInterestAtPitch ?? null,
       currentGimmickArchetype: entry.currentGimmickArchetype ?? null,

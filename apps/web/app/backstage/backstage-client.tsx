@@ -21,6 +21,9 @@ const REPLIES: Array<{ value: BackstageResponse; label: string; detail: string }
   { value: "PASS_RIVALRY", label: "Not the right feud", detail: "Pass on this idea without changing relationships or any scripted wrestling." },
   { value: "CONSIDER_GIMMICK_CHANGE", label: "Explore a repackaging", detail: "Consider a new direction. Only you can edit the gimmick in the wrestler profile." },
   { value: "PASS_GIMMICK_CHANGE", label: "Keep the current gimmick", detail: "Decline the suggestion; no character, trust or morale change follows." },
+  { value: "DISCUSS_WORKING_PLAN", label: "Discuss ways to improve the partnership", detail: "Open a professional conversation. Only completed future matches can demonstrate actual improvement; this is not a guarantee." },
+  { value: "KEEP_WORKING_PAIR", label: "Keep the pairing for now", detail: "Maintain your creative direction. This response does not force any future booking or cause another trust penalty." },
+  { value: "CONSIDER_PARTNER_CHANGE", label: "Explore a different pairing", detail: "Consider another partner or a rest period. You must make any actual changes yourself through booking and team management." },
 ];
 
 function roleLabel(role: string): string {
@@ -115,24 +118,28 @@ export default function BackstageClient(): React.JSX.Element {
               const rivalry = conversation.kind === "RIVALRY_PITCH";
               const moment = conversation.kind === "TEAM_MOMENT";
               const gimmick = conversation.kind === "GIMMICK_CHANGE_PITCH";
+              const working = conversation.kind === "WORKING_PARTNERSHIP_CONCERN";
               const replies = REPLIES.filter((reply) => pitch
                 ? reply.value === "CONSIDER_TAG_TEAM" || reply.value === "PASS_TAG_TEAM"
                 : rivalry
                   ? reply.value === "CONSIDER_RIVALRY" || reply.value === "PASS_RIVALRY"
                   : gimmick
                     ? reply.value === "CONSIDER_GIMMICK_CHANGE" || reply.value === "PASS_GIMMICK_CHANGE"
-                    : !["CONSIDER_TAG_TEAM","PASS_TAG_TEAM","CONSIDER_RIVALRY","PASS_RIVALRY",
-                        "CONSIDER_GIMMICK_CHANGE","PASS_GIMMICK_CHANGE"].includes(reply.value));
+                    : working
+                      ? ["DISCUSS_WORKING_PLAN", "KEEP_WORKING_PAIR", "CONSIDER_PARTNER_CHANGE"].includes(reply.value)
+                      : !["CONSIDER_TAG_TEAM","PASS_TAG_TEAM","CONSIDER_RIVALRY","PASS_RIVALRY",
+                          "CONSIDER_GIMMICK_CHANGE","PASS_GIMMICK_CHANGE",
+                          "DISCUSS_WORKING_PLAN","KEEP_WORKING_PAIR","CONSIDER_PARTNER_CHANGE"].includes(reply.value));
               const selected = choices[conversation.conversationId] ?? (
                 pitch ? "CONSIDER_TAG_TEAM" : rivalry ? "CONSIDER_RIVALRY"
-                  : gimmick ? "CONSIDER_GIMMICK_CHANGE" : "HEAR_OUT"
+                  : gimmick ? "CONSIDER_GIMMICK_CHANGE" : working ? "DISCUSS_WORKING_PLAN" : "HEAR_OUT"
               );
               return (
                 <article className="choice-card" key={conversation.conversationId}>
                   <div className="choice-card-top">
                     <div>
                       <span className="eyebrow">{moment ? "LOCKER-ROOM GOOD NEWS" : pitch ? "TAG-TEAM PITCH" : rivalry ? "RIVALRY PITCH"
-                        : gimmick ? "CHARACTER PITCH" : conversation.status === "OPEN" ? "WANTS A WORD" : "CONVERSATION RECORDED"}</span>
+                        : gimmick ? "CHARACTER PITCH" : working ? "TAG PARTNERSHIP CONCERN" : conversation.status === "OPEN" ? "WANTS A WORD" : "CONVERSATION RECORDED"}</span>
                       <h3>{conversation.wrestlerName}</h3>
                     </div>
                     <span className="revision">Y{conversation.createdDate.year} W{conversation.createdDate.week}</span>
@@ -140,7 +147,22 @@ export default function BackstageClient(): React.JSX.Element {
                   <p className="body-copy" style={{fontStyle:"italic",borderLeft:"3px solid #5de9ce",paddingLeft:12}}>
                     “{conversation.dialogue.speech}”
                   </p>
-                  {gimmick ? (
+                  {working ? (
+                    <>
+                      <p className="muted micro-copy">
+                        {conversation.observedMatchShows} independently completed poor tag outings ·
+                        Professional working confidence {conversation.workingTrustDelta?.toFixed(1) ?? "—"}.
+                        The World ledger recorded this before the conversation.
+                      </p>
+                      <a href="/talent/teams" style={{ color: "#5de9ce", fontWeight: 850 }}>
+                        Review tag teams →
+                      </a>
+                      <p className="muted micro-copy">
+                        This is about professional in-ring execution, not personal hostility.
+                        None of your replies breaks up the team, changes a scripted storyline, alters morale or restores trust automatically.
+                      </p>
+                    </>
+                  ) : gimmick ? (
                     <>
 
                       <p className="muted micro-copy">
@@ -281,7 +303,8 @@ export default function BackstageClient(): React.JSX.Element {
                     <p className="muted body-copy">You responded: {REPLIES.find((reply) => reply.value === conversation.response)?.label ?? "Response recorded"}.
                       This conversation is now part of your promotion history. {pitch ? "No team has been created automatically."
                         : rivalry ? "No Programme has been created automatically."
-                        : gimmick ? "Their existing gimmick is unchanged until you edit it." : ""}</p>
+                        : gimmick ? "Their existing gimmick is unchanged until you edit it."
+                        : working ? "Your choice was recorded. Future wrestling remains yours to book." : ""}</p>
                   )}
                 </article>
               );

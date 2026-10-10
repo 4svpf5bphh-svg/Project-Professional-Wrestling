@@ -58,6 +58,8 @@ function scene(
       return `${printableName(names.get(entry.rivalPersonId ?? ""))} and I have had ${entry.sharedSinglesMatches ?? 0} singles matches the crowd got into. I reckon there's a programme there, if you want to book it.`;
     case "TEAM_MOMENT":
       return `The tag matches with ${printableName(names.get(entry.partnerPersonId ?? ""))} are clicking. We've got ${entry.sharedTagMatches ?? 0} good recent outings together. Feels like we're finding our rhythm.`;
+    case "WORKING_PARTNERSHIP_CONCERN":
+      return `The last ${entry.observedMatchShows} rough tag outings with ${printableName(names.get(entry.partnerPersonId ?? ""))} have me thinking about how we work together. The execution hasn't been there, and I want to discuss our options before we book the next one. What's your view?`;
     case "GIMMICK_CHANGE_PITCH":
       return `It's been ${entry.observedMatchShows} matches and the crowds aren't connecting as much as we'd hoped. I wonder if a ${title(entry.suggestedGimmickArchetype)} direction could work better than the current ${title(entry.currentGimmickArchetype)} character. What do you think?`;
   }

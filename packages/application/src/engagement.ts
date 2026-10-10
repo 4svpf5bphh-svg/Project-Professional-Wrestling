@@ -7,7 +7,8 @@ export type PlayerActivityStatus = "ACTIVE" | "WARNING" | "STEWARDED";
 export type OpportunityCategory = "TALENT" | "MARKET" | "BUSINESS" | "WORLD";
 export type StewardshipExitRequestStatus = "OPEN" | "SETTLED" | "WITHDRAWN";
 export type BackstageConversationStatus = "OPEN" | "ANSWERED" | "NOTED";
-export type BackstageResponse = "HEAR_OUT" | "EXPLAIN_PLAN" | "STAND_FIRM" | "PROMISE_FEATURED_BOOKING" | "CONSIDER_TAG_TEAM" | "PASS_TAG_TEAM" | "CONSIDER_RIVALRY" | "PASS_RIVALRY" | "CONSIDER_GIMMICK_CHANGE" | "PASS_GIMMICK_CHANGE";
+export type BackstageResponse = "HEAR_OUT" | "EXPLAIN_PLAN" | "STAND_FIRM" | "PROMISE_FEATURED_BOOKING" | "CONSIDER_TAG_TEAM" | "PASS_TAG_TEAM" | "CONSIDER_RIVALRY" | "PASS_RIVALRY" | "CONSIDER_GIMMICK_CHANGE" | "PASS_GIMMICK_CHANGE"
+  | "DISCUSS_WORKING_PLAN" | "KEEP_WORKING_PAIR" | "CONSIDER_PARTNER_CHANGE";
 
 export type BackstagePromiseStatus = "PENDING" | "FULFILLED" | "NOT_DELIVERED" | "NO_OPPORTUNITY" | "EXCUSED";
 
@@ -42,7 +43,7 @@ export interface BackstageConversation {
   promotionId: Id;
   wrestlerId: Id;
   sourceContractId: Id;
-  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH";
+  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH" | "WORKING_PARTNERSHIP_CONCERN";
   createdDate: PpwDate;
   status: BackstageConversationStatus;
   response: BackstageResponse | null;
@@ -58,6 +59,9 @@ export interface BackstageConversation {
   rivalPersonId?: Id | null;
   sharedSinglesMatches?: number;
   professionalTrustAtPitch?: number;
+  /** World-locked source and exact strain, not hearsay or a scripted betrayal. */
+  workingSourceLedgerId?: Id;
+  workingTrustDelta?: number;
   /** Optional observed tag partnership familiarity at the time of the idea. */
   tagFamiliarityAtPitch?: number;
   /** Fictional interest used to surface this idea, frozen for historical context. */
@@ -518,6 +522,19 @@ export function openBackstageConversation(
       || conversation.professionalTrustAtPitch < 60 || conversation.professionalTrustAtPitch > 100) {
       throw new Error("positive locker-room moment requires verified relationship and match evidence");
     }
+  } else if (conversation.kind === "WORKING_PARTNERSHIP_CONCERN") {
+    if (conversation.promisedRole !== null || !conversation.partnerPersonId
+      || conversation.partnerPersonId === conversation.wrestlerId
+      || !conversation.workingSourceLedgerId
+      || !Number.isSafeInteger(conversation.observedMatchShows) || conversation.observedMatchShows < 3
+      || typeof conversation.workingTrustDelta !== "number"
+      || !Number.isFinite(conversation.workingTrustDelta)
+      || conversation.workingTrustDelta >= 0 || conversation.workingTrustDelta < -0.6
+      || typeof conversation.professionalTrustAtPitch !== "number"
+      || conversation.professionalTrustAtPitch < -100
+      || conversation.professionalTrustAtPitch > 100) {
+      throw new Error("partnership concern needs a frozen World-locked working-strain record");
+    }
   } else if (conversation.kind === "GIMMICK_CHANGE_PITCH") {
     if (conversation.promisedRole !== null
       || !Number.isSafeInteger(conversation.observedMatchShows)
@@ -557,7 +574,8 @@ export function answerBackstageConversation(
   const pitchReplies: BackstageResponse[] = ["CONSIDER_TAG_TEAM", "PASS_TAG_TEAM"];
   const rivalryReplies: BackstageResponse[] = ["CONSIDER_RIVALRY", "PASS_RIVALRY"];
   const gimmickReplies: BackstageResponse[] = ["CONSIDER_GIMMICK_CHANGE", "PASS_GIMMICK_CHANGE"];
-  if (![...concernReplies, ...pitchReplies, ...rivalryReplies, ...gimmickReplies].includes(response)) throw new Error("unsupported Backstage response");
+  const workingReplies: BackstageResponse[] = ["DISCUSS_WORKING_PLAN", "KEEP_WORKING_PAIR", "CONSIDER_PARTNER_CHANGE"];
+  if (![...concernReplies, ...pitchReplies, ...rivalryReplies, ...gimmickReplies, ...workingReplies].includes(response)) throw new Error("unsupported Backstage response");
   if ((response === "PROMISE_FEATURED_BOOKING") !== (promise !== null)) {
     throw new Error("a booking promise must have an explicit, tracked commitment");
   }
@@ -570,7 +588,8 @@ export function answerBackstageConversation(
   if (conversation.status !== "OPEN") throw new Error("Backstage conversation already answered");
   if (!(conversation.kind === "TAG_TEAM_PITCH" ? pitchReplies
     : conversation.kind === "RIVALRY_PITCH" ? rivalryReplies
-    : conversation.kind === "GIMMICK_CHANGE_PITCH" ? gimmickReplies : concernReplies).includes(response)) {
+    : conversation.kind === "GIMMICK_CHANGE_PITCH" ? gimmickReplies
+    : conversation.kind === "WORKING_PARTNERSHIP_CONCERN" ? workingReplies : concernReplies).includes(response)) {
     throw new Error("response does not match Backstage conversation type");
   }
   conversation.status = "ANSWERED";

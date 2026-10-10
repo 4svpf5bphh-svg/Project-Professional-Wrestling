@@ -19,6 +19,8 @@ import { generateTagTeamPitches } from "../packages/application/src/backstage-pi
 import { generateRivalryPitches } from "../packages/application/src/backstage-rivalries.js";
 import { generateTeamMoments } from "../packages/application/src/backstage-moments.js";
 import { generateGimmickChangePitches } from "../packages/application/src/backstage-gimmicks.js";
+import { generateWorkingPartnershipConcerns } from "../packages/application/src/backstage-working-concerns.js";
+import { WORKING_PARTNERSHIP_STRAIN_LEDGER_TYPE } from "../packages/application/src/working-relationship-evolution.js";
 import { assessCreativeFollowThrough } from "../packages/application/src/backstage-follow-through.js";
 import { createProgramme } from "../packages/sim-core/src/programmes.js";
 import { chooseCreativePitchSpeaker, wrestlerCreativeInterestScores } from "../packages/application/src/wrestler-creative-interests.js";
@@ -1532,6 +1534,150 @@ test("Declined creative ideas never receive follow-through, even after unrelated
       fields:{...defaultWrestlerCreativeFields(f.person),ringName:"Independent Change"}}});
   ok(assessCreativeFollowThrough(a)===0&&note.creativeFollowThrough===undefined,
     "a previous rejection was retroactively turned into an agreement");
+});
+
+
+test("World-locked working strain creates one private, optional review with safe booking choices", () => {
+  const f = fixture();
+  const { aggregate, promotion, person, contract } = f;
+  const state = aggregate.state;
+  const other = activeContractsForPromotion(state, promotion.id)
+    .find(c => c.personId !== person.id);
+  ok(other, "fixture needs another wrestler on the same active roster");
+  other!.startDate = { ...contract.startDate };
+  other!.endDate = { ...contract.endDate };
+  other!.dateEntitlement = 12;
+  other!.datesUsed = 2;
+  const sourceDate = addPpwWeeks(state.world.currentDate, -1, state.ruleset.weeksPerYear);
+  const eventId = "backstage-strained-team-show";
+  const matchId = "backstage-strained-team-match";
+  const event = {
+    ...state.events[0]!, id: eventId,
+    date: sourceDate, promotionId: promotion.id, status: "COMPLETED" as const,
+    matchCount: 1, averageMatchRating: 1.2, crowdResponse: 28,
+  };
+  const match: Match = {
+    ...state.matches[0]!, id: matchId, eventId, promotionId: promotion.id,
+    type: "TAG", status: "COMPLETED",
+    executionQuality: 28, crowdResponse: 26,
+  };
+  state.events.push(event);
+  state.matches.push(match);
+  const ids = [person.id, other!.personId, ...state.people
+    .filter(p => p.id !== person.id && p.id !== other!.personId)
+    .slice(0, 2).map(p => p.id)];
+  ok(ids.length === 4, "fixture cannot form a valid tag match");
+  state.matchParticipants.push(...ids.map((personId, i) => ({
+    id: "backstage-strain-participant-" + i,
+    worldId: state.world.id, eventId, matchId, personId,
+    side: i < 2 ? "A" as const : "B" as const, won: false,
+  })));
+  const [a, b] = [ids[0]!, ids[1]!].sort();
+  state.ledger.push({
+    id: "ledger:working-strain-test",
+    worldId: state.world.id, date: sourceDate, order: state.ledger.length + 1,
+    type: WORKING_PARTNERSHIP_STRAIN_LEDGER_TYPE,
+    significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+    entityIds: [a!, b!],
+    payload: { sourceMatchId: matchId, verifiedShows: 3, trustDelta: -0.6,
+      familiarityDelta: 0, reason: "REPEATED_POOR_TAG_EXECUTION" },
+  });
+  const beforeState = JSON.stringify(state);
+  ok(generateWorkingPartnershipConcerns(aggregate) === 1,
+    "verified home-promotion strain should open one concern");
+  ok(generateWorkingPartnershipConcerns(aggregate) === 0,
+    "retry duplicated an already recorded private working concern");
+  ok(JSON.stringify(state) === beforeState,
+    "raising a concern changed match results, morale or professional trust");
+  const view = buildPlayerBackstageView(aggregate, "backstage-owner");
+  const issue = view.conversations.find(c => c.kind === "WORKING_PARTNERSHIP_CONCERN");
+  ok(issue?.partnerPersonId && issue.workingSourceLedgerId === "ledger:working-strain-test"
+    && issue.observedMatchShows === 3 && issue.workingTrustDelta === -0.6
+    && issue.dialogue.speech.includes("execution"),
+    "working concern did not freeze the proven failure and named partner");
+  const alert = buildPlayerAttention(aggregate, "backstage-owner")
+    .find(item => item.attentionId === "backstage:" + issue?.conversationId);
+  ok(alert?.title.includes("difficult tag partnership") && alert.deepLink === "/backstage"
+    && alert.category === "IMPORTANT", "owner was not told about the private working concern");
+  const snapshot = cloneApplicationWorld(aggregate);
+  ok(snapshot.engagement?.backstageConversations.some(c =>
+    c.conversationId === issue?.conversationId && c.workingSourceLedgerId === "ledger:working-strain-test"),
+    "persistence roundtrip lost frozen working-strain evidence");
+
+  const command = {
+    commandType: "RESPOND_BACKSTAGE_CONVERSATION" as const,
+    worldId: state.world.id, playerId: "backstage-owner",
+    requestId: "backstage-reviewed-strain",
+    payload: { conversationId: issue!.conversationId, response: "DISCUSS_WORKING_PLAN" as const },
+  };
+  let rejected = false;
+  try { respondBackstageConversationCommand(aggregate, {
+    ...command, requestId: "wrong-working-response",
+    payload: { ...command.payload, response: "CONSIDER_GIMMICK_CHANGE" as "DISCUSS_WORKING_PLAN" },
+  }); } catch { rejected = true; }
+  ok(rejected, "gimmick response was accepted for a working concern");
+  rejected = false;
+  try { respondBackstageConversationCommand(aggregate, {
+    ...command, requestId: "stranger-working-response", playerId: "unregistered-owner",
+  }); } catch { rejected = true; }
+  ok(rejected, "other controller could answer a private working concern");
+  const saved = respondBackstageConversationCommand(aggregate, command);
+  ok(saved.response === "DISCUSS_WORKING_PLAN" && saved.status === "ANSWERED",
+    "booker's management choice was not recorded");
+  ok(respondBackstageConversationCommand(aggregate, command).response === "DISCUSS_WORKING_PLAN",
+    "command retry did not preserve the same answer");
+  ok(JSON.stringify(state) === beforeState,
+    "answering working concern changed simulation or scripted outcomes");
+  ok(buildPlayerBackstageView(aggregate, "backstage-owner").openCount === 0,
+    "answered working concern remained open");
+  ok(generateWorkingPartnershipConcerns(aggregate) === 0,
+    "answered working concern reopened without fresh World evidence");
+});
+
+test("Outside promotion work, out-of-date strain and zero roster dates do not create private grievances", () => {
+  const { aggregate, promotion, person, contract } = fixture();
+  const state = aggregate.state;
+  const other = activeContractsForPromotion(state, promotion.id)
+    .find(c => c.personId !== person.id)!;
+  other.startDate = { ...contract.startDate };
+  other.endDate = { ...contract.endDate };
+  other.dateEntitlement = 10;
+  other.datesUsed = 0;
+  const sourceDate = addPpwWeeks(state.world.currentDate, -1, state.ruleset.weeksPerYear);
+  const foreignPromotion = state.promotions.find(p => p.id !== promotion.id)!;
+  state.ledger.push({
+    id: "ledger:outside-strain",
+    worldId: state.world.id, date: sourceDate, order: state.ledger.length + 1,
+    type: WORKING_PARTNERSHIP_STRAIN_LEDGER_TYPE,
+    significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+    entityIds: [person.id, other.personId].sort(),
+    payload: { sourceMatchId: "missing-foreign-match", verifiedShows: 3, trustDelta: -0.6 },
+  });
+  ok(generateWorkingPartnershipConcerns(aggregate) === 0,
+    "another promotion's ledger record created our private backstage concern");
+  const event = { ...state.events[0]!, id: "foreign-event", promotionId: foreignPromotion.id,
+    date: sourceDate, status: "COMPLETED" as const };
+  state.events.push(event);
+  const match = { ...state.matches[0]!, id: "missing-foreign-match", eventId: event.id,
+    promotionId: foreignPromotion.id, type: "TAG" as const, status: "COMPLETED" as const,
+    executionQuality: 25 };
+  state.matches.push(match);
+  const others = state.people.filter(p => p.id !== person.id && p.id !== other.personId).slice(0, 2);
+  state.matchParticipants.push(...[person.id, other.personId, others[0]!.id, others[1]!.id].map((personId, i) => ({
+    id: "foreign-strain-p-" + i, worldId: state.world.id, matchId: match.id,
+    eventId: event.id, personId, side: i < 2 ? "A" as const : "B" as const, won: false,
+  })));
+  ok(generateWorkingPartnershipConcerns(aggregate) === 0,
+    "foreign promotion's genuine completed match generated an owner-only demand here");
+  match.promotionId = promotion.id;
+  event.promotionId = promotion.id;
+  other.datesUsed = other.dateEntitlement;
+  ok(generateWorkingPartnershipConcerns(aggregate) === 0,
+    "exhausted finite dates triggered an unfulfillable wrestler request");
+  other.datesUsed = 0;
+  state.world.currentDate = addPpwWeeks(state.world.currentDate, 2, state.ruleset.weeksPerYear);
+  ok(generateWorkingPartnershipConcerns(aggregate) === 0,
+    "out-of-date World strain created a delayed concern when no longer relevant");
 });
 
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");
