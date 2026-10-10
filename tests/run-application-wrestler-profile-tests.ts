@@ -18,6 +18,8 @@ import {
   joinPlayerToWorld,
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
+import { GIMMICK_CATALOG, gimmickDefinition } from "../packages/application/src/gimmick-catalog.js";
+import { CURATED_WRESTLER_CHARACTERS } from "../packages/content/src/real-wrestler-characters.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { activeContractsForPromotion, createWorld } from "../packages/sim-core/src/index.js";
 
@@ -113,10 +115,10 @@ test("wrestler profile does not leak a rival's private contract or internal cond
   ok(view.relationship?.ourContract === null, "rival contract was exposed as our contract");
   ok(view.relationship?.morale === null && view.relationship?.fatigue === null && view.relationship?.wear === null, "rival internal condition leaked");
   ok(view.relationship?.bookingEvidence === null, "a rival's private contract-role expectations leaked");
-  ok(view.person.baselinePresentation.ringName === rival!.name
-    && view.person.baselinePresentation.gimmickArchetype === "AUTHENTIC"
-    && view.person.baselinePresentation.finishingMove === null,
-    "all wrestlers need a neutral public presentation without invented finishing moves");
+  const publicBaseline=defaultWrestlerCreativeFields(rival!);
+  ok(view.person.baselinePresentation.ringName===rival!.name
+    && JSON.stringify(view.person.baselinePresentation)===JSON.stringify(publicBaseline),
+    "non-roster character identity must use the shared public baseline");
   const serialized = JSON.stringify(view);
   ok(!serialized.includes("999888777"), "rival weekly guarantee leaked into profile");
   ok(!serialized.includes("888777666"), "rival appearance fee leaked into profile");
@@ -463,6 +465,78 @@ test("Wrestler profiles expose only controller-owned Backstage history, includin
   ok(!buildPlayerWrestlerProfileView(aggregate,"player-b",person.id)
     .backstageHistory.some(x=>x.conversationId===partnerEntry.conversationId),
     "partner history leaked to rival promotion");
+});
+
+
+test("Gimmick catalogue is substantial, consistent and uses authored definitions",()=>{
+  ok(GIMMICK_CATALOG.length>=65 && new Set(GIMMICK_CATALOG.map(entry=>entry.id)).size===GIMMICK_CATALOG.length,
+    "character catalogue lacks variety or duplicates template IDs");
+  ok(new Set(GIMMICK_CATALOG.map(entry=>entry.family)).size>=9,
+    "historical categories have too few families");
+  ok(GIMMICK_CATALOG.every(entry=>entry.description.length>12
+    &&entry.label.length>2 && gimmickDefinition(entry.id).id===entry.id),
+    "missing predetermined catalogue descriptions");
+  const unique=new Set(CURATED_WRESTLER_CHARACTERS.map(entry=>entry.name.toLowerCase()));
+  ok(unique.size===CURATED_WRESTLER_CHARACTERS.length
+    &&CURATED_WRESTLER_CHARACTERS.length>=20,
+    "curated identities are duplicated or undersized");
+  ok(CURATED_WRESTLER_CHARACTERS.every(entry=>
+    GIMMICK_CATALOG.some(g=>g.id===entry.gimmickArchetype)
+    &&entry.finishingMove?.name.length>0 &&entry.sourceUrl.startsWith("https://")),
+    "curated persona references invalid gimmicks or absent finisher provenance");
+});
+
+test("Researched real characters carry to fresh promotions without overwritten private edits",()=>{
+  const {aggregate,promotionAId,promotionBId}=fixture(73183);
+  const person=structuredClone(aggregate.state.people[0]!);
+  person.name="Roman Reigns";
+  const baseline=defaultWrestlerCreativeFields(person);
+  ok(baseline.gimmickArchetype==="TRIBAL_CHIEF"
+    &&baseline.signatureMove?.name==="Superman Punch"
+    &&baseline.finishingMove?.name==="Spear",
+    "Roman Reigns was still generic Authentic with blank moves");
+  const omega={...person,name:"Kenny Omega"};
+  const omegaBase=defaultWrestlerCreativeFields(omega);
+  ok(omegaBase.gimmickArchetype==="BEST_BOUT_MACHINE"
+    &&omegaBase.finishingMove?.name==="One Winged Angel"
+    &&omegaBase.signatureMove?.name==="V-Trigger",
+    "Kenny Omega lost his shared wrestling identity");
+  const unknown={...person,name:"Completely Fictional Roster Placeholder"};
+  const noResearch=defaultWrestlerCreativeFields(unknown);
+  ok(noResearch.finishingMove===null &&noResearch.signatureMove===null,
+    "missing research must not fabricate signature moves");
+  const engage=createWorldEngagementState(aggregate.state.world.id);
+  const a=wrestlerCreativeProfileFor(engage,promotionAId,person);
+  const b=wrestlerCreativeProfileFor(engage,promotionBId,person);
+  ok(JSON.stringify(a)===JSON.stringify(b),
+    "two promotions initially see unrelated identities for the same wrestler");
+  engage.wrestlerCreativeProfiles!.push({
+    worldId:aggregate.state.world.id,promotionId:promotionAId,personId:person.id,
+    changedDate:{...aggregate.state.world.currentDate},
+    fields:{...baseline,gimmickArchetype:"OUTLAW",finishingMove:null},
+    history:[{revision:5,date:{...aggregate.state.world.currentDate},
+      previous:baseline,next:{...baseline,gimmickArchetype:"OUTLAW",finishingMove:null}}],
+  });
+  const edited=wrestlerCreativeProfileFor(engage,promotionAId,person);
+  ok(edited.gimmickArchetype==="OUTLAW"&&edited.finishingMove===null,
+    "explicit player edits or deliberate cleared moves were overwritten by researched defaults");
+  ok(wrestlerCreativeProfileFor(engage,promotionBId,person).gimmickArchetype==="TRIBAL_CHIEF",
+    "legacy promotion edit modified another company's current presentation");
+  const legacyFields={...baseline,gimmickArchetype:"AUTHENTIC" as const,
+    signatureMove:null,finishingMove:null};
+  engage.wrestlerCreativeProfiles!.push({
+    worldId:aggregate.state.world.id,promotionId:promotionBId,personId:person.id,
+    changedDate:{...aggregate.state.world.currentDate},
+    fields:legacyFields,history:[{revision:6,date:{...aggregate.state.world.currentDate},
+      previous:legacyFields,next:{...legacyFields,ringName:"The Chief"}}],
+  });
+  const upgraded=wrestlerCreativeProfileFor(engage,promotionBId,person);
+  ok(upgraded.ringName==="The Chief"&&upgraded.gimmickArchetype==="TRIBAL_CHIEF"
+    &&upgraded.finishingMove?.name==="Spear",
+    "unchanged legacy blank profile was not enriched while preserving authored ring name");
+  const snapshot=cloneApplicationWorld({...aggregate,engagement:engage});
+  ok(snapshot.engagement?.wrestlerCreativeProfiles?.[1]?.fields.finishingMove===null,
+    "read-only fallback rewrote a persistent historical wrestler profile");
 });
 
 console.log(`\nApplication wrestler-profile tests: ${passed} passed, ${failed} failed`);
