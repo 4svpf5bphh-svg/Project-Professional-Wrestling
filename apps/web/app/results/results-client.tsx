@@ -240,7 +240,7 @@ export default function ResultsClient(): React.JSX.Element {
                           return (
                             <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
                               <div className={styles.matchTop}>
-                                <span>SLOT {slot.order} · SEGMENT · {label(slot.segment.type)}</span>
+                                <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : label(slot.segment.type)}</span>
                                 <strong>
                                   {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
                                     ? `${slot.segment.plannedLengthMinutes} min`
@@ -252,13 +252,68 @@ export default function ResultsClient(): React.JSX.Element {
                                   <span key={participant.personId}>{participant.name}</span>
                                 ))}
                               </div>
+                              {slot.segment.type === "INTERRUPTION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.interruptionOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Interrupter"} interrupts {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "speaker"} · {slot.segment.interruptionOutcome === "VERBAL_EXCHANGE" ? "Verbal exchange" : slot.segment.interruptionOutcome === "INTERRUPTER_PREVAILS" ? "Interrupter gets the better of them" : slot.segment.interruptionOutcome === "SPEAKER_PREVAILS" ? "Original speaker gets the better of them" : "Brawl erupts"}</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "STABLE_RECONCILIATION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.stableReconciliationOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Representative"} approaches former member {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Former member"} of {slot.segment.stableName ?? "the stable"} · {slot.segment.stableReconciliationOutcome === "RECONCILED" ? "Reconciled on-screen" : "Reconciliation rebuffed"}</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "STABLE_EXIT" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.stableExitOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Departing member"} {slot.segment.stableExitOutcome === "EXPELLED" ? "expelled from" : "walks out of"} {slot.segment.stableName ?? "the stable"} · {slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Representative"} represents the group</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "STABLE_INVITATION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.stableInvitationOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Representative"} invites {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Recruit"} to {slot.segment.stableName ?? "stable"} · {slot.segment.stableInvitationOutcome === "ACCEPTED" ? "Accepted on-screen" : "Refused on-screen"}</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "CONTRACT_SIGNING" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.signingOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Proposer"} and {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Responder"} · {slot.segment.signingOutcome === "SIGNED" ? "Signed on-screen" : slot.segment.signingOutcome === "REJECTED" ? "Proposal rejected" : slot.segment.signingOutcome === "WALKOUT" ? "Walkout" : "Signing broke into a brawl"}</span>
+                                </div>
+                              ) : null}
+                              {(slot.segment.type === "CHALLENGE" || slot.segment.type === "CONFRONTATION") && slot.segment.initiatorPersonId && slot.segment.targetPersonId ? (
+                                  <div className={styles.matchMeta}>
+                                    <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Wrestler"} {slot.segment.type === "CHALLENGE" ? "challenged" : "confronted"} {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "opponent"}{slot.segment.type === "CHALLENGE" && slot.segment.challengeResponse
+                                      ? ` · ${slot.segment.challengeResponse === "ACCEPTED" ? "Challenge accepted" : slot.segment.challengeResponse === "REFUSED" ? "Challenge refused" : "Challenge left open"}`
+                                      : ""}</span>
+                                  </div>
+                                ) : null}
+                              {slot.segment.type === "POST_MATCH_ASSAULT" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.sourceMatchId ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "Aggressor"} attacked {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} after the match ({slot.segment.victimMatchOutcome === "WON" ? "victim won" : slot.segment.victimMatchOutcome === "LOST" ? "victim lost" : "match drawn"})</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "RESCUE" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.rescuerPersonId ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.rescuerPersonId)?.name ?? "Rescuer"} saved {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} from {slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "aggressor"}</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "ATTACK" && slot.segment.attackerPersonId && slot.segment.victimPersonId ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "Attacker"} attacked {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"}</span>
+                                </div>
+                              ) : null}
                               <div className={styles.matchMeta}>
                                 <span>{slot.segment.programmeId ? "Programme attached" : "Standalone segment"}</span>
+                                {slot.segment.type === "ATTACK" && slot.segment.attackObjective ? (
+                                  <span>Booking objective: {label(slot.segment.attackObjective)}</span>
+                                ) : null}
                                 {slot.segment.executionQuality !== null ? <span>Execution {decimal(slot.segment.executionQuality)}</span> : null}
                                 {slot.segment.type === "TURN" && slot.segment.turnTargetAlignment ? (
-                                  <span>
-                                    {slot.segment.participants.find((participant) => participant.personId === slot.segment.turnPersonId)?.name ?? "Wrestler"} → {label(slot.segment.turnTargetAlignment)}
-                                  </span>
+                                  <>
+                                    <span>
+                                      {slot.segment.participants.find((participant) => participant.personId === slot.segment.turnPersonId)?.name ?? "Wrestler"} → {label(slot.segment.turnTargetAlignment)}
+                                    </span>
+                                    {slot.segment.turnPresentation === "BETRAYAL" && slot.segment.betrayedPersonId ? (
+                                      <span>Betrayed {slot.segment.participants.find((person) => person.personId === slot.segment.betrayedPersonId)?.name ?? "another wrestler"}</span>
+                                    ) : null}
+                                  </>
                                 ) : slot.segment.executionQuality === null ? <span>Resolved show history</span> : null}
                               </div>
                               {slot.segment.factors.length > 0 ? (
@@ -295,6 +350,11 @@ export default function ResultsClient(): React.JSX.Element {
                               <span>{match.actualLengthMinutes} min{match.actualLengthMinutes !== match.plannedLengthMinutes ? ` / ${match.plannedLengthMinutes} planned` : ""}</span>
                               <span>Crowd {decimal(match.crowdResponse)}</span>
                             </div>
+                            {match.interference ? (
+                              <div className={styles.matchMeta}>
+                                <span>Run-in: {match.interference.name} assisted Side {match.interference.aidedSide} · {match.interference.outcome === "SUCCESS" ? "Succeeded (protected finish)" : match.interference.outcome === "ABORTED" ? "Aborted" : "Thwarted"}</span>
+                              </div>
+                            ) : null}
                             {match.styleResult ? (
                               <div className={styles.styleResult}>
                                 <div>
@@ -423,7 +483,7 @@ export default function ResultsClient(): React.JSX.Element {
                               return (
                                 <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
                                   <div className={styles.matchTop}>
-                                    <span>SLOT {slot.order} · SEGMENT · {label(slot.segment.type)}</span>
+                                    <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : label(slot.segment.type)}</span>
                                     <strong>
                                       {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
                                         ? "SEGMENT"
@@ -437,11 +497,61 @@ export default function ResultsClient(): React.JSX.Element {
                                       </a>
                                     ))}
                                   </div>
+                                  {slot.segment.type === "INTERRUPTION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.interruptionOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Interrupter"} interrupts {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "speaker"} · {slot.segment.interruptionOutcome === "VERBAL_EXCHANGE" ? "Verbal exchange" : slot.segment.interruptionOutcome === "INTERRUPTER_PREVAILS" ? "Interrupter gets the better of them" : slot.segment.interruptionOutcome === "SPEAKER_PREVAILS" ? "Original speaker gets the better of them" : "Brawl erupts"}</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "STABLE_RECONCILIATION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.stableReconciliationOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Representative"} approaches former member {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Former member"} of {slot.segment.stableName ?? "the stable"} · {slot.segment.stableReconciliationOutcome === "RECONCILED" ? "Reconciled on-screen" : "Reconciliation rebuffed"}</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "STABLE_EXIT" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.stableExitOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Departing member"} {slot.segment.stableExitOutcome === "EXPELLED" ? "expelled from" : "walks out of"} {slot.segment.stableName ?? "the stable"} · {slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Representative"} represents the group</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "STABLE_INVITATION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.stableInvitationOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Representative"} invites {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Recruit"} to {slot.segment.stableName ?? "stable"} · {slot.segment.stableInvitationOutcome === "ACCEPTED" ? "Accepted on-screen" : "Refused on-screen"}</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "CONTRACT_SIGNING" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.signingOutcome ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Proposer"} and {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Responder"} · {slot.segment.signingOutcome === "SIGNED" ? "Signed on-screen" : slot.segment.signingOutcome === "REJECTED" ? "Proposal rejected" : slot.segment.signingOutcome === "WALKOUT" ? "Walkout" : "Signing broke into a brawl"}</span>
+                                </div>
+                              ) : null}
+                              {(slot.segment.type === "CHALLENGE" || slot.segment.type === "CONFRONTATION") && slot.segment.initiatorPersonId && slot.segment.targetPersonId ? (
+                                  <div className={styles.matchMeta}>
+                                    <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Wrestler"} {slot.segment.type === "CHALLENGE" ? "challenged" : "confronted"} {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "opponent"}{slot.segment.type === "CHALLENGE" && slot.segment.challengeResponse
+                                      ? ` · ${slot.segment.challengeResponse === "ACCEPTED" ? "Challenge accepted" : slot.segment.challengeResponse === "REFUSED" ? "Challenge refused" : "Challenge left open"}`
+                                      : ""}</span>
+                                  </div>
+                                ) : null}
+                              {slot.segment.type === "POST_MATCH_ASSAULT" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.sourceMatchId ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "Aggressor"} attacked {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} after the match ({slot.segment.victimMatchOutcome === "WON" ? "victim won" : slot.segment.victimMatchOutcome === "LOST" ? "victim lost" : "match drawn"})</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "RESCUE" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.rescuerPersonId ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.rescuerPersonId)?.name ?? "Rescuer"} saved {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} from {slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "aggressor"}</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "ATTACK" && slot.segment.attackerPersonId && slot.segment.victimPersonId ? (
+                                    <div className={styles.matchMeta}>
+                                      <span>{slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "Attacker"} attacked {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"}</span>
+                                    </div>
+                                  ) : null}
                                   {slot.segment.type === "TURN" && slot.segment.turnTargetAlignment ? (
                                     <div className={styles.matchMeta}>
                                       <span>
                                         {slot.segment.participants.find((participant) => participant.personId === slot.segment.turnPersonId)?.name ?? "Wrestler"} → {label(slot.segment.turnTargetAlignment)}
                                       </span>
+                                      {slot.segment.turnPresentation === "BETRAYAL" && slot.segment.betrayedPersonId ? (
+                                        <span>Betrayed {slot.segment.participants.find((person) => person.personId === slot.segment.betrayedPersonId)?.name ?? "another wrestler"}</span>
+                                      ) : null}
                                     </div>
                                   ) : null}
                                 </article>
@@ -473,6 +583,11 @@ export default function ResultsClient(): React.JSX.Element {
                                   <span>{match.actualLengthMinutes} min</span>
                                   <span>Crowd {decimal(match.crowdResponse)}</span>
                                 </div>
+                                {match.interference ? (
+                                  <div className={styles.matchMeta}>
+                                    <span>Run-in: {match.interference.name} assisted Side {match.interference.aidedSide} · {match.interference.outcome === "SUCCESS" ? "Succeeded" : match.interference.outcome === "ABORTED" ? "Aborted" : "Thwarted"}</span>
+                                  </div>
+                                ) : null}
                                 {match.titleOutcomes.map((title) => (
                                   <a className={`${styles.consequence} ${styles.titleLink}`} href="/championships" key={title.championshipId}>
                                     <strong>{title.championshipName}</strong>

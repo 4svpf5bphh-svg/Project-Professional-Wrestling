@@ -23,6 +23,15 @@ import {
   type DetailedMatchDraft,
   type DetailedShowSegmentDraft,
   type DetailedShowSegmentType,
+  type AttackPresentation,
+  type AttackObjective,
+  type TurnPresentation,
+  type SigningOutcome,
+  type StableInvitationOutcome,
+  type StableExitOutcome,
+  type StableReconciliationOutcome,
+  type ChallengeResponse,
+  type InterruptionOutcome,
   type DetailedShowSlotRef,
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
@@ -96,6 +105,9 @@ export interface AlphaCardMatchView {
   readiness?: AlphaCardMatchReadinessView;
   plannedLengthMinutes: number;
   plannedFinish?: MatchFinish;
+  interfererPersonId?: Id | null;
+  interferenceSide?: MatchSide | null;
+  interferenceOutcome?: "SUCCESS" | "THWARTED" | null;
 }
 
 export interface AlphaCardSegmentView {
@@ -104,8 +116,25 @@ export interface AlphaCardSegmentView {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  attackerPersonId?: Id | null;
+  victimPersonId?: Id | null;
+  rescuerPersonId?: Id | null;
+  sourceDraftMatchId?: string | null;
+  initiatorPersonId?: Id | null;
+  targetPersonId?: Id | null;
+  signingOutcome?: SigningOutcome | null;
+  stableId?: Id | null;
+  stableInvitationOutcome?: StableInvitationOutcome | null;
+  stableExitOutcome?: StableExitOutcome | null;
+  stableReconciliationOutcome?: StableReconciliationOutcome | null;
+  challengeResponse?: ChallengeResponse | null;
+  interruptionOutcome?: InterruptionOutcome | null;
+  attackPresentation?: AttackPresentation | null;
+  attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
   turnTargetAlignment?: WrestlerAlignment | null;
+  turnPresentation?: TurnPresentation | null;
+  betrayedPersonId?: Id | null;
 }
 
 export interface AlphaCardProgrammeView {
@@ -151,6 +180,13 @@ export interface AlphaCardTeamView {
   memberNames: [string, string];
 }
 
+export interface AlphaCardStableView {
+  stableId: Id;
+  name: string;
+  memberIds: Id[];
+  formerMemberIds: Id[];
+}
+
 export interface AlphaCurrentWeekCardView {
   world: {
     worldId: Id;
@@ -176,6 +212,7 @@ export interface AlphaCurrentWeekCardView {
   participants: AlphaCardParticipantView[];
   availableParticipants: AlphaCardParticipantView[];
   availableTeams: AlphaCardTeamView[];
+  availableStables: AlphaCardStableView[];
   matches: AlphaCardMatchView[];
   segments: AlphaCardSegmentView[];
   runningOrder: AlphaCardSlotView[];
@@ -212,8 +249,15 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "PROMO",
   "INTERVIEW",
   "CONFRONTATION",
+  "INTERRUPTION",
   "CHALLENGE",
+  "CONTRACT_SIGNING",
+  "STABLE_INVITATION",
+  "STABLE_EXIT",
+  "STABLE_RECONCILIATION",
   "ATTACK",
+  "RESCUE",
+  "POST_MATCH_ASSAULT",
   "CELEBRATION",
   "TURN",
 ]);
@@ -264,6 +308,22 @@ function normalizeCompleteCard(
     }
 
     const ids = [...match.sideAIds, ...match.sideBIds];
+    const interfererPersonId = match.interfererPersonId ?? null;
+    const interferenceSide = match.interferenceSide ?? null;
+    const interferenceOutcome = interfererPersonId ? (match.interferenceOutcome ?? "SUCCESS") : null;
+    if ((interfererPersonId === null) !== (interferenceSide === null)
+      || (interferenceSide !== null && !MATCH_SIDES.has(interferenceSide))) {
+      throw new Error("run-in requires an outside wrestler and the side they assist");
+    }
+    if (interferenceOutcome !== null && interferenceOutcome !== "SUCCESS" && interferenceOutcome !== "THWARTED") {
+      throw new Error("run-in outcome must be successful or thwarted");
+    }
+    if (interferenceOutcome === "SUCCESS" && interferenceSide !== match.intendedWinnerSide) {
+      throw new Error("successful run-in must aid the booked winning side");
+    }
+    if (interfererPersonId && ids.includes(interfererPersonId)) {
+      throw new Error("run-in wrestler cannot compete in the same match");
+    }
     if (new Set(ids).size !== ids.length) throw new Error("one wrestler cannot occupy multiple positions in a match");
     for (const personId of ids) {
       requiredText(personId, `matches[${index}] wrestler`, 128);
@@ -272,6 +332,7 @@ function normalizeCompleteCard(
       orderedParticipants.push(personId);
     }
 
+    if (interfererPersonId) orderedParticipants.push(interfererPersonId);
     return {
       draftMatchId,
       type: match.type,
@@ -282,6 +343,7 @@ function normalizeCompleteCard(
       ...(style === undefined ? {} : { style }),
       plannedLengthMinutes: match.plannedLengthMinutes,
       plannedFinish,
+      ...(interfererPersonId ? { interfererPersonId, interferenceSide, interferenceOutcome } : {}),
     } satisfies DetailedMatchDraft;
   });
 
@@ -405,8 +467,14 @@ function normalizeSegments(
       requiredText(personId, `segments[${index}].participantIds[${personIndex}]`, 128)
     ));
     if (new Set(people).size !== people.length) throw new Error("segment cannot include the same wrestler twice");
-    if (["CONFRONTATION", "CHALLENGE", "ATTACK"].includes(segment.type) && people.length < 2) {
+    if (["CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION", "ATTACK"].includes(segment.type) && people.length < 2) {
       throw new Error(`${segment.type.toLowerCase()} segment requires at least two wrestlers`);
+    }
+    if (segment.type === "POST_MATCH_ASSAULT" && people.length < 2) {
+      throw new Error("POST_MATCH_ASSAULT segment requires two distinct wrestlers");
+    }
+    if (segment.type === "RESCUE" && people.length < 3) {
+      throw new Error("RESCUE segment requires three distinct wrestlers");
     }
     if (!Number.isInteger(segment.plannedLengthMinutes) || segment.plannedLengthMinutes < 2 || segment.plannedLengthMinutes > 20) {
       throw new Error("segment length must be an integer from 2 to 20 minutes");
@@ -419,7 +487,112 @@ function normalizeSegments(
       ? requiredText(segment.turnPersonId ?? "", `segments[${index}].turnPersonId`, 128)
       : null;
     const turnTargetAlignment = segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null;
+    const turnPresentation = segment.type === "TURN" ? (segment.turnPresentation ?? "REVEAL") : null;
+    const betrayedPersonId = segment.type === "TURN" && turnPresentation === "BETRAYAL"
+      ? requiredText(segment.betrayedPersonId ?? "", `segments[${index}].betrayedPersonId`, 128)
+      : null;
+    const attackerPersonId = (segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT")
+      ? requiredText(segment.attackerPersonId ?? "", `segments[${index}].attackerPersonId`, 128) : null;
+    const victimPersonId = (segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT")
+      ? requiredText(segment.victimPersonId ?? "", `segments[${index}].victimPersonId`, 128) : null;
+    const sourceDraftMatchId = segment.type === "POST_MATCH_ASSAULT"
+      ? requiredText(segment.sourceDraftMatchId ?? "", `segments[${index}].sourceDraftMatchId`, 128) : null;
+    const rescuerPersonId = segment.type === "RESCUE"
+      ? requiredText(segment.rescuerPersonId ?? "", `segments[${index}].rescuerPersonId`, 128) : null;
+    if ((segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT") && (
+      attackerPersonId === victimPersonId || !people.includes(attackerPersonId!) || !people.includes(victimPersonId!)
+    )) throw new Error("attack angle requires distinct attacker and victim among its participants");
+    if (segment.type === "RESCUE" && (
+      rescuerPersonId === attackerPersonId || rescuerPersonId === victimPersonId
+      || !people.includes(rescuerPersonId!)
+    )) throw new Error("RESCUE requires a distinct rescuer among segment participants");
+    const isDirected = segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING" || segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" || segment.type === "STABLE_RECONCILIATION";
+    const initiatorPersonId = isDirected && segment.initiatorPersonId != null
+      ? requiredText(segment.initiatorPersonId, `segments[${index}].initiatorPersonId`, 128) : null;
+    const targetPersonId = isDirected && segment.targetPersonId != null
+      ? requiredText(segment.targetPersonId, `segments[${index}].targetPersonId`, 128) : null;
+    if (isDirected && (initiatorPersonId !== null || targetPersonId !== null) && (
+      !initiatorPersonId || !targetPersonId || initiatorPersonId === targetPersonId
+      || !people.includes(initiatorPersonId) || !people.includes(targetPersonId)
+    )) throw new Error("directed segment requires distinct initiator and target among participants");
+    const challengeResponse = segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : null;
+    if (challengeResponse !== null && !["ACCEPTED", "REFUSED", "LEFT_OPEN"].includes(challengeResponse)) {
+      throw new Error("CHALLENGE has an unsupported scripted response");
+    }
+    const interruptionOutcome = segment.type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null;
+    if (segment.type === "INTERRUPTION" && (
+      !initiatorPersonId || !targetPersonId
+      || !["VERBAL_EXCHANGE", "INTERRUPTER_PREVAILS", "SPEAKER_PREVAILS", "BRAWL"].includes(interruptionOutcome!)
+    )) throw new Error("INTERRUPTION requires interrupter, original speaker and a scripted outcome");
+    const stableId = segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" || segment.type === "STABLE_RECONCILIATION"
+      ? (segment.stableId ? requiredText(segment.stableId, `segments[${index}].stableId`, 128) : null) : null;
+    const stableInvitationOutcome = segment.type === "STABLE_INVITATION" ? (segment.stableInvitationOutcome ?? "REFUSED") : null;
+    const stableExitOutcome = segment.type === "STABLE_EXIT" ? (segment.stableExitOutcome ?? "EXPELLED") : null;
+    const stableReconciliationOutcome = segment.type === "STABLE_RECONCILIATION"
+      ? (segment.stableReconciliationOutcome ?? "RECONCILED") : null;
+    if (segment.type === "STABLE_RECONCILIATION") {
+      const stable = (state.stables ?? []).find((entry) => entry.id === stableId
+        && entry.promotionId === promotionId && entry.status === "ACTIVE");
+      if (!stable) throw new Error("STABLE_RECONCILIATION requires an active stable in this promotion");
+      if (!initiatorPersonId || !targetPersonId
+        || !["RECONCILED", "REBUFFED"].includes(stableReconciliationOutcome!)) {
+        throw new Error("STABLE_RECONCILIATION needs a representative, former member and scripted outcome");
+      }
+      const members = (state.stableMemberships ?? []).filter((entry) => entry.stableId === stable.id);
+      if (!members.some((entry) => entry.personId === initiatorPersonId && entry.active)) {
+        throw new Error("reconciliation representative must be a current member");
+      }
+      if (!members.some((entry) => entry.personId === targetPersonId && !entry.active)
+        || members.some((entry) => entry.personId === targetPersonId && entry.active)) {
+        throw new Error("reconciliation target must be a former, not current, stable member");
+      }
+    }
+    if (segment.type === "STABLE_EXIT") {
+      const stable = (state.stables ?? []).find((entry) => entry.id === stableId
+        && entry.promotionId === promotionId && entry.status === "ACTIVE");
+      if (!stable) throw new Error("STABLE_EXIT requires an active stable in this promotion");
+      if (!initiatorPersonId || !targetPersonId || !["EXPELLED", "WALKED_OUT"].includes(stableExitOutcome!)) {
+        throw new Error("STABLE_EXIT needs representative, departing wrestler and a scripted exit");
+      }
+      const memberIds = new Set((state.stableMemberships ?? [])
+        .filter((entry) => entry.stableId === stable.id && entry.active).map((entry) => entry.personId));
+      if (!memberIds.has(initiatorPersonId) || !memberIds.has(targetPersonId)) {
+        throw new Error("stable exit requires two current members of the selected stable");
+      }
+    }
+    if (segment.type === "STABLE_INVITATION") {
+      const stable = (state.stables ?? []).find((entry) => entry.id === stableId
+        && entry.promotionId === promotionId && entry.status === "ACTIVE");
+      if (!stable) throw new Error("STABLE_INVITATION requires an active stable in this promotion");
+      if (!initiatorPersonId || !targetPersonId || !["ACCEPTED", "REFUSED"].includes(stableInvitationOutcome!)) {
+        throw new Error("STABLE_INVITATION needs recruiter, recruit and scripted acceptance or refusal");
+      }
+      const members = (state.stableMemberships ?? []).filter((entry) => entry.stableId === stable.id && entry.active);
+      if (!members.some((entry) => entry.personId === initiatorPersonId)) {
+        throw new Error("stable recruiter must be a current member of the selected stable");
+      }
+      if (members.some((entry) => entry.personId === targetPersonId)) {
+        throw new Error("stable recruit already belongs to the selected stable");
+      }
+    }
+    const signingOutcome = segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null;
+    if (segment.type === "CONTRACT_SIGNING" && (
+      !initiatorPersonId || !targetPersonId
+      || !["SIGNED", "REJECTED", "WALKOUT", "BRAWL"].includes(signingOutcome!)
+    )) throw new Error("CONTRACT_SIGNING needs proposer, responder and a scripted outcome");
+    const attackPresentation = segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null;
+    const attackObjective = segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null;
+    if (segment.type === "ATTACK" && (
+      !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(attackPresentation!)
+      || !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(attackObjective!)
+    )) throw new Error("ATTACK segment has an unsupported presentation or objective");
     if (segment.type === "TURN") {
+      if (turnPresentation !== "REVEAL" && turnPresentation !== "BETRAYAL") {
+        throw new Error("TURN segment has an unsupported presentation");
+      }
+      if (turnPresentation === "BETRAYAL" && (
+        betrayedPersonId === turnPersonId || !people.includes(betrayedPersonId!)
+      )) throw new Error("BETRAYAL requires a distinct betrayed wrestler among segment participants");
       if (!people.includes(turnPersonId!)) throw new Error("TURN segment wrestler must be one of the segment participants");
       if (!turnTargetAlignment || !["FACE", "HEEL", "TWEENER"].includes(turnTargetAlignment)) {
         throw new Error("TURN segment must choose face, heel or tweener");
@@ -437,6 +610,8 @@ function normalizeSegments(
       usedProgrammes.add(programmeId);
       const storyPeople = new Set(programmeParticipantIds(state, programmeId));
       for (const personId of people) {
+        if ((segment.type === "RESCUE" && personId === rescuerPersonId)
+          || (segment.type === "POST_MATCH_ASSAULT" && personId === attackerPersonId)) continue;
         if (!storyPeople.has(personId)) throw new Error(`${personId} does not belong to Programme ${programmeId}`);
       }
     }
@@ -448,7 +623,17 @@ function normalizeSegments(
       participantIds: people,
       programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
-      ...(segment.type === "TURN" ? { turnPersonId, turnTargetAlignment } : {}),
+      ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
+      ...(segment.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
+      ...(segment.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
+      ...(segment.type === "STABLE_EXIT" ? { stableId, stableExitOutcome } : {}),
+      ...(segment.type === "STABLE_RECONCILIATION" ? { stableId, stableReconciliationOutcome } : {}),
+      ...(segment.type === "CHALLENGE" && challengeResponse ? { challengeResponse } : {}),
+      ...(segment.type === "INTERRUPTION" ? { interruptionOutcome } : {}),
+      ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
+      ...(segment.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
+      ...(segment.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),
+      ...(segment.type === "TURN" ? { turnPersonId, turnTargetAlignment, turnPresentation, betrayedPersonId } : {}),
     } satisfies DetailedShowSegmentDraft;
   });
 
@@ -611,6 +796,9 @@ function replaceMaterializedEventCard(
       ...(match.style === undefined ? {} : { style: { ...match.style } }),
       plannedLengthMinutes: match.plannedLengthMinutes,
       plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
+      ...(match.interfererPersonId && match.interferenceSide
+        ? { interfererPersonId: match.interfererPersonId, interferenceSide: match.interferenceSide,
+          interferenceOutcome: match.interferenceOutcome ?? "SUCCESS" } : {}),
     };
   });
   const materializedMatches = prepareHumanMatchCard(state, eventId, plans);
@@ -823,6 +1011,22 @@ export async function loadAlphaShowCard(
     .filter((team): team is AlphaCardTeamView => team !== null)
     .sort((left, right) => left.name.localeCompare(right.name));
 
+  const availableStables = (aggregate.state.stables ?? [])
+    .filter((stable) => stable.promotionId === promotion.id && stable.status === "ACTIVE")
+    .map((stable): AlphaCardStableView => ({
+      stableId: stable.id,
+      name: stable.name,
+      memberIds: (aggregate.state.stableMemberships ?? [])
+        .filter((member) => member.stableId === stable.id && member.active)
+        .map((member) => member.personId),
+      formerMemberIds: [...new Set((aggregate.state.stableMemberships ?? [])
+        .filter((member) => member.stableId === stable.id && !member.active)
+        .map((member) => member.personId))]
+        .filter((personId) => !(aggregate.state.stableMemberships ?? []).some((member) =>
+          member.stableId === stable.id && member.personId === personId && member.active)),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   const participants = draft.participantIds.map((personId) => {
     const available = availableById.get(personId);
     if (available) return { ...available };
@@ -859,8 +1063,26 @@ export async function loadAlphaShowCard(
       participantIds: [...segment.participantIds],
       programmeId: segment.programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
+      attackerPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.attackerPersonId ?? null) : null,
+      victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
+      rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
+      sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
+      initiatorPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
+      targetPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
+      signingOutcome: segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
+      stableId: segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" || segment.type === "STABLE_RECONCILIATION" ? (segment.stableId ?? null) : null,
+      stableInvitationOutcome: segment.type === "STABLE_INVITATION" ? (segment.stableInvitationOutcome ?? "REFUSED") : null,
+      stableExitOutcome: segment.type === "STABLE_EXIT" ? (segment.stableExitOutcome ?? "EXPELLED") : null,
+      stableReconciliationOutcome: segment.type === "STABLE_RECONCILIATION" ? (segment.stableReconciliationOutcome ?? "RECONCILED") : null,
+      challengeResponse: segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : null,
+      interruptionOutcome: segment.type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null,
+      attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
+      attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null,
       turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
       turnTargetAlignment: segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
+      turnPresentation: segment.type === "TURN" ? (segment.turnPresentation ?? "REVEAL") : null,
+      betrayedPersonId: segment.type === "TURN" && segment.turnPresentation === "BETRAYAL"
+        ? (segment.betrayedPersonId ?? null) : null,
     })),
     ...(draft.programmeSegments ?? []).map((segment) => ({
       draftSegmentId: segment.draftSegmentId,
@@ -870,6 +1092,8 @@ export async function loadAlphaShowCard(
       plannedLengthMinutes: 6,
       turnPersonId: null,
       turnTargetAlignment: null,
+      turnPresentation: null,
+      betrayedPersonId: null,
     })),
   ];
   const segmentIds = new Set(segments.map((segment) => segment.draftSegmentId));
@@ -928,6 +1152,7 @@ export async function loadAlphaShowCard(
     participants,
     availableParticipants,
     availableTeams,
+    availableStables,
     matches: draft.matches.flatMap((match) => (
       match.intendedWinnerSide !== null && match.intent !== null && match.plannedLengthMinutes !== null
         ? [{
@@ -943,6 +1168,9 @@ export async function loadAlphaShowCard(
           }),
           plannedLengthMinutes: match.plannedLengthMinutes,
           plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
+          interfererPersonId: match.interfererPersonId ?? null,
+          interferenceSide: match.interferenceSide ?? null,
+          interferenceOutcome: match.interferenceOutcome ?? (match.interfererPersonId ? "SUCCESS" : null),
         } satisfies AlphaCardMatchView]
         : []
     )),
@@ -1020,6 +1248,19 @@ export async function saveAlphaShowCard(
     }
     const normalizedSegments = normalizeSegments(request.segments, aggregate.state, control.promotionId);
     const runningOrder = normalizeRunningOrder(request.runningOrder, normalizedCard.matches, normalizedSegments.segments);
+    for (const segment of normalizedSegments.segments) {
+      if (segment.type !== "POST_MATCH_ASSAULT") continue;
+      const source = normalizedCard.matches.find((match) => match.draftMatchId === segment.sourceDraftMatchId);
+      if (!source) throw new Error("post-match assault must reference a match booked on this card");
+      if (![...source.sideAIds, ...source.sideBIds].includes(segment.victimPersonId!)) {
+        throw new Error("post-match assault victim must compete in the referenced match");
+      }
+      const sourcePosition = runningOrder.findIndex((slot) => slot.kind === "MATCH" && slot.refId === source.draftMatchId);
+      const assaultPosition = runningOrder.findIndex((slot) => slot.kind === "SEGMENT" && slot.refId === segment.draftSegmentId);
+      if (assaultPosition !== sourcePosition + 1) {
+        throw new Error("post-match assault must immediately follow its referenced match");
+      }
+    }
     const matchOrder = new Map(
       runningOrder
         .filter((slot) => slot.kind === "MATCH")

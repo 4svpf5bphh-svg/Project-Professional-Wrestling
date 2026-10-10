@@ -16,7 +16,7 @@ import {
   resolvedShowSegmentsForEvent,
   type ResolvedSegmentOutcomeBand,
 } from "./programme-segments.js";
-import type { DetailedShowSegmentType } from "./planning.js";
+import type { DetailedShowSegmentType, AttackPresentation, AttackObjective } from "./planning.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const PLAYER_SHOW_HISTORY_LIMIT = 12;
@@ -112,6 +112,7 @@ export interface PlayerShowMatchView {
   finishChangedDueToInjury: boolean;
   participants: PlayerShowParticipantView[];
   winnerNames: string[];
+  interference: { personId: Id; name: string; aidedSide: "A" | "B"; outcome: "SUCCESS" | "THWARTED" | "ABORTED" | null } | null;
   titleOutcomes: PlayerShowTitleOutcomeView[];
   injuries: PlayerShowInjuryView[];
   crowdFlowFactors: PlayerShowCrowdFactorView[];
@@ -135,8 +136,27 @@ export interface PlayerShowSegmentView {
   plannedLengthMinutes: number;
   participants: PlayerShowSegmentParticipantView[];
   programmeId: Id | null;
+  attackerPersonId: Id | null;
+  victimPersonId: Id | null;
+  rescuerPersonId: Id | null;
+  sourceMatchId: Id | null;
+  victimMatchOutcome: "WON" | "LOST" | "DRAW" | null;
+  initiatorPersonId: Id | null;
+  targetPersonId: Id | null;
+  signingOutcome: "SIGNED" | "REJECTED" | "WALKOUT" | "BRAWL" | null;
+  challengeResponse: "ACCEPTED" | "REFUSED" | "LEFT_OPEN" | null;
+  interruptionOutcome: "VERBAL_EXCHANGE" | "INTERRUPTER_PREVAILS" | "SPEAKER_PREVAILS" | "BRAWL" | null;
+  stableId: Id | null;
+  stableName: string | null;
+  stableInvitationOutcome: "ACCEPTED" | "REFUSED" | null;
+  stableExitOutcome: "EXPELLED" | "WALKED_OUT" | null;
+  stableReconciliationOutcome: "RECONCILED" | "REBUFFED" | null;
+  attackPresentation: AttackPresentation | null;
+  attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
+  turnPresentation: "REVEAL" | "BETRAYAL" | null;
+  betrayedPersonId: Id | null;
   executionQuality: number | null;
   crowdResponse: number | null;
   outcomeBand: ResolvedSegmentOutcomeBand | null;
@@ -346,6 +366,14 @@ function segmentFactors(segment: ReturnType<typeof resolvedShowSegmentsForEvent>
   if (segment.fatigueModifier <= -0.45) {
     factors.push({ label: "Fatigue hurt the delivery", impact: segment.fatigueModifier });
   }
+  if (Math.abs(segment.angleFitModifier) >= 0.45) {
+    factors.push({
+      label: segment.type === "RESCUE"
+        ? (segment.angleFitModifier > 0 ? "Rescue drew a positive reaction" : "Rescue lacked credibility")
+        : (segment.angleFitModifier > 0 ? "Attack angle connected with the crowd" : "Attack angle struggled to land"),
+      impact: segment.angleFitModifier,
+    });
+  }
   if (segment.alignmentVolatilityModifier <= -0.45) {
     factors.push({ label: "Recent alignment changes hurt credibility", impact: segment.alignmentVolatilityModifier });
   }
@@ -542,6 +570,12 @@ export function buildPlayerShowHistory(
           finishChangedDueToInjury: match.finishChangedDueToInjury,
           participants,
           winnerNames: participants.filter((participant) => participant.won).map((participant) => participant.name),
+          interference: match.interference ? {
+            personId: match.interference.personId,
+            name: peopleById.get(match.interference.personId)?.name ?? "Unknown wrestler",
+            aidedSide: match.interference.aidedSide,
+            outcome: match.interference.outcome,
+          } : null,
           titleOutcomes,
           injuries,
           crowdFlowFactors: frozenCrowdFactors(matchLedgerByMatch.get(match.id), match.id, match.order),
@@ -559,8 +593,27 @@ export function buildPlayerShowHistory(
           name: peopleById.get(personId)?.name ?? "Unknown wrestler",
         })),
         programmeId: segment.programmeId,
+        attackerPersonId: segment.attackerPersonId,
+        victimPersonId: segment.victimPersonId,
+        rescuerPersonId: segment.rescuerPersonId,
+        sourceMatchId: segment.sourceMatchId,
+        victimMatchOutcome: segment.victimMatchOutcome,
+        initiatorPersonId: segment.initiatorPersonId,
+        targetPersonId: segment.targetPersonId,
+        signingOutcome: segment.signingOutcome,
+        challengeResponse: segment.challengeResponse,
+        interruptionOutcome: segment.interruptionOutcome,
+        stableId: segment.stableId,
+        stableName: segment.stableName,
+        stableInvitationOutcome: segment.stableInvitationOutcome,
+        stableExitOutcome: segment.stableExitOutcome,
+        stableReconciliationOutcome: segment.stableReconciliationOutcome,
+        attackPresentation: segment.attackPresentation,
+        attackObjective: segment.attackObjective,
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,
+        turnPresentation: segment.turnPresentation,
+        betrayedPersonId: segment.betrayedPersonId,
         executionQuality: segment.executionQuality,
         crowdResponse: segment.crowdResponse,
         outcomeBand: segment.outcomeBand,

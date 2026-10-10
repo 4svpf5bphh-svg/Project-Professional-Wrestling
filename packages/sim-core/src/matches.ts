@@ -471,6 +471,29 @@ function resolveMatch(state: WorldState, planned: PlannedMatch, event: Wrestling
     match.finishChangedDueToInjury = true;
     match.crowdResponse = Math.round(clamp(match.crowdResponse - 4, 0, 100) * 10) / 10;
   }
+  // A run-in is resolved against the booked/actual winner, not a hidden
+  // chance to reverse player-authored results. Injury stoppages take priority.
+  if (match.interference) {
+    const interferer = state.people.find((person) => person.id === match.interference!.personId);
+    const eligible = interferer?.status === "ACTIVE"
+      && state.scheduledAppearances.some((appearance) => (
+        appearance.eventId === event.id
+        && appearance.personId === interferer.id
+        && appearance.status === "COMMITTED"
+      ));
+    const interrupted = !eligible || actualFinish === "INJURY_STOPPAGE";
+    // The player scripts success/failure. Simulation evaluates delivery and
+    // permits real injury/unavailability to cancel, never randomize the spot.
+    const outcome = interrupted ? "ABORTED" : (match.interference.plannedOutcome ?? "SUCCESS");
+    match.interference.outcome = outcome;
+    if (outcome === "SUCCESS") actualFinish = "PROTECTED_FINISH";
+    const delivery = interferer ? clamp((interferer.skills.presentation - 50) * 0.045, -2.25, 2.25) : 0;
+    match.crowdResponse = Math.round(clamp(
+      match.crowdResponse + (outcome === "SUCCESS" ? 1.5 : outcome === "THWARTED" ? -0.5 : -2)
+        + (outcome === "ABORTED" ? 0 : delivery),
+      0, 100,
+    ) * 10) / 10;
+  }
   match.actualWinnerSide = actualWinnerSide;
   setActualMatchFinish(match, actualFinish);
   match.status = "COMPLETED";
@@ -524,7 +547,8 @@ function resolveMatch(state: WorldState, planned: PlannedMatch, event: Wrestling
     date: event.date,
     type: "MATCH_COMPLETED",
     significance: match.criticalRatingStars >= 4.75 || (event.type === "MAJOR" && isMainEvent) ? "NOTABLE" : "ROUTINE",
-    entityIds: [match.id, event.id, ...allPeople.map((person) => person.id)],
+    entityIds: [match.id, event.id, ...allPeople.map((person) => person.id),
+      ...(match.interference ? [match.interference.personId] : [])],
     payload: {
       matchType: match.type,
       intent: match.intent,
@@ -533,6 +557,12 @@ function resolveMatch(state: WorldState, planned: PlannedMatch, event: Wrestling
       rating: match.criticalRatingStars,
       crowd: match.crowdResponse,
       winnerSide: actualWinnerSide,
+      ...(match.interference ? {
+        interferencePersonId: match.interference.personId,
+        interferenceAidedSide: match.interference.aidedSide,
+        interferenceOutcome: match.interference.outcome,
+        interferencePlannedOutcome: match.interference.plannedOutcome,
+      } : {}),
       finishChangedDueToInjury: match.finishChangedDueToInjury,
       ...(styleEvaluation === null ? {} : {
         styleResolver: "DIMENSIONAL",
@@ -602,7 +632,11 @@ export function resolveEventCard(
   }
   const completedPlans = plannedMatches.filter((planned) => planned.match.status === "COMPLETED");
   const completedMatches = completedPlans.map((planned) => planned.match);
-  const usedPersonIds = new Set(completedPlans.flatMap((planned) => planned.participants.map((participant) => participant.personId)));
+  const usedPersonIds = new Set(completedPlans.flatMap((planned) => [
+    ...planned.participants.map((participant) => participant.personId),
+    ...(planned.match.interference && planned.match.interference.outcome !== null
+      ? [planned.match.interference.personId] : []),
+  ]));
   event.matchCount = completedMatches.length;
   event.averageMatchRating = completedMatches.length === 0
     ? 0

@@ -98,6 +98,8 @@ test("persisted World state has an explicit schema version and materializes lazy
   ok(Array.isArray(snapshot.promotionSurvivalStates), "survival state was not materialized");
   ok(Array.isArray(snapshot.teams), "teams were not materialized");
   ok(Array.isArray(snapshot.teamMemberships), "team memberships were not materialized");
+  ok(Array.isArray(snapshot.stables) && Array.isArray(snapshot.stableMemberships), "stable collections were not persisted");
+  ok(snapshot.entityIdCounters.stable === 0 && snapshot.entityIdCounters.stableMembership === 0, "new stable counters were not initialized");
   ok(Array.isArray(snapshot.championships), "championships were not materialized");
   ok(Array.isArray(snapshot.championshipReigns), "championship reigns were not materialized");
   ok(Array.isArray(snapshot.championshipContests), "championship contests were not materialized");
@@ -191,6 +193,29 @@ test("schema v4 migrates with empty promotion wrestler presentation state", () =
   ok(restored.promotionWrestlerPresentations?.length === 0, "v4 migration invented wrestler presentation overrides");
   const current = createPersistedWorldState(restored);
   ok(current.stateSchemaVersion === CURRENT_WORLD_STATE_SCHEMA_VERSION, "v4 migration did not upgrade to current schema");
+});
+
+test("schema v7 migrates existing Worlds without inventing stables", () => {
+  const world = createWorld(22035, DEFAULT_RULESET);
+  const snapshot = createPersistedWorldState(world);
+  const legacy: any = structuredClone(snapshot);
+  legacy.stateSchemaVersion = 7;
+  delete legacy.stables;
+  delete legacy.stableMemberships;
+  delete legacy.entityIdCounters.stable;
+  delete legacy.entityIdCounters.stableMembership;
+  const restored = restorePersistedWorldState(legacy);
+  ok(Array.isArray(restored.stables) && restored.stables.length === 0,
+    "v7 migration did not initialize empty stable identities");
+  ok(Array.isArray(restored.stableMemberships) && restored.stableMemberships.length === 0,
+    "v7 migration invented stable membership");
+  const current = createPersistedWorldState(restored);
+  ok(current.stateSchemaVersion === CURRENT_WORLD_STATE_SCHEMA_VERSION,
+    "v7 migration did not upgrade schema");
+  ok(current.entityIdCounters.stable === 0 && current.entityIdCounters.stableMembership === 0,
+    "v7 migration did not upgrade stable allocation counters");
+  ok(deterministicWorldHash(restored) === deterministicWorldHash(world),
+    "migration changed the deterministic World");
 });
 
 test("schema v6 migrates promotion-owned show series and event lineage", () => {
@@ -288,6 +313,11 @@ test("missing or corrupt mandatory persisted booking state is rejected", () => {
 
   const missingAffiliations = { ...snapshot, wrestlerPromotionAffiliations: undefined };
   expectReject(() => restorePersistedWorldState(missingAffiliations), "field wrestlerPromotionAffiliations must be an array");
+
+  const missingStables = { ...snapshot, stables: undefined };
+  expectReject(() => restorePersistedWorldState(missingStables), "field stables must be an array");
+  const missingMembers = { ...snapshot, stableMemberships: undefined };
+  expectReject(() => restorePersistedWorldState(missingMembers), "field stableMemberships must be an array");
 
   const missingCounters = { ...snapshot, entityIdCounters: undefined };
   expectReject(() => restorePersistedWorldState(missingCounters), "persisted entity ID counters must be an object");

@@ -1,0 +1,54 @@
+# Backstage conversation lifecycle — first usable slice
+
+## Why this exists
+After the booking audit and contract-role evidence, the first Backstage conversation type is a grounded **role-usage concern**. A wrestler with a current main-event/upper-card contract can raise an issue after at least four actual completed in-ring appearances within twelve PPW weeks without the promised featured position. Mere unbooked dates, scripted losses, and stable exits do not trigger a grievance.
+
+## Lifecycle
+- World Lock determines facts; a persisted World transaction creates the conversation from resolved booking records.
+- Stable ID per source contract and type prevents repetition on retry or successive weeks. Older records are not backfilled on player login.
+- The home Attention panel shows an IMPORTANT deep link to Backstage; it is deliberately *not* an ACTION_REQUIRED blocker. Normal World progression and prebooked shows remain unaffected.
+- Backstage exposes the request and three first-version replies: **Hear them out**, **Explain your current plans**, and **Stand firm**. A player response is an idempotent, world-authoritative command. The original concern and answer remain in history.
+- Responses do **not** create promises, apply morale/trust changes, change contracts or alter scripted wrestling. Delivery-driven promises and later consequences will be separate waves, with clear follow-up evaluation.
+- Private conversations are only readable/actionable by the human controller of that promotion; rivals see none.
+- No AI inference or forced modal. There may be quiet weeks.
+
+## Dependencies/future hooks
+Source: contract-specific appearances, match results, role expectation and Home Attention.
+Consumer: future promise tracking, human consequences, relationship and trust state, and later richer dialogue/UI.
+Authority: persistent engagement state plus idempotent application commands.
+Presentation: Backstage area and Attention deep links; no simulation authority in React.
+
+## Deliberately deferred
+Multi-type creative suggestions, interpersonal disputes, scripted-character pitches, staff delegation, graded response impact, time-limited follow-ups, persistent promise obligations, roster personality adaptation, balance caps for a large world and AI dialogue. Do not infer that answering "Hear them out" automatically makes the wrestler happy.
+
+## Attention pacing
+
+A promotion receives at most one new Backstage conversation per PPW week and holds at most three unanswered conversations from this generator. Limits apply even if the player replies during the same week. Eligible candidates are ranked deterministically by actual completed matches, promised role, then contract ID. Deferred requests are reconsidered later, never fabricated as already created and never auto-answered. The limit is per promotion, not a global first-player advantage.
+
+## Explicit booking promises — follow-through read model
+
+A fourth choice, **Promise a featured match**, must pass server-side eligibility: same active promotion contract, an unused contracted appearance, and at least another PPW week to book. This creates a durable commitment to a suitable featured match within four PPW weeks or by contract end if sooner. Other replies do not create promises. The promise is measured only against completed matches under the same contract at the expected position, not against promos, appearance lists alone or AI-scripted outcomes. The first completed suitable match fulfils it; otherwise after the deadline it is recorded as not delivered when shows occurred, or as no opportunity when none occurred. Resolution is deterministic and idempotent. History and a dismissible Home follow-up retain the outcome. **These factual statuses do not yet change morale/trust**; injuries, contract disruptions and absence fairness need a separate consequence policy before tuning such effects.
+
+The four-week deadline covers **every show day of the fourth PPW week**, not just its Monday; an earlier contract end date still takes precedence.
+
+## First consequence policy — small, accountable, auditable
+
+A separate post-resolution pass now assesses **player-authored** promises. There are **no bonus trust/morale points for logging in, talking, or delivering what was already promised**. An unexcused missed featured booking (completed promotion show(s), no delivered featured position, active human controller) applies a *single*, bounded drop in promotion–wrestler trust (2–4 points depending on the wrestler's pre-existing role priority) and 1 point of wrestler morale. The exact **actual** applied deltas, reason and assessment date are persisted with the promise, not inferred afresh on page load. Repeat World resolution, screen refresh and retries cannot stack the penalty. No negative effect for unanswered concerns, declined promise options, delivered promises, or no completed show.
+
+The first conservative exemptions are a documented injury overlapping the promise window, terminated/missing contract, unavailable/retired wrestler, no current human promotion controller, or an owner whose promotion is under AI stewardship. In those cases a missed promise is marked **EXCUSED** rather than blaming the booker. This distinguishes authoring a booking from the multiplayer World's asynchronous operation, and does not rewrite match outcomes. Fine-grained scheduling disruptions and temporary availability will need additional separate evidence before the policy becomes harsher. Contextual reasons appear in Backstage and Home.
+
+## Morale/trust overlap audit (2026-10-10)
+
+Weekly wrestler morale already responds to show usage and missed appearances; annual talent trust is promotion-specific and uses completed appearances and contract disruptions. Adding a separate global morale hit for the same missed booking would double-count that evidence, especially with multi-promotion contracts. The Backstage consequence remains a 2–4 point, one-time promotion-specific trust reduction for an explicit and unexcused broken word. The extra global -1 morale is removed; persisted moraleDelta remains 0 for new decisions. No free bonuses for responding or keeping a promise. Existing base morale/trust algorithms and deterministic sim hashes stay unchanged. Annual trust smoothing may attenuate this discrete signal; balance it later rather than amplifying it now.
+
+## Positive creative proposals — tag team pitch
+
+Backstage can now offer an optional tag-team pairing idea based on two or more completed, well-received tag matches together on the same side in the same promotion within the recent 12-week window. Both wrestlers must be contracted and have available dates; established active tag teams are excluded. The proposal freezes their identities, actual sample size and average crowd response, shares the existing per-promotion weekly and unanswered limits, and appears in Home Attention. The player can Explore the pairing or Not right now. Neither reply mutates tag memberships, contracts, morale, trust, scripted decisions or match outcomes. The Tag Teams management screen is offered as a manual next step. Other pitches and positive relationship updates are deferred until their evidence and player-choice model are specified.
+
+## Scripted rivalry proposal (2026-10-10)
+
+A second optional creative pitch proposes a **scripted on-screen rivalry** between two active contracted wrestlers who completed at least two singles matches opposite one another in the latest 12 PPW weeks, average crowd response at least 70, and have an existing working relationship with professional trust of at least 60. Verified completed appearances from each wrestler's contracted dates are required; no invented chemistry or simulated personal feud. Existing active Programmes between the pair prevent a redundant pitch. The pair gets one stable ID for its proposal, is bounded by the shared per-promotion weekly/inbox limits, and is private to that promotion's controller. Reply choices are Explore the programme or Not the right feud. Responses never book, accept, reject, betray, turn, or otherwise write in-ring or narrative outcomes. There are no stat bonuses for replying. The Programme creator remains the only mechanism for booking a feud.
+
+## Passive locker-room good news
+
+Not every Backstage item asks the booker for a decision. **TEAM_MOMENT** records a positive relationship update for an *existing active team*, after two verified well-received tag matches in the recent 12-week window, TAG working-chemistry familiarity, and professional trust of at least 60. It starts in **NOTED** status and has no response command or deadline. Home shows a dismissible WATCHING alert; Backstage retains the persistent note. The team and wrestler roles are never mutated, no bonus is awarded for being online, and at most one such item may exist per team per PPW year. Good news shares the per-promotion weekly creation cap and is the lowest priority, behind genuine concerns and optional creative proposals.

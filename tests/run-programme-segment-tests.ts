@@ -161,6 +161,579 @@ test("typed show segments can attach an active Programme and preserve running or
   ok(programmeActivities(setup.state, setup.programme.id)[0]?.kind === "SEGMENT", "typed segment did not feed Programme history");
 });
 
+for (const [kind, seed] of [["CHALLENGE", 9156], ["CONFRONTATION", 9157]] as const) {
+  test(`${kind} preserves chosen initiator and target without guessing them from participant order`, () => {
+    const setup = fixture(seed);
+    const [first, second] = setup.rosterIds;
+    const base = {
+      draftId: `directed-${kind.toLowerCase()}`,
+      promotionId: setup.promotion.id,
+      targetDate: setup.targetDate,
+      marketId: null,
+      venueId: null,
+      ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4),
+      matches: [],
+      championshipAssignments: [],
+    };
+    const directed = {
+      draftSegmentId: "directed-1",
+      type: kind,
+      participantIds: [first!, second!],
+      programmeId: setup.programme.id,
+      plannedLengthMinutes: 5,
+      initiatorPersonId: second!,
+      targetPersonId: first!,
+    };
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...directed, targetPersonId: null }],
+    }), "distinct initiator and target");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...directed, targetPersonId: second! }],
+    }), "distinct initiator and target");
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, { ...base, segments: [directed] });
+    const stored = setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!;
+    ok(stored.initiatorPersonId === second && stored.targetPersonId === first, "directed booking lost role direction");
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "directed segment did not resolve");
+    const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(frozen.initiatorPersonId === second && frozen.targetPersonId === first, "ledger lost directed roles");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0, "replay duplicated directed segment");
+  });
+}
+
+test("RESCUE freezes the aggressor, victim and rescuer as distinct characters", () => {
+  const setup = fixture(9167);
+  const [aggressor, victim, rescuer] = setup.rosterIds;
+  const base = {
+    draftId: "rescue-show", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+  };
+  const segment = {
+    draftSegmentId: "rescue-1", type: "RESCUE" as const,
+    participantIds: [victim!, aggressor!, rescuer!],
+    attackerPersonId: aggressor!, victimPersonId: victim!, rescuerPersonId: rescuer!,
+    programmeId: null, plannedLengthMinutes: 5,
+  };
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...segment, participantIds: [aggressor!, victim!] }],
+  }), "three distinct wrestlers");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...segment, rescuerPersonId: aggressor! }],
+  }), "distinct rescuer");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...segment, rescuerPersonId: setup.rosterIds[3]! }],
+  }), "distinct rescuer");
+  setPromotionWrestlerAlignment(setup.state, setup.promotion.id, aggressor!, "HEEL");
+  setPromotionWrestlerAlignment(setup.state, setup.promotion.id, victim!, "FACE");
+  setPromotionWrestlerAlignment(setup.state, setup.promotion.id, rescuer!, "FACE");
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, { ...base, segments: [segment] });
+  const stored = setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!;
+  ok(stored.attackerPersonId === aggressor && stored.victimPersonId === victim
+    && stored.rescuerPersonId === rescuer, "rescuer roles were inferred from participant order");
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "rescue did not resolve");
+  const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(frozen.type === "RESCUE" && frozen.attackerPersonId === aggressor
+    && frozen.victimPersonId === victim && frozen.rescuerPersonId === rescuer,
+    "rescue direction was not frozen in ledger");
+  ok(frozen.crowdResponse !== null && frozen.outcomeBand !== null, "rescue missing crowd outcome");
+  ok(Number.isFinite(frozen.angleFitModifier), "rescue fit was not deterministic");
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 0, "rescue duplicated on retry");
+});
+
+test("outsider rescue can advance a two-wrestler Programme without joining it", () => {
+  const setup = fixture(9169);
+  const [aggressor, victim, rescuer] = setup.rosterIds;
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    draftId: "outsider-save", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+    segments: [{ draftSegmentId: "outsider-save-1", type: "RESCUE",
+      participantIds: [aggressor!, victim!, rescuer!],
+      attackerPersonId: aggressor!, victimPersonId: victim!, rescuerPersonId: rescuer!,
+      programmeId: setup.programme.id, plannedLengthMinutes: 5 }],
+  });
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "outsider save never resolved");
+  const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(frozen.rescuerPersonId === rescuer && frozen.programmeId === setup.programme.id,
+    "outsider rescue lost programme attribution");
+  ok(programmeActivities(setup.state, setup.programme.id).length === 1,
+    "rescue did not contribute to existing Programme history");
+  ok(setup.programme.sideA.length === 1 && setup.programme.sideB.length === 1,
+    "outsider was silently enlisted into the Programme");
+});
+
+test("RESCUE crowd fit responds to a rescuer changing from face to heel", () => {
+  const resolve = (rescuerAlignment: "HEEL" | "FACE") => {
+    const setup = fixture(9168);
+    const [aggressor, victim, rescuer] = setup.rosterIds;
+    setPromotionWrestlerAlignment(setup.state, setup.promotion.id, aggressor!, "HEEL");
+    setPromotionWrestlerAlignment(setup.state, setup.promotion.id, victim!, "FACE");
+    setPromotionWrestlerAlignment(setup.state, setup.promotion.id, rescuer!, rescuerAlignment);
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      draftId: "rescue-fit", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+      marketId: null, venueId: null, ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+      segments: [{ draftSegmentId: "save", type: "RESCUE",
+        participantIds: [aggressor!, victim!, rescuer!],
+        attackerPersonId: aggressor!, victimPersonId: victim!, rescuerPersonId: rescuer!,
+        programmeId: null, plannedLengthMinutes: 6 }],
+    });
+    setup.state.events.push(completedEvent(setup));
+    recordResolvedShowSegments(setup.state, setup.planning);
+    return resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  };
+  const face = resolve("FACE");
+  const heel = resolve("HEEL");
+  ok(face.angleFitModifier > heel.angleFitModifier, "rescue ignored character alignment");
+  ok(face.crowdResponse! > heel.crowdResponse!, "a clearer save did not land better");
+});
+
+test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the real match victim", () => {
+  const setup = fixture(9170);
+  const victim = setup.rosterIds[0]!;
+  const division = setup.state.people.find((person) => person.id === victim)?.division ?? "MEN";
+  const opponent = setup.rosterIds.slice(1).find((id) => (
+    (setup.state.people.find((person) => person.id === id)?.division ?? "MEN") === division
+  ));
+  if (!opponent) throw new Error("post-match test needs two wrestlers in one division");
+  const aggressor = setup.rosterIds.find((id) => id !== victim && id !== opponent)!;
+  const source = { draftMatchId: "source-match", type: "SINGLES" as const,
+    sideAIds: [victim], sideBIds: [opponent], intendedWinnerSide: "A" as const,
+    intent: "COMPETITIVE" as const, plannedLengthMinutes: 12 };
+  const assault = { draftSegmentId: "assault", type: "POST_MATCH_ASSAULT" as const,
+    participantIds: [aggressor, victim], attackerPersonId: aggressor,
+    victimPersonId: victim, sourceDraftMatchId: source.draftMatchId,
+    programmeId: null, plannedLengthMinutes: 4 };
+  const base = { draftId: "post-match-show", promotionId: setup.promotion.id,
+    targetDate: setup.targetDate, marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4), matches: [source], segments: [assault],
+    championshipAssignments: [],
+    runningOrder: [
+      { kind: "MATCH" as const, refId: source.draftMatchId },
+      { kind: "SEGMENT" as const, refId: assault.draftSegmentId },
+    ] };
+  const outsideVictim = setup.rosterIds.find((id) => (
+    id !== victim && id !== opponent && id !== aggressor
+  ))!;
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...assault, participantIds: [aggressor, outsideVictim], victimPersonId: outsideVictim }],
+  }), "victim must compete");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, runningOrder: [base.runningOrder[1]!, base.runningOrder[0]!],
+  }), "immediately follow");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...assault, sourceDraftMatchId: "not-booked" }],
+  }), "reference a match");
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, base);
+  const event = completedEvent(setup);
+  setup.state.events.push(event);
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+    "missing match cannot create a fictional assault");
+  const id = "completed-assault-source";
+  setup.state.matches.push({
+    id, worldId: setup.state.world.id, eventId: event.id, promotionId: setup.promotion.id,
+    order: 1, type: "SINGLES", status: "COMPLETED", intent: "COMPETITIVE",
+    plannedLengthMinutes: 12, actualLengthMinutes: 12, intendedWinnerSide: "A",
+    actualWinnerSide: "A", finishChangedDueToInjury: false,
+    executionQuality: 65, criticalRatingStars: 3, crowdResponse: 60,
+  });
+  for (const [index, personId] of [victim, opponent].entries()) {
+    setup.state.matchParticipants.push({
+      id: `post-match-person:${index}`, worldId: setup.state.world.id, eventId: event.id, matchId: id,
+      personId, side: index === 0 ? "A" : "B", won: index === 0,
+    });
+  }
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1,
+    "completed source match did not produce assault history");
+  const frozen = resolvedShowSegmentsForEvent(setup.state, event.id)[0]!;
+  ok(frozen.sourceMatchId === id && frozen.sourceDraftMatchId === source.draftMatchId,
+    "source match was not linked to the result");
+  ok(frozen.victimMatchOutcome === "WON" && frozen.victimPersonId === victim,
+    "frozen assault lost the victim's actual win");
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+    "replaying post-match assaults duplicated history");
+  ok(setup.state.matches.find((match) => match.id === id)?.actualWinnerSide === "A",
+    "assault altered a completed match finish");
+});
+
+for (const [outcome, seed] of [["RECONCILED", 9187], ["REBUFFED", 9188]] as const) {
+  test(`STABLE_RECONCILIATION freezes scripted ${outcome} without restoring old membership`, () => {
+    const setup = fixture(seed);
+    const [representative, former, third, outsider] = setup.rosterIds;
+    const stableId = "reunion-stable";
+    setup.state.stables = [{
+      id: stableId, worldId: setup.state.world.id, promotionId: setup.promotion.id,
+      name: "Reunion History Stable", status: "ACTIVE",
+      formedDate: { ...setup.state.world.currentDate }, disbandedDate: null,
+    }];
+    setup.state.stableMemberships = [representative!, former!, third!].map((personId, index) => ({
+      id: `reunion-member-${index}`, worldId: setup.state.world.id, stableId,
+      personId, joinedDate: { ...setup.state.world.currentDate },
+      leftDate: index === 1 ? { ...setup.state.world.currentDate } : null,
+      active: index !== 1,
+    }));
+    const base = {
+      draftId: "reconciliation-show", promotionId: setup.promotion.id,
+      targetDate: setup.targetDate, marketId: null, venueId: null,
+      ticketStrategy: null, participantIds: setup.rosterIds.slice(0, 4),
+      matches: [], championshipAssignments: [],
+    };
+    const angle = {
+      draftSegmentId: "reunion-angle", type: "STABLE_RECONCILIATION" as const,
+      participantIds: [former!, representative!],
+      initiatorPersonId: representative!, targetPersonId: former!,
+      stableId, stableReconciliationOutcome: outcome,
+      programmeId: setup.programme.id, plannedLengthMinutes: 6,
+    };
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, stableId: "not-a-stable" }],
+    }), "requires an active stable");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, stableReconciliationOutcome: "RANDOM" as typeof outcome }],
+    }), "scripted outcome");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, targetPersonId: third, participantIds: [representative!, third!] }],
+    }), "former, not current");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, targetPersonId: outsider, participantIds: [representative!, outsider!] }],
+    }), "former, not current");
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [angle],
+    });
+    const before = JSON.stringify(setup.state.stableMemberships);
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "reconciliation not recorded");
+    const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(frozen.stableReconciliationOutcome === outcome
+      && frozen.stableId === stableId && frozen.stableName === "Reunion History Stable",
+      "scripted reconciliation or stable identity changed");
+    ok(frozen.initiatorPersonId === representative && frozen.targetPersonId === former,
+      "representative and former member roles were lost");
+    ok(frozen.crowdResponse !== null && frozen.executionQuality !== null,
+      "reconciliation was not scored separately from its authored story");
+    ok(JSON.stringify(setup.state.stableMemberships) === before,
+      "scripted reconciliation changed actual stable membership");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+      "replayed World Lock duplicated reconciliation");
+  });
+}
+
+for (const [outcome, seed] of [["EXPELLED", 9185], ["WALKED_OUT", 9186]] as const) {
+  test(`STABLE_EXIT preserves scripted ${outcome} without silently altering stable membership`, () => {
+    const setup = fixture(seed);
+    const [representative, departing, third] = setup.rosterIds;
+    const stableId = "active-stable-exit";
+    setup.state.stables = [{
+      id: stableId, worldId: setup.state.world.id,
+      promotionId: setup.promotion.id, name: "Exit Test Faction",
+      status: "ACTIVE", formedDate: { ...setup.state.world.currentDate }, disbandedDate: null,
+    }];
+    setup.state.stableMemberships = [representative!, departing!, third!].map((personId, index) => ({
+      id: `exit-member-${index}`, worldId: setup.state.world.id, stableId,
+      personId, joinedDate: { ...setup.state.world.currentDate }, leftDate: null, active: true,
+    }));
+    const base = {
+      draftId: "stable-exit-show", promotionId: setup.promotion.id,
+      targetDate: setup.targetDate, marketId: null, venueId: null, ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+    };
+    const exit = {
+      draftSegmentId: "stable-exit-angle", type: "STABLE_EXIT" as const,
+      participantIds: [departing!, representative!],
+      initiatorPersonId: representative!, targetPersonId: departing!,
+      stableId, stableExitOutcome: outcome, programmeId: setup.programme.id,
+      plannedLengthMinutes: 6,
+    };
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...exit, stableId: "no-such-stable" }],
+    }), "requires an active stable");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...exit, stableExitOutcome: "RANDOM" as typeof outcome }],
+    }), "scripted exit");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...exit, targetPersonId: setup.rosterIds[3], participantIds: [representative!, setup.rosterIds[3]!] }],
+    }), "two current members");
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [exit],
+    });
+    const original = JSON.stringify(setup.state.stableMemberships);
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "stable exit not recorded");
+    const resolved = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(resolved.stableId === stableId && resolved.stableName === "Exit Test Faction"
+      && resolved.stableExitOutcome === outcome, "World history changed the scripted exit");
+    ok(resolved.initiatorPersonId === representative && resolved.targetPersonId === departing,
+      "World history changed the representative or departing wrestler");
+    ok(resolved.crowdResponse !== null && resolved.executionQuality !== null,
+      "on-screen exit did not receive simulated delivery and crowd response");
+    ok(JSON.stringify(setup.state.stableMemberships) === original,
+      "scripted stable exit silently changed World membership");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+      "replaying World resolution duplicated the exit");
+  });
+}
+
+for (const [response, seed] of [["ACCEPTED", 9183], ["REFUSED", 9184]] as const) {
+  test(`STABLE_INVITATION records scripted ${response} without silently changing group membership`, () => {
+    const setup = fixture(seed);
+    const [representative, recruit, memberTwo, memberThree] = setup.rosterIds;
+    setup.state.stables = [{
+      id: "test-stable", worldId: setup.state.world.id,
+      promotionId: setup.promotion.id, name: "Test faction",
+      status: "ACTIVE", formedDate: { ...setup.state.world.currentDate }, disbandedDate: null,
+    }];
+    setup.state.stableMemberships = [representative!, memberTwo!, memberThree!].map((personId, index) => ({
+      id: `test-stable-member-${index}`, worldId: setup.state.world.id,
+      stableId: "test-stable", personId,
+      joinedDate: { ...setup.state.world.currentDate }, leftDate: null, active: true,
+    }));
+    const base = {
+      draftId: "invite-show", promotionId: setup.promotion.id,
+      targetDate: setup.targetDate, marketId: null, venueId: null, ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+    };
+    const angle = {
+      draftSegmentId: "invite-angle", type: "STABLE_INVITATION" as const,
+      participantIds: [recruit!, representative!],
+      initiatorPersonId: representative!, targetPersonId: recruit!,
+      stableId: "test-stable", stableInvitationOutcome: response,
+      programmeId: setup.programme.id, plannedLengthMinutes: 6,
+    };
+    // This is a distinct bookkeeping action: recruiting cannot invent group membership.
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, stableId: "missing-stable" }],
+    }), "active stable");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, initiatorPersonId: recruit, targetPersonId: representative }],
+    }), "recruiter must be a current member");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, stableInvitationOutcome: "RANDOM" as typeof response }],
+    }), "scripted acceptance or refusal");
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [angle],
+    });
+    const membershipsBefore = JSON.stringify(setup.state.stableMemberships);
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "invitation not recorded");
+    const resolved = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(resolved.stableId === "test-stable" && resolved.stableName === "Test faction"
+      && resolved.stableInvitationOutcome === response, "scripted faction event lost name, identity or outcome");
+    ok(resolved.initiatorPersonId === representative && resolved.targetPersonId === recruit,
+      "recruiter and recruit roles changed");
+    ok(resolved.crowdResponse !== null, "segment was not evaluated for crowd reception");
+    ok(JSON.stringify(setup.state.stableMemberships) === membershipsBefore,
+      "on-screen invitation silently changed stable membership");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0, "invitation duplicated on replay");
+  });
+}
+
+for (const [outcome, seed] of [
+  ["VERBAL_EXCHANGE", 9179], ["INTERRUPTER_PREVAILS", 9180],
+  ["SPEAKER_PREVAILS", 9181], ["BRAWL", 9182],
+] as const) {
+  test(`INTERRUPTION preserves scripted ${outcome} and named roles at World Lock`, () => {
+    const setup = fixture(seed);
+    const [speaker, interrupter] = setup.rosterIds;
+    const base = {
+      draftId: "interruption-draft", promotionId: setup.promotion.id,
+      targetDate: setup.targetDate, marketId: null, venueId: null,
+      ticketStrategy: null, participantIds: setup.rosterIds.slice(0, 4),
+      matches: [], championshipAssignments: [],
+    };
+    const angle = {
+      draftSegmentId: "interruption-1", type: "INTERRUPTION" as const,
+      participantIds: [speaker!, interrupter!],
+      initiatorPersonId: interrupter!, targetPersonId: speaker!,
+      interruptionOutcome: outcome, programmeId: setup.programme.id,
+      plannedLengthMinutes: 6,
+    };
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, interruptionOutcome: "RANDOM" as typeof outcome }],
+    }), "scripted outcome");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, initiatorPersonId: speaker }],
+    }), "distinct initiator and target");
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [angle],
+    });
+    const stored = setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!;
+    ok(stored.interruptionOutcome === outcome, "draft lost chosen ending");
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1,
+      "interruption was not recorded");
+    const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(frozen.interruptionOutcome === outcome, "sim changed scripted interruption");
+    ok(frozen.initiatorPersonId === interrupter && frozen.targetPersonId === speaker,
+      "interrupter and speaker roles swapped");
+    ok(frozen.executionQuality !== null && frozen.crowdResponse !== null,
+      "interruption was not rated for execution and crowd response");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+      "interruption produced duplicate history");
+  });
+}
+
+for (const [response, seed] of [["ACCEPTED", 9175], ["REFUSED", 9176], ["LEFT_OPEN", 9177]] as const) {
+  test(`CHALLENGE saves player-selected ${response} without overriding it`, () => {
+    const setup = fixture(seed);
+    const [first, second] = setup.rosterIds;
+    const base = {
+      draftId: "challenge-response", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+      marketId: null, venueId: null, ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+    };
+    const challenge = {
+      draftSegmentId: "challenge-response-1", type: "CHALLENGE" as const,
+      participantIds: [second!, first!], programmeId: null, plannedLengthMinutes: 5,
+      initiatorPersonId: first!, targetPersonId: second!, challengeResponse: response,
+    };
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [challenge],
+    });
+    ok(setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments?.[0]?.challengeResponse === response,
+      "draft lost the authored response");
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "challenge not recorded");
+    const resolved = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(resolved.challengeResponse === response, "challenge response changed during resolution");
+    ok(resolved.initiatorPersonId === first && resolved.targetPersonId === second,
+      "challenge roles were reordered");
+    ok(resolved.crowdResponse !== null, "scripted challenge received no crowd score");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+      "challenge history duplicated");
+  });
+}
+
+for (const [signingOutcome, seed] of [
+  ["SIGNED", 9171], ["REJECTED", 9172], ["WALKOUT", 9173], ["BRAWL", 9174],
+] as const) {
+  test(`CONTRACT_SIGNING freezes scripted ${signingOutcome} and authored roles without random outcomes`, () => {
+    const setup = fixture(seed);
+    const proposer = setup.rosterIds[0]!;
+    const responder = setup.rosterIds[1]!;
+    const angle = {
+      draftSegmentId: "signing-1", type: "CONTRACT_SIGNING" as const,
+      participantIds: [responder, proposer], initiatorPersonId: proposer,
+      targetPersonId: responder, signingOutcome, programmeId: setup.programme.id,
+      plannedLengthMinutes: 8,
+    };
+    const base = {
+      draftId: "contract-signing-show", promotionId: setup.promotion.id,
+      targetDate: setup.targetDate, marketId: null, venueId: null,
+      ticketStrategy: null, participantIds: setup.rosterIds.slice(0, 4),
+      matches: [], championshipAssignments: [],
+    };
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, initiatorPersonId: responder, targetPersonId: responder }],
+    }), "distinct initiator and target");
+    throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [{ ...angle, signingOutcome: "SURPRISE" as typeof signingOutcome }],
+    }), "scripted outcome");
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      ...base, segments: [angle],
+    });
+    setup.state.events.push(completedEvent(setup));
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "signing was not recorded");
+    const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+    ok(frozen.signingOutcome === signingOutcome,
+      "simulation changed the player-authored signing");
+    ok(frozen.initiatorPersonId === proposer && frozen.targetPersonId === responder,
+      "signing roles were inferred from participant order");
+    ok(frozen.crowdResponse !== null && frozen.executionQuality !== null,
+      "signing was not evaluated for delivery");
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+      "signing repeated on World replay");
+  });
+}
+
+test("ATTACK records explicit attacker and victim into immutable show history", () => {
+  const setup = fixture(9158);
+  const [attacker, victim] = setup.rosterIds;
+  const base = {
+    draftId: "attack-segment-show",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null,
+    venueId: null,
+    ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [],
+    championshipAssignments: [],
+  };
+  const attack = {
+    draftSegmentId: "attack-1",
+    type: "ATTACK" as const,
+    participantIds: [attacker!, victim!],
+    programmeId: setup.programme.id,
+    plannedLengthMinutes: 5,
+    attackerPersonId: attacker!,
+    victimPersonId: victim!,
+    attackPresentation: "BLINDSIDE" as const,
+    attackObjective: "GENERATE_HEAT" as const,
+  };
+  setPromotionWrestlerAlignment(setup.state, setup.promotion.id, attacker!, "HEEL");
+  setPromotionWrestlerAlignment(setup.state, setup.promotion.id, victim!, "FACE");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...attack, victimPersonId: attacker! }],
+  }), "distinct attacker and victim");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base,
+    segments: [{ ...attack, attackPresentation: "TOTALLY_UNKNOWN" as typeof attack.attackPresentation }],
+  }), "unsupported presentation or objective");
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [attack],
+  });
+  const saved = setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!;
+  ok(saved.attackerPersonId === attacker && saved.victimPersonId === victim, "attack roles were not saved");
+  ok(saved.attackPresentation === "BLINDSIDE" && saved.attackObjective === "GENERATE_HEAT", "attack format/objective lost before resolution");
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "attack did not resolve");
+  const recorded = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(recorded.attackerPersonId === attacker && recorded.victimPersonId === victim, "attack direction was lost from the ledger");
+  ok(recorded.attackPresentation === "BLINDSIDE" && recorded.attackObjective === "GENERATE_HEAT", "attack authored format/objective lost from ledger");
+  ok(recorded.angleFitModifier > 0, "heel blindside of a babyface should generate some extra heat");
+});
+
+test("an established feud gives a pull-apart brawl a stronger reception than a cold one", () => {
+  const run = (heat: number) => {
+    const setup = fixture(9159);
+    setup.programme.heat = heat;
+    const [attacker, victim] = setup.rosterIds;
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      draftId: "brawl-show",
+      promotionId: setup.promotion.id,
+      targetDate: setup.targetDate,
+      marketId: null,
+      venueId: null,
+      ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4),
+      matches: [],
+      championshipAssignments: [],
+      segments: [{
+        draftSegmentId: "brawl",
+        type: "ATTACK",
+        participantIds: [attacker!, victim!],
+        attackerPersonId: attacker!,
+        victimPersonId: victim!,
+        attackPresentation: "PULL_APART_BRAWL",
+        attackObjective: "ESCALATE_RIVALRY",
+        programmeId: setup.programme.id,
+        plannedLengthMinutes: 6,
+      }],
+    });
+    setup.state.events.push(completedEvent(setup));
+    recordResolvedShowSegments(setup.state, setup.planning);
+    return resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  };
+  const cold = run(20);
+  const hot = run(85);
+  ok(hot.angleFitModifier > cold.angleFitModifier, "brawl angle fit failed to acknowledge rivalry heat");
+  ok(hot.crowdResponse! > cold.crowdResponse!, "hot rivalry failed to improve brawl response");
+});
+
 test("standalone segments become factual show history without inventing Programme activity", () => {
   const setup = fixture(9151);
   upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
@@ -291,6 +864,53 @@ test("TURN segment freezes its intent and changes promotion alignment only after
   ));
   ok(changeEntry, "turn did not retain historical alignment-change evidence");
   ok(changeEntry?.date.day === setup.targetDate.day, "turn alignment history was not dated to the show itself");
+});
+
+test("BETRAYAL turn requires a valid target and records both people without duplicate alignment changes", () => {
+  const setup = fixture(9166);
+  const turner = setup.rosterIds[0]!;
+  const betrayed = setup.rosterIds[1]!;
+  setPromotionWrestlerAlignment(setup.state, setup.promotion.id, turner, "FACE");
+  const betrayedOriginalAlignment = wrestlerAlignmentForPromotion(setup.state, setup.promotion.id, betrayed);
+  const base = {
+    draftId: "betrayal-show", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+  };
+  const turn = {
+    draftSegmentId: "betrayal-slot",
+    type: "TURN" as const,
+    participantIds: [turner, betrayed],
+    programmeId: setup.programme.id,
+    plannedLengthMinutes: 7,
+    turnPersonId: turner,
+    turnTargetAlignment: "HEEL" as const,
+    turnPresentation: "BETRAYAL" as const,
+    betrayedPersonId: betrayed,
+  };
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...turn, betrayedPersonId: turner }],
+  }), "distinct betrayed wrestler");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...turn, betrayedPersonId: setup.rosterIds[2] }],
+  }), "distinct betrayed wrestler");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...turn, betrayedPersonId: null }],
+  }), "distinct betrayed wrestler");
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, { ...base, segments: [turn] });
+  const stored = setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!;
+  ok(stored.turnPresentation === "BETRAYAL" && stored.betrayedPersonId === betrayed, "betrayal intent lost during drafting");
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "betrayal segment not recorded");
+  const resolved = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(resolved.turnPersonId === turner && resolved.betrayedPersonId === betrayed, "ledger lost betrayal direction");
+  ok(resolved.turnPresentation === "BETRAYAL", "ledger lost turn presentation");
+  ok(wrestlerAlignmentForPromotion(setup.state, setup.promotion.id, turner) === "FACE", "betrayal changed alignment before applying");
+  ok(applyResolvedShowTurns(setup.state) === 1, "betrayal did not trigger alignment change");
+  ok(wrestlerAlignmentForPromotion(setup.state, setup.promotion.id, turner) === "HEEL", "betrayer did not turn heel");
+  ok(applyResolvedShowTurns(setup.state) === 0, "betrayal applied twice");
+  ok(wrestlerAlignmentForPromotion(setup.state, setup.promotion.id, betrayed) === betrayedOriginalAlignment,
+    "betrayal must not turn the victim");
 });
 
 test("Programme segments remain planned until their show has completed", () => {

@@ -76,6 +76,9 @@ test("wrestler profile exposes own roster relationship and own contract terms", 
   const view = buildPlayerWrestlerProfileView(aggregate, "player-a", ownContract!.personId);
   ok(view.relationship?.employmentStatus === "OUR_ROSTER", "own wrestler was not identified as our roster");
   ok(view.relationship?.ourContract?.weeklyGuarantee === 55_555_551, "own contract money was not visible");
+  ok(view.relationship?.bookingEvidence?.contractId === ownContract!.id
+    && view.relationship?.bookingEvidence?.roleExpectation === ownContract!.roleExpectation,
+    "own wrestler expectation evidence not available on their profile");
   ok(view.relationship?.morale === 67, "own wrestler morale was not visible");
   ok(view.relationship?.fatigue === 23, "own wrestler fatigue was not visible");
   ok(view.relationship?.wear === 31, "own wrestler Wear was not visible");
@@ -101,6 +104,7 @@ test("wrestler profile does not leak a rival's private contract or internal cond
   ok(view.relationship?.employmentStatus === "EXCLUSIVE_ELSEWHERE", "rival exclusive employment was not represented safely");
   ok(view.relationship?.ourContract === null, "rival contract was exposed as our contract");
   ok(view.relationship?.morale === null && view.relationship?.fatigue === null && view.relationship?.wear === null, "rival internal condition leaked");
+  ok(view.relationship?.bookingEvidence === null, "a rival\'s private contract-role expectations leaked");
   const serialized = JSON.stringify(view);
   ok(!serialized.includes("999888777"), "rival weekly guarantee leaked into profile");
   ok(!serialized.includes("888777666"), "rival appearance fee leaked into profile");

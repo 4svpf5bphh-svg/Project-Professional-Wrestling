@@ -58,6 +58,7 @@ export type InjurySeverity = "MINOR" | "MODERATE" | "MAJOR" | "SEVERE";
 export type InjuryStatus = "ACTIVE" | "RECOVERED";
 export type ChemistryContext = "SINGLES" | "TAG";
 export type TeamStatus = "ACTIVE" | "DISBANDED";
+export type StableStatus = "ACTIVE" | "DISBANDED";
 export type WrestlerRelationshipTag =
   | "FAMILY"
   | "TAG_PARTNERS"
@@ -373,6 +374,13 @@ export interface ScheduledAppearance {
   status: ScheduledAppearanceStatus;
 }
 
+export interface MatchInterference {
+  personId: Id;
+  aidedSide: MatchSide;
+  plannedOutcome: "SUCCESS" | "THWARTED";
+  outcome: "SUCCESS" | "THWARTED" | "ABORTED" | null;
+}
+
 export interface Match {
   id: Id;
   worldId: Id;
@@ -388,6 +396,7 @@ export interface Match {
   intendedWinnerSide: MatchSide;
   actualWinnerSide: MatchSide | null;
   finishChangedDueToInjury: boolean;
+  interference?: MatchInterference;
   executionQuality: number;
   criticalRatingStars: number;
   crowdResponse: number;
@@ -452,6 +461,26 @@ export interface TeamMembership {
   id: Id;
   worldId: Id;
   teamId: Id;
+  personId: Id;
+  joinedDate: PpwDate;
+  leftDate: PpwDate | null;
+  active: boolean;
+}
+
+/** Promotion-owned stables have their own membership history, separate from tag teams. */
+export interface Stable {
+  id: Id;
+  worldId: Id;
+  promotionId: Id;
+  name: string;
+  status: StableStatus;
+  formedDate: PpwDate;
+  disbandedDate: PpwDate | null;
+}
+export interface StableMembership {
+  id: Id;
+  worldId: Id;
+  stableId: Id;
   personId: Id;
   joinedDate: PpwDate;
   leftDate: PpwDate | null;
@@ -550,6 +579,8 @@ export interface WorldState {
   wrestlerPromotionAffiliations?: WrestlerPromotionAffiliation[];
   teams?: Team[];
   teamMemberships?: TeamMembership[];
+  stables?: Stable[];
+  stableMemberships?: StableMembership[];
   championships?: Championship[];
   championshipReigns?: ChampionshipReign[];
   championshipContests?: ChampionshipContest[];

@@ -16,7 +16,7 @@ import {
   resolvedShowSegmentsForEvent,
   type ResolvedSegmentOutcomeBand,
 } from "./programme-segments.js";
-import type { DetailedShowSegmentType } from "./planning.js";
+import type { DetailedShowSegmentType, AttackPresentation } from "./planning.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const WORLD_RESULTS_HISTORY_LIMIT = 30;
@@ -54,6 +54,7 @@ export interface PlayerWorldResultMatchView {
   crowdResponse: number;
   participants: PlayerWorldResultParticipantView[];
   winnerNames: string[];
+  interference: { personId: Id; name: string; aidedSide: "A" | "B"; outcome: "SUCCESS" | "THWARTED" | "ABORTED" | null } | null;
   titleOutcomes: PlayerWorldResultTitleOutcomeView[];
   injuries: PlayerWorldResultInjuryView[];
 }
@@ -63,8 +64,26 @@ export interface PlayerWorldResultSegmentView {
   order: number;
   type: DetailedShowSegmentType;
   participants: Array<{ personId: Id; name: string }>;
+  attackerPersonId: Id | null;
+  victimPersonId: Id | null;
+  rescuerPersonId: Id | null;
+  sourceMatchId: Id | null;
+  victimMatchOutcome: "WON" | "LOST" | "DRAW" | null;
+  initiatorPersonId: Id | null;
+  targetPersonId: Id | null;
+  signingOutcome: "SIGNED" | "REJECTED" | "WALKOUT" | "BRAWL" | null;
+  challengeResponse: "ACCEPTED" | "REFUSED" | "LEFT_OPEN" | null;
+  interruptionOutcome: "VERBAL_EXCHANGE" | "INTERRUPTER_PREVAILS" | "SPEAKER_PREVAILS" | "BRAWL" | null;
+  stableId: Id | null;
+  stableName: string | null;
+  stableInvitationOutcome: "ACCEPTED" | "REFUSED" | null;
+  stableExitOutcome: "EXPELLED" | "WALKED_OUT" | null;
+  stableReconciliationOutcome: "RECONCILED" | "REBUFFED" | null;
+  attackPresentation: AttackPresentation | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
+  turnPresentation: "REVEAL" | "BETRAYAL" | null;
+  betrayedPersonId: Id | null;
   crowdResponse: number | null;
   outcomeBand: ResolvedSegmentOutcomeBand | null;
 }
@@ -268,6 +287,12 @@ export function buildPlayerWorldResultsView(
           crowdResponse: match.crowdResponse,
           participants,
           winnerNames: participants.filter((participant) => participant.won).map((participant) => participant.name),
+          interference: match.interference ? {
+            personId: match.interference.personId,
+            name: peopleById.get(match.interference.personId)?.name ?? "Unknown wrestler",
+            aidedSide: match.interference.aidedSide,
+            outcome: match.interference.outcome,
+          } : null,
           titleOutcomes,
           injuries,
         };
@@ -281,8 +306,26 @@ export function buildPlayerWorldResultsView(
           personId,
           name: peopleById.get(personId)?.name ?? "Unknown wrestler",
         })),
+        attackerPersonId: segment.attackerPersonId,
+        victimPersonId: segment.victimPersonId,
+        rescuerPersonId: segment.rescuerPersonId,
+        sourceMatchId: segment.sourceMatchId,
+        victimMatchOutcome: segment.victimMatchOutcome,
+        initiatorPersonId: segment.initiatorPersonId,
+        targetPersonId: segment.targetPersonId,
+        signingOutcome: segment.signingOutcome,
+        challengeResponse: segment.challengeResponse,
+        interruptionOutcome: segment.interruptionOutcome,
+        stableId: segment.stableId,
+        stableName: segment.stableName,
+        stableInvitationOutcome: segment.stableInvitationOutcome,
+        stableExitOutcome: segment.stableExitOutcome,
+        stableReconciliationOutcome: segment.stableReconciliationOutcome,
+        attackPresentation: segment.attackPresentation,
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,
+        turnPresentation: segment.turnPresentation,
+        betrayedPersonId: segment.betrayedPersonId,
         crowdResponse: segment.crowdResponse,
         outcomeBand: segment.outcomeBand,
       }));

@@ -486,6 +486,16 @@
   gap: 7px;
 }
 
+.attackFixedPersonRow {
+  min-width: 0;
+}
+
+.segmentPersonCell {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
 .segmentPersonRow select {
   width: 100%;
   min-height: 42px;

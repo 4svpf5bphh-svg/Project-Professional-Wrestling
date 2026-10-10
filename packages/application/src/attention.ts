@@ -133,6 +133,81 @@ export function buildPlayerAttention(
       });
     }
 
+    for (const conversation of aggregate.engagement?.backstageConversations ?? []) {
+      if (conversation.promotionId !== promotion.id) continue;
+      if (conversation.kind === "TEAM_MOMENT" && conversation.status === "NOTED") {
+        const name = personName(aggregate, conversation.wrestlerId);
+        const partner = conversation.partnerPersonId
+          ? personName(aggregate, conversation.partnerPersonId) : "their partner";
+        pushIfVisible(aggregate, playerId, items, {
+          attentionId: `backstage-moment:${conversation.conversationId}`,
+          category: "WATCHING",
+          title: `${name} and ${partner} are clicking`,
+          summary: `Their ${conversation.sharedTagMatches ?? 0} recent tag matches have gone over well. A positive locker-room development; no action required.`,
+          deadline: null,
+          deepLink: "/backstage",
+          dismissible: true,
+          sourceOpportunityCategory: null,
+        });
+        continue;
+      }
+      if (conversation.status !== "OPEN") continue;
+      const name = personName(aggregate, conversation.wrestlerId);
+      const isPitch = conversation.kind === "TAG_TEAM_PITCH";
+      const isRivalry = conversation.kind === "RIVALRY_PITCH";
+      const partner = conversation.partnerPersonId ? personName(aggregate, conversation.partnerPersonId) : "";
+      const rival = conversation.rivalPersonId ? personName(aggregate, conversation.rivalPersonId) : "";
+      items.push({
+        attentionId: `backstage:${conversation.conversationId}`,
+        category: "IMPORTANT",
+        title: isPitch ? `${name} has a tag-team idea`
+          : isRivalry ? `${name} pitches an on-screen rivalry` : `${name} wants a word`,
+        summary: isPitch
+          ? `${name} suggests teaming with ${partner} after ${conversation.sharedTagMatches ?? 0} promising tag matches. You decide whether to explore it.`
+          : isRivalry
+            ? `${name} suggests a scripted feud with ${rival} after ${conversation.sharedSinglesMatches ?? 0} hot singles matches. You decide whether it happens.`
+            : `${name} is questioning their ${conversation.promisedRole === "MAIN_EVENT" ? "main-event" : "upper-card"} booking. ${conversation.observedMatchShows} completed matches have not delivered a promised featured position. You can hear them out in Backstage.`,
+        deadline: null,
+        deepLink: "/backstage",
+        dismissible: false,
+        sourceOpportunityCategory: null,
+      });
+    }
+
+    for (const conversation of aggregate.engagement?.backstageConversations ?? []) {
+      if (conversation.promotionId !== promotion.id || !conversation.promise
+        || conversation.promise.status === "PENDING") continue;
+      const status = conversation.promise.status;
+      const name = personName(aggregate, conversation.wrestlerId);
+      const reason = conversation.promise.consequence?.reason ?? null;
+      pushIfVisible(aggregate, playerId, items, {
+        attentionId: `backstage-promise:${conversation.conversationId}:${status}`,
+        category: "IMPORTANT",
+        title: status === "FULFILLED"
+          ? `You delivered on your word to ${name}`
+          : status === "EXCUSED"
+            ? `${name}'s booking promise was excused`
+            : status === "NOT_DELIVERED"
+              ? `Your booking promise to ${name} wasn't delivered`
+              : `No eligible show took place for ${name}'s booking promise`,
+        summary: status === "FULFILLED"
+          ? "The promised featured match took place. Your commitment is recorded in Backstage."
+          : status === "EXCUSED"
+            ? reason === "WRESTLER_INJURED"
+              ? "Injury affected the promise window. No booking breach or trust penalty was applied."
+              : reason === "OWNER_STEWARDED"
+                ? "AI stewardship covered the promotion. Your absence did not count as a broken promise."
+                : "Contract or roster circumstances prevented a fair booking expectation. No penalty was applied."
+            : status === "NOT_DELIVERED"
+              ? "The player-authored featured match was not delivered despite completed shows. The small trust impact is recorded in Backstage."
+              : "No completed show took place in the promise window; no breach or trust penalty was applied.",
+        deadline: null,
+        deepLink: "/backstage",
+        dismissible: true,
+        sourceOpportunityCategory: null,
+      });
+    }
+
     const workspace = aggregate.planning.workspaces.find((candidate) => candidate.promotionId === promotion.id);
     for (const draft of workspace?.detailedShowDrafts ?? []) {
       const status = playerShowPlanningStatus(aggregate.state, aggregate.planning, aggregate.runtime, promotion.id, draft.draftId);

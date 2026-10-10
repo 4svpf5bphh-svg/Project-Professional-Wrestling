@@ -27,6 +27,9 @@ export interface DetailedMatchDraft {
   style?: MatchStyleProfile;
   plannedLengthMinutes: number | null;
   plannedFinish?: MatchFinish;
+  interfererPersonId?: Id | null;
+  interferenceSide?: MatchSide | null;
+  interferenceOutcome?: "SUCCESS" | "THWARTED" | null;
 }
 
 export interface ChampionshipDraftAssignment {
@@ -44,10 +47,28 @@ export type DetailedShowSegmentType =
   | "PROMO"
   | "INTERVIEW"
   | "CONFRONTATION"
+  | "INTERRUPTION"
   | "CHALLENGE"
+  | "CONTRACT_SIGNING"
+  | "STABLE_INVITATION"
+  | "STABLE_EXIT"
+  | "STABLE_RECONCILIATION"
   | "ATTACK"
+  | "RESCUE"
+  | "POST_MATCH_ASSAULT"
   | "CELEBRATION"
   | "TURN";
+
+export type AttackPresentation = "BLINDSIDE" | "BEATDOWN" | "PULL_APART_BRAWL";
+export type AttackObjective = "GENERATE_HEAT" | "BUILD_SYMPATHY" | "ESCALATE_RIVALRY";
+export type TurnPresentation = "REVEAL" | "BETRAYAL";
+export type SigningOutcome = "SIGNED" | "REJECTED" | "WALKOUT" | "BRAWL";
+export type ChallengeResponse = "ACCEPTED" | "REFUSED" | "LEFT_OPEN";
+export type StableInvitationOutcome = "ACCEPTED" | "REFUSED";
+export type StableExitOutcome = "EXPELLED" | "WALKED_OUT";
+export type StableReconciliationOutcome = "RECONCILED" | "REBUFFED";
+// Both outcomes are player-scripted; no random story outcome at World Lock.
+export type InterruptionOutcome = "VERBAL_EXCHANGE" | "INTERRUPTER_PREVAILS" | "SPEAKER_PREVAILS" | "BRAWL";
 
 export interface DetailedShowSegmentDraft {
   draftSegmentId: string;
@@ -55,8 +76,29 @@ export interface DetailedShowSegmentDraft {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  // Roles are authored intent; participants alone must not invent attack direction.
+  attackerPersonId?: Id | null;
+  victimPersonId?: Id | null;
+  // RESCUE is an attack interrupted by a third, explicitly identified wrestler.
+  rescuerPersonId?: Id | null;
+  // POST_MATCH_ASSAULT must follow its referenced match in the same show.
+  sourceDraftMatchId?: string | null;
+  // CHALLENGE/CONFRONTATION direction is authored, never inferred from participant order.
+  initiatorPersonId?: Id | null;
+  targetPersonId?: Id | null;
+  signingOutcome?: SigningOutcome | null;
+  stableId?: Id | null;
+  stableInvitationOutcome?: StableInvitationOutcome | null;
+  stableExitOutcome?: StableExitOutcome | null;
+  stableReconciliationOutcome?: StableReconciliationOutcome | null;
+  challengeResponse?: ChallengeResponse | null;
+  interruptionOutcome?: InterruptionOutcome | null;
+  attackPresentation?: AttackPresentation | null;
+  attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
   turnTargetAlignment?: WrestlerAlignment | null;
+  turnPresentation?: TurnPresentation | null;
+  betrayedPersonId?: Id | null;
 }
 
 export interface DetailedShowSlotRef {
@@ -135,8 +177,15 @@ const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "PROMO",
   "INTERVIEW",
   "CONFRONTATION",
+  "INTERRUPTION",
   "CHALLENGE",
+  "CONTRACT_SIGNING",
+  "STABLE_INVITATION",
+  "STABLE_EXIT",
+  "STABLE_RECONCILIATION",
   "ATTACK",
+  "RESCUE",
+  "POST_MATCH_ASSAULT",
   "CELEBRATION",
   "TURN",
 ]);
@@ -206,6 +255,25 @@ function validateMatchDraft(
     throw new Error("draft planned match finish must be clean, submission, flash or protected");
   }
   const style = draft.style === undefined ? undefined : normalizeMatchStyle(draft.style);
+  const interfererPersonId = draft.interfererPersonId == null ? null : normalizedId(draft.interfererPersonId, "interfererPersonId");
+  const interferenceSide = draft.interferenceSide ?? null;
+  const interferenceOutcome = interfererPersonId ? (draft.interferenceOutcome ?? "SUCCESS") : null;
+  if ((interfererPersonId === null) !== (interferenceSide === null)
+    || (interferenceSide !== null && !MATCH_SIDES.has(interferenceSide))) {
+    throw new Error("run-in requires an outside wrestler and an aided match side");
+  }
+  if (interferenceOutcome !== null && interferenceOutcome !== "SUCCESS" && interferenceOutcome !== "THWARTED") {
+    throw new Error("run-in outcome must be successful or thwarted");
+  }
+  if (interferenceOutcome === "SUCCESS" && draft.intendedWinnerSide !== null && interferenceSide !== draft.intendedWinnerSide) {
+    throw new Error("successful run-in must aid the booked winning side");
+  }
+  if (interfererPersonId !== null && sideIds.includes(interfererPersonId)) {
+    throw new Error("run-in wrestler cannot compete in the same match");
+  }
+  if (interfererPersonId !== null && !participantIds.has(interfererPersonId)) {
+    throw new Error("run-in wrestler must be selected for this show draft");
+  }
 
   return {
     draftMatchId,
@@ -217,6 +285,7 @@ function validateMatchDraft(
     ...(style === undefined ? {} : { style }),
     plannedLengthMinutes: draft.plannedLengthMinutes,
     ...(draft.plannedFinish === undefined ? {} : { plannedFinish: draft.plannedFinish }),
+    ...(interfererPersonId === null ? {} : { interfererPersonId, interferenceSide, interferenceOutcome }),
   };
 }
 
@@ -275,8 +344,14 @@ function validateShowSegmentDraft(
   if (new Set(draft.participantIds).size !== draft.participantIds.length) {
     throw new Error("show segment cannot include the same wrestler twice");
   }
-  if (["CONFRONTATION", "CHALLENGE", "ATTACK"].includes(draft.type) && draft.participantIds.length < 2) {
+  if (["CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION", "ATTACK"].includes(draft.type) && draft.participantIds.length < 2) {
     throw new Error(`${draft.type} segment requires at least two wrestlers`);
+  }
+  if (draft.type === "POST_MATCH_ASSAULT" && draft.participantIds.length < 2) {
+    throw new Error("POST_MATCH_ASSAULT segment requires two distinct wrestlers");
+  }
+  if (draft.type === "RESCUE" && draft.participantIds.length < 3) {
+    throw new Error("RESCUE segment requires three distinct wrestlers");
   }
   if (!Number.isInteger(draft.plannedLengthMinutes) || draft.plannedLengthMinutes < 2 || draft.plannedLengthMinutes > 20) {
     throw new Error("show segment length must be an integer from 2 to 20 minutes");
@@ -292,7 +367,118 @@ function validateShowSegmentDraft(
       : normalizedId(draft.turnPersonId, "turnPersonId"))
     : null;
   const turnTargetAlignment = draft.type === "TURN" ? (draft.turnTargetAlignment ?? null) : null;
+  const attackerPersonId = (draft.type === "ATTACK" || draft.type === "RESCUE" || draft.type === "POST_MATCH_ASSAULT")
+    ? (draft.attackerPersonId == null ? null : normalizedId(draft.attackerPersonId, "attackerPersonId")) : null;
+  const victimPersonId = (draft.type === "ATTACK" || draft.type === "RESCUE" || draft.type === "POST_MATCH_ASSAULT")
+    ? (draft.victimPersonId == null ? null : normalizedId(draft.victimPersonId, "victimPersonId")) : null;
+  const sourceDraftMatchId = draft.type === "POST_MATCH_ASSAULT"
+    ? (draft.sourceDraftMatchId == null ? null : normalizedId(draft.sourceDraftMatchId, "sourceDraftMatchId"))
+    : null;
+  const rescuerPersonId = draft.type === "RESCUE"
+    ? (draft.rescuerPersonId == null ? null : normalizedId(draft.rescuerPersonId, "rescuerPersonId"))
+    : null;
+  if ((draft.type === "ATTACK" || draft.type === "RESCUE" || draft.type === "POST_MATCH_ASSAULT") && (
+    !attackerPersonId || !victimPersonId || attackerPersonId === victimPersonId
+    || !draft.participantIds.includes(attackerPersonId)
+    || !draft.participantIds.includes(victimPersonId)
+  )) throw new Error("attack angle requires distinct attacker and victim among its participants");
+  if (draft.type === "RESCUE" && (
+    !rescuerPersonId || rescuerPersonId === attackerPersonId || rescuerPersonId === victimPersonId
+    || !draft.participantIds.includes(rescuerPersonId)
+  )) throw new Error("RESCUE requires a distinct rescuer among segment participants");
+  const isDirected = draft.type === "CHALLENGE" || draft.type === "CONFRONTATION" || draft.type === "INTERRUPTION" || draft.type === "CONTRACT_SIGNING" || draft.type === "STABLE_INVITATION" || draft.type === "STABLE_EXIT" || draft.type === "STABLE_RECONCILIATION";
+  const initiatorPersonId = isDirected && draft.initiatorPersonId != null
+    ? normalizedId(draft.initiatorPersonId, "initiatorPersonId") : null;
+  const targetPersonId = isDirected && draft.targetPersonId != null
+    ? normalizedId(draft.targetPersonId, "targetPersonId") : null;
+  // Legacy saved segments can have no roles. New role-aware bookings must supply a valid pair.
+  if (isDirected && (initiatorPersonId !== null || targetPersonId !== null) && (
+    !initiatorPersonId || !targetPersonId || initiatorPersonId === targetPersonId
+    || !draft.participantIds.includes(initiatorPersonId)
+    || !draft.participantIds.includes(targetPersonId)
+  )) throw new Error("directed segment requires distinct initiator and target among participants");
+  // Null represents legacy challenges recorded before authored responses.
+  const challengeResponse = draft.type === "CHALLENGE" ? (draft.challengeResponse ?? null) : null;
+  if (challengeResponse !== null && !["ACCEPTED", "REFUSED", "LEFT_OPEN"].includes(challengeResponse)) {
+    throw new Error("CHALLENGE has an unsupported scripted response");
+  }
+  const interruptionOutcome = draft.type === "INTERRUPTION" ? (draft.interruptionOutcome ?? "VERBAL_EXCHANGE") : null;
+  if (draft.type === "INTERRUPTION" && (
+    !initiatorPersonId || !targetPersonId
+    || !["VERBAL_EXCHANGE", "INTERRUPTER_PREVAILS", "SPEAKER_PREVAILS", "BRAWL"].includes(interruptionOutcome!)
+  )) throw new Error("INTERRUPTION requires interrupter, original speaker and a scripted outcome");
+  const stableId = draft.type === "STABLE_INVITATION" || draft.type === "STABLE_EXIT" || draft.type === "STABLE_RECONCILIATION"
+    ? (draft.stableId ? normalizedId(draft.stableId, "stableId") : null) : null;
+  const stableInvitationOutcome = draft.type === "STABLE_INVITATION" ? (draft.stableInvitationOutcome ?? "REFUSED") : null;
+  const stableExitOutcome = draft.type === "STABLE_EXIT" ? (draft.stableExitOutcome ?? "EXPELLED") : null;
+  const stableReconciliationOutcome = draft.type === "STABLE_RECONCILIATION" ? (draft.stableReconciliationOutcome ?? "RECONCILED") : null;
+  if (draft.type === "STABLE_RECONCILIATION") {
+    const stable = (state.stables ?? []).find((entry) => entry.id === stableId
+      && entry.promotionId === promotionId && entry.status === "ACTIVE");
+    if (!stable) throw new Error("STABLE_RECONCILIATION requires an active stable in this promotion");
+    if (!initiatorPersonId || !targetPersonId
+      || !["RECONCILED", "REBUFFED"].includes(stableReconciliationOutcome!)) {
+      throw new Error("STABLE_RECONCILIATION needs a representative, former member and scripted outcome");
+    }
+    const members = (state.stableMemberships ?? []).filter((entry) => entry.stableId === stable.id);
+    if (!members.some((entry) => entry.personId === initiatorPersonId && entry.active)) {
+      throw new Error("reconciliation representative must be a current member");
+    }
+    if (!members.some((entry) => entry.personId === targetPersonId && !entry.active)
+      || members.some((entry) => entry.personId === targetPersonId && entry.active)) {
+      throw new Error("reconciliation target must be a former, not current, stable member");
+    }
+  }
+  if (draft.type === "STABLE_EXIT") {
+    const stable = (state.stables ?? []).find((entry) => entry.id === stableId
+      && entry.promotionId === promotionId && entry.status === "ACTIVE");
+    if (!stable) throw new Error("STABLE_EXIT requires an active stable in this promotion");
+    if (!initiatorPersonId || !targetPersonId || !["EXPELLED", "WALKED_OUT"].includes(stableExitOutcome!)) {
+      throw new Error("STABLE_EXIT needs representative, departing wrestler and a scripted exit");
+    }
+    const memberIds = new Set((state.stableMemberships ?? [])
+      .filter((entry) => entry.stableId === stable.id && entry.active).map((entry) => entry.personId));
+    if (!memberIds.has(initiatorPersonId) || !memberIds.has(targetPersonId)) {
+      throw new Error("stable exit requires two current members of the selected stable");
+    }
+  }
+  if (draft.type === "STABLE_INVITATION") {
+    const stable = (state.stables ?? []).find((entry) => entry.id === stableId
+      && entry.promotionId === promotionId && entry.status === "ACTIVE");
+    if (!stable) throw new Error("STABLE_INVITATION requires an active stable in this promotion");
+    if (!initiatorPersonId || !targetPersonId || !["ACCEPTED", "REFUSED"].includes(stableInvitationOutcome!)) {
+      throw new Error("STABLE_INVITATION needs recruiter, recruit and scripted acceptance or refusal");
+    }
+    const members = (state.stableMemberships ?? []).filter((entry) => entry.stableId === stable.id && entry.active);
+    if (!members.some((entry) => entry.personId === initiatorPersonId)) {
+      throw new Error("stable recruiter must be a current member of the selected stable");
+    }
+    if (members.some((entry) => entry.personId === targetPersonId)) {
+      throw new Error("stable recruit already belongs to the selected stable");
+    }
+  }
+  const signingOutcome = draft.type === "CONTRACT_SIGNING" ? (draft.signingOutcome ?? "SIGNED") : null;
+  if (draft.type === "CONTRACT_SIGNING" && (
+    !initiatorPersonId || !targetPersonId
+    || !["SIGNED", "REJECTED", "WALKOUT", "BRAWL"].includes(signingOutcome!)
+  )) throw new Error("CONTRACT_SIGNING needs proposer, responder and a scripted outcome");
+  const attackPresentation = draft.type === "ATTACK" ? (draft.attackPresentation ?? "BLINDSIDE") : null;
+  const attackObjective = draft.type === "ATTACK" ? (draft.attackObjective ?? "GENERATE_HEAT") : null;
+  if (draft.type === "ATTACK" && (
+    !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(attackPresentation!)
+    || !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(attackObjective!)
+  )) throw new Error("ATTACK segment has an unsupported presentation or objective");
+  const turnPresentation = draft.type === "TURN" ? (draft.turnPresentation ?? "REVEAL") : null;
+  const betrayedPersonId = draft.type === "TURN" && turnPresentation === "BETRAYAL"
+    ? (draft.betrayedPersonId == null ? null : normalizedId(draft.betrayedPersonId, "betrayedPersonId"))
+    : null;
   if (draft.type === "TURN") {
+    if (turnPresentation !== "REVEAL" && turnPresentation !== "BETRAYAL") {
+      throw new Error("TURN segment has an unsupported presentation");
+    }
+    if (turnPresentation === "BETRAYAL" && (
+      !betrayedPersonId || betrayedPersonId === turnPersonId || !draft.participantIds.includes(betrayedPersonId)
+    )) throw new Error("BETRAYAL requires a distinct betrayed wrestler among segment participants");
     if (!turnPersonId || !draft.participantIds.includes(turnPersonId)) {
       throw new Error("TURN segment must identify one participating wrestler who turns");
     }
@@ -310,6 +496,10 @@ function validateShowSegmentDraft(
     if (programme.promotionId !== promotionId) throw new Error("show segment Programme belongs to another promotion");
     const storyPeople = programmePersonIds(state, programmeId);
     for (const personId of draft.participantIds) {
+      // A rescuer can intervene in an existing feud without becoming a
+      // Programme participant. Aggressor and victim still belong to it.
+      if ((draft.type === "RESCUE" && personId === rescuerPersonId)
+        || (draft.type === "POST_MATCH_ASSAULT" && personId === attackerPersonId)) continue;
       if (!storyPeople.has(personId)) throw new Error(`${personId} does not belong to Programme ${programmeId}`);
     }
   }
@@ -320,7 +510,17 @@ function validateShowSegmentDraft(
     participantIds: [...draft.participantIds],
     programmeId,
     plannedLengthMinutes: draft.plannedLengthMinutes,
-    ...(draft.type === "TURN" ? { turnPersonId, turnTargetAlignment } : {}),
+    ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
+    ...(draft.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
+    ...(draft.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
+    ...(draft.type === "STABLE_EXIT" ? { stableId, stableExitOutcome } : {}),
+    ...(draft.type === "STABLE_RECONCILIATION" ? { stableId, stableReconciliationOutcome } : {}),
+    ...(draft.type === "CHALLENGE" && challengeResponse ? { challengeResponse } : {}),
+    ...(draft.type === "INTERRUPTION" ? { interruptionOutcome } : {}),
+    ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
+    ...(draft.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
+    ...(draft.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),
+    ...(draft.type === "TURN" ? { turnPersonId, turnTargetAlignment, turnPresentation, betrayedPersonId } : {}),
   };
 }
 
@@ -541,6 +741,23 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
     return validated;
   });
   const runningOrder = validateRunningOrder(draft.runningOrder, draftMatchIds, draftSegmentIds);
+  const actualOrder = runningOrder ?? [
+    ...matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ...segments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
+    ...programmeSegments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
+  ];
+  for (const segment of segments) {
+    if (segment.type !== "POST_MATCH_ASSAULT") continue;
+    const source = matches.find((match) => match.draftMatchId === segment.sourceDraftMatchId);
+    if (!source) throw new Error("post-match assault must reference a match booked on this card");
+    const victimIsCompetitor = [...source.sideAIds, ...source.sideBIds].includes(segment.victimPersonId!);
+    if (!victimIsCompetitor) throw new Error("post-match assault victim must compete in the referenced match");
+    const sourcePosition = actualOrder.findIndex((slot) => slot.kind === "MATCH" && slot.refId === source.draftMatchId);
+    const assaultPosition = actualOrder.findIndex((slot) => slot.kind === "SEGMENT" && slot.refId === segment.draftSegmentId);
+    if (assaultPosition !== sourcePosition + 1) {
+      throw new Error("post-match assault must immediately follow its referenced match");
+    }
+  }
 
   return structuredClone({
     draftId,

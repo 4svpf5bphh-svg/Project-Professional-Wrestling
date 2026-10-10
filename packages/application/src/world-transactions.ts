@@ -1,5 +1,10 @@
 import type { Id } from "../../domain/src/types.js";
 import { generateWorldOpportunities } from "./opportunity-generation.js";
+import { evaluateBackstagePromises, generateBackstageConversations } from "./backstage.js";
+import { generateTagTeamPitches } from "./backstage-pitches.js";
+import { generateRivalryPitches } from "./backstage-rivalries.js";
+import { generateTeamMoments } from "./backstage-moments.js";
+import { applyBackstagePromiseConsequences } from "./backstage-consequences.js";
 import {
   closeCurrentWeekReservationsAtCommitmentLock,
   materializeCurrentWeekReservations,
@@ -106,6 +111,12 @@ export async function resolvePersistedWorldWeek(
         applyResolvedShowTurns(state);
       },
     });
+    evaluateBackstagePromises(aggregate);
+    applyBackstagePromiseConsequences(aggregate);
+    generateBackstageConversations(aggregate);
+    generateTagTeamPitches(aggregate);
+    generateRivalryPitches(aggregate);
+    generateTeamMoments(aggregate);
     generateWorldOpportunities(aggregate);
   });
   return committed.revision;
