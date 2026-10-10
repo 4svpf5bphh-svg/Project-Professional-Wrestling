@@ -61,7 +61,7 @@ function book(f:ReturnType<typeof fixture>,otherId:string,id:string,weekOffset:n
     state.scheduledAppearances.push({
       id:matchId+":date:"+personId,worldId:state.world.id,
       eventId,promotionId,personId,contractId:contract.id,date,
-      serviceCapacityAtBooking:1,status,
+      serviceCapacityAtBooking:1,status:status==="COMPLETED"?"COMPLETED":"COMMITTED",
     });
   }
 }
