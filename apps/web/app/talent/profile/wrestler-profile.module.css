@@ -93,3 +93,11 @@
 .saveButton:disabled,.cancelButton:disabled { opacity: .48; cursor: not-allowed; }
 .saved { color: #9affdd !important; font-weight: 800; }
 .history summary { cursor: pointer; color: #9affdd; font-size: 12px; font-weight: 800; }
+
+.gimmickGrid { display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px; }
+.gimmickChoice,.gimmickActive { min-height:76px;display:grid;align-content:start;text-align:left;gap:5px;
+  padding:12px;border-radius:12px;background:#102329;color:#e2f4ef;border:1px solid rgba(129,187,181,.25);
+  cursor:pointer;font:inherit; }
+.gimmickActive { border-color:#5de9ce;background:rgba(93,233,206,.14); }
+.gimmickChoice strong,.gimmickActive strong{font-size:13px}
+.gimmickChoice small,.gimmickActive small{font-size:11px;color:#a0bdb6;line-height:1.35}
