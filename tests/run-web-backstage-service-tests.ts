@@ -49,5 +49,47 @@ await test("Backstage server endpoints persist responses, isolate owners and are
   ok(persisted.engagement?.backstageConversations[0]?.response==="STAND_FIRM",
     "conversation did not survive repository roundtrip");
 });
+await test("Creative repackage replies persist privately without performing any character edit",async()=>{
+  const repository=new InMemoryApplicationWorldRepository();
+  const aggregate=createAlphaWorldAggregate({seed:91121,playerId:"owner"});
+  await repository.initialize(aggregate);
+  const worldId=aggregate.state.world.id;
+  const independent=(await loadAlphaPlayerSession(repository,worldId,"owner")).availableIndependentPromotions[0]!;
+  await claimAlphaPromotion(repository,worldId,"owner",{promotionId:independent.promotionId,requestId:"claim-character-service"});
+  await repository.transact(worldId,null,current=>{
+    const contract=current.state.contracts.find(x=>x.promotionId===independent.promotionId&&x.status==="SIGNED")!;
+    openBackstageConversation(current.engagement!,{
+      conversationId:"backstage:test:gimmick",worldId,promotionId:independent.promotionId,
+      wrestlerId:contract.personId,sourceContractId:contract.id,kind:"GIMMICK_CHANGE_PITCH",
+      createdDate:{...current.state.world.currentDate},status:"OPEN",response:null,responseDate:null,
+      promisedRole:null,observedMatchShows:4,observedFeaturedShows:0,
+      observedCrowdResponse:50,currentGimmickArchetype:"AUTHENTIC",
+      suggestedGimmickArchetype:"REBEL",
+    });
+  });
+  const before=await loadAlphaBackstage(repository,worldId,"owner");
+  ok(before.openCount===1 && before.conversations[0]?.suggestedGimmickArchetype==="REBEL",
+    "server hid character proposal");
+  let denied=false;
+  try{await respondAlphaBackstage(repository,worldId,"intruder",{
+    requestId:"intruder-character",conversationId:"backstage:test:gimmick",response:"CONSIDER_GIMMICK_CHANGE",
+  });}catch{denied=true;}
+  ok(denied,"a non-member answered the private character pitch");
+  denied=false;
+  try{await respondAlphaBackstage(repository,worldId,"owner",{
+    requestId:"wrong-character-kind",conversationId:"backstage:test:gimmick",response:"HEAR_OUT",
+  });}catch{denied=true;}
+  ok(denied,"an unrelated reply was accepted for a creative request");
+  const reply={requestId:"save-character-suggestion",conversationId:"backstage:test:gimmick",
+    response:"CONSIDER_GIMMICK_CHANGE" as const};
+  const after=await respondAlphaBackstage(repository,worldId,"owner",reply);
+  ok(after.openCount===0&&after.conversations[0]?.response==="CONSIDER_GIMMICK_CHANGE",
+    "service did not persist the player's creative discussion");
+  const replay=await respondAlphaBackstage(repository,worldId,"owner",reply);
+  ok(replay.openCount===0&&replay.conversations.length===1,"retry duplicated creative request");
+  const saved=await repository.load(worldId);
+  ok((saved.engagement?.wrestlerCreativeProfiles??[]).length===0,
+    "reply to a gimmick pitch silently changed the wrestler's presentation");
+});
 console.log("\nWeb Backstage service tests: "+passed+" passed, "+failed+" failed");
 if(failed)process.exitCode=1;

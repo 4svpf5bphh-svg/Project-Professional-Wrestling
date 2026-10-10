@@ -448,6 +448,20 @@ try {
   ok(creativeRetry.world.revision===creativeSaved.world.revision
     && creativeRetry.creativeProfile.history.length===1,"HTTP creative retry duplicated a revision or edit");
 
+  // Guard against a UI/backend whitelist mismatch: even when no character
+  // request exists, the HTTP route must recognise this reply enum.
+  const characterReplyValidation = await fetch(`${baseUrl}/api/backstage/respond`,{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      requestId:"ci-gimmick-route-enum",conversationId:"nonexistent-character-pitch",
+      response:"CONSIDER_GIMMICK_CHANGE",
+    }),
+  });
+  const characterReplyError = await characterReplyValidation.json();
+  ok(characterReplyValidation.status===409
+    && String(characterReplyError.error).includes("does not belong to your promotion"),
+    "HTTP route rejected a valid creative reply before reaching promotion validation");
+
   const ready = await json(await fetch(`${baseUrl}/api/session`, { cache: "no-store" }));
   ok(ready.promotion?.showPlanning?.currentPlan?.state === "RESERVED", "HTTP booked show lost its reserved planning state before lock");
   ok(ready.promotion?.showPlanning?.currentPlan?.reservationId, "HTTP booked show lost its committed reservation before lock");
