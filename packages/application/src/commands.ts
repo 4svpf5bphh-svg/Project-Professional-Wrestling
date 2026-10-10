@@ -44,7 +44,8 @@ export type ApplicationCommandType =
   | "DISBAND_STABLE"
   | "UPSERT_PROMOTION_SHOW_SERIES"
   | "ARCHIVE_PROMOTION_SHOW_SERIES"
-  | "RESPOND_BACKSTAGE_CONVERSATION";
+  | "RESPOND_BACKSTAGE_CONVERSATION"
+  | "SET_WRESTLER_CREATIVE_PROFILE";
 
 export interface ApplicationCommandEnvelope<TPayload> {
   requestId: string;
