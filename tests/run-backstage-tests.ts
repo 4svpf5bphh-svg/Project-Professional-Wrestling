@@ -18,6 +18,8 @@ import { promotionTalentTrustFor } from "../packages/sim-core/src/talent-trust.j
 import { generateTagTeamPitches } from "../packages/application/src/backstage-pitches.js";
 import { generateRivalryPitches } from "../packages/application/src/backstage-rivalries.js";
 import { generateTeamMoments } from "../packages/application/src/backstage-moments.js";
+import { generateGimmickChangePitches } from "../packages/application/src/backstage-gimmicks.js";
+import { setWrestlerCreativeProfileCommand, defaultWrestlerCreativeFields } from "../packages/application/src/wrestler-creative.js";
 import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
 import { claimIndependentPromotionForPlayer } from "../packages/application/src/ownership.js";
 import type { Match, WrestlingEvent } from "../packages/domain/src/types.js";
@@ -907,6 +909,133 @@ test("Positive updates never bypass weekly cap or compete for an open reply slot
   ok(generateTeamMoments(f.aggregate)===1,"good news was not deferred until next week");
   ok(f.aggregate.engagement?.backstageConversations.filter((c)=>c.status==="OPEN").length===1,
     "informational note stole an open decision slot");
+});
+
+
+test("Underwhelming real match crowds lead to a persistent optional gimmick discussion", () => {
+  const f=fixture();
+  const before=JSON.stringify(f.aggregate.state);
+  ok(generateGimmickChangePitches(f.aggregate)===1,"eligible wrestler did not ask about a fresh character");
+  ok(generateGimmickChangePitches(f.aggregate)===0,"repeat World pass created another gimmick pitch");
+  ok(JSON.stringify(f.aggregate.state)===before,"character proposal mutated World match outcomes");
+  const note=f.aggregate.engagement!.backstageConversations[0]!;
+  ok(note.kind==="GIMMICK_CHANGE_PITCH" && note.sourceContractId===f.contract.id
+    && note.wrestlerId===f.person.id && note.observedMatchShows===4
+    && note.observedCrowdResponse===50 && note.currentGimmickArchetype==="AUTHENTIC"
+    && note.suggestedGimmickArchetype !== note.currentGimmickArchetype,
+    "pitch lost actual evidence or grounded proposal");
+  const view=buildPlayerBackstageView(f.aggregate,"backstage-owner");
+  ok(view.openCount===1 && view.conversations[0]?.suggestedGimmickArchetype===note.suggestedGimmickArchetype
+    && !view.conversations[0]?.canPromiseFeaturedBooking,
+    "private Backstage UI did not expose the creative context");
+  const alert=buildPlayerAttention(f.aggregate,"backstage-owner")
+    .find(item=>item.attentionId==="backstage:"+note.conversationId);
+  ok(alert?.title.includes("gimmick") && alert.deepLink==="/backstage"
+    && alert.category==="IMPORTANT", "Home did not surface the private proposal");
+  const snapshot=cloneApplicationWorld(f.aggregate);
+  ok(snapshot.engagement?.backstageConversations[0]?.observedCrowdResponse===50,
+    "character pitch disappeared across persistence");
+  const request={requestId:"consider-character",worldId:f.aggregate.state.world.id,
+    playerId:"backstage-owner",commandType:"RESPOND_BACKSTAGE_CONVERSATION" as const,
+    payload:{conversationId:note.conversationId,response:"CONSIDER_GIMMICK_CHANGE" as const}};
+  const originalCreative=JSON.stringify(f.aggregate.engagement!.wrestlerCreativeProfiles);
+  const done=respondBackstageConversationCommand(f.aggregate,request);
+  ok(done.response==="CONSIDER_GIMMICK_CHANGE" && done.status==="ANSWERED",
+    "creative response was not recorded");
+  ok(respondBackstageConversationCommand(f.aggregate,request).status==="ANSWERED",
+    "idempotent creative replay failed");
+  ok(JSON.stringify(f.aggregate.engagement!.wrestlerCreativeProfiles)===originalCreative
+    && JSON.stringify(f.aggregate.state)===before,
+    "agreeing to explore created an automatic gimmick change or simulation boost");
+  ok(generateGimmickChangePitches(f.aggregate)===0,"answered pitch regenerated within same contract");
+});
+
+test("A gimmick change is player-authored separately from the conversation", () => {
+  const f=fixture();
+  generateGimmickChangePitches(f.aggregate);
+  const note=f.aggregate.engagement!.backstageConversations[0]!;
+  const initial=defaultWrestlerCreativeFields(f.person);
+  let denied=false;
+  for(const [i,response,playerId] of [
+    [1,"HEAR_OUT","backstage-owner"],
+    [2,"PROMISE_FEATURED_BOOKING","backstage-owner"],
+    [3,"CONSIDER_GIMMICK_CHANGE","wrong-booker"],
+  ] as const){
+    try{respondBackstageConversationCommand(f.aggregate,{
+      requestId:"deny-gimmick-"+i,worldId:f.aggregate.state.world.id,playerId,
+      commandType:"RESPOND_BACKSTAGE_CONVERSATION",
+      payload:{conversationId:note.conversationId,response},
+    });}catch{denied=true;}
+  }
+  ok(denied && note.status==="OPEN","unauthorized or wrong-kind answer was accepted");
+  respondBackstageConversationCommand(f.aggregate,{
+    requestId:"keep-character",worldId:f.aggregate.state.world.id,
+    playerId:"backstage-owner",commandType:"RESPOND_BACKSTAGE_CONVERSATION",
+    payload:{conversationId:note.conversationId,response:"PASS_GIMMICK_CHANGE"},
+  });
+  ok(JSON.stringify(f.aggregate.engagement?.wrestlerCreativeProfiles??[])==="[]",
+    "declining the proposal modified the character");
+  const chosen= {
+    ...initial,ringName:"The Last Outlaw",gimmickArchetype:"REBEL" as const,
+    gimmickDescription:"A seasoned competitor who plays by nobody's rules.",
+  };
+  setWrestlerCreativeProfileCommand(f.aggregate.state,f.aggregate.engagement!,f.aggregate.ownership,
+    f.aggregate.commands,f.aggregate.runtime,{
+      requestId:"booker-writes-character",worldId:f.aggregate.state.world.id,playerId:"backstage-owner",
+      commandType:"SET_WRESTLER_CREATIVE_PROFILE",
+      payload:{promotionId:f.promotion.id,personId:f.person.id,fields:chosen},
+    });
+  ok(f.aggregate.engagement?.wrestlerCreativeProfiles?.[0]?.fields.ringName==="The Last Outlaw",
+    "player's separate character authoring was blocked");
+  ok(note.status==="ANSWERED" && note.response==="PASS_GIMMICK_CHANGE",
+    "later manual character edit rewrote the original conversation");
+});
+
+test("Gimmick ideas require current contract usage, low crowd response and a settled presentation", () => {
+  for(const failure of ["GOOD_CROWD","TOO_FEW","WRONG_CONTRACT","INJURED","FRESH_GIMMICK","NO_DATES"] as const) {
+    const f=fixture();
+    if(failure==="GOOD_CROWD") {
+      for(const match of f.aggregate.state.matches.filter(m=>m.id.startsWith("backstage-show-")&&m.order===1)){
+        match.crowdResponse=86;
+      }
+    }
+    if(failure==="TOO_FEW") {
+      f.aggregate.state.matchParticipants=f.aggregate.state.matchParticipants.filter(
+        item=>item.eventId!=="backstage-show-4" || item.personId!==f.person.id);
+    }
+    if(failure==="WRONG_CONTRACT") {
+      for(const entry of f.aggregate.state.scheduledAppearances.filter(
+        x=>x.personId===f.person.id && x.id.startsWith("backstage-appearance-")))entry.contractId="outside-contract";
+    }
+    if(failure==="INJURED")f.person.status="INJURED";
+    if(failure==="NO_DATES")f.contract.datesUsed=f.contract.dateEntitlement;
+    if(failure==="FRESH_GIMMICK") {
+      f.aggregate.engagement=createWorldEngagementState(f.aggregate.state.world.id);
+      const baseline=defaultWrestlerCreativeFields(f.person);
+      setWrestlerCreativeProfileCommand(f.aggregate.state,f.aggregate.engagement!,f.aggregate.ownership,
+        f.aggregate.commands,f.aggregate.runtime,{
+          requestId:"recent-rebrand",worldId:f.aggregate.state.world.id,playerId:"backstage-owner",
+          commandType:"SET_WRESTLER_CREATIVE_PROFILE",
+          payload:{promotionId:f.promotion.id,personId:f.person.id,fields:{...baseline,ringName:"Newly Rebranded"}},
+        });
+    }
+    ok(generateGimmickChangePitches(f.aggregate)===0,
+      "generated an ungrounded gimmick request: "+failure);
+  }
+});
+
+test("Creative pitches respect the existing Backstage weekly limit and unanswered cap", () => {
+  const f=fixture();
+  ok(generateBackstageConversations(f.aggregate)===1,"expected the priority role-usage concern");
+  ok(generateGimmickChangePitches(f.aggregate)===0,"character pitch bypassed priority weekly cap");
+  f.aggregate.state.world.currentDate=addPpwWeeks(
+    f.aggregate.state.world.currentDate,1,f.aggregate.state.ruleset.weeksPerYear);
+  ok(generateGimmickChangePitches(f.aggregate)===1,"deferred character suggestion was not reconsidered");
+  ok(f.aggregate.engagement?.backstageConversations.length===2,
+    "later creative request overwrote the concern");
+  const newNote=f.aggregate.engagement?.backstageConversations.find(x=>x.kind==="GIMMICK_CHANGE_PITCH");
+  ok(newNote?.createdDate.week===f.aggregate.state.world.currentDate.week,
+    "wrong week persisted on deferred pitch");
 });
 
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");
