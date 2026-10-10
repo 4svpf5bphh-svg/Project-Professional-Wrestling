@@ -161,7 +161,8 @@ test("Newly verified work creates a neutral, portable pair, never a forced allia
   addMatch(state, ids, promotionId, 3, "new-second");
   ok(evolveCompletedWorkingPartnerships(state) === 1, "new pair was not created");
   const relation = wrestlerRelationshipBetween(state, a!, b!);
-  ok(relation?.professionalTrust === 50.8 && relation?.familiarity === 2,
+  if (!relation) throw new Error("new pair missing after World development");
+  ok(relation.professionalTrust === 50.8 && relation.familiarity === 2,
     "new pair must begin neutral and earn only a tiny working relationship increment");
   ok(relation.tags.length === 0 && relation.affinity === 0 && relation.rivalryHeat === 0,
     "completed tag matches falsely created a friendship, alliance or feud");
