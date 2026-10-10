@@ -47,6 +47,7 @@ export type DetailedShowSegmentType =
   | "CHALLENGE"
   | "ATTACK"
   | "RESCUE"
+  | "POST_MATCH_ASSAULT"
   | "CELEBRATION"
   | "TURN";
 
@@ -65,6 +66,8 @@ export interface DetailedShowSegmentDraft {
   victimPersonId?: Id | null;
   // RESCUE is an attack interrupted by a third, explicitly identified wrestler.
   rescuerPersonId?: Id | null;
+  // POST_MATCH_ASSAULT must follow its referenced match in the same show.
+  sourceDraftMatchId?: string | null;
   // CHALLENGE/CONFRONTATION direction is authored, never inferred from participant order.
   initiatorPersonId?: Id | null;
   targetPersonId?: Id | null;
@@ -155,6 +158,7 @@ const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CHALLENGE",
   "ATTACK",
   "RESCUE",
+  "POST_MATCH_ASSAULT",
   "CELEBRATION",
   "TURN",
 ]);
@@ -296,6 +300,9 @@ function validateShowSegmentDraft(
   if (["CONFRONTATION", "CHALLENGE", "ATTACK"].includes(draft.type) && draft.participantIds.length < 2) {
     throw new Error(`${draft.type} segment requires at least two wrestlers`);
   }
+  if (draft.type === "POST_MATCH_ASSAULT" && draft.participantIds.length < 2) {
+    throw new Error("POST_MATCH_ASSAULT segment requires two distinct wrestlers");
+  }
   if (draft.type === "RESCUE" && draft.participantIds.length < 3) {
     throw new Error("RESCUE segment requires three distinct wrestlers");
   }
@@ -313,14 +320,17 @@ function validateShowSegmentDraft(
       : normalizedId(draft.turnPersonId, "turnPersonId"))
     : null;
   const turnTargetAlignment = draft.type === "TURN" ? (draft.turnTargetAlignment ?? null) : null;
-  const attackerPersonId = (draft.type === "ATTACK" || draft.type === "RESCUE")
+  const attackerPersonId = (draft.type === "ATTACK" || draft.type === "RESCUE" || draft.type === "POST_MATCH_ASSAULT")
     ? (draft.attackerPersonId == null ? null : normalizedId(draft.attackerPersonId, "attackerPersonId")) : null;
-  const victimPersonId = (draft.type === "ATTACK" || draft.type === "RESCUE")
+  const victimPersonId = (draft.type === "ATTACK" || draft.type === "RESCUE" || draft.type === "POST_MATCH_ASSAULT")
     ? (draft.victimPersonId == null ? null : normalizedId(draft.victimPersonId, "victimPersonId")) : null;
+  const sourceDraftMatchId = draft.type === "POST_MATCH_ASSAULT"
+    ? (draft.sourceDraftMatchId == null ? null : normalizedId(draft.sourceDraftMatchId, "sourceDraftMatchId"))
+    : null;
   const rescuerPersonId = draft.type === "RESCUE"
     ? (draft.rescuerPersonId == null ? null : normalizedId(draft.rescuerPersonId, "rescuerPersonId"))
     : null;
-  if ((draft.type === "ATTACK" || draft.type === "RESCUE") && (
+  if ((draft.type === "ATTACK" || draft.type === "RESCUE" || draft.type === "POST_MATCH_ASSAULT") && (
     !attackerPersonId || !victimPersonId || attackerPersonId === victimPersonId
     || !draft.participantIds.includes(attackerPersonId)
     || !draft.participantIds.includes(victimPersonId)
@@ -390,6 +400,7 @@ function validateShowSegmentDraft(
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
     ...(draft.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
+    ...(draft.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),
     ...(draft.type === "TURN" ? { turnPersonId, turnTargetAlignment, turnPresentation, betrayedPersonId } : {}),
   };
 }
@@ -611,6 +622,23 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
     return validated;
   });
   const runningOrder = validateRunningOrder(draft.runningOrder, draftMatchIds, draftSegmentIds);
+  const actualOrder = runningOrder ?? [
+    ...matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ...segments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
+    ...programmeSegments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
+  ];
+  for (const segment of segments) {
+    if (segment.type !== "POST_MATCH_ASSAULT") continue;
+    const source = matches.find((match) => match.draftMatchId === segment.sourceDraftMatchId);
+    if (!source) throw new Error("post-match assault must reference a match booked on this card");
+    const victimIsCompetitor = [...source.sideAIds, ...source.sideBIds].includes(segment.victimPersonId!);
+    if (!victimIsCompetitor) throw new Error("post-match assault victim must compete in the referenced match");
+    const sourcePosition = actualOrder.findIndex((slot) => slot.kind === "MATCH" && slot.refId === source.draftMatchId);
+    const assaultPosition = actualOrder.findIndex((slot) => slot.kind === "SEGMENT" && slot.refId === segment.draftSegmentId);
+    if (assaultPosition !== sourcePosition + 1) {
+      throw new Error("post-match assault must immediately follow its referenced match");
+    }
+  }
 
   return structuredClone({
     draftId,

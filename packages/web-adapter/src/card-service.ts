@@ -110,6 +110,7 @@ export interface AlphaCardSegmentView {
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
   rescuerPersonId?: Id | null;
+  sourceDraftMatchId?: string | null;
   initiatorPersonId?: Id | null;
   targetPersonId?: Id | null;
   attackPresentation?: AttackPresentation | null;
@@ -227,6 +228,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CHALLENGE",
   "ATTACK",
   "RESCUE",
+  "POST_MATCH_ASSAULT",
   "CELEBRATION",
   "TURN",
 ]);
@@ -421,6 +423,9 @@ function normalizeSegments(
     if (["CONFRONTATION", "CHALLENGE", "ATTACK"].includes(segment.type) && people.length < 2) {
       throw new Error(`${segment.type.toLowerCase()} segment requires at least two wrestlers`);
     }
+    if (segment.type === "POST_MATCH_ASSAULT" && people.length < 2) {
+      throw new Error("POST_MATCH_ASSAULT segment requires two distinct wrestlers");
+    }
     if (segment.type === "RESCUE" && people.length < 3) {
       throw new Error("RESCUE segment requires three distinct wrestlers");
     }
@@ -439,13 +444,15 @@ function normalizeSegments(
     const betrayedPersonId = segment.type === "TURN" && turnPresentation === "BETRAYAL"
       ? requiredText(segment.betrayedPersonId ?? "", `segments[${index}].betrayedPersonId`, 128)
       : null;
-    const attackerPersonId = (segment.type === "ATTACK" || segment.type === "RESCUE")
+    const attackerPersonId = (segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT")
       ? requiredText(segment.attackerPersonId ?? "", `segments[${index}].attackerPersonId`, 128) : null;
-    const victimPersonId = (segment.type === "ATTACK" || segment.type === "RESCUE")
+    const victimPersonId = (segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT")
       ? requiredText(segment.victimPersonId ?? "", `segments[${index}].victimPersonId`, 128) : null;
+    const sourceDraftMatchId = segment.type === "POST_MATCH_ASSAULT"
+      ? requiredText(segment.sourceDraftMatchId ?? "", `segments[${index}].sourceDraftMatchId`, 128) : null;
     const rescuerPersonId = segment.type === "RESCUE"
       ? requiredText(segment.rescuerPersonId ?? "", `segments[${index}].rescuerPersonId`, 128) : null;
-    if ((segment.type === "ATTACK" || segment.type === "RESCUE") && (
+    if ((segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT") && (
       attackerPersonId === victimPersonId || !people.includes(attackerPersonId!) || !people.includes(victimPersonId!)
     )) throw new Error("attack angle requires distinct attacker and victim among its participants");
     if (segment.type === "RESCUE" && (
@@ -506,6 +513,7 @@ function normalizeSegments(
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
       ...(segment.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
+      ...(segment.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),
       ...(segment.type === "TURN" ? { turnPersonId, turnTargetAlignment, turnPresentation, betrayedPersonId } : {}),
     } satisfies DetailedShowSegmentDraft;
   });
@@ -920,6 +928,7 @@ export async function loadAlphaShowCard(
       attackerPersonId: ["ATTACK", "RESCUE"].includes(segment.type) ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: ["ATTACK", "RESCUE"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
+      sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
       initiatorPersonId: ["CHALLENGE", "CONFRONTATION"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
       targetPersonId: ["CHALLENGE", "CONFRONTATION"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
       attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
@@ -1090,6 +1099,19 @@ export async function saveAlphaShowCard(
     }
     const normalizedSegments = normalizeSegments(request.segments, aggregate.state, control.promotionId);
     const runningOrder = normalizeRunningOrder(request.runningOrder, normalizedCard.matches, normalizedSegments.segments);
+    for (const segment of normalizedSegments.segments) {
+      if (segment.type !== "POST_MATCH_ASSAULT") continue;
+      const source = normalizedCard.matches.find((match) => match.draftMatchId === segment.sourceDraftMatchId);
+      if (!source) throw new Error("post-match assault must reference a match booked on this card");
+      if (![...source.sideAIds, ...source.sideBIds].includes(segment.victimPersonId!)) {
+        throw new Error("post-match assault victim must compete in the referenced match");
+      }
+      const sourcePosition = runningOrder.findIndex((slot) => slot.kind === "MATCH" && slot.refId === source.draftMatchId);
+      const assaultPosition = runningOrder.findIndex((slot) => slot.kind === "SEGMENT" && slot.refId === segment.draftSegmentId);
+      if (assaultPosition !== sourcePosition + 1) {
+        throw new Error("post-match assault must immediately follow its referenced match");
+      }
+    }
     const matchOrder = new Map(
       runningOrder
         .filter((slot) => slot.kind === "MATCH")

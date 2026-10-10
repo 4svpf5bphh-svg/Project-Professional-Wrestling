@@ -38,7 +38,7 @@ const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
 ];
 const MATCH_FINISHES: BookableFinish[] = ["CLEAN_PIN", "SUBMISSION", "FLASH_PIN", "PROTECTED_FINISH"];
 const SEGMENT_TYPES: AlphaCardSegmentView["type"][] = [
-  "PROMO", "INTERVIEW", "CONFRONTATION", "CHALLENGE", "ATTACK", "RESCUE", "CELEBRATION", "TURN",
+  "PROMO", "INTERVIEW", "CONFRONTATION", "CHALLENGE", "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN",
 ];
 const ATTACK_FORMATS = ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"] as const;
 const ATTACK_OBJECTIVES = ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"] as const;
@@ -117,7 +117,7 @@ function isDirectedSegment(type: AlphaCardSegmentView["type"]): boolean {
 }
 
 function segmentMinimum(type: AlphaCardSegmentView["type"]): number {
-  return type === "RESCUE" ? 3 : type === "CONFRONTATION" || type === "CHALLENGE" || type === "ATTACK" ? 2 : 1;
+  return type === "RESCUE" ? 3 : type === "POST_MATCH_ASSAULT" || type === "CONFRONTATION" || type === "CHALLENGE" || type === "ATTACK" ? 2 : 1;
 }
 
 function MinuteField(props: {
@@ -396,12 +396,20 @@ export default function CardClient(): React.JSX.Element {
       && segment.participantIds.includes(segment.initiatorPersonId ?? "")
       && segment.participantIds.includes(segment.targetPersonId ?? "")
     ))
-    && (segment.type !== "ATTACK" && segment.type !== "RESCUE" || (
+    && (segment.type !== "ATTACK" && segment.type !== "RESCUE" && segment.type !== "POST_MATCH_ASSAULT" || (
       Boolean(segment.attackerPersonId) && Boolean(segment.victimPersonId)
       && segment.attackerPersonId !== segment.victimPersonId
       && segment.participantIds.includes(segment.attackerPersonId ?? "")
       && segment.participantIds.includes(segment.victimPersonId ?? "")
     ))
+    && (segment.type !== "POST_MATCH_ASSAULT" || (() => {
+      const match = matches.find((candidate) => candidate.draftMatchId === segment.sourceDraftMatchId);
+      const sourceIndex = runningOrder.findIndex((slot) => slot.kind === "MATCH" && slot.refId === segment.sourceDraftMatchId);
+      const segmentIndex = runningOrder.findIndex((slot) => slot.kind === "SEGMENT" && slot.refId === segment.draftSegmentId);
+      return Boolean(match && segment.victimPersonId
+        && [...match.sideAIds, ...match.sideBIds].includes(segment.victimPersonId)
+        && segmentIndex === sourceIndex + 1);
+    })())
     && (segment.type !== "RESCUE" || (
       Boolean(segment.rescuerPersonId) && segment.rescuerPersonId !== segment.attackerPersonId
       && segment.rescuerPersonId !== segment.victimPersonId
@@ -434,7 +442,7 @@ export default function CardClient(): React.JSX.Element {
     saveBlockers.push("Choose every wrestler in each match.");
   }
   if (segments.length > 0 && !completeSegments) {
-    saveBlockers.push("Complete every segment and choose all required wrestlers.");
+    saveBlockers.push("Complete every segment, including post-match source match and participants, and choose all required wrestlers.");
   }
   if (duplicateMatchBooking) {
     saveBlockers.push("A wrestler can only be booked in one match. Segment appearances are still allowed.");
@@ -489,6 +497,8 @@ export default function CardClient(): React.JSX.Element {
       attackerPersonId: null,
       victimPersonId: null,
       rescuerPersonId: null,
+      sourceDraftMatchId: type === "POST_MATCH_ASSAULT"
+        ? ([...runningOrder].reverse().find((slot) => slot.kind === "MATCH")?.refId ?? null) : null,
       initiatorPersonId: null,
       targetPersonId: null,
       attackPresentation: type === "ATTACK" ? "BLINDSIDE" : null,
@@ -632,19 +642,51 @@ export default function CardClient(): React.JSX.Element {
     markDirty();
   }
 
+  function placeAfterMatch(segmentId: string, draftMatchId: string): void {
+    setRunningOrder((current) => {
+      const withoutSegment = current.filter((slot) => !(slot.kind === "SEGMENT" && slot.refId === segmentId));
+      const matchPosition = withoutSegment.findIndex((slot) => slot.kind === "MATCH" && slot.refId === draftMatchId);
+      if (matchPosition < 0) return current;
+      const reordered = [...withoutSegment];
+      reordered.splice(matchPosition + 1, 0, { kind: "SEGMENT", refId: segmentId });
+      return reordered;
+    });
+  }
+
+  function linkPostMatch(segmentId: string, draftMatchId: string): void {
+    const segment = segments.find((candidate) => candidate.draftSegmentId === segmentId);
+    if (!segment) return;
+    const match = matches.find((candidate) => candidate.draftMatchId === draftMatchId);
+    const victim = segment.victimPersonId;
+    const victimIsInMatch = match && victim && [...match.sideAIds, ...match.sideBIds].includes(victim);
+    const participantIds = [...segment.participantIds];
+    if (!victimIsInMatch && participantIds.length > 1) participantIds[1] = "";
+    updateSegment(segmentId, {
+      sourceDraftMatchId: draftMatchId || null,
+      victimPersonId: victimIsInMatch ? victim : null,
+      participantIds,
+    });
+    if (draftMatchId) placeAfterMatch(segmentId, draftMatchId);
+  }
+
   function setSegmentType(segmentId: string, type: AlphaCardSegmentView["type"]): void {
     const segment = segments.find((candidate) => candidate.draftSegmentId === segmentId);
     if (!segment) return;
     const minimum = segmentMinimum(type);
     const participantIds = [...segment.participantIds];
     while (participantIds.length < minimum) participantIds.push("");
+    const sourceDraftMatchId = type === "POST_MATCH_ASSAULT"
+      ? (segment.type === type ? (segment.sourceDraftMatchId ?? null)
+        : ([...runningOrder].reverse().find((slot) => slot.kind === "MATCH")?.refId ?? null))
+      : null;
     updateSegment(segmentId, {
       type,
       participantIds,
-      attackerPersonId: (type === "ATTACK" || type === "RESCUE") && type === segment.type && participantIds[0] === segment.attackerPersonId
+      attackerPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[0] === segment.attackerPersonId
         ? (segment.attackerPersonId ?? null) : null,
-      victimPersonId: (type === "ATTACK" || type === "RESCUE") && type === segment.type && participantIds[1] === segment.victimPersonId
+      victimPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[1] === segment.victimPersonId
         ? (segment.victimPersonId ?? null) : null,
+      sourceDraftMatchId,
       rescuerPersonId: type === "RESCUE" && type === segment.type && participantIds[2] === segment.rescuerPersonId
         ? (segment.rescuerPersonId ?? null) : null,
       initiatorPersonId: isDirectedSegment(type) && type === segment.type && participantIds.includes(segment.initiatorPersonId ?? "")
@@ -662,6 +704,7 @@ export default function CardClient(): React.JSX.Element {
         && segment.betrayedPersonId && participantIds.includes(segment.betrayedPersonId)
         && segment.betrayedPersonId !== segment.turnPersonId ? segment.betrayedPersonId : null,
     });
+    if (type === "POST_MATCH_ASSAULT" && sourceDraftMatchId) placeAfterMatch(segmentId, sourceDraftMatchId);
   }
 
   function setSegmentProgramme(segmentId: string, programmeId: string): void {
@@ -700,8 +743,8 @@ export default function CardClient(): React.JSX.Element {
     participantIds[index] = personId;
     updateSegment(segmentId, {
       participantIds,
-      attackerPersonId: (segment.type === "ATTACK" || segment.type === "RESCUE") && index === 0 ? (personId || null) : (segment.attackerPersonId ?? null),
-      victimPersonId: (segment.type === "ATTACK" || segment.type === "RESCUE") && index === 1 ? (personId || null) : (segment.victimPersonId ?? null),
+      attackerPersonId: (segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT") && index === 0 ? (personId || null) : (segment.attackerPersonId ?? null),
+      victimPersonId: (segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT") && index === 1 ? (personId || null) : (segment.victimPersonId ?? null),
       rescuerPersonId: segment.type === "RESCUE" && index === 2 ? (personId || null) : (segment.rescuerPersonId ?? null),
       initiatorPersonId: isDirectedSegment(segment.type) && index === 0 ? (personId || null) : (segment.initiatorPersonId ?? null),
       targetPersonId: isDirectedSegment(segment.type) && index === 1 ? (personId || null) : (segment.targetPersonId ?? null),
@@ -790,6 +833,10 @@ export default function CardClient(): React.JSX.Element {
   function removeSlot(slot: AlphaCardSlotView): void {
     if (slot.kind === "MATCH") {
       setMatches((current) => current.filter((match) => match.draftMatchId !== slot.refId));
+      setSegments((current) => current.map((segment) => segment.sourceDraftMatchId === slot.refId
+        ? { ...segment, sourceDraftMatchId: null, victimPersonId: null,
+            participantIds: segment.participantIds.map((id, index) => index === 1 ? "" : id) }
+        : segment));
       setTitleAssignments((current) => current.filter((entry) => entry.draftMatchId !== slot.refId));
     } else {
       setSegments((current) => current.filter((segment) => segment.draftSegmentId !== slot.refId));
@@ -877,7 +924,13 @@ export default function CardClient(): React.JSX.Element {
     const segment = segments.find((candidate) => candidate.draftSegmentId === target.segmentId);
     if (!segment) return [];
     const eligibleIds = new Set(segmentEligiblePeople(segment, target.kind === "SEGMENT" ? target.slotIndex : null).map((person) => person.personId));
-    if (current) eligibleIds.add(current.personId);
+    if (segment.type === "POST_MATCH_ASSAULT" && target.kind === "SEGMENT" && target.slotIndex === 1) {
+      const source = matches.find((match) => match.draftMatchId === segment.sourceDraftMatchId);
+      const matchPeople = new Set(source ? [...source.sideAIds, ...source.sideBIds].filter(Boolean) : []);
+      for (const personId of [...eligibleIds]) if (!matchPeople.has(personId)) eligibleIds.delete(personId);
+    }
+    if (current && !(segment.type === "POST_MATCH_ASSAULT" && target.kind === "SEGMENT" && target.slotIndex === 1))
+      eligibleIds.add(current.personId);
     const sameSegmentIds = new Set(segment.participantIds.filter(Boolean));
     sameSegmentIds.delete(target.currentId);
 
@@ -924,6 +977,12 @@ export default function CardClient(): React.JSX.Element {
       const target = segment.targetPersonId ? personName(segment.targetPersonId) : "Choose target";
       const action = segment.type === "CHALLENGE" ? "challenges" : "confronts";
       return `${initiator} ${action} ${target} · ${segment.plannedLengthMinutes} min`;
+    }
+    if (segment.type === "POST_MATCH_ASSAULT") {
+      const attacker = segment.attackerPersonId ? personName(segment.attackerPersonId) : "Choose aggressor";
+      const victim = segment.victimPersonId ? personName(segment.victimPersonId) : "Choose victim";
+      const match = matches.find((candidate) => candidate.draftMatchId === segment.sourceDraftMatchId);
+      return `Post-match assault · ${attacker} attacks ${victim} · After ${match ? match.sideAIds.map(personName).join(" & ") + " vs " + match.sideBIds.map(personName).join(" & ") : "choose match"}`;
     }
     if (segment.type === "RESCUE") {
       const rescuer = segment.rescuerPersonId ? personName(segment.rescuerPersonId) : "Choose rescuer";
@@ -1306,6 +1365,24 @@ export default function CardClient(): React.JSX.Element {
                   </div>
                 </div>
 
+                {segment.type === "POST_MATCH_ASSAULT" ? (
+                  <div className={styles.controls}>
+                    <div className={styles.control}>
+                      <label>After which match?</label>
+                      <select value={segment.sourceDraftMatchId ?? ""} disabled={!view.canEdit}
+                        onChange={(event) => linkPostMatch(segment.draftSegmentId, event.target.value)}>
+                        <option value="">Choose a match on this card</option>
+                        {matches.map((match) => (
+                          <option key={match.draftMatchId} value={match.draftMatchId}>
+                            {match.sideAIds.map(personName).join(" & ")} vs {match.sideBIds.map(personName).join(" & ")}
+                          </option>
+                        ))}
+                      </select>
+                      <small className={styles.sideLabel}>Automatically places this assault immediately after the match. The victim must have competed in it; the aggressor may be an outsider.</small>
+                    </div>
+                  </div>
+                ) : null}
+
                 {segment.type === "ATTACK" ? (
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
@@ -1441,16 +1518,16 @@ export default function CardClient(): React.JSX.Element {
                 ) : (
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
-                      <span>{segment.type === "RESCUE" ? "Who attacks, who is saved, and who makes the save?" : segment.type === "ATTACK" ? "Who attacks whom?" : isDirectedSegment(segment.type) ? "Who starts it?" : "Who is involved?"}</span>
+                      <span>{segment.type === "RESCUE" ? "Who attacks, who is saved, and who makes the save?" : segment.type === "POST_MATCH_ASSAULT" ? "Who attacks after the match?" : segment.type === "ATTACK" ? "Who attacks whom?" : isDirectedSegment(segment.type) ? "Who starts it?" : "Who is involved?"}</span>
                       {segment.programmeId ? <small>{segment.type === "RESCUE" ? "Aggressor and victim from Programme; rescuer can be an outsider" : "Limited to this Programme"}</small> : <small>Any contracted wrestler</small>}
                     </div>
                     {segment.participantIds.map((personId, personIndex) => (
-                      <div className={(segment.type === "RESCUE" && personIndex < 3) || ((segment.type === "ATTACK" || isDirectedSegment(segment.type)) && personIndex < 2) ? styles.attackFixedPersonRow : styles.segmentPersonRow} key={personIndex}>
+                      <div className={(segment.type === "RESCUE" && personIndex < 3) || ((segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT" || isDirectedSegment(segment.type)) && personIndex < 2) ? styles.attackFixedPersonRow : styles.segmentPersonRow} key={personIndex}>
                         <div className={styles.segmentPersonCell}>
-                        {segment.type === "ATTACK" || segment.type === "RESCUE" || isDirectedSegment(segment.type) ? (
+                        {segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT" || isDirectedSegment(segment.type) ? (
                           <span className={styles.sideLabel}>
                             {segment.type === "RESCUE" ? (personIndex === 0 ? "Aggressor" : personIndex === 1 ? "Victim" : personIndex === 2 ? "Rescuer" : "Also involved")
-                              : segment.type === "ATTACK"
+                              : segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT"
                               ? (personIndex === 0 ? "Attacker" : personIndex === 1 ? "Victim" : "Also involved")
                               : (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Challenger" : "Instigator") : personIndex === 1 ? "Target" : "Also involved")}
                           </span>
@@ -1458,7 +1535,7 @@ export default function CardClient(): React.JSX.Element {
                         <WrestlerSlotButton
                           person={pickerPerson(segment.type === "RESCUE" && personIndex < 3
                             ? (personIndex === 0 ? (segment.attackerPersonId ?? "") : personIndex === 1 ? (segment.victimPersonId ?? "") : (segment.rescuerPersonId ?? ""))
-                            : segment.type === "ATTACK" && personIndex < 2
+                            : (segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT") && personIndex < 2
                             ? (personIndex === 0 ? (segment.attackerPersonId ?? "") : (segment.victimPersonId ?? ""))
                             : isDirectedSegment(segment.type) && personIndex < 2
                               ? (personIndex === 0 ? (segment.initiatorPersonId ?? "") : (segment.targetPersonId ?? ""))
@@ -1471,7 +1548,7 @@ export default function CardClient(): React.JSX.Element {
                             currentId: personId,
                             label: segment.type === "RESCUE"
                               ? (personIndex === 0 ? "Choose aggressor" : personIndex === 1 ? "Choose victim" : personIndex === 2 ? "Choose rescuer" : "Also involved")
-                              : segment.type === "ATTACK"
+                              : segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT"
                               ? (personIndex === 0 ? "Choose attacker" : personIndex === 1 ? "Choose victim" : "Also involved")
                               : isDirectedSegment(segment.type)
                                 ? (personIndex === 0 ? (segment.type === "CHALLENGE" ? "Choose challenger" : "Choose instigator") : personIndex === 1 ? "Choose target" : "Also involved")
@@ -1479,7 +1556,7 @@ export default function CardClient(): React.JSX.Element {
                           })}
                         />
                         </div>
-                        {(segment.type === "RESCUE" && personIndex < 3) || ((segment.type === "ATTACK" || isDirectedSegment(segment.type)) && personIndex < 2) ? null : (
+                        {(segment.type === "RESCUE" && personIndex < 3) || ((segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT" || isDirectedSegment(segment.type)) && personIndex < 2) ? null : (
                           <button type="button" className={styles.smallRemove} disabled={!view.canEdit || segment.participantIds.length <= segmentMinimum(segment.type)} onClick={() => removeSegmentParticipant(segment.draftSegmentId, personIndex)}>×</button>
                         )}
                       </div>

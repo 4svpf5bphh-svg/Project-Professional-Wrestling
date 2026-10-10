@@ -66,6 +66,8 @@ export interface PlayerWorldResultSegmentView {
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
+  sourceMatchId: Id | null;
+  victimMatchOutcome: "WON" | "LOST" | "DRAW" | null;
   initiatorPersonId: Id | null;
   targetPersonId: Id | null;
   attackPresentation: AttackPresentation | null;
@@ -292,6 +294,8 @@ export function buildPlayerWorldResultsView(
         attackerPersonId: segment.attackerPersonId,
         victimPersonId: segment.victimPersonId,
         rescuerPersonId: segment.rescuerPersonId,
+        sourceMatchId: segment.sourceMatchId,
+        victimMatchOutcome: segment.victimMatchOutcome,
         initiatorPersonId: segment.initiatorPersonId,
         targetPersonId: segment.targetPersonId,
         attackPresentation: segment.attackPresentation,

@@ -292,6 +292,71 @@ test("RESCUE crowd fit responds to a rescuer changing from face to heel", () => 
   ok(face.crowdResponse! > heel.crowdResponse!, "a clearer save did not land better");
 });
 
+test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the real match victim", () => {
+  const setup = fixture(9170);
+  const victim = setup.rosterIds[0]!;
+  const division = setup.state.people.find((person) => person.id === victim)?.division ?? "MEN";
+  const opponent = setup.rosterIds.slice(1).find((id) => (
+    (setup.state.people.find((person) => person.id === id)?.division ?? "MEN") === division
+  ));
+  if (!opponent) throw new Error("post-match test needs two wrestlers in one division");
+  const aggressor = setup.rosterIds.find((id) => id !== victim && id !== opponent)!;
+  const source = { draftMatchId: "source-match", type: "SINGLES" as const,
+    sideAIds: [victim], sideBIds: [opponent], intendedWinnerSide: "A" as const,
+    intent: "COMPETITIVE" as const, plannedLengthMinutes: 12 };
+  const assault = { draftSegmentId: "assault", type: "POST_MATCH_ASSAULT" as const,
+    participantIds: [aggressor, victim], attackerPersonId: aggressor,
+    victimPersonId: victim, sourceDraftMatchId: source.draftMatchId,
+    programmeId: null, plannedLengthMinutes: 4 };
+  const base = { draftId: "post-match-show", promotionId: setup.promotion.id,
+    targetDate: setup.targetDate, marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4), matches: [source], segments: [assault],
+    championshipAssignments: [],
+    runningOrder: [
+      { kind: "MATCH" as const, refId: source.draftMatchId },
+      { kind: "SEGMENT" as const, refId: assault.draftSegmentId },
+    ] };
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...assault, victimPersonId: aggressor }],
+  }), "victim must compete");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, runningOrder: [base.runningOrder[1]!, base.runningOrder[0]!],
+  }), "immediately follow");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...assault, sourceDraftMatchId: "not-booked" }],
+  }), "reference a match");
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, base);
+  const event = completedEvent(setup);
+  setup.state.events.push(event);
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+    "missing match cannot create a fictional assault");
+  const id = "completed-assault-source";
+  setup.state.matches.push({
+    id, worldId: setup.state.world.id, eventId: event.id, promotionId: setup.promotion.id,
+    order: 1, type: "SINGLES", status: "COMPLETED", intent: "COMPETITIVE",
+    plannedLengthMinutes: 12, actualLengthMinutes: 12, intendedWinnerSide: "A",
+    actualWinnerSide: "A", finishChangedDueToInjury: false,
+    executionQuality: 65, criticalRatingStars: 3, crowdResponse: 60,
+  });
+  for (const [index, personId] of [victim, opponent].entries()) {
+    setup.state.matchParticipants.push({
+      id: `post-match-person:${index}`, worldId: setup.state.world.id, eventId: event.id, matchId: id,
+      personId, side: index === 0 ? "A" : "B", won: index === 0,
+    });
+  }
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1,
+    "completed source match did not produce assault history");
+  const frozen = resolvedShowSegmentsForEvent(setup.state, event.id)[0]!;
+  ok(frozen.sourceMatchId === id && frozen.sourceDraftMatchId === source.draftMatchId,
+    "source match was not linked to the result");
+  ok(frozen.victimMatchOutcome === "WON" && frozen.victimPersonId === victim,
+    "frozen assault lost the victim's actual win");
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+    "replaying post-match assaults duplicated history");
+  ok(setup.state.matches.find((match) => match.id === id)?.actualWinnerSide === "A",
+    "assault altered a completed match finish");
+});
+
 test("ATTACK records explicit attacker and victim into immutable show history", () => {
   const setup = fixture(9158);
   const [attacker, victim] = setup.rosterIds;

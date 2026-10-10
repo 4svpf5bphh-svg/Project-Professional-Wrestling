@@ -31,6 +31,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CHALLENGE",
   "ATTACK",
   "RESCUE",
+  "POST_MATCH_ASSAULT",
   "CELEBRATION",
   "TURN",
 ]);
@@ -51,6 +52,9 @@ export interface ResolvedShowSegment {
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
+  sourceDraftMatchId: string | null;
+  sourceMatchId: Id | null;
+  victimMatchOutcome: "WON" | "LOST" | "DRAW" | null;
   initiatorPersonId: Id | null;
   targetPersonId: Id | null;
   attackPresentation: AttackPresentation | null;
@@ -79,6 +83,7 @@ interface NormalizedDraftSegment {
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
+  sourceDraftMatchId: string | null;
   initiatorPersonId: Id | null;
   targetPersonId: Id | null;
   attackPresentation: AttackPresentation | null;
@@ -148,6 +153,7 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     attackerPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" ? (segment.attackerPersonId ?? null) : null,
     victimPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" ? (segment.victimPersonId ?? null) : null,
     rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
+    sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
     initiatorPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" ? (segment.initiatorPersonId ?? null) : null,
     targetPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" ? (segment.targetPersonId ?? null) : null,
     attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? null) : null,
@@ -170,6 +176,7 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       attackerPersonId: null,
       victimPersonId: null,
       rescuerPersonId: null,
+      sourceDraftMatchId: null,
       initiatorPersonId: null,
       targetPersonId: null,
       attackPresentation: null,
@@ -186,6 +193,7 @@ function segmentOutcome(
   state: WorldState,
   event: WorldState["events"][number],
   segment: NormalizedDraftSegment,
+  victimMatchOutcome: "WON" | "LOST" | "DRAW" | null = null,
 ): {
   executionQuality: number;
   crowdResponse: number;
@@ -215,6 +223,7 @@ function segmentOutcome(
     CHALLENGE: [0.56, 0.28, 0.16],
     ATTACK: [0.38, 0.34, 0.28],
     RESCUE: [0.42, 0.30, 0.28],
+    POST_MATCH_ASSAULT: [0.38, 0.35, 0.27],
     CELEBRATION: [0.40, 0.45, 0.15],
     TURN: [0.55, 0.25, 0.20],
   };
@@ -273,6 +282,15 @@ function segmentOutcome(
       angleFitModifier = round1(clamp(clarity + credibility + stakes, -5, 5));
     }
   }
+  if (segment.type === "POST_MATCH_ASSAULT" && segment.attackerPersonId && segment.victimPersonId && victimMatchOutcome) {
+    const attackerAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, segment.attackerPersonId);
+    const victimAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, segment.victimPersonId);
+    const roleClarity = attackerAlignment === "HEEL" && victimAlignment === "FACE" ? 2
+      : attackerAlignment === "FACE" && victimAlignment === "FACE" ? -2 : 0;
+    // Match result is authoritative. The assault cannot alter it.
+    const aftermath = victimMatchOutcome === "WON" ? 1 : victimMatchOutcome === "LOST" ? -0.5 : 0;
+    angleFitModifier = round1(clamp(roleClarity + aftermath, -5, 5));
+  }
   const alignmentVolatilityModifier = segment.type === "TURN" && segment.turnPersonId
     ? round1(recentAlignmentVolatilityPenalty(state, event.promotionId, [segment.turnPersonId]))
     : 0;
@@ -328,6 +346,9 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const attackerPersonId = entry.payload.attackerPersonId ?? null;
   const victimPersonId = entry.payload.victimPersonId ?? null;
   const rescuerPersonId = entry.payload.rescuerPersonId ?? null;
+  const sourceDraftMatchId = entry.payload.sourceDraftMatchId ?? null;
+  const sourceMatchId = entry.payload.sourceMatchId ?? null;
+  const victimMatchOutcome = entry.payload.victimMatchOutcome ?? null;
   const initiatorPersonId = entry.payload.initiatorPersonId ?? null;
   const targetPersonId = entry.payload.targetPersonId ?? null;
   const attackPresentation = entry.payload.attackPresentation ?? null;
@@ -365,6 +386,9 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || (attackerPersonId !== null && typeof attackerPersonId !== "string")
     || (victimPersonId !== null && typeof victimPersonId !== "string")
     || (rescuerPersonId !== null && typeof rescuerPersonId !== "string")
+    || (sourceDraftMatchId !== null && typeof sourceDraftMatchId !== "string")
+    || (sourceMatchId !== null && typeof sourceMatchId !== "string")
+    || (victimMatchOutcome !== null && !["WON", "LOST", "DRAW"].includes(String(victimMatchOutcome)))
     || (initiatorPersonId !== null && typeof initiatorPersonId !== "string")
     || (targetPersonId !== null && typeof targetPersonId !== "string")
     || (attackPresentation !== null && !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(String(attackPresentation)))
@@ -390,6 +414,9 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     attackerPersonId: attackerPersonId as Id | null,
     victimPersonId: victimPersonId as Id | null,
     rescuerPersonId: rescuerPersonId as Id | null,
+    sourceDraftMatchId: sourceDraftMatchId as string | null,
+    sourceMatchId: sourceMatchId as Id | null,
+    victimMatchOutcome: victimMatchOutcome as "WON" | "LOST" | "DRAW" | null,
     initiatorPersonId: initiatorPersonId as Id | null,
     targetPersonId: targetPersonId as Id | null,
     attackPresentation: attackPresentation as AttackPresentation | null,
@@ -415,6 +442,33 @@ export function resolvedShowSegmentsForEvent(state: WorldState, eventId: Id): Re
     .map(resolvedSegmentFromLedger)
     .filter((segment): segment is ResolvedShowSegment => segment !== null && segment.eventId === eventId)
     .sort((left, right) => left.slotOrder - right.slotOrder || left.ledgerId.localeCompare(right.ledgerId));
+}
+
+function completedMatchForAftermath(
+  state: WorldState,
+  eventId: Id,
+  draft: DetailedShowDraft,
+  segment: NormalizedDraftSegment,
+): { sourceMatchId: Id; victimMatchOutcome: "WON" | "LOST" | "DRAW" } | null {
+  if (segment.type !== "POST_MATCH_ASSAULT" || !segment.sourceDraftMatchId || !segment.victimPersonId) return null;
+  const source = draft.matches.find((match) => match.draftMatchId === segment.sourceDraftMatchId);
+  if (!source) return null;
+  const expected = [...source.sideAIds, ...source.sideBIds];
+  const match = state.matches.find((candidate) => {
+    if (candidate.eventId !== eventId || candidate.status !== "COMPLETED" || candidate.type !== source.type) return false;
+    const actual = state.matchParticipants.filter((participant) => participant.matchId === candidate.id);
+    return actual.length === expected.length && actual.every((participant) => expected.includes(participant.personId));
+  });
+  if (!match) return null;
+  const victim = state.matchParticipants.find((participant) => (
+    participant.matchId === match.id && participant.personId === segment.victimPersonId
+  ));
+  if (!victim) return null;
+  return {
+    sourceMatchId: match.id,
+    victimMatchOutcome: match.actualWinnerSide === null ? "DRAW"
+      : victim.side === match.actualWinnerSide ? "WON" : "LOST",
+  };
 }
 
 function segmentSlotOrder(draft: DetailedShowDraft, segmentId: string, fallbackIndex: number): number {
@@ -455,7 +509,12 @@ export function recordResolvedShowSegments(
       segments.forEach((segment, segmentIndex) => {
         if (existing.has(segment.draftSegmentId)) return;
         const slotOrder = segmentSlotOrder(draft, segment.draftSegmentId, segmentIndex);
-        const outcome = segmentOutcome(state, event, segment);
+        const sourceMatch = segment.type === "POST_MATCH_ASSAULT"
+          ? completedMatchForAftermath(state, event.id, draft, segment)
+          : null;
+        // Incomplete or missing matches never yield fictional aftermath.
+        if (segment.type === "POST_MATCH_ASSAULT" && !sourceMatch) return;
+        const outcome = segmentOutcome(state, event, segment, sourceMatch?.victimMatchOutcome ?? null);
         writer.append({
           date: event.date,
           type: RESOLVED_SEGMENT_LEDGER_TYPE,
@@ -474,6 +533,9 @@ export function recordResolvedShowSegments(
             attackerPersonId: segment.attackerPersonId,
             victimPersonId: segment.victimPersonId,
             rescuerPersonId: segment.rescuerPersonId,
+            sourceDraftMatchId: segment.sourceDraftMatchId,
+            sourceMatchId: sourceMatch?.sourceMatchId ?? null,
+            victimMatchOutcome: sourceMatch?.victimMatchOutcome ?? null,
             initiatorPersonId: segment.initiatorPersonId,
             targetPersonId: segment.targetPersonId,
             attackPresentation: segment.attackPresentation,

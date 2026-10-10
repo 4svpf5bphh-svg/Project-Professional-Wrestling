@@ -447,6 +447,81 @@ await test("RESCUE allows a booked outsider to save a wrestler in an active Prog
   ok(reloaded.segments[0]?.rescuerPersonId === rescuer, "outsider rescuer disappeared on reload");
 });
 
+await test("Card post-match assault links to completed match without changing its finish", async () => {
+  const fixture = await reservedShowFixture(61106);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const card = singlesCard(fixture.participantIds);
+  if (card.length < 2) throw new Error("match-linked fixture needs two matches");
+  const victim = card[0]!.sideAIds[0]!;
+  const attacker = card[1]!.sideAIds[0]!;
+  const segment: AlphaCardSegmentView = {
+    draftSegmentId: "after-match-assault", type: "POST_MATCH_ASSAULT",
+    participantIds: [attacker, victim], attackerPersonId: attacker,
+    victimPersonId: victim, sourceDraftMatchId: card[0]!.draftMatchId,
+    programmeId: null, plannedLengthMinutes: 5,
+  };
+  const validOrder = [
+    { kind: "MATCH" as const, refId: card[0]!.draftMatchId },
+    { kind: "SEGMENT" as const, refId: segment.draftSegmentId },
+    ...card.slice(1).map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+  ];
+  let rejected = false;
+  try {
+    await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: "assault-wrong-order", expectedRevision: before.world.revision,
+      expectedPlanVersion: before.workspaceVersion, matches: card, segments: [segment],
+      runningOrder: [...card.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+        { kind: "SEGMENT" as const, refId: segment.draftSegmentId }],
+      championshipAssignments: [],
+    });
+  } catch (error) {
+    rejected = String(error).includes("immediately follow");
+  }
+  ok(rejected, "Card allowed aftermath detached from source match");
+  rejected = false;
+  try {
+    await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: "assault-wrong-victim", expectedRevision: before.world.revision,
+      expectedPlanVersion: before.workspaceVersion, matches: card,
+      segments: [{ ...segment, victimPersonId: card[1]!.sideBIds[0],
+        participantIds: [attacker, card[1]!.sideBIds[0]!] }],
+      runningOrder: validOrder, championshipAssignments: [],
+    });
+  } catch (error) {
+    rejected = String(error).includes("victim must compete");
+  }
+  ok(rejected, "Card accepted an assault against a different match's wrestler");
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "assault-correctly-linked", expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion, matches: card, segments: [segment],
+    runningOrder: validOrder, championshipAssignments: [],
+  });
+  ok(saved.segments[0]?.sourceDraftMatchId === card[0]!.draftMatchId,
+    "Card dropped source match identity");
+  const loaded = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(loaded.runningOrder[1]?.kind === "SEGMENT" && loaded.segments[0]?.victimPersonId === victim,
+    "Card moved aftermath or forgot the victim after reload");
+  await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+    expectedRevision: saved.world.revision,
+  });
+  const finished = await fixture.repository.load(fixture.worldId);
+  const frozen = finished.state.ledger.find((entry) => entry.type === "SHOW_SEGMENT_COMPLETED"
+    && entry.payload.segmentType === "POST_MATCH_ASSAULT"
+    && entry.payload.draftSegmentId === segment.draftSegmentId);
+  ok(frozen, "match-linked assault did not enter the frozen show history");
+  const sourceId = frozen?.payload.sourceMatchId;
+  const sourceMatch = finished.state.matches.find((match) => match.id === sourceId);
+  ok(sourceMatch?.status === "COMPLETED", "assault source points to an incomplete match");
+  const victimAppearance = finished.state.matchParticipants.find((person) => (
+    person.matchId === sourceId && person.personId === victim
+  ));
+  ok(victimAppearance, "assault victim was not in the actual source match");
+  const actualOutcome = sourceMatch!.actualWinnerSide === null ? "DRAW"
+    : victimAppearance!.side === sourceMatch!.actualWinnerSide ? "WON" : "LOST";
+  ok(frozen?.payload.victimMatchOutcome === actualOutcome,
+    "post-match assault fabricated the victim's match outcome");
+});
+
 await test("Card requires attack roles and preserves them on reload", async () => {
   const fixture = await reservedShowFixture(61098);
   const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
