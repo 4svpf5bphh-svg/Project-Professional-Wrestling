@@ -30,6 +30,7 @@ import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 import { baselineWrestlingStyle, defaultWrestlerCreativeFields, wrestlerCreativeProfileFor, type WrestlerCreativeFields, type WrestlerCreativeChange, type WrestlingStyle } from "./wrestler-creative.js";
 import { wrestlerPersonalityFor, type WrestlerPersonalityView } from "./wrestler-personality.js";
 import { wrestlerCreativeInterestFor, type WrestlerCreativeInterestView } from "./wrestler-creative-interests.js";
+import { workingConnectionsForWrestler, type WrestlerWorkingConnectionView } from "./wrestler-working-connections.js";
 
 export type WrestlerProfileEmploymentStatus =
   | "OUR_ROSTER"
@@ -159,6 +160,8 @@ export interface PlayerWrestlerProfileView {
     defenses: number;
   }>;
   recentMatches: PlayerWrestlerProfileRecentMatchView[];
+  /** Factual wrestling partnerships and established fictional backstory, not personal-life claims. */
+  workingConnections: WrestlerWorkingConnectionView[];
   injuryHistory: Array<{
     injuryId: Id;
     date: PpwDate;
@@ -504,6 +507,8 @@ export function buildPlayerWrestlerProfileView(
     activeTeams,
     currentChampionships,
     recentMatches,
+    workingConnections: relationship?.employmentStatus === "OUR_ROSTER"
+      ? workingConnectionsForWrestler(aggregate.state, personId) : [],
     injuryHistory,
   };
 }
