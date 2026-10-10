@@ -23,11 +23,12 @@ export const WRESTLING_STYLES = [
 ] as const;
 export type WrestlingStyle = (typeof WRESTLING_STYLES)[number];
 
-export const GIMMICK_ARCHETYPES = [
-  "AUTHENTIC", "HERO", "VILLAIN", "REBEL", "SHOWMAN",
-  "MONSTER", "COMEDY", "MYSTERY", "SPORTING", "OTHER",
-] as const;
-export type GimmickArchetype = (typeof GIMMICK_ARCHETYPES)[number];
+import { GIMMICK_ARCHETYPES } from "./gimmick-catalog.js";
+import type { GimmickId } from "./gimmick-catalog.js";
+import { curatedCharacterFor } from "../../content/src/real-wrestler-characters.js";
+
+export { GIMMICK_ARCHETYPES };
+export type GimmickArchetype = GimmickId;
 
 export const MOVE_CATEGORIES = ["STRIKE","GRAPPLE","SUBMISSION","AERIAL","POWER","OTHER"] as const;
 export type MoveCategory = (typeof MOVE_CATEGORIES)[number];
@@ -81,14 +82,15 @@ export function baselineWrestlingStyle(person: Person): WrestlingStyle {
 }
 
 export function defaultWrestlerCreativeFields(person: Person): WrestlerCreativeFields {
+  const real = curatedCharacterFor(person.name);
   return {
     ringName: person.name,
-    gimmickArchetype: "AUTHENTIC",
+    gimmickArchetype: real?.gimmickArchetype ?? "AUTHENTIC",
     gimmickDescription: "",
-    primaryStyle: baselineWrestlingStyle(person),
-    secondaryStyle: null,
-    signatureMove: null,
-    finishingMove: null,
+    primaryStyle: real?.primaryStyle ?? baselineWrestlingStyle(person),
+    secondaryStyle: real?.secondaryStyle ?? null,
+    signatureMove: real?.signatureMove ? {...real.signatureMove} : null,
+    finishingMove: real?.finishingMove ? {...real.finishingMove} : null,
   };
 }
 
@@ -99,7 +101,23 @@ export function wrestlerCreativeProfileFor(
 ): WrestlerCreativeFields {
   const entry = (engagement?.wrestlerCreativeProfiles ?? [])
     .find((record) => record.promotionId === promotionId && record.personId === person.id);
-  return structuredClone(entry?.fields ?? defaultWrestlerCreativeFields(person));
+  const baseline=defaultWrestlerCreativeFields(person);
+  if (!entry) return baseline;
+  // Read-only legacy enrichment: older Worlds may have saved the previous
+  // blank/default character. Explicit player changes always take precedence.
+  // No existing historical revision is altered by an updated curation file.
+  const edited=<K extends keyof WrestlerCreativeFields>(key:K):boolean =>
+    (entry.history??[]).some(change=>JSON.stringify(change.previous[key])!==JSON.stringify(change.next[key]));
+  return structuredClone({
+    ...entry.fields,
+    gimmickArchetype:entry.fields.gimmickArchetype==="AUTHENTIC" && !edited("gimmickArchetype")
+      ? baseline.gimmickArchetype:entry.fields.gimmickArchetype,
+    primaryStyle:!edited("primaryStyle") ? baseline.primaryStyle:entry.fields.primaryStyle,
+    signatureMove:entry.fields.signatureMove===null && !edited("signatureMove")
+      ? baseline.signatureMove:entry.fields.signatureMove,
+    finishingMove:entry.fields.finishingMove===null && !edited("finishingMove")
+      ? baseline.finishingMove:entry.fields.finishingMove,
+  });
 }
 
 function bounded(value: unknown, field: string, max: number, required = false): string {
@@ -168,7 +186,7 @@ export function setWrestlerCreativeProfileCommand(
     const record = (engagement.wrestlerCreativeProfiles ??= [])
       .find((candidate) => candidate.promotionId === promotionId && candidate.personId === personId);
     const person = state.people.find((entry) => entry.id === personId)!;
-    const previous = record?.fields ?? defaultWrestlerCreativeFields(person);
+    const previous = wrestlerCreativeProfileFor(engagement,promotionId,person);
     if (JSON.stringify(previous) === JSON.stringify(next)) return record ? structuredClone(record) : null;
     const update: WrestlerCreativeChange = {
       date: { ...state.world.currentDate },
