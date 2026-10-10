@@ -73,6 +73,7 @@ await test("Wrestler presentation persists via web service without touching matc
   const before=await loadAlphaWrestlerProfile(repository,aggregate.state.world.id,playerId,ownContract.personId);
   ok(before.creativeProfile?.canEdit && before.creativeProfile.fields.ringName===before.person.name,
     "initial character profile not available to booker");
+  if (!before.creativeProfile) throw new Error("owned wrestler has no editable creative profile");
   const fields={...before.creativeProfile.fields,ringName:"The Night Shift",
     finishingMove:{name:"The Last Bell",category:"STRIKE" as const}};
   const command={requestId:"creative-web-save",expectedRevision:before.world.revision,
