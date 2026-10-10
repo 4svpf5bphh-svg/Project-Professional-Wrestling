@@ -491,6 +491,7 @@ function normalizeSegments(
       usedProgrammes.add(programmeId);
       const storyPeople = new Set(programmeParticipantIds(state, programmeId));
       for (const personId of people) {
+        if (segment.type === "RESCUE" && personId === rescuerPersonId) continue;
         if (!storyPeople.has(personId)) throw new Error(`${personId} does not belong to Programme ${programmeId}`);
       }
     }

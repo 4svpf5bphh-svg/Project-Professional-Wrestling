@@ -243,6 +243,29 @@ test("RESCUE freezes the aggressor, victim and rescuer as distinct characters", 
   ok(recordResolvedShowSegments(setup.state, setup.planning) === 0, "rescue duplicated on retry");
 });
 
+test("outsider rescue can advance a two-wrestler Programme without joining it", () => {
+  const setup = fixture(9169);
+  const [aggressor, victim, rescuer] = setup.rosterIds;
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    draftId: "outsider-save", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+    segments: [{ draftSegmentId: "outsider-save-1", type: "RESCUE",
+      participantIds: [aggressor!, victim!, rescuer!],
+      attackerPersonId: aggressor!, victimPersonId: victim!, rescuerPersonId: rescuer!,
+      programmeId: setup.programme.id, plannedLengthMinutes: 5 }],
+  });
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "outsider save never resolved");
+  const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(frozen.rescuerPersonId === rescuer && frozen.programmeId === setup.programme.id,
+    "outsider rescue lost programme attribution");
+  ok(programmeActivities(setup.state, setup.programme.id).length === 1,
+    "rescue did not contribute to existing Programme history");
+  ok(setup.programme.sideA.length === 1 && setup.programme.sideB.length === 1,
+    "outsider was silently enlisted into the Programme");
+});
+
 test("RESCUE crowd fit responds to a rescuer changing from face to heel", () => {
   const resolve = (rescuerAlignment: "HEEL" | "FACE") => {
     const setup = fixture(9168);

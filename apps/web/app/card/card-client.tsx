@@ -674,7 +674,11 @@ export default function CardClient(): React.JSX.Element {
     const programme = view.programmes.find((candidate) => candidate.programmeId === programmeId);
     const allowed = new Set(programme?.participantIds ?? []);
     const minimum = segmentMinimum(segment.type);
-    let participantIds = segment.participantIds.filter((personId) => !personId || allowed.has(personId));
+    let participantIds = segment.type === "RESCUE"
+      ? segment.participantIds.map((personId, index) => (
+          !personId || allowed.has(personId) || index === 2 ? personId : ""
+        ))
+      : segment.participantIds.filter((personId) => !personId || allowed.has(personId));
     while (participantIds.length < minimum) participantIds.push("");
     updateSegment(segmentId, {
       programmeId,
@@ -872,7 +876,7 @@ export default function CardClient(): React.JSX.Element {
 
     const segment = segments.find((candidate) => candidate.draftSegmentId === target.segmentId);
     if (!segment) return [];
-    const eligibleIds = new Set(segmentEligiblePeople(segment).map((person) => person.personId));
+    const eligibleIds = new Set(segmentEligiblePeople(segment, target.kind === "SEGMENT" ? target.slotIndex : null).map((person) => person.personId));
     if (current) eligibleIds.add(current.personId);
     const sameSegmentIds = new Set(segment.participantIds.filter(Boolean));
     sameSegmentIds.delete(target.currentId);
@@ -942,13 +946,15 @@ export default function CardClient(): React.JSX.Element {
     return championship.holderPersonIds.every((personId) => ids.includes(personId));
   }
 
-  function segmentEligiblePeople(segment: AlphaCardSegmentView): AlphaCardParticipantView[] {
+  function segmentEligiblePeople(segment: AlphaCardSegmentView, slotIndex: number | null): AlphaCardParticipantView[] {
     if (!view) return [];
     const programme = segment.programmeId
       ? view.programmes.find((candidate) => candidate.programmeId === segment.programmeId)
       : null;
     const allowed = programme ? new Set(programme.participantIds) : null;
-    return view.availableParticipants.filter((person) => !allowed || allowed.has(person.personId));
+    return view.availableParticipants.filter((person) => (
+      !allowed || (segment.type === "RESCUE" && slotIndex === 2) || allowed.has(person.personId)
+    ));
   }
 
   async function save(): Promise<void> {
@@ -1436,7 +1442,7 @@ export default function CardClient(): React.JSX.Element {
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
                       <span>{segment.type === "RESCUE" ? "Who attacks, who is saved, and who makes the save?" : segment.type === "ATTACK" ? "Who attacks whom?" : isDirectedSegment(segment.type) ? "Who starts it?" : "Who is involved?"}</span>
-                      {segment.programmeId ? <small>Limited to this Programme</small> : <small>Any contracted wrestler</small>}
+                      {segment.programmeId ? <small>{segment.type === "RESCUE" ? "Aggressor and victim from Programme; rescuer can be an outsider" : "Limited to this Programme"}</small> : <small>Any contracted wrestler</small>}
                     </div>
                     {segment.participantIds.map((personId, personIndex) => (
                       <div className={(segment.type === "RESCUE" && personIndex < 3) || ((segment.type === "ATTACK" || isDirectedSegment(segment.type)) && personIndex < 2) ? styles.attackFixedPersonRow : styles.segmentPersonRow} key={personIndex}>
