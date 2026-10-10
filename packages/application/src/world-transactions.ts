@@ -4,6 +4,7 @@ import { evaluateBackstagePromises, generateBackstageConversations } from "./bac
 import { generateTagTeamPitches } from "./backstage-pitches.js";
 import { generateRivalryPitches } from "./backstage-rivalries.js";
 import { generateTeamMoments } from "./backstage-moments.js";
+import { generateGimmickChangePitches } from "./backstage-gimmicks.js";
 import { applyBackstagePromiseConsequences } from "./backstage-consequences.js";
 import {
   closeCurrentWeekReservationsAtCommitmentLock,
@@ -116,6 +117,7 @@ export async function resolvePersistedWorldWeek(
     generateBackstageConversations(aggregate);
     generateTagTeamPitches(aggregate);
     generateRivalryPitches(aggregate);
+    generateGimmickChangePitches(aggregate);
     generateTeamMoments(aggregate);
     generateWorldOpportunities(aggregate);
   });

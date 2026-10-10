@@ -19,6 +19,8 @@ const REPLIES: Array<{ value: BackstageResponse; label: string; detail: string }
   { value: "PASS_TAG_TEAM", label: "Not right now", detail: "Pass on the pitch without affecting contracts, morale or wrestling results." },
   { value: "CONSIDER_RIVALRY", label: "Explore the programme", detail: "Consider building an on-screen feud. You still author every segment and outcome." },
   { value: "PASS_RIVALRY", label: "Not the right feud", detail: "Pass on this idea without changing relationships or any scripted wrestling." },
+  { value: "CONSIDER_GIMMICK_CHANGE", label: "Explore a repackaging", detail: "Consider a new direction. Only you can edit the gimmick in the wrestler profile." },
+  { value: "PASS_GIMMICK_CHANGE", label: "Keep the current gimmick", detail: "Decline the suggestion; no character, trust or morale change follows." },
 ];
 
 function roleLabel(role: string): string {
@@ -112,24 +114,51 @@ export default function BackstageClient(): React.JSX.Element {
               const pitch = conversation.kind === "TAG_TEAM_PITCH";
               const rivalry = conversation.kind === "RIVALRY_PITCH";
               const moment = conversation.kind === "TEAM_MOMENT";
+              const gimmick = conversation.kind === "GIMMICK_CHANGE_PITCH";
               const replies = REPLIES.filter((reply) => pitch
                 ? reply.value === "CONSIDER_TAG_TEAM" || reply.value === "PASS_TAG_TEAM"
                 : rivalry
                   ? reply.value === "CONSIDER_RIVALRY" || reply.value === "PASS_RIVALRY"
-                  : !["CONSIDER_TAG_TEAM","PASS_TAG_TEAM","CONSIDER_RIVALRY","PASS_RIVALRY"].includes(reply.value));
+                  : gimmick
+                    ? reply.value === "CONSIDER_GIMMICK_CHANGE" || reply.value === "PASS_GIMMICK_CHANGE"
+                    : !["CONSIDER_TAG_TEAM","PASS_TAG_TEAM","CONSIDER_RIVALRY","PASS_RIVALRY",
+                        "CONSIDER_GIMMICK_CHANGE","PASS_GIMMICK_CHANGE"].includes(reply.value));
               const selected = choices[conversation.conversationId] ?? (
-                pitch ? "CONSIDER_TAG_TEAM" : rivalry ? "CONSIDER_RIVALRY" : "HEAR_OUT"
+                pitch ? "CONSIDER_TAG_TEAM" : rivalry ? "CONSIDER_RIVALRY"
+                  : gimmick ? "CONSIDER_GIMMICK_CHANGE" : "HEAR_OUT"
               );
               return (
                 <article className="choice-card" key={conversation.conversationId}>
                   <div className="choice-card-top">
                     <div>
-                      <span className="eyebrow">{moment ? "LOCKER-ROOM GOOD NEWS" : pitch ? "TAG-TEAM PITCH" : rivalry ? "RIVALRY PITCH" : conversation.status === "OPEN" ? "WANTS A WORD" : "CONVERSATION RECORDED"}</span>
+                      <span className="eyebrow">{moment ? "LOCKER-ROOM GOOD NEWS" : pitch ? "TAG-TEAM PITCH" : rivalry ? "RIVALRY PITCH"
+                        : gimmick ? "CHARACTER PITCH" : conversation.status === "OPEN" ? "WANTS A WORD" : "CONVERSATION RECORDED"}</span>
                       <h3>{conversation.wrestlerName}</h3>
                     </div>
                     <span className="revision">Y{conversation.createdDate.year} W{conversation.createdDate.week}</span>
                   </div>
-                  {moment ? (
+                  {gimmick ? (
+                    <>
+                      <p className="body-copy">
+                        The crowd hasn't really been connecting with what I'm doing lately.
+                        After {conversation.observedMatchShows} matches, maybe it's time we tried
+                        a different character direction. I've been thinking about
+                        {" "}<strong>{(conversation.suggestedGimmickArchetype ?? "OTHER").toLowerCase().replaceAll("_", " ")}</strong>
+                        {" "}instead of the current
+                        {" "}{(conversation.currentGimmickArchetype ?? "AUTHENTIC").toLowerCase().replaceAll("_", " ")}.
+                      </p>
+                      <p className="muted micro-copy">
+                        Actual completed appearances: {conversation.observedMatchShows} ·
+                        Average match crowd response: {conversation.observedCrowdResponse?.toFixed(1) ?? "—"}/100.
+                        This does not prove the gimmick caused the results.
+                      </p>
+                      <a href={`/talent/profile?personId=${encodeURIComponent(conversation.wrestlerId)}&from=talent`}
+                        style={{ color: "#5de9ce", fontWeight: 850 }}>Open wrestler presentation →</a>
+                      <p className="muted micro-copy">
+                        You choose the character, style and moves. Exploring this idea does not apply it.
+                      </p>
+                    </>
+                  ) : moment ? (
                     <>
                       <p className="body-copy">
                         {conversation.wrestlerName} and {conversation.partnerName ?? "their tag partner"}
@@ -230,7 +259,9 @@ export default function BackstageClient(): React.JSX.Element {
                     </div>
                   ) : (
                     <p className="muted body-copy">You responded: {REPLIES.find((reply) => reply.value === conversation.response)?.label ?? "Response recorded"}.
-                      This conversation is now part of your promotion history. {pitch ? "No team has been created automatically." : rivalry ? "No Programme has been created automatically." : ""}</p>
+                      This conversation is now part of your promotion history. {pitch ? "No team has been created automatically."
+                        : rivalry ? "No Programme has been created automatically."
+                        : gimmick ? "Their existing gimmick is unchanged until you edit it." : ""}</p>
                   )}
                 </article>
               );

@@ -155,18 +155,22 @@ export function buildPlayerAttention(
       const name = personName(aggregate, conversation.wrestlerId);
       const isPitch = conversation.kind === "TAG_TEAM_PITCH";
       const isRivalry = conversation.kind === "RIVALRY_PITCH";
+      const isGimmick = conversation.kind === "GIMMICK_CHANGE_PITCH";
       const partner = conversation.partnerPersonId ? personName(aggregate, conversation.partnerPersonId) : "";
       const rival = conversation.rivalPersonId ? personName(aggregate, conversation.rivalPersonId) : "";
       items.push({
         attentionId: `backstage:${conversation.conversationId}`,
         category: "IMPORTANT",
         title: isPitch ? `${name} has a tag-team idea`
-          : isRivalry ? `${name} pitches an on-screen rivalry` : `${name} wants a word`,
+          : isRivalry ? `${name} pitches an on-screen rivalry`
+          : isGimmick ? `${name} wants to refresh their gimmick` : `${name} wants a word`,
         summary: isPitch
           ? `${name} suggests teaming with ${partner} after ${conversation.sharedTagMatches ?? 0} promising tag matches. You decide whether to explore it.`
           : isRivalry
             ? `${name} suggests a scripted feud with ${rival} after ${conversation.sharedSinglesMatches ?? 0} hot singles matches. You decide whether it happens.`
-            : `${name} is questioning their ${conversation.promisedRole === "MAIN_EVENT" ? "main-event" : "upper-card"} booking. ${conversation.observedMatchShows} completed matches have not delivered a promised featured position. You can hear them out in Backstage.`,
+            : isGimmick
+              ? `${name} wants to revisit their on-screen character after ${conversation.observedMatchShows} completed matches with modest crowd response. Any gimmick change is yours to make.`
+              : `${name} is questioning their ${conversation.promisedRole === "MAIN_EVENT" ? "main-event" : "upper-card"} booking. ${conversation.observedMatchShows} completed matches have not delivered a promised featured position. You can hear them out in Backstage.`,
         deadline: null,
         deepLink: "/backstage",
         dismissible: false,

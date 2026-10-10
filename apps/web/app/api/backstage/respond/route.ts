@@ -15,7 +15,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body = await request.json() as Record<string, unknown>;
     const response = requiredText(body.response, "response", 32);
-    if (!["HEAR_OUT", "EXPLAIN_PLAN", "STAND_FIRM", "PROMISE_FEATURED_BOOKING", "CONSIDER_TAG_TEAM", "PASS_TAG_TEAM", "CONSIDER_RIVALRY", "PASS_RIVALRY"].includes(response)) throw new Error("unsupported Backstage response");
+    if (!["HEAR_OUT", "EXPLAIN_PLAN", "STAND_FIRM", "PROMISE_FEATURED_BOOKING", "CONSIDER_TAG_TEAM", "PASS_TAG_TEAM", "CONSIDER_RIVALRY", "PASS_RIVALRY", "CONSIDER_GIMMICK_CHANGE", "PASS_GIMMICK_CHANGE"].includes(response)) throw new Error("unsupported Backstage response");
     const result = await withAlphaServerContext(({ repository, worldId, playerId }) => (
       respondAlphaBackstage(repository, worldId, playerId, {
         requestId: requiredText(body.requestId, "requestId", 256),

@@ -13,6 +13,7 @@ import { talentExpectationEvidenceForContract } from "./talent-expectations.js";
 import { executeIdempotentCommand, type ApplicationCommandEnvelope } from "./commands.js";
 import { activePromotionControlForPlayer, activePromotionControls, activeWorldMembership } from "./ownership.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
+import type { GimmickArchetype } from "./wrestler-creative.js";
 
 export const BACKSTAGE_NEW_CONVERSATIONS_PER_PROMOTION_WEEK = 1;
 export const BACKSTAGE_MAX_UNANSWERED_PER_PROMOTION = 3;
@@ -95,7 +96,7 @@ export interface PlayerBackstageConversation {
   wrestlerName: string;
   createdDate: PpwDate;
   status: "OPEN" | "ANSWERED" | "NOTED";
-  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT";
+  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH";
   promisedRole: "MAIN_EVENT" | "UPPER_CARD" | null;
   observedMatchShows: number;
   partnerPersonId: Id | null;
@@ -106,6 +107,9 @@ export interface PlayerBackstageConversation {
   rivalName: string | null;
   sharedSinglesMatches: number;
   professionalTrustAtPitch: number | null;
+  currentGimmickArchetype: GimmickArchetype | null;
+  suggestedGimmickArchetype: GimmickArchetype | null;
+  observedCrowdResponse: number | null;
   response: BackstageResponse | null;
   responseDate: PpwDate | null;
   canPromiseFeaturedBooking: boolean;
@@ -158,6 +162,9 @@ export function buildPlayerBackstageView(
       rivalName: entry.rivalPersonId ? names.get(entry.rivalPersonId) ?? null : null,
       sharedSinglesMatches: entry.sharedSinglesMatches ?? 0,
       professionalTrustAtPitch: entry.professionalTrustAtPitch ?? null,
+      currentGimmickArchetype: entry.currentGimmickArchetype ?? null,
+      suggestedGimmickArchetype: entry.suggestedGimmickArchetype ?? null,
+      observedCrowdResponse: entry.observedCrowdResponse ?? null,
       response: entry.response,
       responseDate: entry.responseDate ? { ...entry.responseDate } : null,
       canPromiseFeaturedBooking: entry.status === "OPEN"
