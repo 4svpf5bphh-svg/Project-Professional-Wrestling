@@ -19,6 +19,8 @@ import { generateTagTeamPitches } from "../packages/application/src/backstage-pi
 import { generateRivalryPitches } from "../packages/application/src/backstage-rivalries.js";
 import { generateTeamMoments } from "../packages/application/src/backstage-moments.js";
 import { generateGimmickChangePitches } from "../packages/application/src/backstage-gimmicks.js";
+import { assessCreativeFollowThrough } from "../packages/application/src/backstage-follow-through.js";
+import { createProgramme } from "../packages/sim-core/src/programmes.js";
 import { chooseCreativePitchSpeaker, wrestlerCreativeInterestScores } from "../packages/application/src/wrestler-creative-interests.js";
 import { buildBackstageDialogue } from "../packages/application/src/backstage-dialogue.js";
 import { setWrestlerCreativeProfileCommand, defaultWrestlerCreativeFields } from "../packages/application/src/wrestler-creative.js";
@@ -1341,6 +1343,190 @@ test("Verified positive teamwork gives continuity, a considered pitch alone neve
   });
   ok(unrelated.continuity?.pastPositiveTeamMomentsWithPartner===0,
     "pair memory leaked to a wrestler who was never in the established duo");
+});
+
+
+test("A considered rivalry only counts when the player starts a new real opposing Programme",()=>{
+  const f=fixture(),a=f.aggregate;
+  const contracts=activeContractsForPromotion(a.state,f.promotion.id).filter(x=>x.personId!==f.person.id);
+  const partner=contracts[0]!;
+  a.engagement=createWorldEngagementState(a.state.world.id);
+  const existing=createProgramme(a.state,{
+    promotionId:f.promotion.id,
+    sideA:[{kind:"PERSON",entityId:f.person.id}],
+    sideB:[{kind:"PERSON",entityId:partner.personId}],
+  });
+  const item=openBackstageConversation(a.engagement,{
+    conversationId:"follow:rivalry",worldId:a.state.world.id,promotionId:f.promotion.id,
+    wrestlerId:f.person.id,sourceContractId:f.contract.id,
+    kind:"RIVALRY_PITCH",createdDate:{...a.state.world.currentDate},
+    status:"OPEN",response:null,responseDate:null,promisedRole:null,
+    observedMatchShows:0,observedFeaturedShows:0,rivalPersonId:partner.personId,
+    sharedSinglesMatches:2,averageCrowdResponse:80,professionalTrustAtPitch:77,
+  });
+  respondBackstageConversationCommand(a,{
+    requestId:"follow:rivalry-reply",worldId:a.state.world.id,playerId:"backstage-owner",
+    commandType:"RESPOND_BACKSTAGE_CONVERSATION",
+    payload:{conversationId:item.conversationId,response:"CONSIDER_RIVALRY"},
+  });
+  ok(item.creativeBaseline?.existingProgrammeIds.includes(existing.id),"reply missed same-day existing Programme");
+  ok(assessCreativeFollowThrough(a)===0&&item.creativeFollowThrough===undefined,
+    "a Programme created before the reply was wrongly credited");
+  // The old Programme ends; another authored new Programme is now eligible,
+  // even when both actions occur on the same PPW day.
+  existing.status="ENDED";
+  existing.endedDate={...a.state.world.currentDate};
+  const started=createProgramme(a.state,{
+    promotionId:f.promotion.id,
+    sideA:[{kind:"PERSON",entityId:f.person.id}],
+    sideB:[{kind:"PERSON",entityId:partner.personId}],
+  });
+  const before=JSON.stringify(a.state);
+  ok(assessCreativeFollowThrough(a)===1
+    &&item.creativeFollowThrough?.kind==="PROGRAMME_STARTED"
+    &&item.creativeFollowThrough.evidenceId===started.id,
+    "new player-authored Programme did not satisfy the actual idea");
+  ok(assessCreativeFollowThrough(a)===0
+    &&JSON.stringify(a.state)===before,
+    "a retry changed simulation or awarded follow-through twice");
+  const saved=cloneApplicationWorld(a);
+  ok(saved.engagement?.backstageConversations.find(x=>x.conversationId===item.conversationId)
+    ?.creativeFollowThrough?.evidenceId===started.id,
+    "World snapshot dropped completed creative history");
+});
+
+test("Character repackaging requires an actual presentation change, not merely a move-name edit",()=>{
+  const f=fixture(),a=f.aggregate;
+  a.engagement=createWorldEngagementState(a.state.world.id);
+  const initial=defaultWrestlerCreativeFields(f.person);
+  const note=openBackstageConversation(a.engagement,{
+    conversationId:"follow:gimmick",worldId:a.state.world.id,promotionId:f.promotion.id,
+    wrestlerId:f.person.id,sourceContractId:f.contract.id,
+    kind:"GIMMICK_CHANGE_PITCH",createdDate:{...a.state.world.currentDate},
+    status:"OPEN",response:null,responseDate:null,promisedRole:null,
+    observedMatchShows:4,observedFeaturedShows:0,observedCrowdResponse:49,
+    currentGimmickArchetype:"AUTHENTIC",suggestedGimmickArchetype:"REBEL",
+  });
+  respondBackstageConversationCommand(a,{
+    requestId:"follow:gimmick-consider",worldId:a.state.world.id,playerId:"backstage-owner",
+    commandType:"RESPOND_BACKSTAGE_CONVERSATION",
+    payload:{conversationId:note.conversationId,response:"CONSIDER_GIMMICK_CHANGE"},
+  });
+  ok(assessCreativeFollowThrough(a)===0,"clicking Consider was credited as a real repackage");
+  setWrestlerCreativeProfileCommand(a.state,a.engagement,a.ownership,a.commands,a.runtime,{
+    requestId:"follow:finisher-only",worldId:a.state.world.id,playerId:"backstage-owner",
+    commandType:"SET_WRESTLER_CREATIVE_PROFILE",
+    payload:{promotionId:f.promotion.id,personId:f.person.id,
+      fields:{...initial,finishingMove:{name:"New move",category:"GRAPPLE"}}},
+  });
+  ok(assessCreativeFollowThrough(a)===0,"a finisher edit was misreported as a gimmick change");
+  setWrestlerCreativeProfileCommand(a.state,a.engagement,a.ownership,a.commands,a.runtime,{
+    requestId:"follow:real-repackage",worldId:a.state.world.id,playerId:"backstage-owner",
+    commandType:"SET_WRESTLER_CREATIVE_PROFILE",
+    payload:{promotionId:f.promotion.id,personId:f.person.id,
+      fields:{...initial,ringName:"The People's Outlaw",gimmickArchetype:"REBEL"}}},
+  });
+  const state=JSON.stringify(a.state);
+  ok(assessCreativeFollowThrough(a)===1
+    &&note.creativeFollowThrough?.kind==="GIMMICK_UPDATED",
+    "a real creative change was not linked to the earlier conversation");
+  const view=buildPlayerBackstageView(a,"backstage-owner");
+  ok(view.conversations[0]?.creativeFollowThrough?.kind==="GIMMICK_UPDATED",
+    "private Backstage UI lost verified creative outcome");
+  ok(JSON.stringify(a.state)===state&&assessCreativeFollowThrough(a)===0,
+    "creative follow-through reroll changed World or counted twice");
+});
+
+test("Tag pitches require a genuinely completed 2-person tag pairing in the same promotion",()=>{
+  const f=fixture(),a=f.aggregate;
+  const controls=activeContractsForPromotion(a.state,f.promotion.id);
+  ok(controls.length>=4,"fixture lacks four signed active wrestlers");
+  const teammate=controls.find(c=>c.personId!==f.person.id)!;
+  const other=controls.filter(c=>c.personId!==f.person.id&&c.personId!==teammate.personId);
+  a.engagement=createWorldEngagementState(a.state.world.id);
+  const pitch=openBackstageConversation(a.engagement,{
+    conversationId:"follow:tag",worldId:a.state.world.id,promotionId:f.promotion.id,
+    wrestlerId:f.person.id,sourceContractId:f.contract.id,
+    kind:"TAG_TEAM_PITCH",createdDate:{...a.state.world.currentDate},status:"OPEN",
+    response:null,responseDate:null,promisedRole:null,
+    observedMatchShows:0,observedFeaturedShows:0,partnerPersonId:teammate.personId,
+    sharedTagMatches:2,averageCrowdResponse:74,
+  });
+  respondBackstageConversationCommand(a,{
+    requestId:"follow:tag-consider",worldId:a.state.world.id,playerId:"backstage-owner",
+    commandType:"RESPOND_BACKSTAGE_CONVERSATION",
+    payload:{conversationId:pitch.conversationId,response:"CONSIDER_TAG_TEAM"},
+  });
+  const future=addPpwWeeks(a.state.world.currentDate,1,a.state.ruleset.weeksPerYear);
+  const eventId="follow-real-tag-event",matchId="follow-real-tag-match";
+  a.state.events.push({
+    ...a.state.events.find(e=>e.id==="backstage-show-4")!,
+    id:eventId,date:future,status:"COMPLETED",promotionId:f.promotion.id,
+  });
+  a.state.matches.push({
+    ...a.state.matches.find(m=>m.id==="backstage-show-4-match-1")!,
+    id:matchId,eventId,promotionId:f.promotion.id,
+    type:"TAG",status:"COMPLETED",crowdResponse:76,
+  });
+  const ids=[f.person.id,teammate.personId,other[0]!.personId,other[1]!.personId];
+  ids.forEach((personId,i)=>{
+    a.state.matchParticipants.push({
+      id:"follow-tag-participant-"+i,worldId:a.state.world.id,matchId,eventId,
+      personId,side:i<2?"A":"B",won:i<2,
+    });
+    const contract=controls.find(c=>c.personId===personId)!;
+    a.state.scheduledAppearances.push({
+      id:"follow-tag-appearance-"+i,worldId:a.state.world.id,eventId,
+      promotionId:f.promotion.id,personId,contractId:contract.id,date:future,
+      serviceCapacityAtBooking:1,status:"COMPLETED",
+    });
+  });
+  // A real completed tag match in another promotion does not qualify.
+  a.state.matches.at(-1)!.promotionId="outside-promotion";
+  ok(assessCreativeFollowThrough(a)===0,"another promotion earned our follow-through");
+  a.state.matches.at(-1)!.promotionId=f.promotion.id;
+  // Three-person teams are not a two-person pairing and do not satisfy it.
+  a.state.matchParticipants.push({
+    id:"follow-tag-third",worldId:a.state.world.id,matchId,eventId,
+    personId:"third-guest",side:"A",won:true,
+  });
+  ok(assessCreativeFollowThrough(a)===0,"a trio was treated as a tag pair");
+  a.state.matchParticipants.pop();
+  const before=JSON.stringify(a.state);
+  ok(assessCreativeFollowThrough(a)===1
+    &&pitch.creativeFollowThrough?.kind==="TAG_MATCH_BOOKED"
+    &&pitch.creativeFollowThrough.evidenceId===matchId,
+    "actual recorded partnership did not count");
+  ok(assessCreativeFollowThrough(a)===0&&JSON.stringify(a.state)===before,
+    "tag follow-through stacked an additional simulation bonus");
+  const view=buildPlayerBackstageView(a,"backstage-owner");
+  ok(view.conversations[0]?.creativeFollowThrough?.kind==="TAG_MATCH_BOOKED",
+    "recorded tag match did not show in private history");
+});
+
+test("Declined creative ideas never receive follow-through, even after unrelated bookings",()=>{
+  const f=fixture(),a=f.aggregate;
+  a.engagement=createWorldEngagementState(a.state.world.id);
+  const note=openBackstageConversation(a.engagement,{
+    conversationId:"follow:declined",worldId:a.state.world.id,promotionId:f.promotion.id,
+    wrestlerId:f.person.id,sourceContractId:f.contract.id,
+    kind:"GIMMICK_CHANGE_PITCH",createdDate:{...a.state.world.currentDate},
+    status:"OPEN",response:null,responseDate:null,promisedRole:null,
+    observedMatchShows:4,observedFeaturedShows:0,observedCrowdResponse:50,
+    currentGimmickArchetype:"AUTHENTIC",suggestedGimmickArchetype:"REBEL",
+  });
+  respondBackstageConversationCommand(a,{
+    requestId:"follow:decline",worldId:a.state.world.id,playerId:"backstage-owner",
+    commandType:"RESPOND_BACKSTAGE_CONVERSATION",
+    payload:{conversationId:note.conversationId,response:"PASS_GIMMICK_CHANGE"},
+  });
+  setWrestlerCreativeProfileCommand(a.state,a.engagement,a.ownership,a.commands,a.runtime,{
+    requestId:"follow:later-independent-change",worldId:a.state.world.id,playerId:"backstage-owner",
+    commandType:"SET_WRESTLER_CREATIVE_PROFILE",
+    payload:{promotionId:f.promotion.id,personId:f.person.id,
+      fields:{...defaultWrestlerCreativeFields(f.person),ringName:"Independent Change"}}});
+  ok(assessCreativeFollowThrough(a)===0&&note.creativeFollowThrough===undefined,
+    "a previous rejection was retroactively turned into an agreement");
 });
 
 console.log("\nBackstage lifecycle tests: "+passed+" passed, "+failed+" failed");
