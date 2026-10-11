@@ -427,6 +427,26 @@ export function buildPlayerAttention(
 
   const resolvedDate = aggregate.runtime.lastResolvedPpwDate;
   if (promotion && resolvedDate) {
+    // Scheduled World progression cannot be held hostage by one promotion's
+    // outstanding creative waiver. Explain staff fallback *after* the tick
+    // from a durable ledger event rather than inventing live match outcomes.
+    const creativeFallbacks = aggregate.state.ledger.filter((entry) =>
+      entry.type === "PLANNED_SHOW_CREATIVE_STAFF_FALLBACK"
+      && entry.entityIds.includes(promotion.id)
+      && sameWeek(entry.date, resolvedDate)
+    );
+    for (const fallback of creativeFallbacks) {
+      pushIfVisible(aggregate, playerId, items, {
+        attentionId: `creative-staff-fallback:${fallback.id}`,
+        category: "IMPORTANT",
+        title: "Unapproved booking handed to staff",
+        summary: "A wrestler's creative approval was still outstanding at the scheduled commitment lock. The proposed card was not imposed; Routine Continuity handled the missing show preparation.",
+        deadline: null,
+        deepLink: "/results",
+        dismissible: true,
+        sourceOpportunityCategory: null,
+      });
+    }
     const latestEvent = aggregate.state.events
       .filter((event) => event.promotionId === promotion.id && event.status === "COMPLETED" && sameWeek(event.date, resolvedDate))
       .sort((left, right) => right.date.day - left.date.day || right.id.localeCompare(left.id))[0];
