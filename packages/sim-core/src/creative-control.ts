@@ -42,6 +42,65 @@ export function creativeControlOfferBonus(person: Person, level: CreativeControl
   return Math.round(baseline * multiplier * 10) / 10;
 }
 
+/**
+ * Monetary credibility limits what a non-cash creative concession can buy.
+ * It can improve an otherwise credible deal but cannot rescue an exploitative
+ * zero-pay offer. Both player and AI bids use this exact function; no special
+ * rival acceptance rules or hidden competitive bonus.
+ *
+ * moneyScore is the existing bounded 0–100 score in evaluateContractOffer.
+ */
+export function credibleCreativeControlOfferBonus(
+  person: Person,
+  level: CreativeControlLevel | null | undefined,
+  moneyScore: number,
+  family: Contract["family"],
+  termWeeks: number,
+): number {
+  if (!Number.isFinite(moneyScore) || !Number.isSafeInteger(termWeeks) || termWeeks < 1) {
+    throw new Error("creative bargaining needs valid money score and contract term");
+  }
+  const base = creativeControlOfferBonus(person, level);
+  // The first 20 monetary points carry almost no credibility. A market-
+  // reasonable package (moneyScore >= 50) receives the full rights valuation.
+  const cashCredibility = Math.max(0.2, Math.min(1, (moneyScore - 20) / 30));
+  // A week's creative promise is not as valuable as a continuing agreement.
+  const termCredibility = family === "ONE_OFF" ? 0.35 : Math.min(1, 0.65 + termWeeks * 0.035);
+  return Math.round(base * cashCredibility * termCredibility * 10) / 10;
+}
+
+/**
+ * A cautious, transparent policy for AI-controlled promoters. Top-billed
+ * talent may bargain for real protections just as on human offers; the AI
+ * receives the same cost in future booking resistance, not a free rating.
+ * This never rewrites pay, adds new dates or changes the wrestler's answer.
+ */
+export function suggestedAiCreativeControl(
+  person: Person,
+  promotion: Pick<import("../../domain/src/types.js").Promotion,
+    "tier" | "financialDistress" | "aiProfile">,
+  terms: Pick<Contract, "family" | "roleExpectation">,
+): CreativeControlLevel {
+  if (terms.family === "ONE_OFF" || promotion.financialDistress === "CRISIS") return "NONE";
+  const star = (person.recognition + person.popularity + person.skills.presentation) / 3;
+  const role = terms.roleExpectation === "MAIN_EVENT" || terms.roleExpectation === "SPECIAL_ATTRACTION";
+  const premiumPromotion = promotion.tier === "GLOBAL" || promotion.tier === "NATIONAL";
+  const autonomy = person.priorities.role + person.priorities.schedule;
+  if (premiumPromotion && role && terms.family === "EXCLUSIVE"
+    && star >= 82 && person.priorities.role >= person.priorities.money * 1.45
+    && promotion.aiProfile.financialCaution < 55
+    && promotion.financialDistress === "HEALTHY") {
+    return "FULL_APPROVAL";
+  }
+  if (premiumPromotion && role && star >= 68 && autonomy >= person.priorities.money
+    && promotion.financialDistress !== "DISTRESSED") {
+    return "PROTECTED_FINISHES";
+  }
+  if (star >= 55 && autonomy >= person.priorities.money * 0.8
+    && promotion.financialDistress !== "DISTRESSED") return "CONSULTATION";
+  return "NONE";
+}
+
 export interface CreativeBookingProposal {
   /** Is this wrestler among the losing side of the match? */
   loses: boolean;
