@@ -30,6 +30,7 @@ import { GIMMICK_CATALOG } from "../packages/application/src/gimmick-catalog.js"
 import { FULL_REAL_ROSTER_IDENTITY_GUIDE, fullRealRosterIdentityFor } from "../packages/content/src/full-real-roster-identity-guide.js";
 import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4 } from "../packages/content/src/real-roster-editorial-audit-wave4.js";
 import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE5 } from "../packages/content/src/real-roster-editorial-audit-wave5.js";
+import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE6 } from "../packages/content/src/real-roster-editorial-audit-wave6.js";
 import {completeAlphaWrestlerIdentityCoverage} from "../packages/content/src/wrestler-identity-coverage.js";
 import {
   createWorld,
@@ -522,7 +523,7 @@ test("entire 643-person real-roster identity guide has individually keyed charac
   ok(families.size>=30&&styles.size===9,"roster-wide curation collapsed into too few archetypes");
   ok(guide.filter(x=>x.editorialBasis==="TARGETED").length>=130,
     "too few recognisable wrestlers received targeted character overrides");
-  ok(guide.filter(x=>x.editorialBasis==="COHORT").length===299,
+  ok(guide.filter(x=>x.editorialBasis==="COHORT").length===210,
     "the obscure-wrestler approximation cohort is incomplete");
   const danhausen=fullRealRosterIdentityFor("Danhausen")!;
   const sabre=fullRealRosterIdentityFor("Zack Sabre Jr.")!;
@@ -591,7 +592,7 @@ test("editorial wave four corrects 79 exact-name identities without claiming ver
   const reviewed=REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4;
   ok(reviewed.length===79 && new Set(reviewed.map(row=>row.name)).size===79,
     "wave-four review must retain 79 individually keyed identities");
-  ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="COHORT").length===299,
+  ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="COHORT").length===210,
     "reviewed cohort count changed without an audit");
   for(const row of reviewed){
     const merged=fullRealRosterIdentityFor(row.name);
@@ -635,8 +636,8 @@ test("editorial wave five preserves exact wrestler ownership and improves 129 wo
   ok(reviewed.every(row=>!earlier.has(row.name)),
     "review waves overlap or accidentally overwrite earlier curation");
   ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.length===643 &&
-    FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="TARGETED").length===344 &&
-    FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="COHORT").length===299,
+    FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="TARGETED").length===433 &&
+    FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="COHORT").length===210,
     "editorial audit coverage changed without review");
   const gimmicks=new Set(GIMMICK_CATALOG.map(row=>row.id));
   for(const row of reviewed){
@@ -679,6 +680,62 @@ test("editorial wave five preserves exact wrestler ownership and improves 129 wo
   ok(completeAlphaWrestlerIdentityCoverage(testWorld,"EXISTING_WORLD")===0
     && JSON.stringify(live)===before,
     "backfill silently replaced an already persisted world wrestler identity");
+});
+
+
+test("identity audit wave six replaces 89 conspicuously wrong profiles, without overriding negotiated careers",()=>{
+  const batch=REVIEWED_REAL_ROSTER_IDENTITIES_WAVE6;
+  const prior=new Set([...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4,...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE5].map(x=>x.name));
+  ok(batch.length===89 && new Set(batch.map(x=>x.name)).size===89,
+    "wave-six roster-specific review rows missing or duplicated");
+  ok(batch.every(x=>!prior.has(x.name)),
+    "wave-six review overwrote prior wrestler review");
+  ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.length===643 &&
+    FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="TARGETED").length===433 &&
+    FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="COHORT").length===210,
+    "audit-six coverage counts changed without review");
+  const gimmicks=new Set(GIMMICK_CATALOG.map(x=>x.id));
+  for(const row of batch){
+    const now=fullRealRosterIdentityFor(row.name);
+    ok(now!==null && gimmicks.has(row.gimmickArchetype)
+      && now.gimmickArchetype===row.gimmickArchetype
+      && now.primaryStyle===row.primaryStyle
+      && now.secondaryStyle===row.secondaryStyle
+      && now.editorialBasis==="TARGETED",
+      "wave-six exact wrestler gimmick/style missing: "+row.name);
+    ok(JSON.stringify(now.signatureMoves)===JSON.stringify(row.signatureMoves)
+      && JSON.stringify(now.finishingMoves)===JSON.stringify(row.finishingMoves),
+      "wave-six wrestler's repertoire was not layered: "+row.name);
+    ok(row.signatureMoves.length===2 && row.finishingMoves.length===1 &&
+      row.primaryStyle!==row.secondaryStyle &&
+      [...row.signatureMoves,...row.finishingMoves].every(m=>m.source==="PPW_AUTHORED"),
+      "wave-six moves missing, duplicated styles or falsely sourced: "+row.name);
+  }
+  for(const [name,archetype,style,finish] of [
+    ["Dominik Mysterio","OPPORTUNIST","LUCHA","Frog Splash"],
+    ["Chad Gable","WRESTLING_MACHINE","TECHNICAL","Ankle Lock"],
+    ["Roman Reigns","TRIBAL_CHIEF","POWERHOUSE","Spear"],
+    ["Seth Rollins","REVOLUTIONARY","ALL_ROUNDER","Stomp"],
+    ["Shinsuke Nakamura","STRONG_STYLE_ACE","STRONG_STYLE","Kinshasa"],
+    ["Komander","HIGH_FLYING_DAREDEVIL","LUCHA","Cielito Lindo"],
+    ["Kento Miyahara","STRONG_STYLE_ACE","STRONG_STYLE","Shutdown Suplex Hold"],
+  ]){
+    const guide=fullRealRosterIdentityFor(name)!;
+    ok(guide.gimmickArchetype===archetype && guide.primaryStyle===style
+      && guide.finishingMoves[0]?.name===finish,
+      "recognisable wrestler retained generic cohort misclassification: "+name);
+  }
+  const state=createAlphaWorldAggregate({seed:77307,playerId:"audit-six-world"}).state;
+  const kento=state.people.find(x=>x.name==="Kento Miyahara")!;
+  const record=state.wrestlerIdentities!.find(x=>x.personId===kento.id)!;
+  ok(record.active.gimmickId==="STRONG_STYLE_ACE"
+    &&record.active.finishingMoves[0]?.name==="Shutdown Suplex Hold"
+    &&record.active.finishingMoves[0]?.source==="PPW_AUTHORED",
+    "new World failed to apply the exact-name Japanese wrestler review");
+  const before=JSON.stringify(record);
+  ok(completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD")===0
+    &&JSON.stringify(record)===before,
+    "existing wrestler identity was rewritten by later guide read");
 });
 
 console.log(`\nRoster source tests: ${passed} passed, ${failed} failed`);
