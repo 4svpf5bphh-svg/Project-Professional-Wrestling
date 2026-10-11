@@ -9,6 +9,7 @@ import type {
 } from "../../domain/src/types.js";
 import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
+import { creativeBlockersForDraft } from "./creative-consent.js";
 import { prepareHumanShow } from "../../sim-core/src/events.js";
 import {
   prepareHumanMatchCard,
@@ -41,7 +42,8 @@ export type ReservationRiskReason =
   | "SERVICE_CAPACITY_EXCEEDED"
   | "CONTRACT_UNAVAILABLE"
   | "CONTRACT_DATE_EXHAUSTED"
-  | "MATCH_STYLE_REFUSAL";
+  | "MATCH_STYLE_REFUSAL"
+  | "CREATIVE_APPROVAL_REQUIRED";
 
 export type ReservationAssessmentStatus = "NOT_DUE" | "READY" | "AT_RISK" | "EXPIRED";
 
@@ -254,6 +256,7 @@ export function assessDetailedShowReservation(
 
   const draft = sourceDraft(planning, reservation);
   if (draft) {
+    if (creativeBlockersForDraft(state, planning, draft).length > 0) reasons.push("CREATIVE_APPROVAL_REQUIRED");
     for (const match of draft.matches) {
       if (match.style === undefined || match.plannedLengthMinutes === null) continue;
       const ids = [...match.sideAIds, ...match.sideBIds];
