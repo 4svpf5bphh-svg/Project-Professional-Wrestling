@@ -172,7 +172,10 @@ function requestMatchesOffer(
     && offer.roleExpectation === request.roleExpectation
     && resolvedCreativeControl(offer.creativeControl) === resolvedCreativeControl(request.creativeControl)
     && termWeeks === request.termWeeks
-    && offer.dateEntitlement === request.dateEntitlement
+    // An exclusive's dateEntitlement is a legacy transport field, not a
+    // purchased-date cap. Fresh offers canonicalise it to the contract term;
+    // retries must compare the same effective terms even for older callers.
+    && offer.dateEntitlement === (request.family === "EXCLUSIVE" ? request.termWeeks : request.dateEntitlement)
     && offer.weeklyGuarantee === request.weeklyGuarantee
     && offer.appearanceFee === request.appearanceFee
     && offer.signingBonus === request.signingBonus;
