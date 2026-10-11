@@ -205,6 +205,42 @@ export function canAcceptContractTerms(
   return { ok: true, reason: null };
 }
 
+/**
+ * An addendum purchases more appearances on an existing limited/non-exclusive
+ * agreement. It never changes the original end date, salary or exclusivity.
+ * This is intentionally a stricter *remaining-term* capacity check, not a
+ * second overlapping contract with a new service-capacity allocation.
+ */
+export function canAddLimitedContractDates(
+  state: WorldState,
+  person: Person,
+  source: Contract,
+  extraDates: number,
+): { ok: boolean; reason: string | null } {
+  if (source.personId !== person.id || !contractIsActive(state, source)
+    || source.family !== "LIMITED_NON_EXCLUSIVE" || source.exclusivity !== "NON_EXCLUSIVE") {
+    return { ok: false, reason: "only an active limited non-exclusive contract can add dates" };
+  }
+  if (!Number.isSafeInteger(extraDates) || extraDates <= 0 || extraDates > 104
+    || !Number.isSafeInteger(source.dateEntitlement + extraDates)) {
+    return { ok: false, reason: "additional dates must be between 1 and 104" };
+  }
+  const weeksRemaining = Math.max(1, weeksBetween(state.world.currentDate, source.endDate, state.ruleset.weeksPerYear) + 1);
+  const unused = Math.max(0, source.dateEntitlement - source.datesUsed);
+  const others = contractsForPerson(state, person.id).filter(contract =>
+    contract.id !== source.id && contract.status === "SIGNED"
+      && contractOverlaps(contract, { startDate: state.world.currentDate, endDate: source.endDate }, state.ruleset.weeksPerYear));
+  if (others.some(contract => contract.exclusivity === "EXCLUSIVE")) {
+    return { ok: false, reason: "overlapping exclusive contract blocks additional dates" };
+  }
+  const committedDensity = others.reduce((sum, contract) => sum + contractDensity(contract, state.ruleset.weeksPerYear), 0);
+  const availableDensity = Math.max(1, serviceCapacityDatesPerWeek(person));
+  if (committedDensity + (unused + extraDates) / weeksRemaining > availableDensity + 0.001) {
+    return { ok: false, reason: "additional dates exceed remaining-term service capacity" };
+  }
+  return { ok: true, reason: null };
+}
+
 export function contractRoleExpectationForPerson(person: Person): RoleExpectation {
   const starScore = (person.recognition + person.popularity + person.skills.presentation) / 3;
   if (person.careerStage === "SPECIAL_ATTRACTION") return "SPECIAL_ATTRACTION";
