@@ -312,7 +312,7 @@ await test("accepted player one-off is bookable on the following PPW show, not s
         status: "PENDING", offerKind: "RECRUITMENT", resolvedUtility: null,
         rejectionReason: null, family: "ONE_OFF", exclusivity: "OPEN",
         roleExpectation: "MAIN_EVENT", creativeControl: "NONE",
-        startDate: nextWeek, endDate: nextWeek, dateEntitlement: 1,
+        startDate: nextWeek, endDate: { ...nextWeek, day: 7 }, dateEntitlement: 1,
         weeklyGuarantee: 0, appearanceFee: entry.estimatedWeeklyValue * 2, signingBonus: 0,
       });
       return { entry, score };
@@ -332,7 +332,8 @@ await test("accepted player one-off is bookable on the following PPW show, not s
   });
   const offered = (await repository.load(worldId)).state.contractOffers.find(o => o.id === offerResult.offerId);
   ok(offered?.startDate.year === nextWeek.year && offered.startDate.week === nextWeek.week
-    && offered.endDate.year === nextWeek.year && offered.endDate.week === nextWeek.week,
+    && offered.endDate.year === nextWeek.year && offered.endDate.week === nextWeek.week
+    && offered.startDate.day === 1 && offered.endDate.day === 7,
     "human one-off is not dated for the next bookable PPW week");
   ok(!offerResult.view.roster.some(entry => entry.personId === wrestler.personId),
     "unaccepted one-off appeared as owned, available talent");
@@ -444,7 +445,8 @@ await test("exhausted-date renewal to a one-off starts next week without prematu
   const beforeAcceptance = await repository.load(worldId);
   const pending = beforeAcceptance.state.contractOffers.find(o => o.id === offer.offerId);
   ok(pending?.startDate.week === nextWeek.week && pending.startDate.year === nextWeek.year
-    && pending.endDate.week === nextWeek.week && pending.endDate.year === nextWeek.year,
+    && pending.endDate.week === nextWeek.week && pending.endDate.year === nextWeek.year
+    && pending.startDate.day === 1 && pending.endDate.day === 7,
     "exhausted-to-one-off replacement still starts in the already-locked offer week");
   ok(beforeAcceptance.state.contracts.find(c => c.id === source.id)?.status === "SIGNED",
     "submitting a future one-off prematurely terminated the source contract");
