@@ -166,7 +166,8 @@ export function requestCreativeBookingConsent(
     throw new Error("creative consent requires a completed authored match");
   }
   const concern = matchConcerns(state, planning, draft, match).find((entry) => (
-    entry.personId === input.personId && entry.requiresConsent && entry.consent !== "APPROVED"
+    entry.personId === input.personId && entry.requiresConsent
+    && !(entry.consent === "APPROVED" && entry.approvalSource === "STANDING_PROGRAMME")
   ));
   if (!concern) throw new Error("wrestler has no blocking approval right for this booking");
   const existing = (planning.creativeConsents ?? []).find((entry) => (
