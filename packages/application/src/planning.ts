@@ -22,6 +22,8 @@ export const DETAILED_PLANNING_HORIZON_WEEKS = 6 as const;
 
 export interface DetailedMatchDraft {
   draftMatchId: string;
+  /** Explicit storyline link; missing on historical matches (no implicit waiver). */
+  programmeId?: Id | null;
   type: MatchType;
   sideAIds: Id[];
   sideBIds: Id[];
@@ -232,6 +234,7 @@ function weekIndex(date: PpwDate, weeksPerYear: number): number {
 function validateMatchDraft(
   state: WorldState,
   draft: DetailedMatchDraft,
+  promotionId: Id,
   participantIds: Set<Id>,
   usedParticipantIds: Set<Id>,
 ): DetailedMatchDraft {
@@ -247,6 +250,16 @@ function validateMatchDraft(
   }
 
   const sideIds = [...draft.sideAIds, ...draft.sideBIds];
+  const programmeId = draft.programmeId == null ? null : normalizedId(draft.programmeId, "match programmeId");
+  if (programmeId !== null) {
+    const programme = (state.programmes ?? []).find((entry) =>
+      entry.id === programmeId && entry.promotionId === promotionId && entry.status === "ACTIVE");
+    if (!programme) throw new Error("match Programme must be active and belong to this promotion");
+    const members = programmePersonIds(state, programmeId);
+    if (!sideIds.every((personId) => members.has(personId))) {
+      throw new Error("a match linked to a Programme must book only its actual participants");
+    }
+  }
   if (new Set(sideIds).size !== sideIds.length) throw new Error("one wrestler cannot occupy multiple positions in a draft match");
   const sidePeople = sideIds.map((personId) => state.people.find((candidate) => candidate.id === personId));
   if (sidePeople.some((person) => !person)) throw new Error("draft match references a missing wrestler");
@@ -298,6 +311,7 @@ function validateMatchDraft(
 
   return {
     draftMatchId,
+    ...(programmeId === null ? {} : { programmeId }),
     type: draft.type,
     sideAIds: [...draft.sideAIds],
     sideBIds: [...draft.sideBIds],
@@ -803,7 +817,7 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
   const usedParticipantIds = new Set<Id>();
   const draftMatchIds = new Set<string>();
   const matches = draft.matches.map((match) => {
-    const validated = validateMatchDraft(state, match, participantIds, usedParticipantIds);
+    const validated = validateMatchDraft(state, match, draft.promotionId, participantIds, usedParticipantIds);
     if (draftMatchIds.has(validated.draftMatchId)) throw new Error("draft card contains duplicate match IDs");
     draftMatchIds.add(validated.draftMatchId);
     return validated;
