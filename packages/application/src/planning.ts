@@ -1,4 +1,5 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
+import type { CreativeConsentRecord } from "./creative-consent.js";
 import type {
   Id,
   MatchIntent,
@@ -152,6 +153,8 @@ export interface WorldPlanningState {
   worldId: Id;
   workspaces: PromotionPlanningWorkspace[];
   showReservations: DetailedShowReservation[];
+  /** Match-scoped wrestler agreements; absent in older World planning snapshots. */
+  creativeConsents?: CreativeConsentRecord[];
 }
 
 const TICKET_STRATEGIES = new Set<TicketStrategy>(["ACCESSIBLE", "STANDARD", "PREMIUM", "PRESTIGE"]);
@@ -558,7 +561,7 @@ export function detailedShowRunningOrder(draft: DetailedShowDraft): DetailedShow
 }
 
 export function createWorldPlanningState(worldId: Id): WorldPlanningState {
-  return { worldId, workspaces: [], showReservations: [] };
+  return { worldId, workspaces: [], showReservations: [], creativeConsents: [] };
 }
 
 export function promotionPlanningWorkspace(
@@ -575,6 +578,7 @@ export function normalizeWorldPlanningState(planning: WorldPlanningState): World
     worldId: legacy.worldId,
     workspaces: legacy.workspaces ?? [],
     showReservations: Array.isArray(legacy.showReservations) ? legacy.showReservations : [],
+    creativeConsents: Array.isArray(legacy.creativeConsents) ? legacy.creativeConsents : [],
   });
 }
 
@@ -582,6 +586,9 @@ export function validateWorldPlanningStateShape(state: WorldState, planning: Wor
   if (planning.worldId !== state.world.id) throw new Error("planning state crosses World boundary");
   if (!Array.isArray(planning.workspaces)) throw new Error("planning workspaces must be an array");
   if (!Array.isArray(planning.showReservations)) throw new Error("planning reservations must be an array");
+  if (planning.creativeConsents !== undefined && !Array.isArray(planning.creativeConsents)) {
+    throw new Error("creative consent records must be an array");
+  }
   const promotionIds = new Set(state.promotions.map((promotion) => promotion.id));
   const seenPromotions = new Set<Id>();
 
@@ -600,6 +607,28 @@ export function validateWorldPlanningStateShape(state: WorldState, planning: Wor
       if (draftIds.has(draftId)) throw new Error("planning workspace contains duplicate show draft IDs");
       draftIds.add(draftId);
     }
+  }
+
+  const consentKeys = new Set<string>();
+  for (const consent of planning.creativeConsents ?? []) {
+    if (consent.worldId !== state.world.id) throw new Error("creative consent crosses World boundary");
+    if (!promotionIds.has(consent.promotionId)) throw new Error("creative consent references unknown promotion");
+    if (!state.people.some((person) => person.id === consent.personId)) throw new Error("creative consent references missing wrestler");
+    const contract = state.contracts.find((entry) => entry.id === consent.contractId);
+    if (!contract || contract.personId !== consent.personId || contract.promotionId !== consent.promotionId) {
+      throw new Error("creative consent references an unrelated contract");
+    }
+    if (consent.decision !== "APPROVED" && consent.decision !== "DECLINED") {
+      throw new Error("creative consent has invalid decision");
+    }
+    if (!Number.isSafeInteger(consent.requestedPlanVersion) || consent.requestedPlanVersion < 0
+      || !Number.isFinite(consent.score) || consent.score < 0 || consent.score > 100
+      || typeof consent.bookingSignature !== "string" || !consent.bookingSignature) {
+      throw new Error("creative consent record has invalid evidence");
+    }
+    const key = JSON.stringify([consent.promotionId, consent.draftId, consent.draftMatchId, consent.personId]);
+    if (consentKeys.has(key)) throw new Error("duplicate creative consent for same booked wrestler");
+    consentKeys.add(key);
   }
 
   const reservationIds = new Set<string>();
@@ -840,6 +869,10 @@ export function removeDetailedShowDraft(
   const index = workspace.detailedShowDrafts.findIndex((candidate) => candidate.draftId === draftId);
   if (index < 0) throw new Error(`show draft ${draftId} was not found`);
   workspace.detailedShowDrafts.splice(index, 1);
+  // Removing a draft must revoke approvals for its matches.
+  planning.creativeConsents = (planning.creativeConsents ?? []).filter((entry) => !(
+    entry.promotionId === promotionId && entry.draftId === draftId
+  ));
   workspace.version += 1;
   return structuredClone(workspace);
 }
