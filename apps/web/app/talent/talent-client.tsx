@@ -22,6 +22,7 @@ type ErrorPayload = { error?: string };
 export type TalentTab = "ROSTER" | "MARKET" | "OFFERS";
 type OfferFamily = AlphaTalentOfferRequest["family"];
 type OfferRole = AlphaTalentOfferRequest["roleExpectation"];
+type OfferCreative = NonNullable<AlphaTalentOfferRequest["creativeControl"]>;
 type RosterSort = "POPULARITY" | "RECOGNITION" | "DATES_ASC" | "DATES_DESC" | "EXPIRY" | "WAGE_HIGH" | "WAGE_LOW" | "FEE_HIGH" | "FEE_LOW" | "NAME";
 type RosterGroupKey = OfferRole | "ALL_ROLES";
 type RosterContractFilter = "ALL" | "EXCLUSIVE" | "NON_EXCLUSIVE";
@@ -45,6 +46,26 @@ type OfferTarget = {
 };
 
 type OfferDraft = Omit<AlphaTalentOfferRequest, "requestId" | "personId" | "sourceContractId">;
+
+const CREATIVE_CHOICES: {
+  value: OfferCreative;
+  title: string;
+  explanation: string;
+  tradeoff: string;
+}[] = [
+  { value: "NONE", title: "Standard terms",
+    explanation: "Normal booking authority. Existing wrestler-owned gimmick resistance still applies.",
+    tradeoff: "No additional creative bargaining value." },
+  { value: "CONSULTATION", title: "Consultation",
+    explanation: "Discuss major losses or changes. The wrestler may object, but has no contractual veto.",
+    tradeoff: "A modest concession with no match-approval blocker." },
+  { value: "PROTECTED_FINISHES", title: "Protected finishes",
+    explanation: "A clean pin or submission loss needs agreement. Other finishes and match assignments remain bookable.",
+    tradeoff: "Stronger bargaining value; some finishes require consent." },
+  { value: "FULL_APPROVAL", title: "Full creative approval",
+    explanation: "Match assignments and major presentation changes need wrestler consent. Refusal can force a rewrite.",
+    tradeoff: "Strongest bargaining concession and the greatest booking restriction." },
+];
 
 const ROLE_OPTIONS: OfferRole[] = [
   "DEVELOPMENTAL",
@@ -234,6 +255,7 @@ function defaultDraft(target: OfferTarget): OfferDraft {
     return {
       family,
       roleExpectation: contract.roleExpectation,
+      creativeControl: contract.creativeControl,
       termWeeks: family === "EXCLUSIVE" ? 26 : family === "ONE_OFF" ? 1 : 13,
       dateEntitlement: family === "EXCLUSIVE" ? 26 : family === "ONE_OFF" ? 1 : Math.max(1, contract.dateEntitlement),
       weeklyGuarantee: family === "ONE_OFF" ? 0 : contract.weeklyGuarantee,
@@ -246,6 +268,7 @@ function defaultDraft(target: OfferTarget): OfferDraft {
   return {
     family: "LIMITED_NON_EXCLUSIVE",
     roleExpectation: target.suggestedRoleExpectation,
+    creativeControl: "NONE",
     termWeeks: 13,
     dateEntitlement: 5,
     weeklyGuarantee: Math.round(value * 0.2),
@@ -681,6 +704,10 @@ function OfferEditor({
             <div><span>Role promise</span><strong>{guide.roleRead}</strong></div>
             <div><span>Cash package</span><strong>{guide.cashRead} · {money(guide.effectiveWeekly)}/wk effective</strong></div>
             <div><span>Dates</span><strong>{guide.scheduleRead}</strong></div>
+            <div><span>Creative control</span><strong>{
+              CREATIVE_CHOICES.find((choice) => choice.value === (draft.creativeControl ?? "NONE"))?.title
+              ?? "Standard terms"
+            } · negotiated with the cash package, not instead of it</strong></div>
           </div>
           <p>{guide.structure}</p>
           <small>Acceptance can still move with wrestler priorities, promotion standing, competing offers, Service Capacity and normal PPW uncertainty. Rival contract terms remain private.</small>
@@ -744,10 +771,47 @@ function OfferEditor({
           />
         </label>
         </div>
+        <fieldset className={styles.creativeSection} disabled={submitting}>
+          <legend>Creative control</legend>
+          <p className={styles.creativeIntro}>
+            Optional contract concession. Stronger rights may help some wrestlers accept a credible offer,
+            but cannot compensate for unrealistic pay. Any agreed veto applies to your future bookings.
+          </p>
+          <div className={styles.creativeGrid}>
+            {CREATIVE_CHOICES.map((choice) => {
+              const active = (draft.creativeControl ?? "NONE") === choice.value;
+              return (
+                <button
+                  type="button"
+                  key={choice.value}
+                  aria-pressed={active}
+                  className={active ? styles.creativeSelected : styles.creativeChoice}
+                  onClick={() => onChange({ ...draft, creativeControl: choice.value })}
+                >
+                  <span className={styles.creativeChoiceHeading}>
+                    <strong>{choice.title}</strong>
+                    <span aria-hidden="true">{active ? "✓" : "○"}</span>
+                  </span>
+                  <span className={styles.creativeDescription}>{choice.explanation}</span>
+                  <span className={styles.creativeTradeoff}>{choice.tradeoff}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className={styles.creativeWarning}>
+            {draft.creativeControl === "FULL_APPROVAL"
+              ? "High restriction: this wrestler can decline individual bookings. A Programme agreement can reduce repeat requests, but never overrides its negotiated limits."
+              : draft.creativeControl === "PROTECTED_FINISHES"
+                ? "Booking restriction: get permission before a clean pin or submission loss. A protected finish or different winner remains your scripted choice."
+                : draft.creativeControl === "CONSULTATION"
+                  ? "Consultation creates meaningful dialogue about major changes, not a right to veto a match."
+                  : "Standard terms preserve normal promoter booking control. Creative rights can be negotiated if this wrestler values autonomy."}
+          </p>
+        </fieldset>
       </div>
 
       <div className={styles.editorFooter}>
-        <span>PPW will still enforce exclusivity, Service Capacity and wrestler acceptance when this is submitted/resolved.</span>
+        <span>PPW enforces signed creative rights, exclusivity, Service Capacity and wrestler acceptance. These choices do not guarantee a deal.</span>
         <button className={styles.primaryButton} type="button" disabled={submitting} onClick={onSubmit}>{submitting ? "Submitting…" : "Submit offer"}</button>
       </div>
     </section>
