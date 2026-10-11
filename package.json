@@ -84,7 +84,8 @@
     "test:programme-creative": "node dist/tests/run-programme-creative-standing-tests.js",
     "test:creative-economics": "node dist/tests/run-creative-control-economics-tests.js",
     "audit:creative": "node dist/tests/run-creative-control-multiseed-audit.js",
-    "audit:indie-market": "node dist/tests/run-indie-affordability-market-audit.js"
+    "audit:indie-market": "node dist/tests/run-indie-affordability-market-audit.js",
+    "audit:human-indie": "node dist/tests/run-human-indie-26week-audit.js"
   },
   "dependencies": {
     "next": "16.3.8",
