@@ -232,3 +232,40 @@ The next quality step is **reviewing the 505 cohort-based approximations** by
 prominence, region and user-reported inaccuracies, not just declaring
 "643 historically researched." Then continue author-controlled promotion
 character negotiations and Roster editor. No production deployment.
+
+
+## Editorial identity audit — wave 4 (11 October 2026)
+
+This incremental **development-only** review corrects **79 exact-name**
+seed identities across WWE/NXT, AEW/ROH, NJPW/Stardom, NOAH/AAA/CMLL,
+TNA and independent cohorts. Most previously inherited nonsensical
+generic combinations, such as Dax Harwood as a masked high-flyer, Orange
+Cassidy as a powerhouse monster, and Joe Hendry as a daredevil high-flyer.
+
+The separate `real-roster-editorial-audit-wave4.ts` contains deliberate
+character archetypes, compatible primary/secondary styles and distinctive
+two-signature/one-finisher candidates. **77 previously COHORT-based records**
+are now editorially targeted: **215 TARGETED / 428 COHORT**, still 643
+exact-name real-roster records in total. The 58 independently source-backed
+records remain a higher-priority overlay for new-World bootstrap.
+
+Evidence pointers for selected wrestler/move pairs are included in the review
+source. Importantly, every wave-4 move is still explicitly
+`PPW_AUTHORED`; a believable or familiar name **is not automatically
+VERIFIED**. Several combinations are provisional and require further
+publisher/match-source research or historical version distinctions. This is
+not a certification of 79 complete biographies.
+
+The base guide remains intact. The editorial wave is overlaid at guide read,
+so the roster directory and **new-World** seed have the same details, while
+active saved World identities, player-authored contracts/personas and
+promotion-local agreements remain untouched. Regression tests pin the exact
+79 reviewed identities, revised style and moves, provenance, copy isolation,
+and representative misclassification fixes.
+
+**Next quality gate:** continue reviewing the remaining **428 cohort-level**
+approximations by identity/style mismatch and market, with special attention
+to women, Mexican lucha and less-obvious independent workers; add genuinely
+sourced move sets to the separate verified catalogue where evidence exists.
+Do not begin gimmick-negotiation/editor work until this roster audit is
+complete. No main merge, deployment or live World reset authorised.
