@@ -165,6 +165,17 @@ export function marketWeeklyValue(person: Person): number {
   return Math.round((500 + person.recognition * 50 + person.popularity * 30 + averageSkill * 25) * stageMultiplier);
 }
 
+/**
+ * A full-term exclusive removes a scarce wrestler from every competing
+ * promotion's contract market. It must fund real ongoing employment,
+ * even when the promotion never books an appearance. This is deliberately
+ * BELOW the normal AI exclusive wage (around full market value), leaving
+ * room for legitimate small-promotion negotiation without free warehousing.
+ */
+export function minimumExclusiveWeeklyGuarantee(person: Person): number {
+  return Math.max(1, Math.ceil(marketWeeklyValue(person) * 0.5));
+}
+
 export function serviceCapacityDatesPerWeek(person: Person): number {
   const stageBase = person.careerStage === "PRIME" ? 1.9
     : person.careerStage === "PROSPECT" ? 1.55
@@ -188,6 +199,14 @@ export function canAcceptContractTerms(
   terms: ContractTerms,
   options: { ignoreContractId?: Id | null } = {},
 ): { ok: boolean; reason: string | null } {
+  if (terms.family === "EXCLUSIVE") {
+    if (terms.appearanceFee !== 0) {
+      return { ok: false, reason: "exclusive agreements include unlimited appearances; use a guaranteed weekly salary, not an appearance fee" };
+    }
+    if (terms.weeklyGuarantee < minimumExclusiveWeeklyGuarantee(person)) {
+      return { ok: false, reason: `exclusive agreement requires a weekly guarantee of at least ${minimumExclusiveWeeklyGuarantee(person)}` };
+    }
+  }
   const signed = contractsForPerson(state, person.id).filter((contract) => (
     contract.status === "SIGNED"
     && contract.id !== (options.ignoreContractId ?? null)
@@ -616,7 +635,11 @@ function acceptContractOffer(state: WorldState, person: Person, offer: ContractO
 
 function weeklyEquivalent(offer: ContractOffer, state: WorldState): number {
   const termWeeks = Math.max(1, weeksBetween(offer.startDate, offer.endDate, state.ruleset.weeksPerYear) + 1);
-  return offer.weeklyGuarantee + offer.signingBonus / termWeeks + offer.appearanceFee * offer.dateEntitlement / termWeeks;
+  // Exclusives do not purchase individual dates. The legacy numeric
+  // entitlement must never create phantom appearance-fee value, especially
+  // when evaluating migrated pending offers with non-standard terms.
+  return offer.weeklyGuarantee + offer.signingBonus / termWeeks
+    + (offer.family === "EXCLUSIVE" ? 0 : offer.appearanceFee * offer.dateEntitlement / termWeeks);
 }
 
 function relationshipLoyaltyScore(state: WorldState, person: Person, promotion: Promotion): number {
