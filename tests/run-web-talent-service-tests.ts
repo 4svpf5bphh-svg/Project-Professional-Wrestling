@@ -24,6 +24,9 @@ import {
   canAddLimitedContractDates,
   contractHasAppearanceRights,
   contractIsActive,
+  evaluateContractOffer,
+  formatEntityId,
+  snapshotEntityIdCounters,
   wrestlerAlignment,
   wrestlerAlignmentForPromotion,
   serviceCapacityDatesPerWeek,
@@ -290,17 +293,42 @@ await test("accepted player one-off is bookable on the following PPW show, not s
     promotionId: independent.id, requestId: "one-off-claim",
   });
   const before = await loadAlphaTalentSession(repository, worldId, "one-off-player");
-  const wrestler = before.market.find(entry =>
-    entry.availability === "FREE_AGENT" && entry.division === "MEN"
-    && serviceCapacityDatesPerWeek(aggregate.state.people.find(p => p.id === entry.personId)!) >= 1.05);
-  if (!wrestler) throw new Error("one-off test lacks eligible male free agent");
-  const now = (await repository.load(worldId)).state.world.currentDate;
-  const nextWeek = addPpwWeeks(now, 1, aggregate.state.ruleset.weeksPerYear);
+  const initial = (await repository.load(worldId)).state;
+  const now = initial.world.currentDate;
+  const nextWeek = { ...addPpwWeeks(now, 1, initial.ruleset.weeksPerYear), day: 1 };
+  // This tests timing, not a guarantee that any wrestler will sign.
+  // Select an actually willing free agent through PPW's existing scorer,
+  // without changing the production acceptance rules or wrestler priorities.
+  const predictedOfferId = formatEntityId("contractOffer",
+    snapshotEntityIdCounters(initial).contractOffer + 1);
+  const candidates = before.market
+    .filter(entry => entry.availability === "FREE_AGENT" && entry.division === "MEN")
+    .map(entry => {
+      const person = initial.people.find(p => p.id === entry.personId);
+      if (!person || serviceCapacityDatesPerWeek(person) < 1.05) return null;
+      const score = evaluateContractOffer(initial, {
+        id: predictedOfferId, worldId, personId: entry.personId,
+        promotionId: independent.id, submittedDate: { ...now },
+        status: "PENDING", offerKind: "RECRUITMENT", resolvedUtility: null,
+        rejectionReason: null, family: "ONE_OFF", exclusivity: "OPEN",
+        roleExpectation: "MAIN_EVENT", creativeControl: "NONE",
+        startDate: nextWeek, endDate: nextWeek, dateEntitlement: 1,
+        weeklyGuarantee: 0, appearanceFee: entry.estimatedWeeklyValue * 2, signingBonus: 0,
+      });
+      return { entry, score };
+    })
+    .filter((item): item is { entry: (typeof before.market)[number]; score: number } => item !== null)
+    .sort((a, b) => b.score - a.score);
+  const chosen = candidates[0];
+  if (!chosen || chosen.score < initial.ruleset.offerAcceptanceThreshold + 3) {
+    throw new Error(`no credibly willing indie one-off candidate: strongest score ${chosen?.score ?? "none"}`);
+  }
+  const wrestler = chosen.entry;
   const offerResult = await submitAlphaTalentOffer(repository, worldId, "one-off-player", {
     requestId: "one-off-offer", personId: wrestler.personId, sourceContractId: null,
     family: "ONE_OFF", roleExpectation: "MAIN_EVENT", creativeControl: "NONE",
     termWeeks: 1, dateEntitlement: 1, weeklyGuarantee: 0,
-    appearanceFee: wrestler.estimatedWeeklyValue * 25, signingBonus: 0,
+    appearanceFee: wrestler.estimatedWeeklyValue * 2, signingBonus: 0,
   });
   const offered = (await repository.load(worldId)).state.contractOffers.find(o => o.id === offerResult.offerId);
   ok(offered?.startDate.year === nextWeek.year && offered.startDate.week === nextWeek.week
