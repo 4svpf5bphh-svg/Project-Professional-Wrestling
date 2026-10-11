@@ -22,7 +22,7 @@ import {
   loadAlphaCurrentWeekCard, saveAlphaCurrentWeekCard, type AlphaCardMatchView,
 } from "../packages/web-adapter/src/card-service.js";
 import {
-  canAddLimitedContractDates, contractIsActive, marketWeeklyValue,
+  canAddLimitedContractDates, contractCoversBookedDate, contractIsActive, marketWeeklyValue,
   promotionShowSeriesDueForDate, validateWorldInvariants,
 } from "../packages/sim-core/src/index.js";
 import {
@@ -197,6 +197,44 @@ async function makeFairOffers(
   }
 }
 
+/** Snapshot ONLY: explain why a roster entry with dates left cannot book day six.
+ * No retries, resource mutation, automatic date purchases or consent bypass.
+ */
+async function logUnbookableContract(
+  repository: InMemoryApplicationWorldRepository,
+  worldId: string, promotionId: string, ppwWeek: number,
+  participantIds: readonly string[], bookingError: string,
+): Promise<void> {
+  if (!bookingError.includes("no unreserved contract date covering")) return;
+  const { state, planning } = await repository.load(worldId);
+  const showDate = { ...state.world.currentDate, day: 6 };
+  const name = bookingError.split(" has no unreserved")[0]!;
+  const person = state.people.find(p => p.name === name);
+  const contracts = state.contracts.filter(c => c.personId === person?.id
+    && c.promotionId === promotionId).map(c => ({
+      id: c.id, family: c.family, status: c.status,
+      startDate: c.startDate, endDate: c.endDate,
+      dateEntitlement: c.dateEntitlement, datesUsed: c.datesUsed,
+      coversShowDay: contractCoversBookedDate(state, c, showDate),
+      pendingScheduled: state.scheduledAppearances.filter(a =>
+        a.contractId === c.id && a.status === "COMMITTED")
+        .map(a => ({ day: a.date.day, week: a.date.week, year: a.date.year, eventId: a.eventId })),
+      reserved: planning.showReservations.filter(res =>
+        res.participants.some(p => p.contractId === c.id))
+        .map(res => ({ id: res.reservationId, date: res.targetDate, showSeriesId: res.showSeriesId })),
+    }));
+  const scheduledPerson = state.scheduledAppearances.filter(a =>
+    a.personId === person?.id && a.date.year === showDate.year && a.date.week === showDate.week)
+    .map(a => ({ status: a.status, day: a.date.day, promotionId: a.promotionId, contractId: a.contractId }));
+  console.log("HUMAN_INDIE_BOOKING_REJECTION " + JSON.stringify({
+    worldSeed: state.world.seed, elapsedWeek: ppwWeek, promotionId,
+    showDate, participantIds, name, personId: person?.id ?? null,
+    contracts, scheduledPerson,
+    currentShowSeries: promotionShowSeriesDueForDate(state, promotionId, showDate)
+      .map(series => ({ name: series.name, id: series.id, role: series.role })),
+  }));
+}
+
 async function scenario(c: typeof CASES[number]) {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: c.seed, playerId: c.playerId });
@@ -265,6 +303,8 @@ async function scenario(c: typeof CASES[number]) {
           authored = true;
         } catch (error) {
           bookingError = error instanceof Error ? error.message : String(error);
+          await logUnbookableContract(repository, worldId, independent.id,
+            week, participants, bookingError);
         }
       }
     }
