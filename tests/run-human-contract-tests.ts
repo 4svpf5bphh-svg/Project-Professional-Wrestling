@@ -9,6 +9,8 @@ import {
   addPpwWeeks,
   buildContractTerms,
   contractHasAppearanceRights,
+  contractCoversBookedDate,
+  applicableCreativeContract,
   canAddLimitedContractDates,
   creativeBookingReview,
   creativeControlOfferBonus,
@@ -374,6 +376,37 @@ test("a creative-control concession improves an offer and persists into the sign
     "accepted creative-control clause was lost between offer and signed contract");
   ok(signed.weeklyGuarantee === market * 4 && signed.appearanceFee === market * 3,
     "creative rights silently rewrote agreed compensation");
+});
+
+test("legacy and AI final-week terms cover all seven PPW show days without adding another week", () => {
+  const { state, promotionId } = fixture(11013);
+  const contract = activeContractsForPromotion(state, promotionId)[0];
+  if (!contract) throw new Error("final-week boundary fixture has no signed contract");
+  const original = { ...contract.endDate };
+  contract.startDate = { year: 1, week: 51, day: 1 };
+  contract.endDate = { year: 2, week: 1, day: 1 }; // Existing week-based contracts historically store D1.
+  ok(contractCoversBookedDate(state, contract, { year: 1, week: 52, day: 7 }),
+    "booking was blocked in previous covered year-end week");
+  ok(contractCoversBookedDate(state, contract, { year: 2, week: 1, day: 7 }),
+    "legacy day-one expiry wrongly blocked the last calendar day of a covered PPW week");
+  ok(!contractCoversBookedDate(state, contract, { year: 2, week: 2, day: 1 }),
+    "booking incorrectly extended contractual rights into an extra week");
+  contract.creativeControl = "FULL_APPROVAL";
+  ok(applicableCreativeContract(state, promotionId, contract.personId,
+    { year: 2, week: 1, day: 6 })?.id === contract.id,
+    "final-week day-six creative approval was silently bypassed");
+  ok(!applicableCreativeContract(state, promotionId, contract.personId,
+    { year: 2, week: 2, day: 1 }),
+    "creative veto rights illegally extended into the next PPW week");
+  contract.startDate = { year: 1, week: 51, day: 4 };
+  ok(!contractCoversBookedDate(state, contract, { year: 1, week: 51, day: 3 }),
+    "final-week accommodation allowed booking before a precise midweek commencement");
+  ok(contractCoversBookedDate(state, contract, { year: 1, week: 51, day: 4 }),
+    "contract was not usable on its actual start day");
+  contract.status = "EXPIRED";
+  ok(!contractCoversBookedDate(state, contract, { year: 2, week: 1, day: 5 }),
+    "expired contract was allowed to reserve a show");
+  contract.endDate = original;
 });
 
 test("accepted future renewal changes creative rights only when the new term begins", () => {
