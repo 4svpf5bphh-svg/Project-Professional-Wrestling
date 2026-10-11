@@ -233,7 +233,7 @@ function defaultDraft(target: OfferTarget): OfferDraft {
       family,
       roleExpectation: contract.roleExpectation,
       termWeeks: family === "EXCLUSIVE" ? 26 : family === "ONE_OFF" ? 1 : 13,
-      dateEntitlement: family === "ONE_OFF" ? 1 : Math.max(1, contract.dateEntitlement),
+      dateEntitlement: family === "EXCLUSIVE" ? 26 : family === "ONE_OFF" ? 1 : Math.max(1, contract.dateEntitlement),
       weeklyGuarantee: family === "ONE_OFF" ? 0 : contract.weeklyGuarantee,
       appearanceFee: contract.appearanceFee,
       signingBonus: contract.signingBonus,
@@ -270,8 +270,8 @@ function draftForFamily(family: OfferFamily, referenceValue: number, current: Of
       ...current,
       family,
       termWeeks: 26,
-      dateEntitlement: 14,
-      weeklyGuarantee: Math.max(current.weeklyGuarantee, value),
+      dateEntitlement: 26, // retained for transport; exclusive appearances have no cap
+      weeklyGuarantee: Math.max(current.weeklyGuarantee, Math.round(value * 1.3)),
       appearanceFee: 0,
       signingBonus: Math.max(current.signingBonus, value * 4),
     };
@@ -318,7 +318,7 @@ function negotiationGuide(target: OfferTarget, draft: OfferDraft): {
 } {
   const reference = Math.max(1_000, target.referenceValue);
   const weeks = Math.max(1, draft.termWeeks);
-  const density = draft.dateEntitlement / weeks;
+  const density = draft.family === "EXCLUSIVE" ? 1 : draft.dateEntitlement / weeks;
   const actualWeekly = effectiveWeeklyPackage(draft);
 
   let typicalWeeklyLow = 0;
@@ -340,8 +340,8 @@ function negotiationGuide(target: OfferTarget, draft: OfferDraft): {
     typicalWeeklyHigh = reference * 1.25;
     typicalSigningLow = reference * 3;
     typicalSigningHigh = reference * 8;
-    densityLow = 0.5;
-    densityHigh = 0.7;
+    densityLow = 0;
+    densityHigh = 2;
   } else {
     typicalWeeklyLow = reference * 0.12;
     typicalWeeklyHigh = reference * 0.26;
@@ -375,8 +375,10 @@ function negotiationGuide(target: OfferTarget, draft: OfferDraft): {
       ? `Above profile · stronger promise than the current ${label(target.suggestedRoleExpectation)} guide`
       : `Aligned with current ${label(target.suggestedRoleExpectation)} profile`;
 
-  const scheduleRead = draft.family === "ONE_OFF"
-    ? "Single appearance"
+  const scheduleRead = draft.family === "EXCLUSIVE"
+    ? `Unlimited contracted appearances across ${weeks} weeks (fitness and workload still apply)`
+    : draft.family === "ONE_OFF"
+      ? "Single appearance"
     : density < densityLow
       ? `Light commitment · ${draft.dateEntitlement} dates across ${weeks} weeks`
       : density > densityHigh
@@ -396,7 +398,7 @@ function negotiationGuide(target: OfferTarget, draft: OfferDraft): {
   const structure = draft.family === "ONE_OFF"
     ? `One-off guide: appearance ${moneyRange(Math.round(typicalAppearanceLow), Math.round(typicalAppearanceHigh))}; no weekly guarantee or signing bonus.`
     : draft.family === "EXCLUSIVE"
-      ? `Exclusive guide: weekly ${moneyRange(Math.round(typicalWeeklyLow), Math.round(typicalWeeklyHigh))}; signing ${moneyRange(Math.round(typicalSigningLow), Math.round(typicalSigningHigh))}; usually no appearance fee; roughly 50–70% of weeks purchased.`
+      ? `Exclusive guide: weekly ${moneyRange(Math.round(typicalWeeklyLow), Math.round(typicalWeeklyHigh))}; signing ${moneyRange(Math.round(typicalSigningLow), Math.round(typicalSigningHigh))}; usually no appearance fee; no purchased-date cap during the term.`
       : `Non-exclusive guide: weekly ${moneyRange(Math.round(typicalWeeklyLow), Math.round(typicalWeeklyHigh))}; appearance ${moneyRange(Math.round(typicalAppearanceLow), Math.round(typicalAppearanceHigh))}; signing ${moneyRange(Math.round(typicalSigningLow), Math.round(typicalSigningHigh))}; roughly 22–42% of the term purchased.`;
 
   return {
@@ -449,7 +451,7 @@ function RosterCard({
             : rosterSort.startsWith("FEE_")
               ? `${money(contract.appearanceFee)}/show`
               : `POP ${Math.round(wrestler.popularity)}`}</b>
-          <small>{contract.datesRemaining}/{contract.dateEntitlement} dates · {contract.weeksToExpiry}w left</small>
+          <small>{contract.unlimitedAppearances ? "Unlimited dates" : `${contract.datesRemaining}/${contract.dateEntitlement} dates`} · {contract.weeksToExpiry}w left</small>
         </div>
       </summary>
       <div className={styles.cardBody}>
@@ -604,7 +606,7 @@ function OfferCard({ offer }: { offer: PlayerPendingContractOfferView }): React.
       <div className={styles.contractBox}>
         <div>
           <span>{label(offer.family)} · {label(offer.exclusivity)}</span>
-          <strong>{label(offer.roleExpectation)} · {offer.dateEntitlement} dates · to {ppwDate(offer.endDate)}</strong>
+          <strong>{label(offer.roleExpectation)} · {offer.family === "EXCLUSIVE" ? "Unlimited dates" : `${offer.dateEntitlement} dates`} · to {ppwDate(offer.endDate)}</strong>
         </div>
         <div className={styles.moneyRows}>
           <span>Weekly <b>{money(offer.weeklyGuarantee)}</b></span>
@@ -685,11 +687,16 @@ function OfferEditor({
         </label>
         <label>
           <span>Term</span>
-          <select value={draft.termWeeks} onChange={(event) => onChange({ ...draft, termWeeks: Number(event.target.value) })}>
+          <select value={draft.termWeeks} onChange={(event) => {
+              const termWeeks = Number(event.target.value);
+              onChange({ ...draft, termWeeks, dateEntitlement: draft.family === "EXCLUSIVE" ? termWeeks : draft.dateEntitlement });
+            }}>
             {terms.map((weeks) => <option key={weeks} value={weeks}>{weeks === 1 ? "1 PPW week" : `${weeks} PPW weeks`}</option>)}
           </select>
         </label>
-        <label>
+        {draft.family === "EXCLUSIVE" ? (
+          <div className={styles.contractBox}><strong>Unlimited appearances</strong><small>Included for the full exclusive term, subject to health and scheduling.</small></div>
+        ) : <label>
           <span>Purchased dates</span>
           <IntegerInput
             value={draft.dateEntitlement}
@@ -698,7 +705,7 @@ function OfferEditor({
             disabled={draft.family === "ONE_OFF"}
             onChange={(value) => onChange({ ...draft, dateEntitlement: value })}
           />
-        </label>
+        </label>}
         <label>
           <span>Weekly guarantee</span>
           <MoneyInput
