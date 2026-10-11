@@ -9,10 +9,12 @@ import {
   setAlphaRosterAlignment,
   setAlphaTalentWatch,
   submitAlphaTalentOffer,
+  submitAlphaDatesAddendum,
 } from "../packages/web-adapter/src/talent-service.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import {
   addPpwWeeks,
+  canAddLimitedContractDates,
   wrestlerAlignment,
   wrestlerAlignmentForPromotion,
 } from "../packages/sim-core/src/index.js";
@@ -125,6 +127,55 @@ await test("Talent service submits a recruitment offer through the idempotent ap
   const afterRetry = await repository.load(worldId);
   ok(afterRetry.runtime.revision === revision, "idempotent recruitment retry advanced the World revision");
   ok(afterRetry.state.contractOffers.filter((offer) => offer.id === first.offerId).length === 1, "idempotent recruitment retry duplicated the offer");
+});
+
+await test("talent date addendum is private, same-contract and idempotent", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 73042, playerId: "player-a" });
+  const independent = aggregate.state.promotions.find(p => p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("no takeover promotion in date addendum fixture");
+  const source = aggregate.state.contracts.find(c => {
+    if (c.promotionId !== independent.id || c.status !== "SIGNED" || c.family !== "LIMITED_NON_EXCLUSIVE") return false;
+    const person = aggregate.state.people.find(p => p.id === c.personId);
+    return Boolean(person && canAddLimitedContractDates(aggregate.state, person!, c, 1).ok);
+  });
+  if (!source) throw new Error("no amendable non-exclusive contract in fixture");
+  const previousDates = source.dateEntitlement;
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "player-a", {
+    promotionId: independent.id, requestId: "talent-claim-addendum",
+  });
+  const request = {
+    requestId: "talent-more-dates-001",
+    personId: source.personId,
+    contractId: source.id,
+    additionalDates: 1,
+    additionalPayment: 40_000,
+  };
+  const first = await submitAlphaDatesAddendum(repository, worldId, "player-a", request);
+  ok(first.offerKind === "DATES_ADDENDUM" &&
+    first.view.pendingOffers.some(o => o.offerId === first.offerId && o.offerKind === "DATES_ADDENDUM"),
+    "date addendum not visible to its own booker");
+  const after = await repository.load(worldId);
+  const revision = after.runtime.revision;
+  ok(after.state.contracts.find(c => c.id === source.id)?.dateEntitlement === previousDates,
+    "pending additional dates mutated the live contract");
+  const offer = after.state.contractOffers.find(o => o.id === first.offerId);
+  ok(offer?.sourceContractId === source.id && offer.dateEntitlement === previousDates + 1,
+    "date addendum lost original contract and proposed total");
+  const retry = await submitAlphaDatesAddendum(repository, worldId, "player-a", request);
+  ok(retry.offerId === first.offerId, "retry created duplicate date proposal");
+  const afterRetry = await repository.load(worldId);
+  ok(afterRetry.runtime.revision === revision &&
+    afterRetry.state.contractOffers.filter(o => o.id === first.offerId).length === 1,
+    "idempotent retry modified the World");
+  let rejected = false;
+  try {
+    await submitAlphaDatesAddendum(repository, worldId, "player-a",
+      { ...request, additionalPayment: request.additionalPayment + 1000 });
+  } catch { rejected = true; }
+  ok(rejected, "reusing requestId with different date terms was accepted");
 });
 
 await test("Talent service stores promotion-specific alignment without rewriting the wrestler globally", async () => {
