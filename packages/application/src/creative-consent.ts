@@ -9,6 +9,7 @@ import {
 } from "../../sim-core/src/creative-control.js";
 import { defaultPlannedFinishForIntent } from "../../sim-core/src/match-finishes.js";
 import type { DetailedMatchDraft, DetailedShowDraft, WorldPlanningState } from "./planning.js";
+import { standingProgrammeAgreementCoversMatch } from "./programme-creative-standing.js";
 
 /**
  * Consent is an explicit wrestler decision about a PARTICULAR promoter-authored
@@ -39,6 +40,8 @@ export interface CreativeBookingConcern {
   requiresConsent: boolean;
   consent: "APPROVED" | "DECLINED" | "NOT_REQUESTED";
   bookingSignature: string;
+  /** Read-model origin; standing terms are never a fabricated one-match record. */
+  approvalSource?: "EXACT_MATCH" | "STANDING_PROGRAMME";
 }
 
 function matchSignature(draft: DetailedShowDraft, match: DetailedMatchDraft, personId: Id, contractId: Id): string {
@@ -47,6 +50,7 @@ function matchSignature(draft: DetailedShowDraft, match: DetailedMatchDraft, per
   return JSON.stringify({
     promotionId: draft.promotionId, draftId: draft.draftId, targetDate: draft.targetDate,
     personId, contractId, draftMatchId: match.draftMatchId,
+    programmeId: match.programmeId ?? null,
     type: match.type, sideAIds: match.sideAIds, sideBIds: match.sideBIds,
     intendedWinnerSide: match.intendedWinnerSide, intent: match.intent,
     plannedFinish: match.plannedFinish ?? (match.intent ? defaultPlannedFinishForIntent(match.intent) : null),
@@ -85,11 +89,23 @@ function matchConcerns(
       && entry.bookingSignature === bookingSignature
     ));
     for (const reason of review.reasons) {
+      const standing = reason === "MATCH_APPROVAL" && match.programmeId
+        ? standingProgrammeAgreementCoversMatch(state, planning, {
+          programmeId: match.programmeId,
+          promotionId: draft.promotionId,
+          personId,
+          targetDate: draft.targetDate,
+          match,
+        })
+        : false;
       result.push({
         promotionId: draft.promotionId, draftId: draft.draftId,
         draftMatchId: match.draftMatchId, personId, contractId: contract.id,
         reason, requiresConsent: review.requiresConsent,
-        consent: approval?.decision ?? "NOT_REQUESTED", bookingSignature,
+        consent: standing ? "APPROVED" : approval?.decision ?? "NOT_REQUESTED",
+        ...(standing ? { approvalSource: "STANDING_PROGRAMME" as const }
+          : approval ? { approvalSource: "EXACT_MATCH" as const } : {}),
+        bookingSignature,
       });
     }
   }
@@ -150,7 +166,7 @@ export function requestCreativeBookingConsent(
     throw new Error("creative consent requires a completed authored match");
   }
   const concern = matchConcerns(state, planning, draft, match).find((entry) => (
-    entry.personId === input.personId && entry.requiresConsent
+    entry.personId === input.personId && entry.requiresConsent && entry.consent !== "APPROVED"
   ));
   if (!concern) throw new Error("wrestler has no blocking approval right for this booking");
   const existing = (planning.creativeConsents ?? []).find((entry) => (
