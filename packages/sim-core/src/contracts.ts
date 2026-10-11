@@ -193,6 +193,29 @@ function contractDensity(terms: ContractTerms, weeksPerYear: number): number {
   return terms.family === "EXCLUSIVE" ? 1 : terms.dateEntitlement / termWeeks;
 }
 
+/**
+ * Admission estimates FUTURE workload, not the original purchase.
+ *
+ * Paid dates already used on an otherwise still-signed non-exclusive
+ * agreement cannot block new employment with another promotion. The
+ * remaining commitment is spread across the remaining eligible weeks:
+ * using dates early therefore frees capacity, whereas holding unused
+ * dates until near expiry increases the remaining weekly obligation.
+ *
+ * Exclusives still reserve the entire term regardless of appearances
+ * used; real show-day/weekly scheduling remains independently guarded.
+ */
+function remainingSignedServiceDensity(state: WorldState, contract: Contract): number {
+  if (contract.family === "EXCLUSIVE") return 1;
+  const remaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
+  if (remaining === 0) return 0;
+  const from = comparePpwDates(contract.startDate, state.world.currentDate, state.ruleset.weeksPerYear) > 0
+    ? contract.startDate
+    : state.world.currentDate;
+  const remainingWeeks = Math.max(1, weeksBetween(from, contract.endDate, state.ruleset.weeksPerYear) + 1);
+  return remaining / remainingWeeks;
+}
+
 export function canAcceptContractTerms(
   state: WorldState,
   person: Person,
@@ -218,7 +241,7 @@ export function canAcceptContractTerms(
   if (terms.exclusivity !== "EXCLUSIVE" && signed.some((contract) => contract.exclusivity === "EXCLUSIVE")) {
     return { ok: false, reason: "existing exclusive contract blocks outside work" };
   }
-  const currentDensity = signed.reduce((sum, contract) => sum + contractDensity(contract, state.ruleset.weeksPerYear), 0);
+  const currentDensity = signed.reduce((sum, contract) => sum + remainingSignedServiceDensity(state, contract), 0);
   const proposedDensity = contractDensity(terms, state.ruleset.weeksPerYear);
   if (currentDensity + proposedDensity > serviceCapacityDatesPerWeek(person) + 0.001) {
     return { ok: false, reason: "service capacity exceeded" };
@@ -254,7 +277,7 @@ export function canAddLimitedContractDates(
   if (others.some(contract => contract.exclusivity === "EXCLUSIVE")) {
     return { ok: false, reason: "overlapping exclusive contract blocks additional dates" };
   }
-  const committedDensity = others.reduce((sum, contract) => sum + contractDensity(contract, state.ruleset.weeksPerYear), 0);
+  const committedDensity = others.reduce((sum, contract) => sum + remainingSignedServiceDensity(state, contract), 0);
   const availableDensity = Math.max(1, serviceCapacityDatesPerWeek(person));
   if (committedDensity + (unused + extraDates) / weeksRemaining > availableDensity + 0.001) {
     return { ok: false, reason: "additional dates exceed remaining-term service capacity" };
