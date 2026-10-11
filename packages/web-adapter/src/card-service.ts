@@ -76,6 +76,7 @@ export interface AlphaCardParticipantView {
     presentation: number;
   };
   datesRemaining: number;
+  unlimitedAppearances: boolean;
 }
 
 export interface AlphaCardMatchReadinessParticipantView {
@@ -846,7 +847,9 @@ function availableCardParticipants(
   const datesByPerson = new Map<Id, number>();
   for (const contract of state.contracts) {
     if (contract.promotionId !== promotionId || !contractCoversDate(state, contract, targetDate)) continue;
-    const remaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
+    const remaining = contract.family === "EXCLUSIVE"
+      ? Number.MAX_SAFE_INTEGER
+      : Math.max(0, contract.dateEntitlement - contract.datesUsed);
     if (remaining <= 0 && !selected.has(contract.personId)) continue;
     datesByPerson.set(contract.personId, (datesByPerson.get(contract.personId) ?? 0) + remaining);
   }
@@ -872,7 +875,8 @@ function availableCardParticipants(
         stamina: person.skills.stamina,
         presentation: person.skills.presentation,
       },
-      datesRemaining,
+      datesRemaining: datesRemaining === Number.MAX_SAFE_INTEGER ? 0 : datesRemaining,
+      unlimitedAppearances: datesRemaining >= Number.MAX_SAFE_INTEGER,
     });
   }
   return result.sort((left, right) => right.popularity - left.popularity || left.name.localeCompare(right.name));
@@ -1050,6 +1054,7 @@ export async function loadAlphaShowCard(
         presentation: person.skills.presentation,
       },
       datesRemaining: 0,
+      unlimitedAppearances: false,
     } satisfies AlphaCardParticipantView;
   });
 
