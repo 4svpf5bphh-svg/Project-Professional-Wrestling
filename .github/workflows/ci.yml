@@ -92,6 +92,15 @@ jobs:
           name: indie-affordability-market-audit
           path: artifacts/indie-affordability-market-audit.json
           if-no-files-found: ignore
+      - name: Audit 26-week player-authored indie operations under World Lock
+        run: npm run audit:human-indie
+      - name: Preserve human-owned indie baseline report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-indie-26week-audit
+          path: artifacts/human-indie-26week-audit.json
+          if-no-files-found: ignore
       - name: Run 10-year standard-seed smoke simulation
         run: npm run sim -- --seed 20261002 --weeks 520
       # Feature branches can opt into the century stress gate by including [long] in the push commit message.
