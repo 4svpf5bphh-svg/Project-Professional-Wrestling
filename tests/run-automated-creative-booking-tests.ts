@@ -3,6 +3,11 @@ declare const process: { exitCode?: number };
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import {
   activeContractsForPromotion,
+  advanceWeek,
+  creativeBookingAgreed,
+  creativeBookingDecisionScore,
+  applicableCreativeContract,
+  recentAutomatedCreativeRefusalKeys,
   claimIndependentPromotionForHuman,
   createWorld,
   planWorldEvents,
@@ -137,6 +142,66 @@ test("Routine Continuity staff-generated cards obey the same protected finishes"
   ok(state.ledger.some((entry) => entry.type === "AUTOMATED_CREATIVE_FINISH_PROTECTED"
     && entry.entityIds.includes(event.id)), "staff booking did not record wrestler protection");
   ok(validateWorldInvariants(state).length === 0, "staff creative protections broke World invariants");
+});
+
+test("AI does not repeatedly propose an unresolved full-approval refusal, but can rebook after improvement", () => {
+  const state = createWorld(90504, DEFAULT_RULESET);
+  planWorldEvents(state);
+  const global = state.promotions.find(p => p.tier === "GLOBAL" && p.controllerType === "AI")!;
+  const originalShow = state.events.find(e => e.promotionId === global.id && e.status === "SCHEDULED");
+  ok(originalShow, "need a weekly AI global show");
+  const candidates = state.scheduledAppearances.filter(a =>
+    a.eventId === originalShow.id && a.status === "COMMITTED");
+  ok(candidates.length >= state.ruleset.minEventParticipants, "global AI needs a populated first show");
+  const refuserId = candidates[0]!.personId;
+  for (const contract of state.contracts) {
+    if (contract.promotionId === global.id && contract.personId === refuserId && contract.status === "SIGNED") {
+      contract.creativeControl = "FULL_APPROVAL";
+    }
+  }
+  const wrestler = state.people.find(p => p.id === refuserId)!;
+  wrestler.morale = 0; wrestler.fatigue = 100;
+  wrestler.priorities.loyalty = 0; wrestler.priorities.role = 100;
+  const effectiveContract = applicableCreativeContract(state, global.id, refuserId, originalShow.date);
+  ok(effectiveContract, "fixture needs a signed full-approval contract");
+  ok(!creativeBookingAgreed(creativeBookingDecisionScore(wrestler, effectiveContract, "MATCH_APPROVAL")),
+    "fixture wrestler was not strongly opposed to the booked match");
+  resolveWorldEvents(state);
+  const refusals = () => state.ledger.filter(entry =>
+    entry.type === "AUTOMATED_CREATIVE_MATCH_DECLINED"
+    && entry.entityIds.includes(refuserId));
+  ok(refusals().length === 1, "initial refusal was not recorded exactly once");
+  advanceWeek(state.world, state.ruleset.weeksPerYear);
+  const cooled = recentAutomatedCreativeRefusalKeys(state, state.world.currentDate);
+  ok(cooled.has(`${global.id}:${refuserId}:${effectiveContract.id}`),
+    "recorded refusal was lost across PPW weeks");
+  planWorldEvents(state);
+  const nextShow = state.events.find(e =>
+    e.promotionId === global.id && e.status === "SCHEDULED"
+    && e.date.year === state.world.currentDate.year && e.date.week === state.world.currentDate.week);
+  ok(nextShow, "AI global promotion did not schedule its next weekly event");
+  const appearanceIds = (eventId: string) => state.scheduledAppearances.filter(a =>
+    a.eventId === eventId && a.status === "COMMITTED").map(a => a.personId);
+  ok(!appearanceIds(nextShow.id).includes(refuserId),
+    "AI again reserved the same unwilling wrestler for next week's show");
+  resolveWorldEvents(state);
+  ok(refusals().length === 1, "AI added a redundant weekly refusal instead of using substitutes");
+
+  // Changed willingness is a material in-world development: contractual veto
+  // still applies, but an affirmative decision can be requested immediately.
+  wrestler.morale = 100; wrestler.fatigue = 0;
+  wrestler.priorities.loyalty = 100; wrestler.priorities.role = 0;
+  ok(creativeBookingAgreed(creativeBookingDecisionScore(wrestler, effectiveContract, "MATCH_APPROVAL")),
+    "positive creative change did not make the wrestler bookable");
+  advanceWeek(state.world, state.ruleset.weeksPerYear);
+  planWorldEvents(state);
+  const recoveredShow = state.events.find(e =>
+    e.promotionId === global.id && e.status === "SCHEDULED"
+    && e.date.year === state.world.currentDate.year && e.date.week === state.world.currentDate.week);
+  ok(recoveredShow, "recovered AI World did not schedule the weekly event");
+  ok(appearanceIds(recoveredShow.id).includes(refuserId),
+    "a genuine positive consent change could not restore the booked wrestler");
+  ok(validateWorldInvariants(state).length === 0, "creative refusal memory broke World invariants");
 });
 
 console.log(`Automated creative-booking tests: ${passed} passed, ${failed} failed`);
