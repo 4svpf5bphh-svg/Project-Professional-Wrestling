@@ -337,10 +337,6 @@ export function normalizeWorldEngagementState(
     talentWatchlist: (input.talentWatchlist ?? []).map((record) => ({ ...record })),
     opportunities: (input.opportunities ?? []).map((record) => ({
       ...record,
-      programmeCreative: record.programmeCreative ? {
-        ...record.programmeCreative,
-        expiryDate: cloneDate(record.programmeCreative.expiryDate),
-      } : undefined,
       createdDate: cloneDate(record.createdDate),
       opensDate: cloneDate(record.opensDate),
       closesDate: cloneDate(record.closesDate),
@@ -365,6 +361,10 @@ export function normalizeWorldEngagementState(
     })),
     backstageConversations: (input.backstageConversations ?? []).map((record) => ({
       ...record,
+      programmeCreative: record.programmeCreative ? {
+        ...record.programmeCreative,
+        expiryDate: cloneDate(record.programmeCreative.expiryDate),
+      } : undefined,
       createdDate: cloneDate(record.createdDate),
       responseDate: record.responseDate ? cloneDate(record.responseDate) : null,
       creativeBaseline: record.creativeBaseline ? {
