@@ -8,7 +8,7 @@ import type {
   WrestlingEvent,
 } from "../../domain/src/types.js";
 import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
-import { serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
+import { contractCoversBookedDate, serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
 import { creativeBlockersForDraft } from "./creative-consent.js";
 import { prepareHumanShow } from "../../sim-core/src/events.js";
 import {
@@ -125,9 +125,7 @@ function eventSlot(state: WorldState, event: WrestlingEvent): PromotionShowSlot 
 }
 
 function contractCoversDate(state: WorldState, contract: Contract, date: PpwDate): boolean {
-  if (contract.status !== "SIGNED") return false;
-  return comparePpwDates(date, contract.startDate, state.ruleset.weeksPerYear) >= 0
-    && comparePpwDates(date, contract.endDate, state.ruleset.weeksPerYear) <= 0;
+  return contractCoversBookedDate(state, contract, date);
 }
 
 function scheduledContractDates(state: WorldState, contractId: Id): number {
