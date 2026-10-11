@@ -537,6 +537,13 @@ export const GIMMICK_CATALOG = [
     "description": "A ceremonial warrior-inspired fighter"
   },
   {
+    "id": "RISING_PROSPECT",
+    "label": "Rising Prospect",
+    "family": "MISC",
+    "familyLabel": "Other Characters",
+    "description": "An emerging contender building an identity through promise and ambition"
+  },
+  {
     "id": "YOUNG_LION",
     "label": "Young Lion",
     "family": "MISC",

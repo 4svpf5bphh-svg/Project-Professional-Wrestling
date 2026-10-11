@@ -326,3 +326,20 @@ characters, no cohort-only uncurated assignment, new generated wrestler
 coverage, and no mutation of saved or negotiated character state.
 No character editor or gimmick-negotiation feature starts before these
 checks are green and the user is satisfied with the roster data.
+
+## Wrestling-tradition vocabulary correction — 11 October 2026
+
+The full name-by-name review found one final cross-region issue:
+`YOUNG_LION` was being applied to WWE developmental wrestlers,
+STARDOM/joshi rookies, Mexican debutants and independent newcomers.
+That term belongs to the NJPW Young Lion training tradition, not
+every up-and-coming wrestler. Reserve `YOUNG_LION` for the eight explicitly
+reviewed NJPW trainees; classify the other **44** with the more appropriate
+new `RISING_PROSPECT` archetype.
+
+This is an editorial correction to **new World baseline identities**.
+No future fictional prospect is forced into the specific NJPW gimmick.
+No existing-world negotiated character, company presentation or programme
+is changed by this update. The regression suite guards against putting
+Young Lion on a women's wrestler or an outside-NJPW talent, and also
+fixes the older source-test word-boundary regex.

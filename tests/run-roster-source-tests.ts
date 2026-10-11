@@ -647,8 +647,8 @@ test("all older name-targeted wrestlers lose mechanically invented signature lab
       &&moves.every(m=>m.name!==person.finishingMoves[0]?.name),
       "old targeted profile still has incomplete or duplicate move slots: "+person.name);
     const tag=person.name.replace(/["”“'.]/g,"")
-      .replace(/\\b(jr|the|dr|hijo|de|del|la|el)\\b/gi,"")
-      .trim().replace(/\\s+/g," ").split(" ").filter(x=>x.length>1).at(-1)
+      .replace(/\b(jr|the|dr|hijo|de|del|la|el)\b/gi,"")
+      .trim().replace(/\s+/g," ").split(" ").filter(x=>x.length>1).at(-1)
       ?.toLocaleLowerCase("en-GB");
     const generic=/(Cutter|Spinebuster|Lariat|Bridge Suplex|Armbar|Roundhouse|Tornado Rana|Springboard Crossbody)$/i;
     ok(!moves.some(m=>tag&&m.name.split(" ")[0]?.toLocaleLowerCase("en-GB")===tag&&generic.test(m.name)),
@@ -711,6 +711,24 @@ test("NJPW and STARDOM publisher moves take priority over unverified editorial e
   ok(completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD")===0
     &&JSON.stringify(state.wrestlerIdentities)===before,
     "subsequent NJPW/STARDOM source additions rewrote saved player careers");
+});
+
+test("Young Lion is reserved for NJPW trainees; other prospects have their own archetype",()=>{
+  const allowedNJPW=new Set([
+    "Daiki Nagai","Katsuya Murashima","Masatora Yasuda",
+    "Shoma Kato","Taisei Nakahara","Tatsuya Matsumoto",
+    "Yushin Hatazawa","Zane Jay",
+  ]);
+  const youngLions=FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.gimmickArchetype==="YOUNG_LION");
+  const women=new Set(REAL_ACTIVE_WOMENS_ROSTER_NAMES);
+  ok(youngLions.length===allowedNJPW.size
+    &&youngLions.every(x=>allowedNJPW.has(x.name)&&!women.has(x.name)),
+    "Young Lion incorrectly assigned outside the NJPW trainee system");
+  const emerging=FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.gimmickArchetype==="RISING_PROSPECT");
+  ok(emerging.length>=44
+    &&emerging.some(x=>women.has(x.name))
+    &&emerging.some(x=>!women.has(x.name)),
+    "developing non-NJPW wrestlers were not given appropriate prospective personas");
 });
 
 console.log(`\nRoster source tests: ${passed} passed, ${failed} failed`);
