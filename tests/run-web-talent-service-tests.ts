@@ -305,7 +305,7 @@ await test("accepted player one-off is bookable on the following PPW show, not s
     .filter(entry => entry.availability === "FREE_AGENT" && entry.division === "MEN")
     .map(entry => {
       const person = initial.people.find(p => p.id === entry.personId);
-      if (!person || serviceCapacityDatesPerWeek(person) < 1.05) return null;
+      if (!person || person.status !== "ACTIVE" || serviceCapacityDatesPerWeek(person) < 1.05) return null;
       const score = evaluateContractOffer(initial, {
         id: predictedOfferId, worldId, personId: entry.personId,
         promotionId: independent.id, submittedDate: { ...now },
