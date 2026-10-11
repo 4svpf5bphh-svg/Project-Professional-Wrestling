@@ -46,7 +46,7 @@ export function generateTagTeamPitches(aggregate: ApplicationWorldAggregate): nu
 
   let created = 0;
   for (const control of controls) {
-    const previous = engagement.backstageConversations.filter((c) => c.promotionId === control.promotionId);
+    const previous = engagement.backstageConversations.filter((c) => c.promotionId === control.promotionId && c.kind !== "PROGRAMME_CREATIVE_AGREEMENT");
     const unanswered = previous.filter((c) => c.status === "OPEN").length;
     const thisWeek = previous.filter((c) => (
       c.createdDate.year === state.world.currentDate.year && c.createdDate.week === state.world.currentDate.week
