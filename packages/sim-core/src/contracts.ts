@@ -16,6 +16,7 @@ import { recordFinancialTransaction } from "./transactions.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { contractsEndingInWeek, contractsForPerson, contractsForPromotion } from "./indexes.js";
+import { creativeControlOfferBonus, resolvedCreativeControl } from "./creative-control.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 
 const ROLE_VALUE: Record<RoleExpectation, number> = {
@@ -333,6 +334,7 @@ export function createSignedContract(state: WorldState, person: Person, promotio
     family: terms.family,
     exclusivity: terms.exclusivity,
     roleExpectation: terms.roleExpectation,
+    creativeControl: resolvedCreativeControl(terms.creativeControl),
     startDate: { ...terms.startDate },
     endDate: { ...terms.endDate },
     dateEntitlement: terms.dateEntitlement,
@@ -355,6 +357,7 @@ export function createSignedContract(state: WorldState, person: Person, promotio
       payload: {
         family: terms.family,
         exclusivity: terms.exclusivity,
+        creativeControl: resolvedCreativeControl(terms.creativeControl),
         dates: terms.dateEntitlement,
         weeklyGuarantee: terms.weeklyGuarantee,
       },
@@ -542,6 +545,7 @@ function datesAddendumSource(state: WorldState, offer: ContractOffer): Contract 
     || source.family !== "LIMITED_NON_EXCLUSIVE"
     || offer.family !== source.family || offer.exclusivity !== source.exclusivity
     || offer.roleExpectation !== source.roleExpectation
+    || resolvedCreativeControl(offer.creativeControl) !== resolvedCreativeControl(source.creativeControl)
     || offer.weeklyGuarantee !== source.weeklyGuarantee || offer.appearanceFee !== source.appearanceFee
     || comparePpwDates(offer.endDate, source.endDate, state.ruleset.weeksPerYear) !== 0
     || offer.dateEntitlement <= source.dateEntitlement) return null;
@@ -706,7 +710,8 @@ export function evaluateContractOffer(state: WorldState, offer: ContractOffer): 
     + exposureScore * priorities.exposure
   ) / weightTotal;
   const uncertaintyRng = new DeterministicRng(deterministicSeedFromText(`${state.world.seed}:${offer.id}:utility`));
-  return Math.round((raw + uncertaintyRng.float(-3, 3)) * 10) / 10;
+  const benefit = addendum ? 0 : creativeControlOfferBonus(person, offer.creativeControl);
+  return Math.round((raw + benefit + uncertaintyRng.float(-3, 3)) * 10) / 10;
 }
 
 export function resolveContractOffers(state: WorldState): void {
