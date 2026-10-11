@@ -495,7 +495,7 @@ test("entire 643-person real-roster identity guide has individually keyed charac
   const all=[...REAL_ACTIVE_MENS_ROSTER_NAMES,...REAL_ACTIVE_WOMENS_ROSTER_NAMES];
   const names=new Set(all);
   const guide=FULL_REAL_ROSTER_IDENTITY_GUIDE;
-  const gimmicks=new Set(GIMMICK_CATALOG.map(x=>x.id));
+  const gimmicks=new Set<string>(GIMMICK_CATALOG.map(x=>x.id));
   ok(all.length===643&&guide.length===all.length,
     "guide does not explicitly cover every existing real wrestler in the seed pool");
   ok(new Set(guide.map(entry=>entry.name)).size===643,
@@ -546,7 +546,7 @@ test("all seeded real wrestlers use curated or roster-specific identities; exist
   const byPerson=new Map(records.map(x=>[x.personId,x]));
   let verified=0,approx=0;
   for(const person of state.people){
-    const record=byPerson.get(person.id);
+    const record=byPerson.get(person.id)!;
     ok(record?.active.personaName===person.name,
       "person did not retain their own ring identity: "+person.name);
     if(record.active.provenance==="CURATED"){verified++;continue;}
