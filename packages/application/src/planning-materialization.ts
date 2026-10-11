@@ -552,6 +552,22 @@ export function closeCurrentWeekReservationsAtCommitmentLock(
       "PLANNED_SHOW_RESERVATION_RELEASED_AT_LOCK",
       assessment.reasons,
     );
+    if (assessment.reasons.includes("CREATIVE_APPROVAL_REQUIRED")) {
+      // Existing Routine Continuity can now staff this unprepared show. Keep
+      // the rejected scripted card out of match materialization and leave an
+      // explicit historical notice instead of silently dropping it.
+      new LedgerWriter(state.world.id, state.ledger).append({
+        date: state.world.currentDate,
+        type: "PLANNED_SHOW_CREATIVE_STAFF_FALLBACK",
+        significance: "NOTABLE",
+        entityIds: [reservation.promotionId],
+        payload: {
+          sourceDraftId: reservation.sourceDraftId,
+          reservationId: reservation.reservationId,
+          reason: "contractual creative approval unresolved at commitment lock",
+        },
+      });
+    }
     releasedAtRisk.push(assessment);
   }
   return { ...pass, releasedAtRisk };
@@ -566,6 +582,41 @@ export function closeCurrentWeekReservationsAtLock(
   planning: WorldPlanningState,
 ): ReservationLockClosure {
   return closeCurrentWeekReservationsAtCommitmentLock(state, planning);
+}
+
+/** Pending protected bookings belonging to a controller's actual due show.
+ * A loose incomplete draft does not hold an entire multiplayer World hostage. */
+export interface DueCreativeApprovalSummary {
+  promotionId: Id;
+  draftId: string;
+  wrestlerNames: string[];
+}
+
+export function unresolvedDueCreativeApprovals(
+  state: WorldState,
+  planning: WorldPlanningState,
+  promotionId: Id,
+): DueCreativeApprovalSummary[] {
+  if (planning.worldId !== state.world.id) throw new Error("creative approval audit crosses World boundary");
+  const workspace = planning.workspaces.find((entry) => entry.promotionId === promotionId);
+  if (!workspace) return [];
+  const due = workspace.detailedShowDrafts.filter((draft) => samePpwWeek(draft.targetDate, state.world.currentDate));
+  const output: DueCreativeApprovalSummary[] = [];
+  for (const draft of due) {
+    const reserved = planning.showReservations.some((entry) =>
+      entry.promotionId === promotionId && entry.sourceDraftId === draft.draftId);
+    const alreadyMaterialized = state.ledger.some((entry) =>
+      entry.type === "PLANNED_SHOW_MATERIALIZED" && entry.entityIds.includes(promotionId)
+      && entry.payload.sourceDraftId === draft.draftId);
+    if (!reserved && !alreadyMaterialized) continue;
+    const blockers = creativeBlockersForDraft(state, planning, draft);
+    if (!blockers.length) continue;
+    const wrestlerNames = [...new Set(blockers.map((entry) =>
+      state.people.find((person) => person.id === entry.personId)?.name ?? entry.personId
+    ))].sort();
+    output.push({ promotionId, draftId: draft.draftId, wrestlerNames });
+  }
+  return output.sort((a, b) => a.draftId.localeCompare(b.draftId));
 }
 
 export function reservationAssessmentForDraft(
