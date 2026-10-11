@@ -6,7 +6,7 @@ import type {
   Promotion,
   WorldState,
 } from "../../domain/src/types.js";
-import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import {
   promotionShowSeriesById,
   promotionShowSeriesDueForDate,
