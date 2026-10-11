@@ -9,6 +9,7 @@ import type {
   TicketStrategy,
 } from "../../domain/src/types.js";
 import type { HumanWeekReadinessStatus } from "../../sim-core/src/human-routine.js";
+import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
 import { buildPlayerAttention, type PlayerAttentionItem } from "./attention.js";
 import {
   activePromotionControlForPlayer,
@@ -252,8 +253,22 @@ export function buildAlphaPlayerWorldView(
   const controlledPromotion: AlphaControlledPromotionView | null = promotion
     ? (() => {
       const peopleById = new Map(aggregate.state.people.map((person) => [person.id, person]));
+      const currentDate = aggregate.state.world.currentDate;
+      const draftId = currentWeekDraftId(promotion.id, currentDate);
+      const workspace = aggregate.planning.workspaces.find((candidate) => candidate.promotionId === promotion.id);
+      const currentDraft = workspace?.detailedShowDrafts.find((draft) => (
+        draft.draftId === draftId && samePpwWeek(draft.targetDate, currentDate)
+      )) ?? null;
+      // This lightweight Alpha roster is a CURRENT-SHOW booking picker, not
+      // the complete contract directory. A historically SIGNED agreement may
+      // already have ended (or may not begin until next week); positive
+      // purchased-date balance alone cannot supply a show appearance.
+      // Preserve the fully bookable last PPW week, including D6/D7 when a
+      // contract's stored end date happens to use D1.
+      const showDate = { ...currentDate, day: currentDraft?.targetDate.day ?? 6 };
       const roster = aggregate.state.contracts
-        .filter((contract) => contract.promotionId === promotion.id && contract.status === "SIGNED")
+        .filter((contract) => contract.promotionId === promotion.id
+          && contractCoversBookedDate(aggregate.state, contract, showDate))
         .map((contract) => {
           const person = peopleById.get(contract.personId);
           if (!person) return null;
@@ -270,7 +285,6 @@ export function buildAlphaPlayerWorldView(
         })
         .filter((entry): entry is AlphaRosterMemberView => entry !== null)
         .sort((a, b) => b.popularity - a.popularity || a.name.localeCompare(b.name));
-      const workspace = aggregate.planning.workspaces.find((candidate) => candidate.promotionId === promotion.id);
       const reservationCount = aggregate.planning.showReservations.filter(
         (reservation) => reservation.promotionId === promotion.id,
       ).length;
@@ -280,11 +294,6 @@ export function buildAlphaPlayerWorldView(
         aggregate.runtime,
         promotion.id,
       );
-      const currentDate = aggregate.state.world.currentDate;
-      const draftId = currentWeekDraftId(promotion.id, currentDate);
-      const currentDraft = workspace?.detailedShowDrafts.find((draft) => (
-        draft.draftId === draftId && samePpwWeek(draft.targetDate, currentDate)
-      )) ?? null;
       const currentStatus = currentDraft
         ? playerShowPlanningStatus(aggregate.state, aggregate.planning, aggregate.runtime, promotion.id, draftId)
         : null;
