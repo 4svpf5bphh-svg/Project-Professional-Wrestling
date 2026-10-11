@@ -143,7 +143,7 @@ test("closed Programmes and weaker creative clauses never grant a standing waive
 
 test("standing creative negotiations are owned, idempotent and blocked by World Lock", () => {
   const f = fixture(91704);
-  const ownership = createWorldOwnershipState(f.state.world.id, 1);
+  const ownership = createWorldOwnershipState(f.state.world.id, 2);
   joinPlayerToWorld(ownership, "player-a", f.state.world.currentDate);
   joinPlayerToWorld(ownership, "player-b", f.state.world.currentDate);
   claimIndependentPromotionForPlayer(f.state, ownership, "player-a", f.promotion.id);
