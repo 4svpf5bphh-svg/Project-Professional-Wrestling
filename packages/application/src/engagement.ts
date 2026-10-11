@@ -37,13 +37,27 @@ export interface BackstageBookingPromise {
   consequence?: BackstagePromiseConsequence | null;
 }
 
+/** Historical, source-backed response to a player-proposed Programme agreement.
+ * The actual consent always lives in World planning, not the dialogue. */
+export interface BackstageProgrammeCreativeRecord {
+  programmeId: Id;
+  programmeLabel: string;
+  matchType: "SINGLES" | "TAG";
+  permittedOutcome: "WIN_ONLY" | "WIN_OR_PROTECTED_LOSS";
+  expiryDate: PpwDate;
+  approved: boolean;
+  score: number;
+}
+
 export interface BackstageConversation {
   conversationId: string;
   worldId: Id;
   promotionId: Id;
   wrestlerId: Id;
   sourceContractId: Id;
-  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH" | "WORKING_PARTNERSHIP_CONCERN";
+  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH" | "WORKING_PARTNERSHIP_CONCERN" | "PROGRAMME_CREATIVE_AGREEMENT";
+  /** Optional immutable evidence from a recorded negotiated Programme decision. */
+  programmeCreative?: BackstageProgrammeCreativeRecord;
   createdDate: PpwDate;
   status: BackstageConversationStatus;
   response: BackstageResponse | null;
@@ -323,6 +337,10 @@ export function normalizeWorldEngagementState(
     talentWatchlist: (input.talentWatchlist ?? []).map((record) => ({ ...record })),
     opportunities: (input.opportunities ?? []).map((record) => ({
       ...record,
+      programmeCreative: record.programmeCreative ? {
+        ...record.programmeCreative,
+        expiryDate: cloneDate(record.programmeCreative.expiryDate),
+      } : undefined,
       createdDate: cloneDate(record.createdDate),
       opensDate: cloneDate(record.opensDate),
       closesDate: cloneDate(record.closesDate),
@@ -586,7 +604,8 @@ export function openBackstageConversation(
   if (engagement.backstageConversations.some((entry) => entry.conversationId === conversationId)) {
     throw new Error("Backstage conversation already exists");
   }
-  const informational = conversation.kind === "TEAM_MOMENT";
+  const informational = conversation.kind === "TEAM_MOMENT"
+    || conversation.kind === "PROGRAMME_CREATIVE_AGREEMENT";
   if (conversation.status !== (informational ? "NOTED" : "OPEN")
     || conversation.response !== null || conversation.responseDate !== null) {
     throw new Error("new Backstage item has an invalid initial lifecycle");
@@ -615,6 +634,17 @@ export function openBackstageConversation(
       || typeof conversation.professionalTrustAtPitch !== "number"
       || conversation.professionalTrustAtPitch < 60 || conversation.professionalTrustAtPitch > 100) {
       throw new Error("Backstage rivalry pitch requires verified match and trust evidence");
+    }
+  } else if (conversation.kind === "PROGRAMME_CREATIVE_AGREEMENT") {
+    const terms = conversation.programmeCreative;
+    if (conversation.promisedRole !== null || !terms
+      || !terms.programmeId || !terms.programmeLabel
+      || !["SINGLES", "TAG"].includes(terms.matchType)
+      || !["WIN_ONLY", "WIN_OR_PROTECTED_LOSS"].includes(terms.permittedOutcome)
+      || typeof terms.approved !== "boolean"
+      || !Number.isFinite(terms.score) || terms.score < 0 || terms.score > 100
+      || !terms.expiryDate || !Number.isInteger(terms.expiryDate.week)) {
+      throw new Error("Backstage Programme history requires an actual negotiated decision");
     }
   } else if (conversation.kind === "TEAM_MOMENT") {
     if (conversation.promisedRole !== null || !conversation.partnerPersonId
