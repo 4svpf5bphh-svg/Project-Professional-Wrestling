@@ -192,7 +192,7 @@ function WrestlerSlotButton({
       {person ? (
         <>
           <span><strong>{person.name}</strong><small>{person.division === "WOMEN" ? "WOMAN" : person.division === "MEN" ? "MAN" : "DIVISION ?"} · {person.alignment}</small></span>
-          <span><b>POP {Math.round(person.popularity)}</b><small>{person.datesRemaining} dates</small></span>
+          <span><b>POP {Math.round(person.popularity)}</b><small>{person.unlimitedAppearances ? "Unlimited dates" : `${person.datesRemaining} dates`}</small></span>
         </>
       ) : (
         <>
@@ -243,7 +243,9 @@ function WrestlerPicker({
       if (sort === "MOMENTUM") return right.person.momentum - left.person.momentum || left.person.name.localeCompare(right.person.name);
       if (sort === "IN_RING") return right.person.skills.inRingQuality - left.person.skills.inRingQuality || left.person.name.localeCompare(right.person.name);
       if (sort === "PRESENTATION") return right.person.skills.presentation - left.person.skills.presentation || left.person.name.localeCompare(right.person.name);
-      if (sort === "DATES") return right.person.datesRemaining - left.person.datesRemaining || left.person.name.localeCompare(right.person.name);
+      if (sort === "DATES") return (right.person.unlimitedAppearances ? Number.MAX_SAFE_INTEGER : right.person.datesRemaining)
+        - (left.person.unlimitedAppearances ? Number.MAX_SAFE_INTEGER : left.person.datesRemaining)
+        || left.person.name.localeCompare(right.person.name);
       if (sort === "NAME") return left.person.name.localeCompare(right.person.name);
       return right.person.popularity - left.person.popularity
         || right.person.momentum - left.person.momentum
@@ -313,7 +315,7 @@ function WrestlerPicker({
                   <span>RING <b>{Math.round(person.skills.inRingQuality)}</b></span>
                   <span>CRAFT <b>{Math.round(person.skills.matchCraft)}</b></span>
                   <span>PRES <b>{Math.round(person.skills.presentation)}</b></span>
-                  <span>DATES <b>{person.datesRemaining}</b></span>
+                  <span>DATES <b>{person.unlimitedAppearances ? "Unlimited" : person.datesRemaining}</b></span>
                 </div>
               </button>
             );
