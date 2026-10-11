@@ -220,6 +220,29 @@ test("first committed reservation wins a venue/day conflict across human promoti
   ok(f.planning.showReservations.length === 1, "failed competing reservation mutated shared reservation state");
 });
 
+test("final-week D1 legacy contract can reserve a day-six show without gaining another week", () => {
+  const f = fixture(16008);
+  const date = commonRequiredDate(f, 6);
+  const draft = draftFor(f, f.promotionA.id, date, "final-week-show");
+  const chosen = f.state.contracts.find(contract =>
+    contract.promotionId === f.promotionA.id
+    && contract.personId === draft.participantIds[0]
+    && contract.status === "SIGNED");
+  if (!chosen) throw new Error("final-week reservation fixture has no source contract");
+  // This is an existing non-exclusive/exclusive weekly term, not a newly
+  // generated day-seven endDate: legacy data must book correctly as-is.
+  chosen.endDate = { ...date, day: 1 };
+  const beforeRevision = f.runtime.revision;
+  saveDraft(f, "player-a", f.promotionA.id, "final-week-save", 0, draft);
+  const reserved = reserve(f, "player-a", f.promotionA.id, "final-week-reserve", 1, draft.draftId);
+  ok(reserved.participants.some(entry => entry.personId === chosen.personId && entry.contractId === chosen.id),
+    "valid final-week wrestler was not bound to the show reservation");
+  ok(f.runtime.revision === beforeRevision + 2,
+    "final-week reservation mutated World revision unexpectedly");
+  ok(chosen.endDate.day === 1 && chosen.endDate.week === date.week,
+    "reservation mutated an existing contract's signed expiry date");
+});
+
 test("the same wrestler cannot be reserved by two promotions on the same PPW day", () => {
   const f = fixture(16004);
   const date = commonRequiredDate(f);
