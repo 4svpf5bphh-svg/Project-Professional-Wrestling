@@ -16,7 +16,7 @@ import { REAL_WORLD_ALPHA_RULESET } from "../packages/config/src/real-world-rule
 import { calibratedRealActiveMixedRosterSource } from "../packages/content/src/real-active-mixed-roster.js";
 import { realPromotionEcosystemSource } from "../packages/content/src/real-promotions.js";
 import { realWorldInitialRosterAssignmentSource } from "../packages/content/src/real-aew-roh-cmll-rosters.js";
-import type { ContractOffer, CreativeControlLevel, Person, Promotion, WorldState } from "../packages/domain/src/types.js";
+import type { ContractOffer, CreativeControlLevel, WorldState } from "../packages/domain/src/types.js";
 import {
   addPpwWeeks, canAcceptContractTerms, createWorld, evaluateContractOffer,
   marketWeeklyValue, resolveWorldWeek, resolvedCreativeControl,
@@ -144,7 +144,6 @@ function makeWorld(seed: number, cohort: Cohort): WorldState {
 function measure(cohort: Cohort, seed: number, scenario: Scenario): AuditRow {
   const state = makeWorld(seed, cohort);
   const genesis = independentMarket(state);
-  let allNewAiOffers = 0;
   for (let week = 0; week < WEEKS; week++) {
     const previousOfferCount = state.contractOffers.length;
     resolveWorldWeek(state, scenario === "NO_NEW_AI_RIGHTS"
@@ -156,9 +155,6 @@ function measure(cohort: Cohort, seed: number, scenario: Scenario): AuditRow {
         }
       } }
       : {});
-    const added = state.contractOffers.slice(previousOfferCount);
-    allNewAiOffers += added.filter(o =>
-      state.promotions.some(p => p.id === o.promotionId && p.controllerType === "AI")).length;
   }
 
   const errs = validateWorldInvariants(state);
