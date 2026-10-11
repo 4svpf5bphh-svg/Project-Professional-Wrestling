@@ -334,7 +334,7 @@ export function createSignedContract(state: WorldState, person: Person, promotio
     family: terms.family,
     exclusivity: terms.exclusivity,
     roleExpectation: terms.roleExpectation,
-    creativeControl: resolvedCreativeControl(terms.creativeControl),
+    ...(resolvedCreativeControl(terms.creativeControl) === "NONE" ? {} : { creativeControl: terms.creativeControl }),
     startDate: { ...terms.startDate },
     endDate: { ...terms.endDate },
     dateEntitlement: terms.dateEntitlement,
@@ -357,7 +357,7 @@ export function createSignedContract(state: WorldState, person: Person, promotio
       payload: {
         family: terms.family,
         exclusivity: terms.exclusivity,
-        creativeControl: resolvedCreativeControl(terms.creativeControl),
+        ...(resolvedCreativeControl(terms.creativeControl) === "NONE" ? {} : { creativeControl: resolvedCreativeControl(terms.creativeControl) }),
         dates: terms.dateEntitlement,
         weeklyGuarantee: terms.weeklyGuarantee,
       },
