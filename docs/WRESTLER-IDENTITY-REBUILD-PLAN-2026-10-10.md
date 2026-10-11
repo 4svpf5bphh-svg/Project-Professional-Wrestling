@@ -344,3 +344,65 @@ repertoire and secondary-style reviews within targeted tiers as needed.
 Continue exact-name curation, not automatic filler. Do not begin the
 contractual creative-control implementation, Roster gimmick editor, or
 main deployment before roster quality is accepted.
+
+
+## Final 643-person editorial coverage and source reconciliation (11 October 2026)
+
+**The initial full-real-roster identity coverage pass is now complete** on
+the non-deploying development branch. It is not equivalent to historical
+verification for every obscure wrestler.
+
+- Baseline: **136 existing exact-name targeted rows** were not amended in
+  editorial waves 4–9. All 136 still have a gimmick, primary/secondary style,
+  two named signatures and at least one finishing move.
+- Review waves: **79 + 129 + 89 + 62 + 52 + 96 = 507 uniquely name-matched
+  wrestler reviews** (waves 4–9, no duplicate reviewed names).
+- End state: **643 TARGETED / 0 COHORT**. The 96 final wave-nine entries
+  include **29 Japan** (NJPW young lions and Stardom/joshi) and **67
+  independent** workers spanning British, American, Japanese, Mexican and
+  women's wrestling.
+- All reviewed names, moves and gimmicks are *editorial wrestling
+  approximations* where exact sources are sparse: `PPW_AUTHORED` is retained
+  for unsourced moves. `TARGETED` means a named row was individually
+  considered; it does **not** mean all three moves are publisher verified.
+
+**Published source-backed catalogue reconciliation:** the current source
+files actually contain **60 unique exact-name entries** (28 initial,
+13 second wave, 19 women's wave), not the 58 quoted at an earlier
+checkpoint. **58 of 60 source-backed entries originally provided fewer than
+two individually sourced signature moves.** New-World bootstrap now retains
+every genuinely sourced move as `VERIFIED`, supplements missing signatures
+from the newly complete *named wrestler* editorial guide first, and falls
+back to deterministic PPW-authored fictional moves only if necessary.
+It never mislabels a backfilled move as `VERIFIED` and cannot mutate a
+previously saved wrestler identity.
+
+The source-backed signature/finisher overlaps in Will Ospreay, Penta and
+Liv Morgan were reconciled in the editorial waves. A structural source
+audit of all 60 sourced entries found complete, non-overlapping two-signature
+candidate repertoires without resorting to anonymous generated moves;
+every sourced finisher remains first priority.
+
+Tests were added/updated to protect:
+1. exact-name, one-worker-one-identity coverage for all 643 real wrestlers;
+2. 507 non-overlapping reviewed records, correct current cumulative counts
+   and all supported gimmick/style categories;
+3. two distinct signatures and at least one named finisher per seeded person,
+   including published entries with no sourced signature moves;
+4. source accuracy labels, directory clone isolation, new-World bootstrap
+   and no retroactive edits to negotiated/saved wrestler-owned personas.
+
+**Outstanding release gate:** these checks are committed but a clean
+TypeScript compilation, application/roster suite, long simulation and CI
+on the consolidated head have **not** been reported as passed. Do not
+interpret a source-structure check as execution of the TypeScript tests.
+Do not merge/deploy or reset any user's World until integrated tests and
+review are satisfactory. No wrestler-owned creative negotiation
+implementation or new booking systems have been started.
+
+**Remaining quality work after 643/643 coverage:** selectively improve exact
+move/era/classification fidelity in the PPW-authored rows, review the
+60 primary-source links for source reliability and chronology, verify
+women's/indie regional details where possible, and run tests/simulation
+when the supported CI pathway is available. Future randomly generated
+wrestlers retain complete deterministic identities at creation.
