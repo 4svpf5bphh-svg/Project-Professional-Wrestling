@@ -9,6 +9,10 @@ import {
   buildContractTerms,
   contractHasAppearanceRights,
   canAddLimitedContractDates,
+  creativeBookingReview,
+  creativeControlOfferBonus,
+  resolvedCreativeControl,
+  evaluateContractOffer,
   createSignedContract,
   submitHumanDatesAddendum,
   validateWorldInvariants,
@@ -311,6 +315,60 @@ test("extra-date proposals reject exclusive contracts and impossible workloads b
   } catch { rejected = true; }
   ok(rejected && state.contractOffers.length === offersBefore,
     "exclusive contract incorrectly offered limited-date addendum");
+});
+
+test("creative control tiers are deterministic, ordered and never rewrite a scripted booking", () => {
+  const { state, freeAgentId } = fixture(11010);
+  const person = state.people.find(p => p.id === freeAgentId)!;
+  const plain = creativeControlOfferBonus(person, "NONE");
+  const consult = creativeControlOfferBonus(person, "CONSULTATION");
+  const protectedFinishes = creativeControlOfferBonus(person, "PROTECTED_FINISHES");
+  const full = creativeControlOfferBonus(person, "FULL_APPROVAL");
+  ok(plain === 0 && consult > 0 && protectedFinishes > consult && full > protectedFinishes,
+    "higher contractual rights do not improve a wrestler's negotiated utility");
+  ok(resolvedCreativeControl(undefined) === "NONE", "legacy contracts must have no implicit veto");
+  const loss = { loses: true, cleanOrSubmission: true, repackaging: false };
+  const ordinary = creativeBookingReview(undefined, loss);
+  const consultation = creativeBookingReview("CONSULTATION", loss);
+  const protectedLoss = creativeBookingReview("PROTECTED_FINISHES", loss);
+  const protectedWin = creativeBookingReview("PROTECTED_FINISHES",
+    { ...loss, loses: false });
+  const fullApproval = creativeBookingReview("FULL_APPROVAL",
+    { loses: false, cleanOrSubmission: false, repackaging: true });
+  ok(!ordinary.requiresConsent && ordinary.reasons.length === 0, "default booking needed invented approval");
+  ok(!consultation.requiresConsent && consultation.reasons.includes("CONSULTATION_REQUESTED"),
+    "consultation was treated as a blocking veto");
+  ok(protectedLoss.requiresConsent && protectedLoss.reasons.includes("PROTECTED_LOSS"),
+    "protected wrestler was not consulted for a clean loss");
+  ok(!protectedWin.requiresConsent, "protected wrestler could veto unrelated wins");
+  ok(fullApproval.requiresConsent && fullApproval.reasons.includes("GIMMICK_APPROVAL"),
+    "full creative approval did not detect repackaging");
+});
+
+test("a creative-control concession improves an offer and persists into the signed agreement", () => {
+  const { state, promotionId, freeAgentId } = fixture(11011);
+  const person = state.people.find(p => p.id === freeAgentId)!;
+  const market = marketWeeklyValue(person);
+  const offer = submitHumanContractOffer(state, {
+    promotionId, personId: person.id,
+    family: "LIMITED_NON_EXCLUSIVE", exclusivity: "NON_EXCLUSIVE", roleExpectation: "MAIN_EVENT",
+    creativeControl: "PROTECTED_FINISHES",
+    startDate: { ...state.world.currentDate },
+    endDate: addPpwWeeks(state.world.currentDate, 12, state.ruleset.weeksPerYear),
+    dateEntitlement: 3, weeklyGuarantee: market * 4, appearanceFee: market * 3,
+    signingBonus: market * 8,
+  });
+  const equalCashNoRights = evaluateContractOffer(state, { ...offer, creativeControl: "NONE" });
+  const withRights = evaluateContractOffer(state, offer);
+  ok(withRights > equalCashNoRights + 8,
+    "wrestler did not meaningfully value their protected-finishes concession");
+  resolveContractOffers(state);
+  ok(offer.status === "ACCEPTED", `strong offer with creative rights was ${offer.status}`);
+  const signed = state.contracts.find(c => c.sourceOfferId === offer.id);
+  ok(signed?.creativeControl === "PROTECTED_FINISHES",
+    "accepted creative-control clause was lost between offer and signed contract");
+  ok(signed.weeklyGuarantee === market * 4 && signed.appearanceFee === market * 3,
+    "creative rights silently rewrote agreed compensation");
 });
 
 console.log(`\nHuman contract tests: ${passed} passed, ${failed} failed`);
