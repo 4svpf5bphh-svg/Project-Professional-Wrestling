@@ -17,7 +17,7 @@ import { REAL_WORLD_ALPHA_RULESET } from "../packages/config/src/real-world-rule
 import { calibratedRealActiveMixedRosterSource } from "../packages/content/src/real-active-mixed-roster.js";
 import { realPromotionEcosystemSource } from "../packages/content/src/real-promotions.js";
 import { realWorldInitialRosterAssignmentSource } from "../packages/content/src/real-aew-roh-cmll-rosters.js";
-import type { ContractOffer, Promotion, WorldState } from "../packages/domain/src/types.js";
+import type { ContractOffer, FinancialTransactionCategory, Promotion, WorldState } from "../packages/domain/src/types.js";
 import {
   activeContractsForPerson, activeContractsForPromotion,
   addPpwWeeks, canAcceptContractTerms, calculateRunwayWeeks,
@@ -33,6 +33,79 @@ const SEEDS: Record<Cohort, readonly number[]> = {
 };
 const CHECKPOINTS: readonly Checkpoint[] = [0, 13, 26, 52];
 const RECOGNISABLE = 60;
+const FINANCE_CATEGORIES: readonly FinancialTransactionCategory[] = [
+  "MEDIA_INCOME", "SPONSOR_INCOME", "FIXED_OVERHEAD",
+  "CONTRACT_GUARANTEE", "CONTRACT_SIGNING_BONUS", "CONTRACT_BUYOUT",
+  "GATE_REVENUE", "VENUE_COST", "PRODUCTION_COST", "TRAVEL_COST",
+  "APPEARANCE_FEE", "RESTRUCTURING_SETTLEMENT",
+];
+type FinanceCategories = Record<FinancialTransactionCategory, number>;
+function emptyFinance(): FinanceCategories {
+  return Object.fromEntries(FINANCE_CATEGORIES.map(category => [category, 0]))
+    as FinanceCategories;
+}
+function accumulatedFinance(state: WorldState, firstNewTransaction: number): Map<string, FinanceCategories> {
+  const totals = new Map<string, FinanceCategories>();
+  // Use actual transaction data, not forecast model constants. Transactions
+  // are the canonical cash mutation path and include restructuring payouts.
+  for (let index = firstNewTransaction; index < state.financialTransactions.length; index++) {
+    const tx = state.financialTransactions[index]!;
+    const row = totals.get(tx.promotionId) ?? emptyFinance();
+    row[tx.category] += tx.amount;
+    totals.set(tx.promotionId, row);
+  }
+  return totals;
+}
+function sumCategories(row: FinanceCategories, categories: readonly FinancialTransactionCategory[]): number {
+  return categories.reduce((sum, category) => sum + row[category], 0);
+}
+const SHOW_CATEGORIES: readonly FinancialTransactionCategory[] = [
+  "GATE_REVENUE", "VENUE_COST", "PRODUCTION_COST", "TRAVEL_COST", "APPEARANCE_FEE",
+];
+const RECURRING_CATEGORIES: readonly FinancialTransactionCategory[] = [
+  "MEDIA_INCOME", "SPONSOR_INCOME", "FIXED_OVERHEAD", "CONTRACT_GUARANTEE",
+];
+interface FinanceAttribution {
+  initialCash: number;
+  transactionCategories: FinanceCategories;
+  transactionNet: number;
+  cashChange: number;
+  cashReconciliationResidual: number;
+  completedEventNet: number;
+  showTransactionNet: number;
+  showReconciliationResidual: number;
+  recurringCashflow: number;
+  signingAndRestructuringCashflow: number;
+  completedShows: number;
+  cancelledShows: number;
+}
+function attributeFinance(
+  state: WorldState, promotion: Promotion,
+  initialCash: number, categories: FinanceCategories,
+): FinanceAttribution {
+  const transactionNet = sumCategories(categories, FINANCE_CATEGORIES);
+  const actualCashChange = promotion.cash - initialCash;
+  const completedEvents = state.events.filter(event =>
+    event.promotionId === promotion.id && event.status === "COMPLETED");
+  const completedEventNet = completedEvents.reduce((sum, event) => sum + event.netResult, 0);
+  const showTransactionNet = sumCategories(categories, SHOW_CATEGORIES);
+  return {
+    initialCash,
+    transactionCategories: { ...categories },
+    transactionNet,
+    cashChange: actualCashChange,
+    cashReconciliationResidual: Math.round((actualCashChange - transactionNet) * 100) / 100,
+    completedEventNet,
+    showTransactionNet,
+    showReconciliationResidual: Math.round((showTransactionNet - completedEventNet) * 100) / 100,
+    recurringCashflow: sumCategories(categories, RECURRING_CATEGORIES),
+    signingAndRestructuringCashflow: sumCategories(categories,
+      ["CONTRACT_SIGNING_BONUS", "CONTRACT_BUYOUT", "RESTRUCTURING_SETTLEMENT"]),
+    completedShows: completedEvents.length,
+    cancelledShows: state.events.filter(event =>
+      event.promotionId === promotion.id && event.status === "CANCELLED").length,
+  };
+}
 
 function median(values: number[]): number | null {
   if (!values.length) return null;
@@ -71,6 +144,7 @@ interface IndieSnapshot {
   recognisableWillingAndCovered: number;
   cheapestPlausible13WeekFourDateCost: number | null;
   financialWatch: boolean;
+  finance: FinanceAttribution;
 }
 
 interface WorldSnapshot {
@@ -113,7 +187,9 @@ function makeWorld(cohort: Cohort, seed: number): WorldState {
 /** All forecasts use the same accessible, four-date 13-week terms as the game.
  * No reserve, artificial offer, transaction or contract is written to state.
  */
-function indieSnapshot(state: WorldState, promotion: Promotion): IndieSnapshot {
+function indieSnapshot(
+  state: WorldState, promotion: Promotion, genesisCash: number, totals: FinanceCategories,
+): IndieSnapshot {
   const contracts = activeContractsForPromotion(state, promotion.id);
   const signedPeople = new Set(contracts.map(contract => contract.personId));
   const weeklyGuarantees = contracts.reduce((sum, contract) => sum + contract.weeklyGuarantee, 0);
@@ -183,16 +259,20 @@ function indieSnapshot(state: WorldState, promotion: Promotion): IndieSnapshot {
     recognisableWillingAndCovered: recognisableCovered,
     cheapestPlausible13WeekFourDateCost: costs.length ? Math.min(...costs) : null,
     financialWatch: promotion.financialDistress !== "HEALTHY",
+    finance: attributeFinance(state, promotion, genesisCash, totals),
   };
 }
 
 function snapshot(
   state: WorldState, cohort: Cohort, seed: number,
   elapsedWeeks: Checkpoint, genesisIndieIds: readonly string[],
+  genesisCash: ReadonlyMap<string, number>, startingTransactionIndex: number,
 ): WorldSnapshot {
+  const transactionTotals = accumulatedFinance(state, startingTransactionIndex);
   const indies = genesisIndieIds.map(id => state.promotions.find(p => p.id === id))
     .filter((p): p is Promotion => p !== undefined)
-    .map(p => indieSnapshot(state, p));
+    .map(p => indieSnapshot(state, p, genesisCash.get(p.id) ?? p.cash,
+      transactionTotals.get(p.id) ?? emptyFinance()));
   const active = state.people.filter(person => person.status === "ACTIVE");
   let free = 0, nonexclusive = 0, exclusive = 0, multi = 0;
   for (const person of active) {
@@ -241,11 +321,13 @@ for (const cohort of ["PROCEDURAL", "REAL_ROSTER"] as const) {
       continue;
     }
 
-    rows.push(snapshot(state, cohort, seed, 0, indieIds));
+    const genesisCash = new Map(state.promotions.map(p => [p.id, p.cash] as const));
+    const startingTransactionIndex = state.financialTransactions.length;
+    rows.push(snapshot(state, cohort, seed, 0, indieIds, genesisCash, startingTransactionIndex));
     for (let week = 1; week <= 52; week++) {
       resolveWorldWeek(state);
       if (week === 13 || week === 26 || week === 52) {
-        rows.push(snapshot(state, cohort, seed, week, indieIds));
+        rows.push(snapshot(state, cohort, seed, week, indieIds, genesisCash, startingTransactionIndex));
       }
     }
     const errors = validateWorldInvariants(state);
@@ -258,6 +340,17 @@ for (const cohort of ["PROCEDURAL", "REAL_ROSTER"] as const) {
     }
   }
 }
+
+// Source-of-truth cash must reconcile to posted transactions. Flag any
+// direct, unrecorded cash mutation separately from legitimate poor economics.
+const financeReconciliationErrors = rows.flatMap(row => row.indies
+  .filter(indie => Math.abs(indie.finance.cashReconciliationResidual) > 0.01
+    || Math.abs(indie.finance.showReconciliationResidual) > 0.01)
+  .map(indie => ({
+    cohort: row.cohort, seed: row.seed, week: row.elapsedWeeks,
+    promotion: indie.name, cashResidual: indie.finance.cashReconciliationResidual,
+    showResidual: indie.finance.showReconciliationResidual,
+  })));
 
 const summary = {
   observationOnly: true,
@@ -295,6 +388,7 @@ const summary = {
     noConcurrentNonexclusiveWorkersAtYearEnd: rows.some(r => r.elapsedWeeks === 52 && r.multiPromotionWorkers === 0),
     baselineRecurringDeficitAtGenesis: rows.some(r => r.elapsedWeeks === 0 && r.indies.some(p => p.staticNetBeforeShows < 0)),
   },
+  financeReconciliationErrors,
   invariantFailures,
 };
 
@@ -309,6 +403,10 @@ console.log("INDIE_AUDIT_SUMMARY " + JSON.stringify({
   worlds: summary.worlds, totalSimulatedWeeks: summary.totalSimulatedWeeks,
   worldSnapshots: summary.worldSnapshots,
   indieObservations: summary.indieObservations,
-  watchlist: summary.watchlist, invariantFailures: summary.invariantFailures,
+  watchlist: summary.watchlist,
+  financeReconciliationErrors: summary.financeReconciliationErrors,
+  invariantFailures: summary.invariantFailures,
 }));
-if (invariantFailures.length) process.exitCode = 1;
+// Financial integrity failures are distinct from economic weakness: missing
+// money is a release blocker; a cash-poor indie is a balance signal only.
+if (invariantFailures.length || financeReconciliationErrors.length) process.exitCode = 1;
