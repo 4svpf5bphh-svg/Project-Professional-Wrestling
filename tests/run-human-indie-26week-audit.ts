@@ -210,7 +210,7 @@ for (const c of CASES) {
 const summary = {
   observational: true,
   weeksPerScenario: WEEKS,
-  cases: cases.length,
+  caseCount: cases.length,
   totalAdvancedWeeks: cases.reduce((sum, c) => sum + c.advancedWeeks, 0),
   anyWorldInvariants: cases.some(c => c.invariantErrors.length > 0),
   stoppedEarly: cases.filter(c => c.blockedWeek !== null).length,
