@@ -332,7 +332,7 @@ test("remaining unworked dates, not historical purchases, govern extra-date nego
   const { state, promotionId, freeAgentId } = fixture(11019);
   const person = state.people.find(p => p.id === freeAgentId)!;
   person.careerStage = "SPECIAL_ATTRACTION";
-  person.skills.stamina = 100;
+  person.skills.stamina = 50;
   person.fatigue = 0;
   const host = state.promotions.find(p => p.id === promotionId)!;
   const rival = state.promotions.find(p =>
