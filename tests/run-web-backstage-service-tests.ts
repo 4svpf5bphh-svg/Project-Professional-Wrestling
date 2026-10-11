@@ -133,7 +133,8 @@ await test("Backstage standing Programme offers persist actual wrestler decision
   ok(denied,"another owner negotiated a private Programme agreement");
   const after=await discussAlphaBackstageProgrammeCreative(repository,worldId,"owner",request);
   const conversation=after.conversations.find(c=>c.kind==="PROGRAMME_CREATIVE_AGREEMENT");
-  ok(conversation?.status==="NOTED" && conversation.programmeCreative?.approved===true
+  if(!conversation)throw Error("negotiated response was not persisted");
+  ok(conversation.status==="NOTED" && conversation.programmeCreative?.approved===true
     && conversation.programmeCreative.programmeId===programmeId,
     "accepted standing terms were not recorded in the actual Backstage conversation history");
   ok(conversation.dialogue.speech.includes("happy to work") && after.openCount===before.openCount,
