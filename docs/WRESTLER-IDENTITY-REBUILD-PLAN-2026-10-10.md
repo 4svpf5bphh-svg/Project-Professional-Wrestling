@@ -304,3 +304,43 @@ finishes, losses, character changes or matches. The player still authors
 all scripted match and segment outcomes. Refusals are pre-lock
 contract/Backstage decisions, never hidden simulation rewrites.
 This is a **deferred design**, not yet implemented in booking or contracts.
+
+
+## Editorial identity audit — wave 6 (11 October 2026)
+
+Wave six adds **89 individually keyed wrestler character/style/move reviews**
+across WWE/NXT, AEW/ROH, NJPW, NOAH, AAA/CMLL, TNA and independents.
+High-recognition examples include Shinsuke Nakamura's strong-style
+striking/Kinshasa candidate instead of a masked aerial persona; Dominik
+Mysterio's opportunistic lucha repertoire instead of a monster powerhouse;
+Komander's rope-walking aerial style instead of a generic all-rounder;
+and Kento Miyahara's strong-style suplex-based presentation instead of a
+nonspecific technician character. Less prominent workers get clearer,
+style-consistent but **still editorially approximate** moves.
+
+Previously 344 TARGETED / 299 COHORT; now **433 TARGETED / 210 COHORT**
+from the same unchanged 643 exact-name roster. All 89 new records are
+strictly name-matched, do not overlap wave four or five, use GIMMICK_CATALOG
+IDs, contain two distinct signatures and a finisher, and tag every move
+`PPW_AUTHORED` pending independent confirmation. These are character
+editorial suggestions, not claims about off-screen personalities or a
+wrestler's historical contract, and exact move-era accuracy remains subject
+to subsequent manual verification.
+
+Existing publisher-backed entries (58 currently) retain priority on new
+World bootstrap. The guide overlays affect new Worlds and explicitly missing
+identities only; they do not mutate negotiated career eras, previously
+persisted records, or promotional creative edits. Regression assertions were
+added for wave-six counts, exact content, provenance and existing-save
+non-overwrite. A repository-level structural review reported 297 uniquely
+reviewed workers across waves 4–6, zero name/style/duplicate-move issues,
+and the intended 433/210 split. **Full runtime test execution and CI remain
+unverified** at this checkpoint; passing source-structure checks alone
+is not a release gate.
+
+Next pass: **210 remaining** (WWE/NXT 62, AEW/ROH 30, Japan 29, TNA 9,
+NOAH/AAA/CMLL 5, independent 67, women's lucha 8), plus suspicious
+repertoire and secondary-style reviews within targeted tiers as needed.
+Continue exact-name curation, not automatic filler. Do not begin the
+contractual creative-control implementation, Roster gimmick editor, or
+main deployment before roster quality is accepted.
