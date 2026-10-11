@@ -682,9 +682,13 @@ function OfferEditor({
           <p>
             {target.sourceContractId
               ? target.currentContract?.renewalReason === "DATES_EXHAUSTED"
-                ? "All purchased dates are used. If accepted, these terms replace the exhausted deal immediately."
+                ? draft.family === "ONE_OFF"
+                  ? "All purchased dates are used. If accepted, the one-off replaces the exhausted deal at resolution and is bookable next PPW week."
+                  : "All purchased dates are used. If accepted, these terms replace the exhausted deal immediately."
                 : "New terms begin after the current deal expires."
-              : "Offer enters the normal PPW negotiation queue; acceptance is not guaranteed."}
+              : draft.family === "ONE_OFF"
+                ? "If accepted at the next World Resolution, this one-show appearance is bookable the following PPW week."
+                : "Offer enters the normal PPW negotiation queue; acceptance is not guaranteed."}
           </p>
         </div>
         <button className={styles.button} type="button" onClick={onCancel} disabled={submitting}>Cancel</button>
