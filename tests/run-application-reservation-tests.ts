@@ -243,6 +243,54 @@ test("final-week D1 legacy contract can reserve a day-six show without gaining a
     "reservation mutated an existing contract's signed expiry date");
 });
 
+test("two non-exclusive promotions can reserve the same wrestler on different days when weekly capacity permits", () => {
+  const f = fixture(16009);
+  const dateA = commonRequiredDate(f, 5);
+  const dateB = { ...dateA, day: 6 };
+  const pair = venuePair(f);
+  const draftA = draftFor(f, f.promotionA.id, dateA, "shared-day-five", pair.first.id);
+  const sharedPersonId = draftA.participantIds[0]!;
+  const person = f.state.people.find(p => p.id === sharedPersonId)!;
+  // Two engagements in seven days is a real possibility for a rested
+  // PRIME wrestler; do not lower capacity for every non-exclusive worker.
+  person.careerStage = "PRIME";
+  person.skills.stamina = 100;
+  person.fatigue = 0;
+  const source = f.state.contracts.find(c =>
+    c.personId === sharedPersonId && c.promotionId === f.promotionA.id
+    && c.status === "SIGNED");
+  if (!source) throw new Error("shared non-exclusive fixture has no original agreement");
+  source.family = "LIMITED_NON_EXCLUSIVE";
+  source.exclusivity = "NON_EXCLUSIVE";
+  source.dateEntitlement = Math.max(source.dateEntitlement, source.datesUsed + 2);
+  createSignedContract(f.state, person, f.promotionB, {
+    family: "LIMITED_NON_EXCLUSIVE", exclusivity: "NON_EXCLUSIVE",
+    roleExpectation: "REGULAR", startDate: { ...f.state.world.currentDate },
+    endDate: addPpwWeeks(f.state.world.currentDate, 12, f.state.ruleset.weeksPerYear),
+    dateEntitlement: 2, weeklyGuarantee: 0, appearanceFee: 1000,
+    signingBonus: 0,
+  }, null, false);
+  const draftB = draftFor(f, f.promotionB.id, dateB, "shared-day-six", pair.second.id);
+  draftB.participantIds = [sharedPersonId, ...draftB.participantIds.filter(id => id !== sharedPersonId)]
+    .slice(0, draftA.participantIds.length);
+  if (draftB.participantIds.length !== draftA.participantIds.length) {
+    throw new Error("shared-day fixture lacks enough unique rival participants");
+  }
+  saveDraft(f, "player-a", f.promotionA.id, "save-shared-a", 0, draftA);
+  saveDraft(f, "player-b", f.promotionB.id, "save-shared-b", 0, draftB);
+  const first = reserve(f, "player-a", f.promotionA.id, "reserve-shared-a", 1, draftA.draftId);
+  const second = reserve(f, "player-b", f.promotionB.id, "reserve-shared-b", 1, draftB.draftId);
+  const workerA = first.participants.find(p => p.personId === sharedPersonId);
+  const workerB = second.participants.find(p => p.personId === sharedPersonId);
+  ok(workerA?.contractId === source.id && workerB && workerB.contractId !== workerA.contractId,
+    "concurrent non-exclusive commitments did not bind separate signed agreements");
+  ok(f.planning.showReservations.length === 2
+    && f.planning.showReservations[0]!.targetDate.day !== f.planning.showReservations[1]!.targetDate.day,
+    "two compatible rival show days were not retained in authoritative World planning");
+  ok(workerA.serviceCapacityAtReservation >= 2 && workerB.serviceCapacityAtReservation >= 2,
+    "second weekly commitment was accepted without two-date service capacity");
+});
+
 test("the same wrestler cannot be reserved by two promotions on the same PPW day", () => {
   const f = fixture(16004);
   const date = commonRequiredDate(f);
