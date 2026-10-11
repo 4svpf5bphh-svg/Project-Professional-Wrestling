@@ -156,7 +156,7 @@ export const CURATED_WRESTLER_CHARACTERS = [
   },
   {
     "name": "Finn Bálor",
-    "gimmickArchetype": "DEMON",
+    "gimmickArchetype": "DARK_ANTI_HERO",
     "primaryStyle": "HIGH_FLYER",
     "secondaryStyle": null,
     "signatureMove": {

@@ -228,6 +228,33 @@ export default function WrestlerProfileClient({
             {" · "}Known finishers: {view.person.portableIdentity.active.finishingMoves
               .map(move=>move.name).join(", ")||"Not yet verified"}
           </p>
+          {view.person.portableIdentity.documentedAlternates.length > 0 ? (
+            <details className={styles.history}>
+              <summary>
+                Established alternate / former personas ({view.person.portableIdentity.documentedAlternates.length})
+              </summary>
+              <p className={styles.note}>
+                Real-world historical references only — these are not changes to this PPW World,
+                available gimmicks or proof the wrestler would accept a rebrand.
+              </p>
+              <div className={styles.stack}>
+                {view.person.portableIdentity.documentedAlternates.map(persona => (
+                  <div className={styles.historyCard} key={persona.personaName}>
+                    <strong>{persona.personaName}</strong>
+                    <p className={styles.note}>
+                      {persona.kind === "FORMER_RING_NAME" ? "Former ring name"
+                        : persona.kind === "HISTORICAL_CHARACTER" ? "Historical character"
+                        : "Recurring alternate persona"}
+                      {" · "}{gimmickDefinition(persona.gimmickId).label}
+                    </p>
+                    <a href={persona.sourceUrl} target="_blank" rel="noopener noreferrer">
+                      View historical source
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ) : null}
           {creative ? <p className={styles.note}>
             Your promotion edits below remain local until a shared-world character change is negotiated.
           </p>:null}

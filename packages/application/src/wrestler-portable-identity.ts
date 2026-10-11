@@ -9,12 +9,15 @@ import type {Person,WorldState} from "../../domain/src/types.js";
 import type {PortableWrestlerIdentity,PortableIdentityPersona} from "../../domain/src/wrestler-identity.js";
 import {portableWrestlerIdentityRecord} from "../../sim-core/src/wrestler-identity.js";
 import {curatedCharacterFor} from "../../content/src/real-wrestler-characters.js";
+import {alternatePersonaReferencesFor, type VerifiedAlternatePersona} from "../../content/src/verified-alternate-personas.js";
 import {defaultWrestlerCreativeFields} from "./wrestler-creative.js";
 
 export interface WrestlerPortableIdentityView {
   source:"WORLD_RECORD"|"CURATED_BASELINE"|"UNCURATED_BASELINE";
   active:PortableIdentityPersona;
   history:PortableWrestlerIdentity["history"];
+  /** Curated real-world context; never converted to PPW career history on read. */
+  documentedAlternates:VerifiedAlternatePersona[];
   revision:number;
   /** Empty fields mean genuinely uncurated / undocumented repertoire. */
   completeness:{hasSignature:boolean;hasFinisher:boolean;hasGimmick:boolean};
@@ -46,6 +49,7 @@ export function wrestlerPortableIdentityFor(state:WorldState,person:Person):Wres
     source:existing?"WORLD_RECORD":curated?"CURATED_BASELINE":"UNCURATED_BASELINE",
     active:structuredClone(active),
     history:existing?structuredClone(existing.history):[],
+    documentedAlternates:alternatePersonaReferencesFor(person.name),
     revision:existing?.revision??0,
     completeness:complete,
   };

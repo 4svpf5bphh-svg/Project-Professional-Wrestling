@@ -21,6 +21,7 @@ import {
 import { GIMMICK_CATALOG, gimmickDefinition, gimmickUsableBy } from "../packages/application/src/gimmick-catalog.js";
 import { CURATED_WRESTLER_CHARACTERS } from "../packages/content/src/real-wrestler-characters.js";
 import { VERIFIED_WRESTLER_CHARACTER_WAVE_2 } from "../packages/content/src/real-wrestler-characters-wave-2.js";
+import { VERIFIED_ALTERNATE_PERSONAS, alternatePersonaReferencesFor } from "../packages/content/src/verified-alternate-personas.js";
 import { REAL_ACTIVE_MENS_ROSTER_NAMES } from "../packages/content/src/real-active-mens-roster.js";
 import { wrestlerPortableIdentityFor } from "../packages/application/src/wrestler-portable-identity.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
@@ -574,6 +575,83 @@ test("Owned wrestler working connections require complete factual matches and ca
   ok(afterIncomplete.workingConnections.find(entry => entry.personId === partner!.id)
     ?.recentTagMatchesTogether === 1, "incomplete tag match fabricated extra relationship evidence");
   ok(promotionBId !== promotionAId, "fixture controls are not separate");
+});
+
+test("Researched real-world persona references are distinct from World career history",()=>{
+  const {aggregate,promotionAId,promotionBId}=fixture(73195);
+  const state=aggregate.state;
+  const before=JSON.stringify(state);
+  const knownNames=new Set(REAL_ACTIVE_MENS_ROSTER_NAMES);
+  const kinds=new Set(VERIFIED_ALTERNATE_PERSONAS.map(x=>x.kind));
+  ok(VERIFIED_ALTERNATE_PERSONAS.length>=9
+    &&kinds.has("RECURRING_ALTER_EGO")
+    &&kinds.has("FORMER_RING_NAME")
+    &&kinds.has("HISTORICAL_CHARACTER"),
+    "alternate reference library conflated full rebrands, ring names and occasional personas");
+  ok(VERIFIED_ALTERNATE_PERSONAS.every(entry=>
+    knownNames.has(entry.personName)
+    && GIMMICK_CATALOG.some(g=>g.id===entry.gimmickId)
+    && (entry.sourceUrl.startsWith("https://www.wwe.com/")
+      ||entry.sourceUrl.startsWith("https://www.allelitewrestling.com/"))
+    && entry.personaName.length>2
+    && entry.personaName!==entry.personName
+  ),"historic persona source was unverified or assigned to a non-roster wrestler");
+  const keys=VERIFIED_ALTERNATE_PERSONAS.map(x=>x.personName+"|"+x.personaName);
+  ok(new Set(keys).size===keys.length,"same wrestler's historical identity was duplicated");
+  const template=state.people[0]!;
+  const finn={...template,name:"Finn Bálor"};
+  const finnView=wrestlerPortableIdentityFor(state,finn);
+  ok(finnView.active.gimmickId==="DARK_ANTI_HERO"
+    &&finnView.documentedAlternates[0]?.personaName==="The Demon"
+    &&finnView.documentedAlternates[0]?.kind==="RECURRING_ALTER_EGO"
+    &&finnView.history.length===0,
+    "the occasional Demon entrance was mistaken for a permanent base or a PPW-era change");
+  const cody={...template,name:"Cody Rhodes"};
+  const codyView=wrestlerPortableIdentityFor(state,cody);
+  ok(codyView.active.gimmickId==="AMERICAN_NIGHTMARE"
+    &&codyView.documentedAlternates.some(x=>x.personaName==="Stardust"
+      &&x.kind==="HISTORICAL_CHARACTER")
+    &&codyView.revision===0,
+    "real-world Stardust history retroactively changed Cody's PPW character");
+  const jack={...template,name:"Jack Perry"};
+  const jackView=wrestlerPortableIdentityFor(state,jack);
+  ok(jackView.documentedAlternates[0]?.personaName==="Jungle Boy",
+    "historical character reference was lost for Jack Perry");
+  ok(alternatePersonaReferencesFor("Cody Rhodes")[0]?.personaName==="Stardust"
+    &&alternatePersonaReferencesFor("Cody")[0]===undefined,
+    "fuzzy or guessed name matches could cross a wrestler identity");
+  const isolated=alternatePersonaReferencesFor("Adam Copeland");
+  isolated[0]!.personaName="Mutated Detached Result";
+  ok(alternatePersonaReferencesFor("Adam Copeland")[0]?.personaName==="Edge",
+    "mutable catalogue references leaked across players");
+  ok(JSON.stringify(state)===before
+    &&state.wrestlerIdentities===undefined,
+    "looking at real historical references created a simulated wrestler career");
+  ok(promotionAId!==promotionBId,"shared two-promotion setup required");
+});
+
+test("An agreed World identity remains authoritative despite documented real-life alternatives",()=>{
+  const {aggregate}=fixture(73196);
+  const state=aggregate.state,person=state.people[0]!;
+  person.name="Matt Hardy";
+  state.wrestlerIdentities=[{
+    worldId:state.world.id,personId:person.id,revision:1,
+    active:{
+      personaName:"A World-Agreed Character",gimmickId:"REBEL",
+      primaryStyle:"BRAWLER",secondaryStyle:null,
+      signatureMoves:[],finishingMoves:[],
+      introducedDate:{...state.world.currentDate},provenance:"NEGOTIATED",
+    },
+    history:[],
+  }];
+  const before=JSON.stringify(state);
+  const view=wrestlerPortableIdentityFor(state,person);
+  ok(view.source==="WORLD_RECORD"&&view.active.personaName==="A World-Agreed Character"
+    &&view.documentedAlternates.some(x=>x.personaName==="Broken Matt Hardy"
+      &&x.kind==="RECURRING_ALTER_EGO")
+    &&view.history.length===0,
+    "a historical reference overrode the player-authored shared-World character");
+  ok(JSON.stringify(state)===before,"read-only real-life context altered authoritative World");
 });
 
 test("Second verified move wave covers real roster identities without fabricated extra moves",()=>{

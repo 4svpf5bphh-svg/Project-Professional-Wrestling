@@ -78,3 +78,35 @@ and not an automatic new identity record.
 Remaining research: all other real wrestler names, historical/alternate eras,
 rename aliases and revised move sets, with evidence citations. Continue batch
 by batch rather than backfilling speculation.
+
+## Verified historical/alternate personas, wave 1 (11 October 2026)
+
+This research-only catalogue distinguishes three evidence types:
+- **Former ring name:** e.g. Adam Copeland / Edge, Matt Cardona / Zack Ryder, Nic Nemeth / Dolph Ziggler.
+- **Historical character:** e.g. Cody Rhodes / Stardust, Jack Perry / Jungle Boy, Luchasaurus / Killswitch.
+- **Recurring alternate persona:** e.g. Finn Bálor / The Demon, Matt Hardy / Broken Matt Hardy, Chris Jericho / The Painmaker.
+
+Each entry uses the actual roster identity as a strict lookup key and keeps its
+authoritative WWE or AEW source URL. Examples:
+[WWE's account of Cody/Stardust](https://www.wwe.com/shows/raw/2015-02-16/dusty-rhodes-family-retrospective),
+[WWE's Demon Bálor results](https://www.wwe.com/shows/raw/2016-08-15),
+[AEW on Jungle Boy and the Scapegoat](https://www.allelitewrestling.com/post/aew-collision-preview-for-september-14-2024),
+[AEW's Broken Matt Hardy report](https://www.allelitewrestling.com/post/aew-dynamite-results-for-june-24-2020),
+and [WWE's Matt Cardona / Zack Ryder bio](https://www.wwe.com/superstars/matt-cardona).
+
+**Do not confuse history categories:** a renamed performer is not necessarily
+a new gimmick; a wrestler's occasional Demon/Painmaker/Broken appearance is not
+proof they are that character every week. WWE's references to Finn's Demon
+are intentionally preserved as *alternate* rather than the seed default.
+No real-world date is converted into a PPW calendar week. No historical entry
+becomes a PPW career-era record, consent, move-set change, contract
+advantage, automatically selectable persona, or player-authored show.
+
+The wrestler profile now shows these references in a collapsible source-backed
+section, separate from the authoritative, immutable-on-read PPW identity
+and the booker's existing promotion-local presentation. A future creative-change
+negotiation is required before an alternate becomes a new active PPW persona.
+
+Other wrestler characters, era dates, changing publisher portrayals and
+historical move variations remain research backlog. The master roster contains
+hundreds of names; this is a sample of well-sourced cases, not full coverage.
