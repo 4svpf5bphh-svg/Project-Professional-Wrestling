@@ -28,6 +28,9 @@ import { VERIFIED_WOMENS_CHARACTER_WAVE_3 } from "../packages/content/src/real-w
 import { CURATED_WRESTLER_CHARACTERS } from "../packages/content/src/real-wrestler-characters.js";
 import { GIMMICK_CATALOG } from "../packages/application/src/gimmick-catalog.js";
 import { FULL_REAL_ROSTER_IDENTITY_GUIDE, fullRealRosterIdentityFor } from "../packages/content/src/full-real-roster-identity-guide.js";
+import { WESTERN_REVIEW_WAVE_5 } from "../packages/content/src/identity-review-western-wave-5.js";
+import { JAPAN_LUCHA_REVIEW_WAVE_6 } from "../packages/content/src/identity-review-japan-lucha-wave-6.js";
+import { INDEPENDENT_REVIEW_WAVE_7 } from "../packages/content/src/identity-review-indie-wave-7.js";
 import {completeAlphaWrestlerIdentityCoverage} from "../packages/content/src/wrestler-identity-coverage.js";
 import {
   createWorld,
@@ -520,8 +523,10 @@ test("entire 643-person real-roster identity guide has individually keyed charac
   ok(families.size>=30&&styles.size===9,"roster-wide curation collapsed into too few archetypes");
   ok(guide.filter(x=>x.editorialBasis==="TARGETED").length>=130,
     "too few recognisable wrestlers received targeted character overrides");
-  ok(guide.filter(x=>x.editorialBasis==="COHORT").length>400,
-    "the obscure-wrestler approximation cohort is incomplete");
+  ok(guide.filter(x=>x.editorialBasis==="REVIEWED").length===446
+    &&guide.filter(x=>x.editorialBasis==="COHORT").length===59
+    &&guide.filter(x=>x.editorialBasis==="TARGETED").length===138,
+    "the remaining 446 wrestlers have not all been individually audited");
   const danhausen=fullRealRosterIdentityFor("Danhausen")!;
   const sabre=fullRealRosterIdentityFor("Zack Sabre Jr.")!;
   const maki=fullRealRosterIdentityFor("Maki Itoh")!;
@@ -536,6 +541,52 @@ test("entire 643-person real-roster identity guide has individually keyed charac
     "guide lookup leaked mutable roster data");
   ok(fullRealRosterIdentityFor("Invented Future Prospect")===null,
     "future generated wrestlers must use deterministic generation, not a random real profile");
+});
+
+test("three individual review waves cover every previously generic non-curated wrestler",()=>{
+  const wave=[...WESTERN_REVIEW_WAVE_5,...JAPAN_LUCHA_REVIEW_WAVE_6,...INDEPENDENT_REVIEW_WAVE_7];
+  const all=FULL_REAL_ROSTER_IDENTITY_GUIDE;
+  ok(WESTERN_REVIEW_WAVE_5.length===171
+    &&JAPAN_LUCHA_REVIEW_WAVE_6.length===126
+    &&INDEPENDENT_REVIEW_WAVE_7.length===149
+    &&wave.length===446,
+    "review batches were accidentally reduced");
+  const keys=new Set<string>();
+  for(const [name,gimmick,style,finisher] of wave){
+    const k=name.toLocaleLowerCase("en-GB");
+    ok(!keys.has(k),"duplicated wrestler review "+name);
+    keys.add(k);
+    const entry=fullRealRosterIdentityFor(name);
+    ok(entry!==null&&entry.editorialBasis==="REVIEWED"
+      &&entry.gimmickArchetype===gimmick
+      &&entry.primaryStyle===style
+      &&entry.finishingMoves[0]?.name===finisher
+      &&entry.finishingMoves[0]?.source==="PPW_AUTHORED"
+      &&entry.signatureMoves.length===2
+      &&entry.signatureMoves.every(m=>m.source==="PPW_AUTHORED")
+      &&entry.signatureMoves.every(m=>m.name!==entry.finishingMoves[0]?.name),
+      "individual wrestler review did not override the old generated character: "+name);
+  }
+  ok(all.filter(x=>x.editorialBasis==="REVIEWED").length===446,
+    "one of the 446 wrestler reviews did not reach the real World");
+  ok(all.every(x=>x.editorialBasis!=="COHORT"
+      ||CURATED_WRESTLER_CHARACTERS.some(c=>c.name===x.name)),
+    "an unreviewed generic wrestler slipped through the identity completion gate");
+  const dax=fullRealRosterIdentityFor("Dax Harwood")!;
+  const dawkins=fullRealRosterIdentityFor("Angelo Dawkins")!;
+  const wolf=fullRealRosterIdentityFor("Baron Corbin")!;
+  const shota=fullRealRosterIdentityFor("Shota Umino")!;
+  const azm=fullRealRosterIdentityFor("AZM")!;
+  ok(dax.primaryStyle==="TECHNICAL" && dax.gimmickArchetype==="RING_GENERAL"
+    &&dawkins.primaryStyle==="POWERHOUSE" &&dawkins.finishingMoves[0]?.name==="Sky High"
+    &&wolf.gimmickArchetype==="LONE_WOLF"
+    &&shota.finishingMoves[0]?.name==="Death Rider"
+    &&azm.editorialBasis==="TARGETED",
+    "known characters still have the previous inappropriate random defaults");
+  const identityBefore=fullRealRosterIdentityFor("Ivar")!;
+  identityBefore.signatureMoves[0]!.name="local UI mutation";
+  ok(fullRealRosterIdentityFor("Ivar")?.signatureMoves[0]?.name!=="local UI mutation",
+    "roster editorial reference leaked mutations across Worlds");
 });
 
 test("all seeded real wrestlers use curated or roster-specific identities; existing agreements are protected",()=>{

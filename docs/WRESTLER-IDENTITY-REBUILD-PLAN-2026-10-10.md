@@ -232,3 +232,51 @@ The next quality step is **reviewing the 505 cohort-based approximations** by
 prominence, region and user-reported inaccuracies, not just declaring
 "643 historically researched." Then continue author-controlled promotion
 character negotiations and Roster editor. No production deployment.
+
+## Complete individual roster editorial review — waves 5–7 (11 October 2026)
+
+The broad *cohort/random archetype* pass was useful for filling gaps but
+produced implausible real-name defaults. A follow-up roster audit found
+**446 remaining unreviewed records** once the publisher-sourced profiles
+were excluded. All 446 now have an **individual review row**, partitioned:
+
+- Wave 5: **171** WWE/NXT, AEW/ROH and associated women wrestlers.
+- Wave 6: **126** NJPW, NOAH, STARDOM, Japanese guests, AAA/CMLL and luchadoras.
+- Wave 7: **149** TNA, British/global indies, developmental and independent women.
+
+Each entry explicitly selects a plausible wrestler-specific gimmick,
+primary style and named finisher. The previous automatically invented names
+such as `[surname] Breaker` have been replaced with realistic wrestling
+manoeuvres and known move-name candidates. Two secondary signatures are
+chosen consistently from a **style-appropriate real wrestling-move
+vocabulary**, not fabricated historical signature claims.
+
+**Editorial tier meanings:**
+- `CURATED`: independently publisher-sourced data with `VERIFIED` moves
+  (the current separate researched catalogue, 59 distinct names).
+- `TARGETED`: existing individually name-targeted editorials (138 names).
+- `REVIEWED`: this audited set of 446 wrestler-specific editorials.
+- `COHORT`: *none left outside the independently publisher-curated pool*.
+
+**Do not misrepresent the result:** this achieves 643/643 individually
+specified and reasonable starting profiles. It does NOT assert that all
+643 finishers have been independently verified, nor that obscure wrestler
+personas exactly match the real-world current day. Reviewed moves are
+intentionally `PPW_AUTHORED`. Genuine real signature/finisher correctness
+continues to improve through source-driven editorial corrections; some
+character versions evolve with wrestling history. The user's accepted
+standard allows plausible approximate moves for little-known names.
+
+Fixed archetypes **Lone Wolf** and **Viking Warrior** were added to the
+shared catalogue for characters where other labels were inappropriate.
+All profile data is still wrestler-owned, not promotion-owned. A player's
+saved negotiated identity remains untouched by subsequent editorial waves.
+Future generated fictional wrestlers are still given complete self-contained
+characters by the sim-core prospect generator, with no real-roster alias
+reuse. These editorial upgrades apply to new Worlds only, or to missing
+identity records during controlled legacy backfill.
+
+Tests require exact individual review match for all 446 records,
+no unreviewed generic record except one independently curated, complete
+signature/finisher repertoires, world creation, no mutation leakage, and
+player-negotiated override protection. No live deployment.

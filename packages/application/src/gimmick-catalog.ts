@@ -68,6 +68,13 @@ export const GIMMICK_CATALOG = [
     "description": "A calculating wrestler exploiting weaknesses and shortcuts"
   },
   {
+    "id": "LONE_WOLF",
+    "label": "Lone Wolf",
+    "family": "CLASSIC",
+    "familyLabel": "Classic Wrestling",
+    "description": "An intimidating outsider who refuses allegiance to others"
+  },
+  {
     "id": "REDEMPTION_SEEKER",
     "label": "Redemption Seeker",
     "family": "CLASSIC",
@@ -514,6 +521,13 @@ export const GIMMICK_CATALOG = [
     "family": "MISC",
     "familyLabel": "Other Characters",
     "description": "A specific established character not yet captured by the catalogue"
+  },
+  {
+    "id": "VIKING_WARRIOR",
+    "label": "Viking Warrior",
+    "family": "MISC",
+    "familyLabel": "Other Characters",
+    "description": "An imposing Norse warrior-inspired wrestling persona"
   },
   {
     "id": "SAMURAI",
