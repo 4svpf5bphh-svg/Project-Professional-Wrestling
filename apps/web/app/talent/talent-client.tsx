@@ -258,8 +258,10 @@ function defaultDraft(target: OfferTarget): OfferDraft {
       creativeControl: contract.creativeControl,
       termWeeks: family === "EXCLUSIVE" ? 26 : family === "ONE_OFF" ? 1 : 13,
       dateEntitlement: family === "EXCLUSIVE" ? 26 : family === "ONE_OFF" ? 1 : Math.max(1, contract.dateEntitlement),
-      weeklyGuarantee: family === "ONE_OFF" ? 0 : contract.weeklyGuarantee,
-      appearanceFee: contract.appearanceFee,
+      weeklyGuarantee: family === "ONE_OFF" ? 0
+        : family === "EXCLUSIVE" ? Math.max(contract.weeklyGuarantee, Math.ceil(target.referenceValue * 0.5))
+          : contract.weeklyGuarantee,
+      appearanceFee: family === "EXCLUSIVE" ? 0 : contract.appearanceFee,
       signingBonus: contract.signingBonus,
     };
   }
@@ -423,7 +425,7 @@ function negotiationGuide(target: OfferTarget, draft: OfferDraft): {
   const structure = draft.family === "ONE_OFF"
     ? `One-off guide: appearance ${moneyRange(Math.round(typicalAppearanceLow), Math.round(typicalAppearanceHigh))}; no weekly guarantee or signing bonus.`
     : draft.family === "EXCLUSIVE"
-      ? `Exclusive guide: weekly ${moneyRange(Math.round(typicalWeeklyLow), Math.round(typicalWeeklyHigh))}; signing ${moneyRange(Math.round(typicalSigningLow), Math.round(typicalSigningHigh))}; usually no appearance fee; no purchased-date cap during the term.`
+      ? `Exclusive guide: weekly ${moneyRange(Math.round(typicalWeeklyLow), Math.round(typicalWeeklyHigh))}; minimum ${money(Math.ceil(reference * 0.5))}/wk; signing ${moneyRange(Math.round(typicalSigningLow), Math.round(typicalSigningHigh))}; no separate appearance fee; unlimited appearances during the term.`
       : `Non-exclusive guide: weekly ${moneyRange(Math.round(typicalWeeklyLow), Math.round(typicalWeeklyHigh))}; appearance ${moneyRange(Math.round(typicalAppearanceLow), Math.round(typicalAppearanceHigh))}; signing ${moneyRange(Math.round(typicalSigningLow), Math.round(typicalSigningHigh))}; roughly 22–42% of the term purchased.`;
 
   return {
@@ -673,6 +675,10 @@ function OfferEditor({
 }): React.JSX.Element {
   const terms = draft.family === "ONE_OFF" ? [1] : draft.family === "EXCLUSIVE" ? [13, 26, 52] : [4, 13, 26];
   const guide = negotiationGuide(target, draft);
+  // Mirrors the server's minimum market-value guarantee for exclusive work.
+  const exclusiveWeeklyFloor = Math.max(1, Math.ceil(target.referenceValue * 0.5));
+  const invalidExclusivePay = draft.family === "EXCLUSIVE"
+    && (draft.weeklyGuarantee < exclusiveWeeklyFloor || draft.appearanceFee !== 0);
   return (
     <section className={styles.editor} aria-label={`Contract offer for ${target.personName}`}>
       <div className={styles.editorHeader}>
@@ -741,7 +747,10 @@ function OfferEditor({
           </select>
         </label>
         {draft.family === "EXCLUSIVE" ? (
-          <div className={styles.contractBox}><strong>Unlimited appearances</strong><small>Included for the full exclusive term, subject to health and scheduling.</small></div>
+          <div className={styles.contractBox}>
+            <strong>Unlimited appearances</strong>
+            <small>Included for the full exclusive term, subject to health and scheduling. Minimum guaranteed salary {money(exclusiveWeeklyFloor)}/week; appearance fees are not charged separately.</small>
+          </div>
         ) : <label>
           <span>Purchased dates</span>
           <IntegerInput
@@ -764,6 +773,7 @@ function OfferEditor({
           <span>Appearance fee</span>
           <MoneyInput
             value={draft.appearanceFee}
+            disabled={draft.family === "EXCLUSIVE"}
             onChange={(value) => onChange({ ...draft, appearanceFee: value })}
           />
         </label>
@@ -815,8 +825,10 @@ function OfferEditor({
       </div>
 
       <div className={styles.editorFooter}>
-        <span>PPW enforces signed creative rights, exclusivity, Service Capacity and wrestler acceptance. These choices do not guarantee a deal.</span>
-        <button className={styles.primaryButton} type="button" disabled={submitting} onClick={onSubmit}>{submitting ? "Submitting…" : "Submit offer"}</button>
+        <span>{invalidExclusivePay
+          ? `Exclusive employment needs at least ${money(exclusiveWeeklyFloor)} guaranteed per week and no separate appearance fee.`
+          : "PPW enforces signed creative rights, exclusivity, Service Capacity and wrestler acceptance. These choices do not guarantee a deal."}</span>
+        <button className={styles.primaryButton} type="button" disabled={submitting || invalidExclusivePay} onClick={onSubmit}>{submitting ? "Submitting…" : "Submit offer"}</button>
       </div>
     </section>
   );
