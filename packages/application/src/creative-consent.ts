@@ -1,7 +1,8 @@
-import type { Contract, Id, MatchSide, Person, PpwDate, WorldState } from "../../domain/src/types.js";
+import type { Id, MatchSide, WorldState } from "../../domain/src/types.js";
 import { comparePpwDates } from "../../sim-core/src/clock.js";
 import {
   creativeBookingReview,
+  applicableCreativeContract,
   creativeBookingDecisionScore,
   creativeBookingAgreed,
   resolvedCreativeControl,
@@ -41,23 +42,6 @@ export interface CreativeBookingConcern {
   bookingSignature: string;
 }
 
-function contractCovers(state: WorldState, contract: Contract, date: PpwDate): boolean {
-  return contract.status === "SIGNED"
-    && comparePpwDates(date, contract.startDate, state.ruleset.weeksPerYear) >= 0
-    && comparePpwDates(date, contract.endDate, state.ruleset.weeksPerYear) <= 0;
-}
-
-const CONTROL_WEIGHT = { NONE: 0, CONSULTATION: 1, PROTECTED_FINISHES: 2, FULL_APPROVAL: 3 } as const;
-
-/** A stronger live clause cannot be evaded by selecting a weaker overlapping contract. */
-function applicableContract(state: WorldState, promotionId: Id, personId: Id, date: PpwDate): Contract | null {
-  return state.contracts
-    .filter((contract) => contract.promotionId === promotionId && contract.personId === personId
-      && contractCovers(state, contract, date))
-    .sort((a, b) => CONTROL_WEIGHT[resolvedCreativeControl(b.creativeControl)]
-      - CONTROL_WEIGHT[resolvedCreativeControl(a.creativeControl)] || a.id.localeCompare(b.id))[0] ?? null;
-}
-
 function matchSignature(draft: DetailedShowDraft, match: DetailedMatchDraft, personId: Id, contractId: Id): string {
   // Explicit fields (including style / interference and the full opposing side)
   // ensure a previously granted waiver cannot silently follow a rewritten card.
@@ -89,7 +73,7 @@ function matchConcerns(
   ];
   const result: CreativeBookingConcern[] = [];
   for (const { personId, side } of sides) {
-    const contract = applicableContract(state, draft.promotionId, personId, draft.targetDate);
+    const contract = applicableCreativeContract(state, draft.promotionId, personId, draft.targetDate);
     if (!contract) continue;
     const review = creativeBookingReview(contract.creativeControl, {
       loses: side !== match.intendedWinnerSide, cleanOrSubmission, repackaging: false,
