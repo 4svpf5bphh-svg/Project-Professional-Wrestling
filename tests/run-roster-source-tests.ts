@@ -578,6 +578,32 @@ test("all seeded real wrestlers use curated or roster-specific identities; exist
   }
   ok(verified===CURATED_WRESTLER_CHARACTERS.length&&approx===643-verified,
     "not all researched and approximated wrestlers were assigned correctly");
+  ok(CURATED_WRESTLER_CHARACTERS.length===60,
+    "published-source character catalogue unexpectedly lost previously sourced wrestlers");
+  for(const curated of CURATED_WRESTLER_CHARACTERS){
+    const person=state.people.find(p=>p.name===curated.name)!;
+    const wrestler=byPerson.get(person.id)!;
+    ok(wrestler.active.provenance==="CURATED",
+      "publisher-sourced wrestler was displaced by an editorial approximation: "+curated.name);
+    const publishedSignatures="signatureMoves" in curated
+      ? curated.signatureMoves
+      : curated.signatureMove?[curated.signatureMove]:[];
+    const publishedFinishers="finishingMoves" in curated
+      ? curated.finishingMoves
+      : curated.finishingMove?[curated.finishingMove]:[];
+    for(const published of publishedSignatures){
+      ok(wrestler.active.signatureMoves.some(move=>
+        move.name===published.name &&move.category===published.category
+          &&move.source==="VERIFIED"),
+        "source-backed signature move was discarded or mislabelled: "+curated.name);
+    }
+    for(const published of publishedFinishers){
+      ok(wrestler.active.finishingMoves.some(move=>
+        move.name===published.name &&move.category===published.category
+          &&move.source==="VERIFIED"),
+        "source-backed finishing move was discarded or mislabelled: "+curated.name);
+    }
+  }
   const sabre=state.people.find(p=>p.name==="Zack Sabre Jr.")!;
   const sabreRecord=byPerson.get(sabre.id)!;
   ok(sabreRecord.active.gimmickId==="SUBMISSION_SPECIALIST"
