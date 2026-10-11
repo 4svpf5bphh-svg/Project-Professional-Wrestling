@@ -19,6 +19,7 @@ import {
   saveAlphaCurrentWeekCard,
   saveAlphaShowCard,
   requestAlphaShowCreativeConsent,
+  withdrawAlphaShowCreativeAmendment,
   type AlphaCardMatchView,
   type AlphaCardSegmentView,
 } from "../packages/web-adapter/src/card-service.js";
@@ -1539,6 +1540,181 @@ await test("manual advance explains an unapproved show, but the scheduled lock r
   const notices = buildPlayerAttention(resolved, "alpha-player");
   ok(notices.some((entry) => entry.title === "Unapproved booking handed to staff"),
     "player was not shown the scripted booking fallback in Attention");
+});
+
+
+await test("withdrawing a refused live-card amendment restores the last committed booking without touching its actual matches", async () => {
+  const fixture = await reservedShowFixture(61271);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await materializePersistedCurrentWeekReservations(fixture.repository, fixture.worldId, before.world.revision);
+  const materialized = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const loserId = fixture.participantIds[1]!;
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const deal = aggregate.state.contracts.find((contract) =>
+      contract.promotionId === materialized.promotion.promotionId && contract.personId === loserId
+      && contract.status === "SIGNED");
+    if (!deal) throw new Error("missing protected wrestler's agreement");
+    deal.creativeControl = "PROTECTED_FINISHES";
+  });
+  const originalCard = singlesCard(fixture.participantIds).map((match, index) =>
+    index === 0 ? { ...match, plannedFinish: "PROTECTED_FINISH" as const } : match);
+  const original = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "withdraw-original",
+    expectedRevision: materialized.world.revision,
+    expectedPlanVersion: materialized.workspaceVersion,
+    matches: originalCard,
+    championshipAssignments: [],
+  });
+  ok(!original.cardPendingConsent, "contract-safe original show was unexpectedly pending approval");
+  const initialWorld = await fixture.repository.load(fixture.worldId);
+  const event = initialWorld.state.events.find((item) =>
+    item.promotionId === original.promotion.promotionId && item.status === "SCHEDULED"
+    && item.date.week === initialWorld.state.world.currentDate.week)!;
+  const liveMatches = initialWorld.state.matches.filter((match) =>
+    match.eventId === event.id && match.status === "SCHEDULED");
+  const initialIds = liveMatches.map((match) => match.id);
+
+  const proposed = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "withdraw-propose-clean-loss",
+    expectedRevision: original.world.revision,
+    expectedPlanVersion: original.workspaceVersion,
+    matches: original.matches.map((match, index) => index === 0
+      ? { ...match, plannedFinish: "CLEAN_PIN" as const, plannedLengthMinutes: match.plannedLengthMinutes + 5 }
+      : match),
+    championshipAssignments: [],
+  });
+  ok(proposed.cardPendingConsent, "new protected loss was applied instead of held");
+  const stored = await fixture.repository.load(fixture.worldId);
+  ok(stored.planning.pendingCardAmendments?.length === 1, "missing rollback checkpoint");
+  ok(stored.planning.pendingCardAmendments?.[0]?.committedDraft.matches[0]?.plannedFinish === "PROTECTED_FINISH",
+    "checkpoint did not keep previously committed finish");
+  const sameIds = stored.state.matches.filter((match) => match.eventId === event.id
+    && match.status === "SCHEDULED").map((match) => match.id);
+  ok(sameIds.join(":") === initialIds.join(":"), "pending change damaged the committed match IDs");
+
+  // Editing another pending proposal must never overwrite the first checkpoint.
+  const amended = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "withdraw-propose-again",
+    expectedRevision: proposed.world.revision,
+    expectedPlanVersion: proposed.workspaceVersion,
+    matches: proposed.matches.map((match, index) => index === 0
+      ? { ...match, plannedLengthMinutes: match.plannedLengthMinutes + 1 } : match),
+    championshipAssignments: [],
+  });
+  const afterSecondSave = await fixture.repository.load(fixture.worldId);
+  ok(afterSecondSave.planning.pendingCardAmendments?.length === 1
+    && afterSecondSave.planning.pendingCardAmendments[0]?.committedDraft.matches[0]?.plannedFinish === "PROTECTED_FINISH",
+    "second proposed change overwrote the committed baseline");
+
+  const restoreRequest = {
+    requestId: "withdraw-test-request",
+    expectedRevision: amended.world.revision,
+    expectedPlanVersion: amended.workspaceVersion,
+    draftId: amended.draftId,
+  };
+  let wrongControllerDenied = false;
+  try {
+    await withdrawAlphaShowCreativeAmendment(fixture.repository, fixture.worldId, "another-player", restoreRequest);
+  } catch { wrongControllerDenied = true; }
+  ok(wrongControllerDenied, "another player withdrew a promoter's pending card");
+
+  const restored = await withdrawAlphaShowCreativeAmendment(
+    fixture.repository, fixture.worldId, "alpha-player", restoreRequest);
+  ok(!restored.cardPendingConsent, "restoration did not clear pending creative amendment");
+  ok(restored.matches[0]?.plannedFinish === "PROTECTED_FINISH"
+    && restored.matches[0]?.plannedLengthMinutes === original.matches[0]?.plannedLengthMinutes,
+    "withdrawal did not restore prior authored finish and duration");
+  ok(restored.creativeConcerns.filter((entry) => entry.requiresConsent).length === 0,
+    "restored protected finish still raised a contractual veto");
+  const resultWorld = await fixture.repository.load(fixture.worldId);
+  ok(resultWorld.planning.pendingCardAmendments?.length === 0, "withdrawal retained stale rollback checkpoint");
+  ok(resultWorld.state.matches.filter((match) => match.eventId === event.id
+    && match.status === "SCHEDULED").map((match) => match.id).join(":") === initialIds.join(":"),
+    "withdrawal replaced actual scheduled matches");
+  const retry = await withdrawAlphaShowCreativeAmendment(
+    fixture.repository, fixture.worldId, "alpha-player", restoreRequest);
+  ok(retry.world.revision === restored.world.revision, "replay of withdrawal mutated World revision");
+
+  let staleRejected = false;
+  try {
+    await withdrawAlphaShowCreativeAmendment(fixture.repository, fixture.worldId, "alpha-player", {
+      ...restoreRequest, requestId: "withdraw-new-stale-request",
+    });
+  } catch { staleRejected = true; }
+  ok(staleRejected, "new withdrawal against already restored card was accepted");
+});
+
+await test("withdrawal restores prior wrestler approval when a declined new finish replaces its consent record", async () => {
+  const fixture = await reservedShowFixture(61272);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await materializePersistedCurrentWeekReservations(fixture.repository, fixture.worldId, before.world.revision);
+  const ready = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const loserId = fixture.participantIds[1]!;
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const deal = aggregate.state.contracts.find((contract) =>
+      contract.promotionId === ready.promotion.promotionId && contract.personId === loserId
+      && contract.status === "SIGNED");
+    if (!deal) throw new Error("missing original protected contract");
+    deal.creativeControl = "PROTECTED_FINISHES";
+    const person = aggregate.state.people.find((entry) => entry.id === loserId)!;
+    person.morale = 100; person.fatigue = 0; person.priorities.loyalty = 100; person.priorities.role = 0;
+  });
+  const first = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "previously-approved-card",
+    expectedRevision: ready.world.revision,
+    expectedPlanVersion: ready.workspaceVersion,
+    matches: singlesCard(fixture.participantIds).map((match, index) =>
+      index === 0 ? { ...match, plannedFinish: "CLEAN_PIN" as const } : match),
+    championshipAssignments: [],
+  });
+  ok(first.cardPendingConsent, "original clean loss should require approval");
+  const accepted = await requestAlphaShowCreativeConsent(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "accept-original-loss",
+    expectedRevision: first.world.revision,
+    expectedPlanVersion: first.workspaceVersion,
+    draftId: first.draftId,
+    draftMatchId: first.matches[0]!.draftMatchId,
+    personId: loserId,
+  });
+  ok(!accepted.cardPendingConsent
+    && accepted.creativeConcerns.some((entry) => entry.personId === loserId && entry.consent === "APPROVED"),
+    "first approved card did not become committed");
+
+  const changed = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "amend-approved-loss",
+    expectedRevision: accepted.world.revision,
+    expectedPlanVersion: accepted.workspaceVersion,
+    matches: accepted.matches.map((match, index) => index === 0
+      ? { ...match, plannedLengthMinutes: match.plannedLengthMinutes + 2 } : match),
+    championshipAssignments: [],
+  });
+  ok(changed.cardPendingConsent, "amended previously approved loss should require fresh consent");
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const person = aggregate.state.people.find((entry) => entry.id === loserId)!;
+    person.morale = 0; person.fatigue = 100; person.priorities.loyalty = 0; person.priorities.role = 100;
+  });
+  const declined = await requestAlphaShowCreativeConsent(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "decline-new-version",
+    expectedRevision: changed.world.revision,
+    expectedPlanVersion: changed.workspaceVersion,
+    draftId: changed.draftId,
+    draftMatchId: changed.matches[0]!.draftMatchId,
+    personId: loserId,
+  });
+  ok(declined.cardPendingConsent
+    && declined.creativeConcerns.some((entry) => entry.personId === loserId && entry.consent === "DECLINED"),
+    "changed booking was not refused");
+  const restored = await withdrawAlphaShowCreativeAmendment(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "restore-agreed-old-loss",
+    expectedRevision: declined.world.revision,
+    expectedPlanVersion: declined.workspaceVersion,
+    draftId: declined.draftId,
+  });
+  ok(!restored.cardPendingConsent, "old committed approval did not restore accepted status");
+  ok(restored.creativeConcerns.some((entry) => entry.personId === loserId && entry.consent === "APPROVED"),
+    "withdrawal discarded an approval the wrestler had already granted for the live card");
+  ok(restored.matches[0]?.plannedLengthMinutes === accepted.matches[0]?.plannedLengthMinutes,
+    "withdrawal left the declined match duration on the live draft");
 });
 
 console.log(`\nAlpha web card service tests: ${passed} passed, ${failed} failed`);
