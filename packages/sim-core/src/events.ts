@@ -12,7 +12,7 @@ import type {
   WrestlingEventType,
 } from "../../domain/src/types.js";
 import { ppwDateToWeekIndex } from "./clock.js";
-import { activeContractsForPromotion, serviceCapacityDatesPerWeek } from "./contracts.js";
+import { activeContractsForPromotion, contractHasAppearanceRights, serviceCapacityDatesPerWeek } from "./contracts.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { contractById, personById } from "./indexes.js";
@@ -132,7 +132,7 @@ function appearanceDateKey(personId: string, date: WrestlingEvent["date"]): stri
 }
 
 function chooseContractForPerson(contracts: Contract[]): Contract | null {
-  const usable = contracts.filter((contract) => contract.datesUsed < contract.dateEntitlement);
+  const usable = contracts.filter(contractHasAppearanceRights);
   if (!usable.length) return null;
   return [...usable].sort(
     (a, b) => (a.dateEntitlement - a.datesUsed) - (b.dateEntitlement - b.datesUsed) || a.id.localeCompare(b.id),
@@ -149,7 +149,7 @@ function selectAppearances(
 ): { person: Person; contract: Contract }[] {
   const contractsByPerson = new Map<string, Contract[]>();
   for (const contract of activeContractsForPromotion(state, promotion.id)) {
-    if (contract.datesUsed >= contract.dateEntitlement) continue;
+    if (!contractHasAppearanceRights(contract)) continue;
     const list = contractsByPerson.get(contract.personId) ?? [];
     list.push(contract);
     contractsByPerson.set(contract.personId, list);
@@ -679,7 +679,7 @@ function resolveEvent(
       continue;
     }
     const contract = contractsById.get(appearance.contractId);
-    if (!contract || contract.datesUsed >= contract.dateEntitlement) {
+    if (!contract || !contractHasAppearanceRights(contract)) {
       appearance.status = "CANCELLED";
       continue;
     }
