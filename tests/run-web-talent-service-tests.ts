@@ -418,6 +418,13 @@ await test("exhausted-date renewal to a one-off starts next week without prematu
   const independent = aggregate.state.promotions.find(p =>
     p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
   if (!independent) throw new Error("one-off renewal fixture lacks a promotion");
+  // This legacy next-week fixture explicitly represents a weekly operator.
+  // The distinct biweekly regression checks calendar-aligned later starts.
+  const flagship = aggregate.state.showSeries?.find(series =>
+    series.promotionId === independent.id && series.role === "FLAGSHIP");
+  if (!flagship) throw new Error("one-off renewal fixture lacks a flagship calendar");
+  flagship.cadenceWeeks = 1;
+  flagship.anchorWeek = 0;
   const source = aggregate.state.contracts.find(c =>
     c.promotionId === independent.id && c.status === "SIGNED" && c.family === "LIMITED_NON_EXCLUSIVE"
     && serviceCapacityDatesPerWeek(aggregate.state.people.find(p => p.id === c.personId)!) >= 1.05);
