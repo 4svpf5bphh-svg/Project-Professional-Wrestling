@@ -219,22 +219,25 @@ function buildFreshPlan(
     if (alreadyOurs) throw new Error("wrestler is already on your active roster; use the renewal action");
   }
 
-  // Human one-offs are evaluated only at World Resolution, after this
-  // week's show commitments have closed. Their single purchased appearance
-  // must therefore belong to a week the booker can actually prepare.
-  // Ordinary future renewals still start after the existing signed term.
-  if (request.family === "ONE_OFF"
-    && ppwDateToWeekIndex(startDate, state.ruleset.weeksPerYear)
+  // Human one-offs resolve after the submission week's commitments close.
+  // Their single appearance must belong to a *future* PPW week. A future
+  // renewal retains the next week after its signed source contract ends.
+  if (request.family === "ONE_OFF") {
+    if (ppwDateToWeekIndex(startDate, state.ruleset.weeksPerYear)
       <= ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear)) {
-    // The new weekly planning window begins on day 1, even if a future
-    // scheduler or migrated World ever stores a later submission weekday.
-    startDate = { ...addPpwWeeks(state.world.currentDate, 1, state.ruleset.weeksPerYear), day: 1 };
+      startDate = addPpwWeeks(state.world.currentDate, 1, state.ruleset.weeksPerYear);
+    }
+    // Reservation and materialization check the exact show DAY: a one-show
+    // weekly deal must allow any day 1–7, while buying just ONE appearance.
+    startDate = { ...startDate, day: 1 };
   }
 
   const exclusivity = request.family === "ONE_OFF" ? "OPEN"
     : request.family === "EXCLUSIVE" ? "EXCLUSIVE"
       : "NON_EXCLUSIVE";
-  const endDate = addPpwWeeks(startDate, request.termWeeks - 1, state.ruleset.weeksPerYear);
+  const endDate = request.family === "ONE_OFF"
+    ? { ...startDate, day: 7 }
+    : addPpwWeeks(startDate, request.termWeeks - 1, state.ruleset.weeksPerYear);
 
   return {
     promotionId,
