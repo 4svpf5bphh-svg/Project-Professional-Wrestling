@@ -149,7 +149,7 @@ export interface PlayerPendingContractOfferView {
   offerId: Id;
   personId: Id;
   personName: string;
-  offerKind: "RECRUITMENT" | "RENEWAL";
+  offerKind: "RECRUITMENT" | "RENEWAL" | "DATES_ADDENDUM";
   status: ContractOfferStatus;
   submittedDate: PpwDate;
   family: ContractFamily;
