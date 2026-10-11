@@ -374,7 +374,7 @@ await test("outage resumes exactly one PPW week and protects accrued inactivity 
   joinPlayerToWorld(aggregate.ownership, "offline-player", aggregate.state.world.currentDate);
   const independent = aggregate.state.promotions.find((entry) =>
     entry.tier === "INDEPENDENT" && entry.lifecycle === "ACTIVE");
-  ok(independent, "fixture has no claimable independent promotion");
+  if (!independent) throw new Error("fixture has no claimable independent promotion");
   claimIndependentPromotionForPlayer(aggregate.state, aggregate.ownership, "offline-player", independent.id);
   aggregate.engagement = createWorldEngagementState(aggregate.state.world.id);
   recordPlayerActivity(
