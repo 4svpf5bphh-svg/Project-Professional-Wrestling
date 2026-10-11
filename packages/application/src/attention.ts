@@ -427,6 +427,23 @@ export function buildPlayerAttention(
 
   const resolvedDate = aggregate.runtime.lastResolvedPpwDate;
   if (promotion && resolvedDate) {
+    // Outages must be visible as operational history, not fabricated player
+    // absences. This information has no competitive reward or penalty.
+    for (const incident of aggregate.state.ledger.filter((entry) =>
+      entry.type === "SCHEDULER_MISSED_CYCLES_PROTECTED"
+      && sameWeek(entry.date, resolvedDate)
+    )) {
+      pushIfVisible(aggregate, playerId, items, {
+        attentionId: `scheduler-recovery:${incident.id}`,
+        category: "WORLD_NEWS",
+        title: "PPW World schedule recovered",
+        summary: `The scheduler missed ${Number(incident.payload.skippedRealDays)} real day(s). Only the current PPW week resolved; missed days do not count toward player inactivity or Stewardship deadlines.`,
+        deadline: null,
+        deepLink: null,
+        dismissible: true,
+        sourceOpportunityCategory: null,
+      });
+    }
     // Scheduled World progression cannot be held hostage by one promotion's
     // outstanding creative waiver. Explain staff fallback *after* the tick
     // from a durable ledger event rather than inventing live match outcomes.
