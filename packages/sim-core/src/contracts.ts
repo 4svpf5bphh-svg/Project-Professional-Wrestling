@@ -16,7 +16,7 @@ import { recordFinancialTransaction } from "./transactions.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { contractsEndingInWeek, contractsForPerson, contractsForPromotion } from "./indexes.js";
-import { creativeControlOfferBonus, resolvedCreativeControl } from "./creative-control.js";
+import { credibleCreativeControlOfferBonus, resolvedCreativeControl, suggestedAiCreativeControl } from "./creative-control.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 
 const ROLE_VALUE: Record<RoleExpectation, number> = {
@@ -423,6 +423,10 @@ function offerSeed(state: WorldState, promotion: Promotion, person: Person, salt
 function createOffer(state: WorldState, promotion: Promotion, person: Person, offerKind: "RECRUITMENT" | "RENEWAL", startDate: typeof state.world.currentDate): ContractOffer {
   const rng = new DeterministicRng(offerSeed(state, promotion, person, offerKind));
   const terms = buildContractTerms(state, promotion, person, rng, startDate);
+  // AI wrestlers negotiate protections through the same acceptance engine as
+  // human offers. Rights carry real future booking constraints, not a free
+  // morale or competitive rating modifier. Distressed companies stay cautious.
+  const creativeControl = suggestedAiCreativeControl(person, promotion, terms);
   const offer: ContractOffer = {
     id: nextEntityId(state, "contractOffer"),
     worldId: state.world.id,
@@ -434,6 +438,7 @@ function createOffer(state: WorldState, promotion: Promotion, person: Person, of
     resolvedUtility: null,
     rejectionReason: null,
     ...terms,
+    ...(creativeControl === "NONE" ? {} : { creativeControl }),
   };
   state.contractOffers.push(offer);
   return offer;
@@ -710,7 +715,9 @@ export function evaluateContractOffer(state: WorldState, offer: ContractOffer): 
     + exposureScore * priorities.exposure
   ) / weightTotal;
   const uncertaintyRng = new DeterministicRng(deterministicSeedFromText(`${state.world.seed}:${offer.id}:utility`));
-  const benefit = addendum ? 0 : creativeControlOfferBonus(person, offer.creativeControl);
+  const benefit = addendum ? 0 : credibleCreativeControlOfferBonus(
+    person, offer.creativeControl, moneyScore, offer.family, termWeeks,
+  );
   return Math.round((raw + benefit + uncertaintyRng.float(-3, 3)) * 10) / 10;
 }
 
