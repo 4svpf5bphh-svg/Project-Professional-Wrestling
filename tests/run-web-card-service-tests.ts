@@ -1364,9 +1364,10 @@ await test("unapproved protected losses hold a future reservation until an expli
   const fixture = await reservedShowFixture(61261);
   const loserId = fixture.participantIds[1]!;
   await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const controlled = aggregate.state.promotions.find((entry) => entry.controllerType === "HUMAN");
     const contract = aggregate.state.contracts.find((entry) =>
-      entry.personId === loserId && entry.promotionId === aggregate.ownership.memberships.find((m) => m.playerId === "alpha-player")?.promotionId
-    ) ?? aggregate.state.contracts.find((entry) => entry.personId === loserId);
+      entry.personId === loserId && entry.promotionId === controlled?.id && entry.status === "SIGNED"
+    );
     if (!contract) throw new Error("fixture missing loser contract");
     contract.creativeControl = "PROTECTED_FINISHES";
     const person = aggregate.state.people.find((entry) => entry.id === loserId)!;
