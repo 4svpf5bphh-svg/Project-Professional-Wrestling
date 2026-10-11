@@ -153,7 +153,8 @@ function indieSnapshot(state: WorldState, promotion: Promotion): IndieSnapshot {
     // ticket sales or unmodelled lending for granted. Positive baseline
     // recurring surplus is available; negative deficit consumes cash.
     const uncommittedCash = promotion.cash + Math.min(0, 13 * staticNet);
-    const funded = uncommittedCash >= totalCost && promotion.lifecycle === "ACTIVE";
+    const funded = uncommittedCash >= totalCost
+      && promotion.lifecycle !== "DORMANT" && promotion.lifecycle !== "CLOSED";
     if (funded) covered++;
     if (funded && willing) {
       willingCovered++;
