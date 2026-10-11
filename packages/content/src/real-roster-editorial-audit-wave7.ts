@@ -729,7 +729,7 @@ export const REVIEWED_REAL_ROSTER_IDENTITIES_WAVE7: readonly ReviewedRosterIdent
         "source": "PPW_AUTHORED"
       },
       {
-        "name": "Penta Driver",
+        "name": "Sling Blade",
         "category": "GRAPPLE",
         "source": "PPW_AUTHORED"
       }
