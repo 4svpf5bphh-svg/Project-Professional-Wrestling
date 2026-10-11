@@ -247,6 +247,28 @@ await test("exclusive creative offers have unlimited dates and retry with canoni
     appearanceFee: 0,
     signingBonus: wrestler.estimatedWeeklyValue * 5,
   };
+  const beforeGuardrail = await repository.load(worldId);
+  const minimum = Math.ceil(wrestler.estimatedWeeklyValue * 0.5);
+  for (const invalid of [
+    { ...request, weeklyGuarantee: 0, appearanceFee: wrestler.estimatedWeeklyValue * 100 },
+    { ...request, weeklyGuarantee: minimum - 1, appearanceFee: 0 },
+    { ...request, weeklyGuarantee: minimum, appearanceFee: wrestler.estimatedWeeklyValue },
+  ]) {
+    let blocked = false;
+    try {
+      await submitAlphaTalentOffer(repository, worldId, "creative-exclusive-player", invalid);
+    } catch (error) {
+      blocked = error instanceof Error && error.message.includes("exclusive");
+    }
+    ok(blocked, "Web Talent allowed free or appearance-only exclusive warehousing");
+    const unchanged = await repository.load(worldId);
+    ok(unchanged.runtime.revision === beforeGuardrail.runtime.revision
+      && unchanged.state.contractOffers.length === beforeGuardrail.state.contractOffers.length
+      && unchanged.commands.receipts.length === beforeGuardrail.commands.receipts.length,
+      "invalid exclusive bid changed authoritative World or acquired a request receipt");
+  }
+  // Same requestId can still be submitted legitimately after an invalid attempt:
+  // only a VALID command earns an idempotency receipt.
   const first = await submitAlphaTalentOffer(repository, worldId, "creative-exclusive-player", request);
   const after = await repository.load(worldId);
   const offer = after.state.contractOffers.find(entry => entry.id === first.offerId);
