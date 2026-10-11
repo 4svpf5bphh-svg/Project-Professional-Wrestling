@@ -2369,7 +2369,7 @@ export const REVIEWED_REAL_ROSTER_IDENTITIES_WAVE5: readonly ReviewedRosterIdent
     ],
     "finishingMoves": [
       {
-        "name": "Magic Killer",
+        "name": "Gallows Pole",
         "category": "GRAPPLE",
         "source": "PPW_AUTHORED"
       }
@@ -3069,7 +3069,7 @@ export const REVIEWED_REAL_ROSTER_IDENTITIES_WAVE5: readonly ReviewedRosterIdent
     ],
     "finishingMoves": [
       {
-        "name": "Princesa Sugehit Submission",
+        "name": "Fujiwara Armbar",
         "category": "SUBMISSION",
         "source": "PPW_AUTHORED"
       }
