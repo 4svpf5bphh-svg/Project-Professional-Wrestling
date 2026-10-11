@@ -1,6 +1,7 @@
 import type { ContractOffer, ContractTerms, Id, WorldState } from "../../domain/src/types.js";
 import { comparePpwDates } from "./clock.js";
 import { canAcceptContractTerms, canAddLimitedContractDates, contractIsActive, contractOverlaps } from "./contracts.js";
+import { resolvedCreativeControl, validCreativeControl } from "./creative-control.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 
@@ -55,6 +56,9 @@ export function submitHumanContractOffer(state: WorldState, plan: HumanContractO
   requireNonNegativeInteger(plan.appearanceFee, "appearance fee");
   requireNonNegativeInteger(plan.signingBonus, "signing bonus");
   validateContractFamily(plan);
+  if (!validCreativeControl(resolvedCreativeControl(plan.creativeControl))) {
+    throw new Error("unsupported creative control clause");
+  }
 
   if (state.contractOffers.some((offer) => (
     offer.status === "PENDING"
@@ -104,6 +108,7 @@ export function submitHumanContractOffer(state: WorldState, plan: HumanContractO
     family: plan.family,
     exclusivity: plan.exclusivity,
     roleExpectation: plan.roleExpectation,
+    creativeControl: resolvedCreativeControl(plan.creativeControl),
     startDate: { ...plan.startDate },
     endDate: { ...plan.endDate },
     dateEntitlement: plan.dateEntitlement,
@@ -123,6 +128,7 @@ export function submitHumanContractOffer(state: WorldState, plan: HumanContractO
       family: offer.family,
       exclusivity: offer.exclusivity,
       roleExpectation: offer.roleExpectation,
+      creativeControl: resolvedCreativeControl(offer.creativeControl),
       dateEntitlement: offer.dateEntitlement,
       weeklyGuarantee: offer.weeklyGuarantee,
       appearanceFee: offer.appearanceFee,
@@ -180,6 +186,7 @@ export function submitHumanDatesAddendum(
     family: source.family,
     exclusivity: source.exclusivity,
     roleExpectation: source.roleExpectation,
+    creativeControl: resolvedCreativeControl(source.creativeControl),
     // The offer stores the proposed *new total*, not extra dates or used dates.
     startDate: { ...source.startDate },
     endDate: { ...source.endDate },
