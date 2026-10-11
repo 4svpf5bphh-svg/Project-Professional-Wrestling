@@ -6,7 +6,7 @@ import type {
   Promotion,
   WorldState,
 } from "../../domain/src/types.js";
-import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import {
   promotionShowSeriesById,
   promotionShowSeriesDueForDate,
@@ -14,7 +14,7 @@ import {
   type PromotionShowSlot,
 } from "../../sim-core/src/show-calendar.js";
 import { maxShowParticipantsForEventType } from "./show-capacity.js";
-import { serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
+import { contractCoversBookedDate, serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
 import {
   validateDetailedShowDraft,
   type DetailedShowReservation,
@@ -36,9 +36,7 @@ function reservationIdFor(promotionId: Id, draftId: string): string {
 }
 
 function contractCoversDate(state: WorldState, contract: Contract, date: PpwDate): boolean {
-  if (contract.status !== "SIGNED") return false;
-  return comparePpwDates(date, contract.startDate, state.ruleset.weeksPerYear) >= 0
-    && comparePpwDates(date, contract.endDate, state.ruleset.weeksPerYear) <= 0;
+  return contractCoversBookedDate(state, contract, date);
 }
 
 function scheduledContractDates(state: WorldState, contractId: Id): number {
