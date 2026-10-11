@@ -20,6 +20,9 @@ import {
 } from "../packages/application/src/index.js";
 import { GIMMICK_CATALOG, gimmickDefinition, gimmickUsableBy } from "../packages/application/src/gimmick-catalog.js";
 import { CURATED_WRESTLER_CHARACTERS } from "../packages/content/src/real-wrestler-characters.js";
+import { VERIFIED_WRESTLER_CHARACTER_WAVE_2 } from "../packages/content/src/real-wrestler-characters-wave-2.js";
+import { REAL_ACTIVE_MENS_ROSTER_NAMES } from "../packages/content/src/real-active-mens-roster.js";
+import { wrestlerPortableIdentityFor } from "../packages/application/src/wrestler-portable-identity.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { activeContractsForPromotion, createWorld, upsertWrestlerRelationship } from "../packages/sim-core/src/index.js";
 
@@ -571,6 +574,46 @@ test("Owned wrestler working connections require complete factual matches and ca
   ok(afterIncomplete.workingConnections.find(entry => entry.personId === partner!.id)
     ?.recentTagMatchesTogether === 1, "incomplete tag match fabricated extra relationship evidence");
   ok(promotionBId !== promotionAId, "fixture controls are not separate");
+});
+
+test("Second verified move wave covers real roster identities without fabricated extra moves",()=>{
+  const {aggregate}=fixture(73188);
+  const stateBefore=JSON.stringify(aggregate.state);
+  const known=new Set(REAL_ACTIVE_MENS_ROSTER_NAMES);
+  const names=VERIFIED_WRESTLER_CHARACTER_WAVE_2.map(entry=>entry.name);
+  ok(VERIFIED_WRESTLER_CHARACTER_WAVE_2.length>=12 &&new Set(names).size===names.length,
+    "second sourced roster batch is incomplete or duplicated");
+  ok(VERIFIED_WRESTLER_CHARACTER_WAVE_2.every(entry=>
+    known.has(entry.name)
+    &&GIMMICK_CATALOG.some(g=>g.id===entry.gimmickArchetype)
+    &&entry.sourceUrl.startsWith("https://www.")
+    &&entry.evidenceUrls.length>0
+    &&entry.evidenceUrls.every(url=>url.startsWith("https://www.wwe.com/")
+      ||url.startsWith("https://www.allelitewrestling.com/"))
+    &&entry.finishingMove?.name===entry.finishingMoves[0]?.name
+    &&entry.signatureMove?.name===(entry.signatureMoves[0]?.name??undefined)
+  ),"move evidence, primary repertoire, seeded wrestler or character template mismatch");
+  const template=aggregate.state.people[0]!;
+  const takeshita={...template,name:"Konosuke Takeshita"};
+  const view=wrestlerPortableIdentityFor(aggregate.state,takeshita);
+  ok(view.source==="CURATED_BASELINE"
+    &&view.active.signatureMoves.map(x=>x.name).join("|")==="Jumping Knee|Power Drive Knee"
+    &&view.active.finishingMoves[0]?.name==="Raging Fire",
+    "verified multi-move repertoire was lost during portable-identity read");
+  const kevin={...template,name:"Kevin Owens"};
+  ok(wrestlerPortableIdentityFor(aggregate.state,kevin).active.signatureMoves[0]?.name
+    ==="Pop-up Powerbomb","Kevin Owens' recognised signature was missing");
+  const bron={...template,name:"Bron Breakker"};
+  const bronView=wrestlerPortableIdentityFor(aggregate.state,bron);
+  ok(bronView.active.signatureMoves.length===0
+    &&bronView.active.finishingMoves[0]?.name==="Spear"
+    &&!bronView.completeness.hasSignature,
+    "single sourced move was padded with an invented extra signature");
+  const unknown={...template,name:"A Nonexistent Wrestling Character"};
+  ok(wrestlerPortableIdentityFor(aggregate.state,unknown).active.finishingMoves.length===0,
+    "fictional or unresearched person was assigned a random move");
+  ok(JSON.stringify(aggregate.state)===stateBefore,
+    "read-only repertoire unexpectedly changed the World");
 });
 
 test("Gimmick catalogue is substantial, consistent and uses authored definitions",()=>{

@@ -212,6 +212,26 @@ export default function WrestlerProfileClient({
           {creative ? " Your promotion can set its own character and style emphasis. Nothing here changes match ratings yet."
             : " Promotional gimmicks and move lists can be edited by the promotion booking this wrestler."}
         </p>
+        <div className={styles.stack}>
+          <p className={styles.note}>
+            Shared wrestler identity: <strong>{view.person.portableIdentity.active.personaName}</strong>
+            {" · "}{gimmickDefinition(view.person.portableIdentity.active.gimmickId).label}
+            {" · "}{view.person.portableIdentity.source==="WORLD_RECORD"
+              ? "World career record"
+              : view.person.portableIdentity.source==="CURATED_BASELINE"
+                ? "Researched reference"
+                : "Research incomplete"}
+          </p>
+          <p className={styles.note}>
+            Known signatures: {view.person.portableIdentity.active.signatureMoves
+              .map(move=>move.name).join(", ")||"Not yet verified"}
+            {" · "}Known finishers: {view.person.portableIdentity.active.finishingMoves
+              .map(move=>move.name).join(", ")||"Not yet verified"}
+          </p>
+          {creative ? <p className={styles.note}>
+            Your promotion edits below remain local until a shared-world character change is negotiated.
+          </p>:null}
+        </div>
         {creativeDraft && creative ? (
           <div className={styles.creativeEditor}>
             <label className={styles.field}>

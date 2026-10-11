@@ -52,3 +52,29 @@ This checkpoint introduces **no automatic wrestler gimmick changes** and
 the future consent/contract and multi-promotion fairness gate. Existing local
 creative edits remain editable under the legacy command until that migration.
 No main merge, preview/production deploy or live World reset is authorised.
+
+## Researched move repertoire, verified wave 2 (11 October 2026)
+
+Add 13 **exact roster-matched** character entries with source URLs and
+an auditable named-move repertoire, extending the initial curated batch.
+First publisher evidence includes [WWE's Kevin Owens profile](https://www.wwe.com/superstars/kevin-owens),
+[Sami Zayn's profile](https://www.wwe.com/superstars/sami-zayn),
+[Penta's profile](https://www.wwe.com/superstars/penta), and
+[AEW's Konosuke Takeshita profile](https://www.allelitewrestling.com/mens-roster/konosuke-takeshita)
+plus match reports for complementary moves. The batch also covers
+Bron Breakker, LA Knight, Chad Gable, Ilja Dragunov, Joe Hendry, Oba Femi,
+Adam Cole, Jay White and Christian Cage.
+
+The public portable-identity read model now displays **multiple** verified
+signatures and finishers (two distinct signatures for Takeshita). The legacy
+promotion editor still stores one of each, without overwriting the larger
+canonical repertoire or previous player edits. A single documented finisher
+does not cause an invented signature to appear; incomplete records are
+explicitly indicated. A move's "signature" or "finisher" role in PPW is
+editorial metadata, not a statement about every historical usage or about
+match outcomes. New source entries are presentation data, not a world reset
+and not an automatic new identity record.
+
+Remaining research: all other real wrestler names, historical/alternate eras,
+rename aliases and revised move sets, with evidence citations. Continue batch
+by batch rather than backfilling speculation.

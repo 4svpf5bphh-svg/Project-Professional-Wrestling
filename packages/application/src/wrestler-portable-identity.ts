@@ -28,8 +28,12 @@ export function wrestlerPortableIdentityFor(state:WorldState,person:Person):Wres
     gimmickId:base.gimmickArchetype,
     primaryStyle:base.primaryStyle,
     secondaryStyle:base.secondaryStyle,
-    signatureMoves:base.signatureMove?[{...base.signatureMove}]:[],
-    finishingMoves:base.finishingMove?[{...base.finishingMove}]:[],
+    signatureMoves:curated && "signatureMoves" in curated
+      ? curated.signatureMoves.map(move=>({...move}))
+      : base.signatureMove?[{...base.signatureMove}]:[],
+    finishingMoves:curated && "finishingMoves" in curated
+      ? curated.finishingMoves.map(move=>({...move}))
+      : base.finishingMove?[{...base.finishingMove}]:[],
     introducedDate:{...person.debutDate},
     provenance:curated?"CURATED" as const:"UNCURATED_BASELINE" as const,
   };
