@@ -2,6 +2,7 @@ import type { Id } from "../../domain/src/types.js";
 import {
   createWorldEngagementState,
   evaluatePlayerInactivity,
+  recordMissedSchedulerCycles,
 } from "./engagement.js";
 import { activePromotionControls } from "./ownership.js";
 import {
@@ -16,6 +17,7 @@ import { settleOverdueStewardshipExitRequests } from "./stewardship-auto-release
 import { runAiStewardshipBuyouts } from "./stewardship-ai-buyouts.js";
 import { runStewardshipCaretakerRecruitment } from "./stewardship-caretaker.js";
 import type { ApplicationWorldRepository } from "./world-aggregate.js";
+import { LedgerWriter } from "../../sim-core/src/ledger.js";
 import {
   lockPersistedCurrentWeekShowCommitments,
   lockPersistedWorldForResolution,
@@ -52,6 +54,38 @@ function requireUtcCycleKey(value: string): string {
   return normalized;
 }
 
+/**
+ * Apply outage credit at most once for each gap. The recovering tick is the
+ * ONLY tick we resolve; skipped real days never simulate extra PPW weeks.
+ */
+function protectMissedCycles(
+  aggregate: import("./world-aggregate.js").ApplicationWorldAggregate,
+  cycleKey: string,
+): number {
+  const previous = aggregate.runtime.lastResolvedRealCycleKey ?? null;
+  if (!previous) return 0;
+  aggregate.engagement ??= createWorldEngagementState(aggregate.state.world.id);
+  const skipped = recordMissedSchedulerCycles(aggregate.engagement, previous, cycleKey);
+  if (skipped > 0) {
+    const span = aggregate.engagement.schedulerPauseSpans!.at(-1)!;
+    new LedgerWriter(aggregate.state.world.id, aggregate.state.ledger).append({
+      date: aggregate.state.world.currentDate,
+      type: "SCHEDULER_MISSED_CYCLES_PROTECTED",
+      significance: "NOTABLE",
+      entityIds: [],
+      payload: {
+        firstMissedCycleKey: span.firstMissedCycleKey,
+        lastMissedCycleKey: span.lastMissedCycleKey,
+        recoveredCycleKey: cycleKey,
+        skippedRealDays: skipped,
+        replayedPpwWeeks: 0,
+        reason: "scheduler outage dates excluded from inactivity and stewardship deadlines",
+      },
+    });
+  }
+  return skipped;
+}
+
 function retryableSchedulerConflict(message: string): boolean {
   return message.includes("stale World revision")
     || message.includes("cannot lock from phase")
@@ -73,6 +107,7 @@ async function claimExistingLockForCycle(
     }
     const existing = aggregate.runtime.lockedRealCycleKey ?? null;
     if (existing !== null && existing > cycleKey) return true;
+    protectMissedCycles(aggregate, cycleKey);
     aggregate.runtime.lockedRealCycleKey = cycleKey;
     return false;
   });
@@ -86,6 +121,9 @@ async function evaluateScheduledPlayerInactivity(
   cycleKey: string,
 ): Promise<number> {
   const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
+    // Even a World with zero current controllers remembers actual scheduler
+    // outages for any existing/open stewardship notice timers.
+    protectMissedCycles(aggregate, cycleKey);
     const controls = activePromotionControls(aggregate.ownership);
     if (controls.length === 0) return;
 
