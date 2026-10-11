@@ -17,7 +17,7 @@ import { REAL_WORLD_ALPHA_RULESET } from "../packages/config/src/real-world-rule
 import { calibratedRealActiveMixedRosterSource } from "../packages/content/src/real-active-mixed-roster.js";
 import { realPromotionEcosystemSource } from "../packages/content/src/real-promotions.js";
 import { realWorldInitialRosterAssignmentSource } from "../packages/content/src/real-aew-roh-cmll-rosters.js";
-import type { ContractOffer, Person, Promotion, WorldState } from "../packages/domain/src/types.js";
+import type { ContractOffer, Promotion, WorldState } from "../packages/domain/src/types.js";
 import {
   activeContractsForPerson, activeContractsForPromotion,
   addPpwWeeks, canAcceptContractTerms, calculateRunwayWeeks,
