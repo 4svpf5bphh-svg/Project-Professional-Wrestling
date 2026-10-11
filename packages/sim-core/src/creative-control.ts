@@ -1,4 +1,6 @@
-import type { Contract, CreativeControlLevel, Person } from "../../domain/src/types.js";
+import type { Contract, CreativeControlLevel, Person, PpwDate, WorldState } from "../../domain/src/types.js";
+import { comparePpwDates } from "./clock.js";
+import { contractsForPerson } from "./indexes.js";
 
 /**
  * Creative control is a contracted right, not a hidden AI ability to rewrite
@@ -103,4 +105,26 @@ export function creativeBookingDecisionScore(
 /** Shared acceptance threshold; no random retries or faster-online advantage. */
 export function creativeBookingAgreed(score: number): boolean {
   return score >= 55;
+}
+
+const CREATIVE_RIGHTS_WEIGHT = { NONE: 0, CONSULTATION: 1, PROTECTED_FINISHES: 2, FULL_APPROVAL: 3 } as const;
+
+/**
+ * Use the strongest overlapping signed right for this person and promotion.
+ * Neither staff nor a player can evade protection by selecting another
+ * appearance agreement with weaker creative language.
+ */
+export function applicableCreativeContract(
+  state: WorldState,
+  promotionId: string,
+  personId: string,
+  date: PpwDate,
+): Contract | null {
+  return contractsForPerson(state, personId)
+    .filter((contract) => contract.promotionId === promotionId && contract.status === "SIGNED"
+      && comparePpwDates(date, contract.startDate, state.ruleset.weeksPerYear) >= 0
+      && comparePpwDates(date, contract.endDate, state.ruleset.weeksPerYear) <= 0)
+    .sort((a, b) => CREATIVE_RIGHTS_WEIGHT[resolvedCreativeControl(b.creativeControl)]
+      - CREATIVE_RIGHTS_WEIGHT[resolvedCreativeControl(a.creativeControl)]
+      || a.id.localeCompare(b.id))[0] ?? null;
 }
