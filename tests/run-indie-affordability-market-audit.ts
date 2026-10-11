@@ -41,8 +41,7 @@ const FINANCE_CATEGORIES: readonly FinancialTransactionCategory[] = [
 ];
 type FinanceCategories = Record<FinancialTransactionCategory, number>;
 function emptyFinance(): FinanceCategories {
-  return Object.fromEntries(FINANCE_CATEGORIES.map(category => [category, 0]))
-    as FinanceCategories;
+  return Object.fromEntries(FINANCE_CATEGORIES.map(category => [category, 0])) as FinanceCategories;
 }
 function accumulatedFinance(state: WorldState, firstNewTransaction: number): Map<string, FinanceCategories> {
   const totals = new Map<string, FinanceCategories>();
