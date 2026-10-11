@@ -77,7 +77,7 @@ function chooseFutureContract(
     .map((contract) => {
       const alreadyCommitted = contract.datesUsed + scheduledContractDates(state, contract.id)
         + reservedContractDates(planning, contract.id, excludingReservationId);
-      return { contract, remaining: contract.dateEntitlement - alreadyCommitted };
+      return { contract, remaining: contract.family === "EXCLUSIVE" ? Number.MAX_SAFE_INTEGER : contract.dateEntitlement - alreadyCommitted };
     })
     .filter((entry) => entry.remaining > 0)
     .sort((a, b) => a.remaining - b.remaining || a.contract.id.localeCompare(b.contract.id));
