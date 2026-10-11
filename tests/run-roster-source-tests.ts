@@ -28,6 +28,7 @@ import { VERIFIED_WOMENS_CHARACTER_WAVE_3 } from "../packages/content/src/real-w
 import { CURATED_WRESTLER_CHARACTERS } from "../packages/content/src/real-wrestler-characters.js";
 import { GIMMICK_CATALOG } from "../packages/application/src/gimmick-catalog.js";
 import { FULL_REAL_ROSTER_IDENTITY_GUIDE, fullRealRosterIdentityFor } from "../packages/content/src/full-real-roster-identity-guide.js";
+import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4 } from "../packages/content/src/real-roster-editorial-audit-wave4.js";
 import {completeAlphaWrestlerIdentityCoverage} from "../packages/content/src/wrestler-identity-coverage.js";
 import {
   createWorld,
@@ -582,6 +583,46 @@ test("all seeded real wrestlers use curated or roster-specific identities; exist
   ok(completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD")===0
     &&JSON.stringify(sabreRecord)===agreed,
     "player's negotiated character was overwritten by the editorial guide");
+});
+
+
+test("editorial wave four corrects 79 exact-name identities without claiming verified moves",()=>{
+  const reviewed=REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4;
+  ok(reviewed.length===79 && new Set(reviewed.map(row=>row.name)).size===79,
+    "wave-four review must retain 79 individually keyed identities");
+  ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="COHORT").length===428,
+    "reviewed cohort count changed without an audit");
+  for(const row of reviewed){
+    const merged=fullRealRosterIdentityFor(row.name);
+    ok(merged?.gimmickArchetype===row.gimmickArchetype
+      &&merged.primaryStyle===row.primaryStyle
+      &&merged.secondaryStyle===row.secondaryStyle
+      &&merged.editorialBasis==="TARGETED", 
+      "identity review failed to replace unsuitable archetype or style: "+row.name);
+    ok(JSON.stringify(merged.signatureMoves)===JSON.stringify(row.signatureMoves)
+      &&JSON.stringify(merged.finishingMoves)===JSON.stringify(row.finishingMoves),
+      "reviewed move set was not applied: "+row.name);
+    ok(row.signatureMoves.length===2 && row.finishingMoves.length>=1
+      &&[...row.signatureMoves,...row.finishingMoves].every(move=>move.source==="PPW_AUTHORED"),
+      "unsourced editorial move was falsely presented as verified: "+row.name);
+    const found=fullRealRosterIdentityFor(row.name)!;
+    found.signatureMoves[0]!.name="cross-World mutation";
+    ok(fullRealRosterIdentityFor(row.name)!.signatureMoves[0]!.name!=="cross-World mutation",
+      "editorial guide leaked shared mutable move records: "+row.name);
+  }
+  for(const [name,gimmick,style,finisher] of [
+    ["Dax Harwood","RING_GENERAL","ALL_ROUNDER","Sheer Drop Brainbuster"],
+    ["Joe Hendry","SHOWMAN","POWERHOUSE","Standing Ovation"],
+    ["Orange Cassidy","ECCENTRIC","ALL_ROUNDER","Orange Punch"],
+    ["Will Ospreay","HIGH_FLYING_DAREDEVIL","HIGH_FLYER","Storm Breaker"],
+    ["Josh Barnett","MMA_CROSSOVER","SUBMISSION","Cross Heel Hold"],
+    ["Cedric Alexander","HIGH_FLYING_DAREDEVIL","ALL_ROUNDER","Lumbar Check"],
+  ]){
+    const candidate=fullRealRosterIdentityFor(name)!;
+    ok(candidate.gimmickArchetype===gimmick && candidate.primaryStyle===style
+      &&candidate.finishingMoves[0]?.name===finisher,
+      "recognisable wrestler retained an incorrect placeholder identity: "+name);
+  }
 });
 
 console.log(`\nRoster source tests: ${passed} passed, ${failed} failed`);
