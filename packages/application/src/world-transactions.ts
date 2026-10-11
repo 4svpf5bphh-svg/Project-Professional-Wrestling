@@ -12,6 +12,7 @@ import { generateWorkingPartnershipConcerns } from "./backstage-working-concerns
 import {
   closeCurrentWeekReservationsAtCommitmentLock,
   materializeCurrentWeekReservations,
+  unresolvedDueCreativeApprovals,
   type ReservationMaterializationPass,
 } from "./planning-materialization.js";
 import {
@@ -80,8 +81,19 @@ export async function lockPersistedWorldForResolution(
   worldId: Id,
   expectedRevision: number,
   realCycleKey: string | null = null,
+  /** Manual Alpha advance only. Scheduled shared-World ticks do not pass this. */
+  manualPromotionId: Id | null = null,
 ): Promise<number> {
   const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
+    if (manualPromotionId && !currentWeekShowCommitmentsLocked(aggregate.runtime, aggregate.state)) {
+      const unresolved = unresolvedDueCreativeApprovals(
+        aggregate.state, aggregate.planning, manualPromotionId,
+      );
+      if (unresolved.length > 0) {
+        const names = [...new Set(unresolved.flatMap((entry) => entry.wrestlerNames))].slice(0, 4).join(", ");
+        throw new Error(`Creative approval required before advancing: ${names}. Open your Show Card to request approval or revise the finish. The shared World will still advance on its scheduled tick.`);
+      }
+    }
     if (!currentWeekShowCommitmentsLocked(aggregate.runtime, aggregate.state)) {
       const closure = closeCurrentWeekReservationsAtCommitmentLock(
         aggregate.state,
