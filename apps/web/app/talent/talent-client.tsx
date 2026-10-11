@@ -482,6 +482,9 @@ function RosterCard({
             <span>Weekly guarantee <b>{money(contract.weeklyGuarantee)}</b></span>
             <span>Appearance fee <b>{money(contract.appearanceFee)}</b></span>
             <span>Signing bonus <b>{money(contract.signingBonus)}</b></span>
+            {contract.creativeControl !== "NONE" ? (
+              <span>Creative rights <b>{label(contract.creativeControl)}</b></span>
+            ) : null}
           </div>
         </div>
         <div className={styles.presentationBox}>
@@ -621,6 +624,9 @@ function OfferCard({ offer }: { offer: PlayerPendingContractOfferView }): React.
           <span>Weekly <b>{money(offer.weeklyGuarantee)}</b></span>
           <span>Appearance <b>{money(offer.appearanceFee)}</b></span>
           <span>{offer.offerKind === "DATES_ADDENDUM" ? "Extra payment" : "Signing"} <b>{money(offer.signingBonus)}</b></span>
+          {offer.creativeControl !== "NONE" && offer.offerKind !== "DATES_ADDENDUM" ? (
+            <span>Creative rights <b>{label(offer.creativeControl)}</b></span>
+          ) : null}
         </div>
       </div>
     </article>
