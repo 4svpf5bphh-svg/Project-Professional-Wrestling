@@ -406,3 +406,33 @@ move/era/classification fidelity in the PPW-authored rows, review the
 women's/indie regional details where possible, and run tests/simulation
 when the supported CI pathway is available. Future randomly generated
 wrestlers retain complete deterministic identities at creation.
+
+
+## Final player-facing roster presentation (11 October 2026)
+
+The roster-identity consolidation removes all **player-visible editorial
+disclaimers** from the wrestler profile: no `(PPW-created)` suffixes, no
+"not independently verified" labels, no "PPW-authored character" labels,
+and no "research incomplete" fallback beside a playable gimmick. Profiles
+now show the **portable wrestler name, gimmick, signature moves and finishing
+moves** as straightforward wrestling facts *in PPW's fictional World*.
+
+The move `source` field stays as an internal authoring/quality-control
+mechanism: it is **not rendered to players** and is needed to keep source-
+backed moves from being overwritten by hypothetical/default moves.
+Removing internal provenance would damage the identity audit and make
+future content corrections less reliable.
+
+Both new-World bootstrap and read-only wrestler-profile fallback now merge
+curated move entries with exact-name editorial candidates, with sourced
+moves taking precedence and duplicate signature/finisher names excluded.
+Regression tests check the read-only published wrestler examples, the
+60-member primary-source catalogue, and the absence of editorial disclaimers
+from the rendered-profile component source.
+
+**Scope:** full 643-person identity *data and presentation* pass, not
+643 externally independently proven historic move sets. Obscure wrestlers
+retain plausible PPW-authored repertoires exactly as allowed by the user.
+Current, previously persisted World identities are not rewritten.
+The newly consolidated code is development-only until application/build and
+long-simulation CI runs pass. No main merge, deployment or World reset.
