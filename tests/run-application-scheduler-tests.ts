@@ -16,7 +16,7 @@ import {
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { readFileSync } from "node:fs";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/memory-world-repository.js";
-import { createWorld } from "../packages/sim-core/src/index.js";
+import { addPpwWeeks, advanceWeek, createWorld } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -341,6 +341,24 @@ await test("daily production cron rules and shared UTC lock/resolve keys stay al
   ok(londonTime("2027-03-27T06:00:00Z") === "06:00"
     && londonTime("2027-03-28T06:00:00Z") === "07:00",
     "spring clock change was not recognized");
+});
+
+await test("PPW's internal day 1–7 calendar stays distinct from daily UTC scheduler cycles", async () => {
+  const state = createWorld(18021, DEFAULT_RULESET);
+  const weeks = state.ruleset.weeksPerYear;
+  ok(weeks === 52, "PPW year must have 52 in-game weeks");
+  for (let day = 1; day <= 7; day += 1) {
+    const date = { year: 1, week: 52, day };
+    const next = addPpwWeeks(date, 1, weeks);
+    ok(next.year === 2 && next.week === 1 && next.day === day,
+      `PPW day ${day} did not survive the 52-week year boundary`);
+  }
+  state.world.currentDate = { year: 1, week: 52, day: 7 };
+  advanceWeek(state.world, weeks);
+  ok(state.world.currentDate.year === 2
+    && state.world.currentDate.week === 1
+    && state.world.currentDate.day === 1,
+    "new PPW week did not restart at Monday after Sunday/year rollover");
 });
 
 console.log(`\nApplication scheduler tests: ${passed} passed, ${failed} failed`);
