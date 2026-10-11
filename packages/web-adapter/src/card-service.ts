@@ -21,6 +21,7 @@ import {
   requestCreativeBookingConsentCommand,
   creativeConcernsForDraft,
   creativeBlockersForDraft,
+  executeIdempotentCommand,
   type CreativeBookingConcern,
   type ApplicationWorldRepository,
   type ChampionshipDraftAssignment,
@@ -194,6 +195,13 @@ export interface AlphaCardStableView {
 
 export interface AlphaCardCreativeConcernView extends Omit<CreativeBookingConcern, "bookingSignature"> {
   wrestlerName: string;
+}
+
+export interface AlphaWithdrawCreativeCardRequest {
+  requestId: string;
+  expectedRevision: number;
+  expectedPlanVersion: number;
+  draftId: string;
 }
 
 export interface AlphaCreativeConsentRequest {
@@ -1214,7 +1222,9 @@ export async function loadAlphaShowCard(
       ...concern, wrestlerName: peopleById.get(concern.personId)?.name ?? concern.personId,
     })),
     cardPendingConsent: status.eventId !== null
-      && creativeBlockersForDraft(aggregate.state, aggregate.planning, draft).length > 0,
+      && (aggregate.planning.pendingCardAmendments ?? []).some((entry) =>
+        entry.promotionId === promotion.id && entry.draftId === draftId
+        && entry.eventId === status.eventId),
   };
 }
 
@@ -1319,6 +1329,11 @@ export async function saveAlphaShowCard(
       aggregate.state,
       control.promotionId,
     );
+    const committedDraftBeforeEdit = materializedEventId !== null ? structuredClone(draft) : null;
+    const committedConsentsBeforeEdit = materializedEventId !== null
+      ? structuredClone((aggregate.planning.creativeConsents ?? []).filter((entry) =>
+          entry.promotionId === control.promotionId && entry.draftId === draftId))
+      : [];
     const nextWorkspace = upsertDetailedShowDraftCommand(
       aggregate.state,
       aggregate.ownership,
@@ -1351,13 +1366,31 @@ export async function saveAlphaShowCard(
       // Keep the previously committed card in place until ALL protected
       // participants approve this exact amended script. Saving a proposal
       // never substitutes a different winner or silently overrides a veto.
-      if (!cardReceipt && creativeBlockersForDraft(aggregate.state, aggregate.planning, storedDraft).length === 0) {
-        replaceMaterializedEventCard(
-          aggregate.state,
-          materializedEventId,
-          matches,
-          championshipAssignments,
-        );
+      if (!cardReceipt) {
+        const blockers = creativeBlockersForDraft(aggregate.state, aggregate.planning, storedDraft);
+        if (blockers.length > 0) {
+          aggregate.planning.pendingCardAmendments ??= [];
+          if (!aggregate.planning.pendingCardAmendments.some((entry) =>
+            entry.promotionId === control.promotionId && entry.draftId === draftId)) {
+            aggregate.planning.pendingCardAmendments.push({
+              promotionId: control.promotionId,
+              draftId,
+              eventId: materializedEventId,
+              committedDraft: committedDraftBeforeEdit!,
+              committedConsents: committedConsentsBeforeEdit,
+            });
+          }
+        } else {
+          replaceMaterializedEventCard(
+            aggregate.state,
+            materializedEventId,
+            matches,
+            championshipAssignments,
+          );
+          // The new script was applied; its previous rollback point is stale.
+          aggregate.planning.pendingCardAmendments = (aggregate.planning.pendingCardAmendments ?? [])
+            .filter((entry) => !(entry.promotionId === control.promotionId && entry.draftId === draftId));
+        }
       }
       return;
     }
@@ -1447,7 +1480,73 @@ export async function requestAlphaShowCreativeConsent(
       replaceMaterializedEventCard(
         aggregate.state, status.eventId, plans, draft.championshipAssignments,
       );
+      aggregate.planning.pendingCardAmendments = (aggregate.planning.pendingCardAmendments ?? [])
+        .filter((entry) => !(entry.promotionId === control.promotionId && entry.draftId === draftId));
     }
+  });
+  return loadAlphaShowCard(repository, worldId, playerId, draftId);
+}
+
+/**
+ * Discard only a pending amendment and return the show editor to its most
+ * recent committed script. Actual scheduled match objects were never changed,
+ * so no match IDs, titles, fees, contract dates or outcomes are rewritten.
+ */
+export async function withdrawAlphaShowCreativeAmendment(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  request: AlphaWithdrawCreativeCardRequest,
+): Promise<AlphaCurrentWeekCardView> {
+  const requestId = requiredText(request.requestId, "requestId", 220);
+  const draftId = requiredText(request.draftId, "draftId", 128);
+  const expectedRevision = requireExpectedRevision(request.expectedRevision);
+  const expectedPlanVersion = requirePlanVersion(request.expectedPlanVersion);
+  const commandRequestId = `${requestId}:withdraw-creative-card`;
+  await repository.transact(worldId, null, (aggregate) => {
+    const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
+    if (!control) throw new Error("Take control of a promotion before withdrawing a card amendment");
+    const priorReceipt = aggregate.commands.receipts.find((entry) => entry.requestId === commandRequestId);
+    if (!priorReceipt && aggregate.runtime.revision !== expectedRevision) {
+      throw new Error(`stale World revision for ${worldId}: expected ${expectedRevision}, current ${aggregate.runtime.revision}`);
+    }
+    executeIdempotentCommand(
+      aggregate.commands, aggregate.runtime,
+      {
+        requestId: commandRequestId, worldId, playerId,
+        commandType: "WITHDRAW_CREATIVE_CARD_AMENDMENT",
+        payload: { promotionId: control.promotionId, draftId, expectedPlanVersion },
+      },
+      aggregate.state.world.currentDate,
+      () => {
+        const workspace = aggregate.planning.workspaces.find((entry) =>
+          entry.promotionId === control.promotionId);
+        if (!workspace || workspace.version !== expectedPlanVersion) {
+          throw new Error("stale show plan version: reload the Show Card before withdrawing");
+        }
+        const status = playerShowPlanningStatus(
+          aggregate.state, aggregate.planning, aggregate.runtime, control.promotionId, draftId,
+        );
+        if (status.eventId === null || !status.availableActions.includes("EDIT_CARD")) {
+          throw new Error("Only an editable materialized show can restore its committed card");
+        }
+        const pending = (aggregate.planning.pendingCardAmendments ?? []).find((entry) =>
+          entry.promotionId === control.promotionId && entry.draftId === draftId
+          && entry.eventId === status.eventId);
+        if (!pending) throw new Error("No pending creative card amendment to withdraw");
+        const draftIndex = workspace.detailedShowDrafts.findIndex((entry) => entry.draftId === draftId);
+        if (draftIndex < 0) throw new Error("The amended show draft no longer exists");
+
+        workspace.detailedShowDrafts[draftIndex] = structuredClone(pending.committedDraft);
+        const otherConsents = (aggregate.planning.creativeConsents ?? []).filter((entry) =>
+          entry.promotionId !== control.promotionId || entry.draftId !== draftId);
+        aggregate.planning.creativeConsents = [...otherConsents, ...structuredClone(pending.committedConsents)];
+        aggregate.planning.pendingCardAmendments = (aggregate.planning.pendingCardAmendments ?? [])
+          .filter((entry) => entry !== pending);
+        workspace.version += 1;
+        return { restoredDraftId: draftId, restoredPlanVersion: workspace.version };
+      },
+    );
   });
   return loadAlphaShowCard(repository, worldId, playerId, draftId);
 }
