@@ -1,5 +1,7 @@
 declare const process: { exitCode?: number };
 
+import { readFileSync } from "node:fs";
+
 import {
   buildPlayerWrestlerProfileView,
   cloneApplicationWorld,
@@ -786,6 +788,19 @@ test("Researched real characters carry to fresh promotions without overwritten p
   const snapshot=cloneApplicationWorld({...aggregate,engagement:engage});
   ok(snapshot.engagement?.wrestlerCreativeProfiles?.[1]?.fields.finishingMove===null,
     "read-only fallback rewrote a persistent historical wrestler profile");
+});
+
+
+test("wrestler profiles show move names without PPW-authored approximation labels",()=>{
+  const file=readFileSync("apps/web/app/talent/profile/wrestler-profile-client.tsx","utf8");
+  ok(file.includes("Signature moves:") &&file.includes("Finishing moves:"),
+    "wrestler profile no longer renders both move lists");
+  for(const phrase of ["(PPW-created)","not independently verified",
+    "PPW-authored starting character","Roster-specific PPW-authored character",
+    "Not yet verified"]){
+    ok(!file.includes(phrase),
+      "editorial move provenance leaked into player-facing wrestler profile: "+phrase);
+  }
 });
 
 console.log(`\nApplication wrestler-profile tests: ${passed} passed, ${failed} failed`);
