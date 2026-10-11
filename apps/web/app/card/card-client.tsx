@@ -338,6 +338,7 @@ export default function CardClient(): React.JSX.Element {
   const [saved, setSaved] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [requestingConsent, setRequestingConsent] = useState<string | null>(null);
+  const [withdrawingAmendment, setWithdrawingAmendment] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedSlotKey, setExpandedSlotKey] = useState<string | null>(null);
   const [wrestlerPicker, setWrestlerPicker] = useState<WrestlerPickerTarget | null>(null);
@@ -1170,6 +1171,42 @@ export default function CardClient(): React.JSX.Element {
     }
   }
 
+  async function withdrawPendingAmendment(): Promise<void> {
+    if (!view || !view.canEdit || !view.cardPendingConsent || withdrawingAmendment || saving || requestingConsent) return;
+    setWithdrawingAmendment(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/show-card/creative-withdraw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: crypto.randomUUID(),
+          expectedRevision: view.world.revision,
+          expectedPlanVersion: view.workspaceVersion,
+          draftId: view.draftId,
+        }),
+      });
+      const payload = await response.json() as AlphaCurrentWeekCardView | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to restore committed card");
+      }
+      // This discards only uncommitted local/editor changes. The actual
+      // scheduled card and the wrestler's contract remain untouched.
+      setView(payload);
+      setMatches(cloneMatches(payload.matches));
+      setSegments(cloneSegments(payload.segments));
+      setRunningOrder(cloneOrder(payload.runningOrder));
+      setTitleAssignments(cloneAssignments(payload.championshipAssignments));
+      setSaved(false);
+      setDirty(false);
+      requestId.current = null;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to withdraw booking changes");
+    } finally {
+      setWithdrawingAmendment(false);
+    }
+  }
+
   async function askCreativeApproval(draftMatchId: string, personId: string): Promise<void> {
     if (!view || dirty || !view.canEdit || requestingConsent) return;
     const key = `${draftMatchId}:${personId}`;
@@ -1951,7 +1988,20 @@ export default function CardClient(): React.JSX.Element {
             </div>
             <p>Wrestler contract rights are checked against the saved script. A booking change requires a fresh agreement; no result is rewritten automatically.</p>
             {dirty ? <p>Save your card edits before requesting approval for the revised script.</p> : null}
-            {view.cardPendingConsent ? <p>This revised card is not yet applied to the committed show. The previously committed card remains in place until permissions are resolved.</p> : null}
+            {view.cardPendingConsent ? (
+              <>
+                <p>This proposed card is not live. Your last committed show is still intact until all approvals are granted.</p>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  disabled={!view.canEdit || withdrawingAmendment || saving || requestingConsent !== null}
+                  onClick={() => void withdrawPendingAmendment()}
+                >
+                  {withdrawingAmendment ? "Restoring…" : "Withdraw changes · restore committed card"}
+                </button>
+                {dirty ? <p>Unsaved edits on this screen will also be discarded.</p> : null}
+              </>
+            ) : null}
             <ul>
               {view.creativeConcerns.map((concern) => (
                 <li key={`${concern.draftMatchId}:${concern.personId}:${concern.reason}`}>
@@ -1965,7 +2015,7 @@ export default function CardClient(): React.JSX.Element {
                     <button
                       type="button"
                       className={styles.secondaryButton}
-                      disabled={!view.canEdit || dirty || requestingConsent !== null}
+                      disabled={!view.canEdit || dirty || requestingConsent !== null || withdrawingAmendment}
                       onClick={() => void askCreativeApproval(concern.draftMatchId, concern.personId)}
                     >
                       {requestingConsent === `${concern.draftMatchId}:${concern.personId}` ? "Asking…" : "Ask for approval"}
