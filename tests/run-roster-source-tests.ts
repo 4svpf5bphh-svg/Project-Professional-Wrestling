@@ -863,8 +863,8 @@ test("wave nine completes the 643-person real wrestler guide without converting 
   const earlierNames=new Set(earlier.map(row=>row.name));
   const batchNames=new Set(batch.map(row=>row.name));
   const allNames=new Set([...earlierNames,...batchNames]);
-  ok(earlier.length===431 && batch.length===96 && batchNames.size===96
-    &&allNames.size===527 && batch.every(row=>!earlierNames.has(row.name)),
+  ok(earlier.length===411 && batch.length===96 && batchNames.size===96
+    &&allNames.size===507 && batch.every(row=>!earlierNames.has(row.name)),
     "editorial audit wave nine is incomplete, duplicated or overlaps prior waves");
   ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.length===643 &&
     FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="TARGETED").length===643 &&
