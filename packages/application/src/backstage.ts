@@ -10,7 +10,13 @@ import {
   type BackstageBookingPromise,
 } from "./engagement.js";
 import { talentExpectationEvidenceForContract } from "./talent-expectations.js";
-import { executeIdempotentCommand, type ApplicationCommandEnvelope } from "./commands.js";
+import {
+  executeIdempotentCommand,
+  requestStandingProgrammeCreativeAgreementCommand,
+  type ApplicationCommandEnvelope,
+} from "./commands.js";
+import type { StandingProgrammeCreativeRequest, StandingProgrammeCreativeAgreement } from "./programme-creative-standing.js";
+import { applicableCreativeContract, resolvedCreativeControl } from "../../sim-core/src/creative-control.js";
 import { activePromotionControlForPlayer, activePromotionControls, activeWorldMembership } from "./ownership.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 import type { GimmickArchetype } from "./wrestler-creative.js";
@@ -94,6 +100,17 @@ export function generateBackstageConversations(aggregate: ApplicationWorldAggreg
   return created;
 }
 
+export interface PlayerBackstageProgrammeOption {
+  programmeId: Id;
+  programmeLabel: string;
+  wrestlerId: Id;
+  wrestlerName: string;
+  matchType: "SINGLES" | "TAG";
+  /** One set of Programme terms per contracted wrestler; no free retries. */
+  previousDecision: "APPROVED" | "DECLINED" | null;
+  expiryDate: PpwDate | null;
+}
+
 export interface PlayerBackstageConversation {
   conversationId: Id;
   wrestlerId: Id;
@@ -128,6 +145,7 @@ export interface PlayerBackstageConversation {
   responseDate: PpwDate | null;
   canPromiseFeaturedBooking: boolean;
   promise: BackstageBookingPromise | null;
+  programmeCreative: BackstageConversation["programmeCreative"] | null;
 }
 
 export interface PlayerBackstageView {
@@ -136,6 +154,7 @@ export interface PlayerBackstageView {
   canRespond: boolean;
   openCount: number;
   conversations: PlayerBackstageConversation[];
+  programmeCreativeOptions: PlayerBackstageProgrammeOption[];
 }
 
 export function buildPlayerBackstageView(
@@ -155,11 +174,44 @@ export function buildPlayerBackstageView(
     ));
   const persons = new Map(aggregate.state.people.map((person) => [person.id, person]));
   const names = new Map(aggregate.state.people.map((person) => [person.id, person.name]));
+  const programmeCreativeOptions: PlayerBackstageProgrammeOption[] = [];
+  if (promotionId) for (const programme of aggregate.state.programmes ?? []) {
+    if (programme.promotionId !== promotionId || programme.status !== "ACTIVE") continue;
+    const labelSide = (refs: typeof programme.sideA) => refs.map((ref) =>
+      ref.kind === "PERSON"
+        ? (names.get(ref.entityId) ?? "Wrestler")
+        : (aggregate.state.teams?.find((team) => team.id === ref.entityId)?.name ?? "Team")
+    ).join(" & ");
+    const programmeLabel = `${labelSide(programme.sideA)} vs ${labelSide(programme.sideB)}`;
+    const refs = [...programme.sideA, ...programme.sideB];
+    const people = [...new Set(refs.flatMap((ref) =>
+      ref.kind === "PERSON" ? [ref.entityId] :
+        (aggregate.state.teamMemberships ?? []).filter((member) =>
+          member.teamId === ref.entityId && member.active).map((member) => member.personId),
+    ))].sort();
+    for (const wrestlerId of people) {
+      const contract = applicableCreativeContract(
+        aggregate.state, promotionId, wrestlerId, aggregate.state.world.currentDate,
+      );
+      if (!contract || resolvedCreativeControl(contract.creativeControl) !== "FULL_APPROVAL") continue;
+      const previous = (aggregate.planning.standingProgrammeCreativeAgreements ?? []).find((entry) =>
+        entry.promotionId === promotionId && entry.programmeId === programme.id
+        && entry.personId === wrestlerId && entry.contractId === contract.id);
+      programmeCreativeOptions.push({
+        programmeId: programme.id, programmeLabel,
+        wrestlerId, wrestlerName: names.get(wrestlerId) ?? "Wrestler",
+        matchType: people.length > 2 ? "TAG" : "SINGLES",
+        previousDecision: previous ? (previous.approved ? "APPROVED" : "DECLINED") : null,
+        expiryDate: previous ? { ...previous.expiresDate } : null,
+      });
+    }
+  }
   return {
     worldId: aggregate.state.world.id,
     promotionId,
     canRespond: aggregate.runtime.phase === "OPEN" && promotionId !== null,
     openCount: entries.filter((entry) => entry.status === "OPEN").length,
+    programmeCreativeOptions,
     conversations: entries.slice(0, 30).map((entry) => ({
       conversationId: entry.conversationId,
       wrestlerId: entry.wrestlerId,
@@ -194,6 +246,7 @@ export function buildPlayerBackstageView(
       responseDate: entry.responseDate ? { ...entry.responseDate } : null,
       canPromiseFeaturedBooking: entry.status === "OPEN"
         && canMakeFeaturedPromise(aggregate, entry),
+      programmeCreative: entry.programmeCreative ? structuredClone(entry.programmeCreative) : null,
       promise: entry.promise ? {
         ...entry.promise,
         madeDate: { ...entry.promise.madeDate },
@@ -202,6 +255,77 @@ export function buildPlayerBackstageView(
       } : null,
     })),
   };
+}
+
+export type BackstageProgrammeCreativePayload = Omit<StandingProgrammeCreativeRequest, "promotionId">;
+
+/**
+ * Existing Backstage inbox is the single history. All terms and the one
+ * deterministic wrestler decision commit together with the World command.
+ * No scripted card is authored here.
+ */
+export function discussBackstageProgrammeCreativeCommand(
+  aggregate: ApplicationWorldAggregate,
+  envelope: ApplicationCommandEnvelope<BackstageProgrammeCreativePayload>,
+): StandingProgrammeCreativeAgreement {
+  if (envelope.commandType !== "REQUEST_STANDING_PROGRAMME_CREATIVE_AGREEMENT") {
+    throw new Error("expected standing Programme negotiation command");
+  }
+  if (envelope.worldId !== aggregate.state.world.id) {
+    throw new Error("Backstage Programme proposal crosses World boundary");
+  }
+  const control = activePromotionControlForPlayer(aggregate.ownership, envelope.playerId);
+  if (!control || !activeWorldMembership(aggregate.ownership, envelope.playerId)) {
+    throw new Error("player cannot negotiate without owning an active promotion");
+  }
+  const existingRecord = (aggregate.planning.standingProgrammeCreativeAgreements ?? []).find((entry) =>
+    entry.promotionId === control.promotionId && entry.programmeId === envelope.payload.programmeId
+    && entry.personId === envelope.payload.personId);
+  const receipt = aggregate.commands.receipts.some((entry) => entry.requestId === envelope.requestId);
+  if (existingRecord && !receipt) {
+    throw new Error("Programme terms already discussed with this wrestler; a new request cannot reroll consent");
+  }
+  const result = requestStandingProgrammeCreativeAgreementCommand(
+    aggregate.state, aggregate.ownership, aggregate.planning, aggregate.commands, aggregate.runtime,
+    { ...envelope, payload: { ...envelope.payload, promotionId: control.promotionId } },
+  );
+  const conversationId = `backstage:programme-creative:${result.programmeId}:${result.personId}:${result.contractId}`;
+  aggregate.engagement ??= createWorldEngagementState(aggregate.state.world.id);
+  if (aggregate.engagement.backstageConversations.some((entry) => entry.conversationId === conversationId)) {
+    return result;
+  }
+  const programme = (aggregate.state.programmes ?? []).find((entry) => entry.id === result.programmeId);
+  if (!programme) throw new Error("agreed Programme no longer exists");
+  const personNames = new Map(aggregate.state.people.map((p) => [p.id, p.name]));
+  const labelSide = (refs: typeof programme.sideA) => refs.map((ref) =>
+    ref.kind === "PERSON" ? (personNames.get(ref.entityId) ?? "Wrestler")
+      : (aggregate.state.teams?.find((team) => team.id === ref.entityId)?.name ?? "Team"),
+  ).join(" & ");
+  openBackstageConversation(aggregate.engagement, {
+    conversationId,
+    worldId: aggregate.state.world.id,
+    promotionId: control.promotionId,
+    wrestlerId: result.personId,
+    sourceContractId: result.contractId,
+    kind: "PROGRAMME_CREATIVE_AGREEMENT",
+    createdDate: { ...result.decidedDate },
+    status: "NOTED",
+    response: null,
+    responseDate: null,
+    promisedRole: null,
+    observedMatchShows: 0,
+    observedFeaturedShows: 0,
+    programmeCreative: {
+      programmeId: result.programmeId,
+      programmeLabel: `${labelSide(programme.sideA)} vs ${labelSide(programme.sideB)}`,
+      matchType: result.matchType,
+      permittedOutcome: result.permittedOutcome,
+      expiryDate: { ...result.expiresDate },
+      approved: result.approved,
+      score: result.score,
+    },
+  });
+  return result;
 }
 
 export interface RespondBackstagePayload {
