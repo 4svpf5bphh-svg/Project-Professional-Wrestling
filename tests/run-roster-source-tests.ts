@@ -427,7 +427,7 @@ test("every regenerated prospect debuts with a fully populated persistent person
 
 test("third curated identity wave improves 19 real women without missing move provenance",()=>{
   const names=new Set(REAL_ACTIVE_WOMENS_ROSTER_NAMES);
-  const knownGimmicks=new Set(GIMMICK_CATALOG.map(entry=>entry.id));
+  const knownGimmicks=new Set<string>(GIMMICK_CATALOG.map(entry=>entry.id));
   const wave=VERIFIED_WOMENS_CHARACTER_WAVE_3;
   ok(wave.length===19,"women's curation wave is incomplete");
   ok(new Set(wave.map(entry=>entry.name)).size===wave.length
@@ -647,7 +647,7 @@ test("editorial wave four corrects 79 exact-name identities without claiming ver
   ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="COHORT").length===0,
     "reviewed cohort count changed without an audit");
   for(const row of reviewed){
-    const merged=fullRealRosterIdentityFor(row.name);
+    const merged=fullRealRosterIdentityFor(row.name)!;
     ok(merged?.gimmickArchetype===row.gimmickArchetype
       &&merged.primaryStyle===row.primaryStyle
       &&merged.secondaryStyle===row.secondaryStyle
@@ -691,9 +691,9 @@ test("editorial wave five preserves exact wrestler ownership and improves 129 wo
     FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="TARGETED").length===643 &&
     FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="COHORT").length===0,
     "editorial audit coverage changed without review");
-  const gimmicks=new Set(GIMMICK_CATALOG.map(row=>row.id));
+  const gimmicks=new Set<string>(GIMMICK_CATALOG.map(row=>row.id));
   for(const row of reviewed){
-    const merged=fullRealRosterIdentityFor(row.name);
+    const merged=fullRealRosterIdentityFor(row.name)!;
     ok(merged?.editorialBasis==="TARGETED" && merged.gimmickArchetype===row.gimmickArchetype
       && merged.primaryStyle===row.primaryStyle && merged.secondaryStyle===row.secondaryStyle,
       "wave-five wrestler did not retain intended persona and styles: "+row.name);
@@ -746,9 +746,9 @@ test("identity audit wave six replaces 89 conspicuously wrong profiles, without 
     FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="TARGETED").length===643 &&
     FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="COHORT").length===0,
     "audit-six coverage counts changed without review");
-  const gimmicks=new Set(GIMMICK_CATALOG.map(x=>x.id));
+  const gimmicks=new Set<string>(GIMMICK_CATALOG.map(x=>x.id));
   for(const row of batch){
-    const now=fullRealRosterIdentityFor(row.name);
+    const now=fullRealRosterIdentityFor(row.name)!;
     ok(now!==null && gimmicks.has(row.gimmickArchetype)
       && now.gimmickArchetype===row.gimmickArchetype
       && now.primaryStyle===row.primaryStyle
@@ -799,11 +799,11 @@ test("WWE and NXT wave seven replaces all 62 outstanding cohort identities witho
   const names=new Set(batch.map(x=>x.name));
   ok(batch.length===62 && names.size===62 && batch.every(x=>!earlier.has(x.name)),
     "WWE/NXT wave-seven audit missing, duplicated, or overlapping names");
-  const gimmicks=new Set(GIMMICK_CATALOG.map(x=>x.id));
+  const gimmicks=new Set<string>(GIMMICK_CATALOG.map(x=>x.id));
   ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.length===643
     &&FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="TARGETED").length===643
     &&FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="COHORT").length===0,
-    "roster review counts are not 495 targeted and 148 cohort");
+    "roster review counts are not 643 targeted and zero cohort");
   for(const row of batch){
     const guide=fullRealRosterIdentityFor(row.name)!;
     ok(guide?.editorialBasis==="TARGETED"
@@ -858,7 +858,7 @@ test("identity audit wave eight completes AEW TNA NOAH and lucha cohort curation
     ...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE6,
     ...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE7].map(x=>x.name));
   const cohortCounts=new Map<string,number>();
-  const gimmicks=new Set(GIMMICK_CATALOG.map(g=>g.id));
+  const gimmicks=new Set<string>(GIMMICK_CATALOG.map(g=>g.id));
   ok(wave.length===52 && new Set(wave.map(x=>x.name)).size===52,
     "wave eight must include 52 unique wrestler identities");
   for(const row of wave){
@@ -881,7 +881,7 @@ test("identity audit wave eight completes AEW TNA NOAH and lucha cohort curation
   for(const [cohort,count] of [
     ["AEW_ROH",30],["TNA",9],["JAPAN_LUCHA",5],["LUCHA",8]
   ]){
-    ok(cohortCounts.get(cohort)===count,"incomplete wave-eight review for "+cohort);
+    ok(cohortCounts.get(String(cohort))===count,"incomplete wave-eight review for "+cohort);
   }
   ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.length===643
     &&FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="COHORT").length===0
@@ -919,10 +919,10 @@ test("wave nine completes the 643-person real wrestler guide without converting 
     FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="TARGETED").length===643 &&
     FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="COHORT").length===0,
     "not all 643 wrestlers have had their cohort approximations reviewed");
-  const gimmicks=new Set(GIMMICK_CATALOG.map(g=>g.id));
+  const gimmicks=new Set<string>(GIMMICK_CATALOG.map(g=>g.id));
   const cohorts=new Map<string,number>();
   for(const row of batch){
-    const guide=fullRealRosterIdentityFor(row.name);
+    const guide=fullRealRosterIdentityFor(row.name)!;
     ok(guide!==null && gimmicks.has(row.gimmickArchetype)
       &&guide.editorialBasis==="TARGETED"
       &&guide.gimmickArchetype===row.gimmickArchetype
@@ -955,7 +955,7 @@ test("wave nine completes the 643-person real wrestler guide without converting 
 test("the entire exact-name real roster keeps complete stable move records",()=>{
   const entries=FULL_REAL_ROSTER_IDENTITY_GUIDE;
   const exact=new Set(entries.map(row=>row.name.toLocaleLowerCase("en-GB")));
-  const gimmicks=new Set(GIMMICK_CATALOG.map(x=>x.id));
+  const gimmicks=new Set<string>(GIMMICK_CATALOG.map(x=>x.id));
   ok(exact.size===643 &&entries.length===643,
     "real wrestler roster lost or duplicated names");
   for(const row of entries){
@@ -980,7 +980,7 @@ test("future generated wrestlers begin with complete deterministic portable char
   const fixture=createAlphaWorldAggregate({seed:88273,playerId:"future-prospect-coverage"}).state;
   const template=fixture.people[0]!;
   const prior=JSON.stringify(fixture.people);
-  const gimmicks=new Set(GIMMICK_CATALOG.map(x=>x.id));
+  const gimmicks=new Set<string>(GIMMICK_CATALOG.map(x=>x.id));
   for(let n=0;n<96;n++){
     const prospect={...template,id:"future-prospect-"+n,name:"Generated Prospect "+n};
     const active=authoredPersonaForPerson(prospect);
