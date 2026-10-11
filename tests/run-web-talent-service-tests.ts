@@ -24,6 +24,7 @@ import {
   canAddLimitedContractDates,
   contractHasAppearanceRights,
   contractIsActive,
+  contractCoversBookedDate,
   evaluateContractOffer,
   formatEntityId,
   snapshotEntityIdCounters,
