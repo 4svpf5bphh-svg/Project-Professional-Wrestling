@@ -2,6 +2,8 @@ declare const process: { exitCode?: number };
 
 import {
   buildPlayerAttention,
+  lockScheduledShowCommitments,
+  resolveScheduledWorldCycle,
   lockPersistedWorldForResolution,
   materializePersistedCurrentWeekReservations,
   resolvePersistedWorldWeek,
@@ -1717,5 +1719,119 @@ await test("withdrawal restores prior wrestler approval when a declined new fini
     "withdrawal left the declined match duration on the live draft");
 });
 
+
+await test("the 06:00 daily commitment lock discards only an unapproved amendment and retains its original show", async () => {
+  const fixture = await reservedShowFixture(61291);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await materializePersistedCurrentWeekReservations(fixture.repository, fixture.worldId, before.world.revision);
+  const materialized = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const loserId = fixture.participantIds[1]!;
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const contract = aggregate.state.contracts.find((entry) => entry.personId === loserId
+      && entry.promotionId === materialized.promotion.promotionId && entry.status === "SIGNED");
+    if (!contract) throw new Error("missing protected wrestler contract");
+    contract.creativeControl = "PROTECTED_FINISHES";
+  });
+  const committed = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "daily-commit-original",
+    expectedRevision: materialized.world.revision,
+    expectedPlanVersion: materialized.workspaceVersion,
+    matches: singlesCard(fixture.participantIds).map((match, index) =>
+      index === 0 ? { ...match, plannedFinish: "PROTECTED_FINISH" as const } : match),
+    championshipAssignments: [],
+  });
+  ok(!committed.cardPendingConsent, "original safe booking unexpectedly needs permission");
+  const beforeProposal = await fixture.repository.load(fixture.worldId);
+  const eventId = beforeProposal.state.events.find((event) =>
+    event.promotionId === committed.promotion.promotionId
+    && event.status === "SCHEDULED"
+    && event.date.week === beforeProposal.state.world.currentDate.week)!.id;
+  const originalMatchIds = beforeProposal.state.matches.filter((match) =>
+    match.eventId === eventId && match.status === "SCHEDULED").map((match) => match.id);
+
+  const pending = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "daily-commit-proposal",
+    expectedRevision: committed.world.revision,
+    expectedPlanVersion: committed.workspaceVersion,
+    matches: committed.matches.map((match, index) => index === 0
+      ? { ...match, plannedFinish: "CLEAN_PIN" as const } : match),
+    championshipAssignments: [],
+  });
+  ok(pending.cardPendingConsent, "pending contractual amendment was silently applied");
+  const lock = await lockScheduledShowCommitments(fixture.repository, fixture.worldId, "2026-10-11");
+  ok(lock.status === "COMMITTED", "daily commitment lock did not run");
+  const afterCommit = await fixture.repository.load(fixture.worldId);
+  ok(afterCommit.planning.pendingCardAmendments?.length === 0, "unapproved amendment survived commitment lock");
+  ok(afterCommit.runtime.phase === "OPEN", "commitment phase incorrectly locked all World commands");
+  const liveCard = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(!liveCard.cardPendingConsent && liveCard.matches[0]?.plannedFinish === "PROTECTED_FINISH",
+    "World Lock changed the already-committed script instead of restoring it");
+  ok(afterCommit.state.matches.filter((match) => match.eventId === eventId
+    && match.status === "SCHEDULED").map((match) => match.id).join(":") === originalMatchIds.join(":"),
+    "commitment lock replaced original match records");
+  ok(afterCommit.state.ledger.filter((entry) =>
+    entry.type === "PLANNED_SHOW_UNAPPROVED_AMENDMENT_IGNORED_AT_LOCK"
+    && entry.entityIds.includes(eventId)).length === 1,
+    "ignored card amendment has no unique factual history record");
+  ok(!afterCommit.state.ledger.some((entry) =>
+    entry.type === "PLANNED_SHOW_CREATIVE_STAFF_FALLBACK"
+    && entry.entityIds.includes(committed.promotion.promotionId)),
+    "complete materialized show incorrectly triggered a staff fallback");
+
+  const resolved = await resolveScheduledWorldCycle(fixture.repository, fixture.worldId, "2026-10-11");
+  ok(resolved.status === "RESOLVED", "scheduled World could not resolve the original card");
+  const world = await fixture.repository.load(fixture.worldId);
+  ok(world.state.events.find((entry) => entry.id === eventId)?.status === "COMPLETED",
+    "the intact player-authored event failed to run");
+  const notices = buildPlayerAttention(world, "alpha-player");
+  ok(notices.some((notice) => notice.title === "Your original card ran"),
+    "promoter did not receive the correct no-staff-takeover notice");
+});
+
+await test("a proposal saved after the 06:00 logistics lock is reconciled by the 08:00 World Lock", async () => {
+  const fixture = await reservedShowFixture(61292);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await materializePersistedCurrentWeekReservations(fixture.repository, fixture.worldId, before.world.revision);
+  const ready = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const loserId = fixture.participantIds[1]!;
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const contract = aggregate.state.contracts.find((entry) => entry.personId === loserId
+      && entry.promotionId === ready.promotion.promotionId && entry.status === "SIGNED");
+    if (!contract) throw new Error("missing match-rights contract");
+    contract.creativeControl = "PROTECTED_FINISHES";
+  });
+  const original = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "post-commit-original",
+    expectedRevision: ready.world.revision,
+    expectedPlanVersion: ready.workspaceVersion,
+    matches: singlesCard(fixture.participantIds).map((match, index) =>
+      index === 0 ? { ...match, plannedFinish: "PROTECTED_FINISH" as const } : match),
+    championshipAssignments: [],
+  });
+  await lockScheduledShowCommitments(fixture.repository, fixture.worldId, "2026-10-12");
+  const afterCommit = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(afterCommit.canEdit, "current rules should still allow match-only edits after logistics lock");
+  const proposal = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "post-commit-pending-proposal",
+    expectedRevision: afterCommit.world.revision,
+    expectedPlanVersion: afterCommit.workspaceVersion,
+    matches: original.matches.map((match, index) => index === 0
+      ? { ...match, plannedFinish: "SUBMISSION" as const } : match),
+    championshipAssignments: [],
+  });
+  ok(proposal.cardPendingConsent, "after-commit draft was not held for wrestler permission");
+
+  // A human advance should not treat a complete committed card as unready.
+  const result = await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+    expectedRevision: proposal.world.revision,
+  });
+  ok(result.world.currentDate.week === 2, "unapproved *amendment* blocked manual advance of complete card");
+  const world = await fixture.repository.load(fixture.worldId);
+  ok(world.planning.pendingCardAmendments?.length === 0, "final lock did not clear late amendment");
+  ok(world.state.ledger.some((entry) => entry.type === "PLANNED_SHOW_UNAPPROVED_AMENDMENT_IGNORED_AT_LOCK"),
+    "final lock did not record the ignored late amendment");
+  ok(world.runtime.phase === "OPEN" && world.state.world.currentDate.day === 1,
+    "after-lock manual resolution left an inconsistent simulated date");
+});
 console.log(`\nAlpha web card service tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
