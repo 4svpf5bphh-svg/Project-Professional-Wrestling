@@ -17,6 +17,7 @@ import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4 } from "./real-roster-editorial-a
 import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE5 } from "./real-roster-editorial-audit-wave5.js";
 import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE6 } from "./real-roster-editorial-audit-wave6.js";
 import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE7 } from "./real-roster-editorial-audit-wave7.js";
+import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE8 } from "./real-roster-editorial-audit-wave8.js";
 export interface FullRosterIdentityGuideEntry {
   name: string;
   gimmickArchetype: string;
@@ -32,11 +33,11 @@ const BASE_FULL_REAL_ROSTER_IDENTITY_GUIDE: readonly FullRosterIdentityGuideEntr
 // replace only the *seed guide* used for future Worlds or missing-identity
 // fallbacks: they cannot repack a wrestler who already has a saved persona.
 const reviewedByName = new Map(
-  [...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4, ...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE5, ...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE6, ...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE7]
+  [...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4, ...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE5, ...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE6, ...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE7, ...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE8]
     .map(entry => [entry.name, entry]),
 );
 if (reviewedByName.size !==
-    REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4.length + REVIEWED_REAL_ROSTER_IDENTITIES_WAVE5.length + REVIEWED_REAL_ROSTER_IDENTITIES_WAVE6.length + REVIEWED_REAL_ROSTER_IDENTITIES_WAVE7.length)
+    REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4.length + REVIEWED_REAL_ROSTER_IDENTITIES_WAVE5.length + REVIEWED_REAL_ROSTER_IDENTITIES_WAVE6.length + REVIEWED_REAL_ROSTER_IDENTITIES_WAVE7.length + REVIEWED_REAL_ROSTER_IDENTITIES_WAVE8.length)
   throw new Error("roster identity audits contain duplicate wrestler names");
 export const FULL_REAL_ROSTER_IDENTITY_GUIDE: readonly FullRosterIdentityGuideEntry[] =
   BASE_FULL_REAL_ROSTER_IDENTITY_GUIDE.map(entry => {
