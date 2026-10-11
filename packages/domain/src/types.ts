@@ -335,7 +335,8 @@ export interface ContractOffer extends ContractTerms {
   promotionId: Id;
   submittedDate: PpwDate;
   status: ContractOfferStatus;
-  offerKind: "RECRUITMENT" | "RENEWAL";
+  /** An additional-dates addendum amends the existing non-exclusive deal on acceptance. */
+  offerKind: "RECRUITMENT" | "RENEWAL" | "DATES_ADDENDUM";
   resolvedUtility: number | null;
   rejectionReason: string | null;
   sourceContractId?: Id | null;
