@@ -368,7 +368,8 @@ test("a creative-control concession improves an offer and persists into the sign
   resolveContractOffers(state);
   ok(offer.status === "ACCEPTED", `strong offer with creative rights was ${offer.status}`);
   const signed = state.contracts.find(c => c.sourceOfferId === offer.id);
-  ok(signed?.creativeControl === "PROTECTED_FINISHES",
+  if (!signed) throw new Error("accepted creative-control contract was not signed");
+  ok(signed.creativeControl === "PROTECTED_FINISHES",
     "accepted creative-control clause was lost between offer and signed contract");
   ok(signed.weeklyGuarantee === market * 4 && signed.appearanceFee === market * 3,
     "creative rights silently rewrote agreed compensation");
