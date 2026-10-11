@@ -1374,19 +1374,19 @@ export const REVIEWED_REAL_ROSTER_IDENTITIES_WAVE7: readonly ReviewedRosterIdent
     "secondaryStyle": "STRIKER",
     "signatureMoves": [
       {
-        "name": "Oblivion",
-        "category": "GRAPPLE",
+        "name": "Codebreaker",
+        "category": "STRIKE",
         "source": "PPW_AUTHORED"
       },
       {
-        "name": "Codebreaker",
-        "category": "STRIKE",
+        "name": "201 Facebreaker",
+        "category": "GRAPPLE",
         "source": "PPW_AUTHORED"
       }
     ],
     "finishingMoves": [
       {
-        "name": "201 Facebreaker",
+        "name": "Oblivion",
         "category": "GRAPPLE",
         "source": "PPW_AUTHORED"
       }
