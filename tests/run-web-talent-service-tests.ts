@@ -466,6 +466,153 @@ await test("exhausted-date renewal to a one-off starts next week without prematu
     "accepted exhausted renewal left a superseded contract overlapping the new booking");
 });
 
+await test("biweekly one-off targets the first actual show and survives the empty intervening week", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 73521, playerId: "biweekly-player" });
+  const independent = aggregate.state.promotions.find(p =>
+    p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("biweekly fixture has no indie promotion");
+  const flagship = aggregate.state.showSeries?.find(s =>
+    s.promotionId === independent.id && s.role === "FLAGSHIP");
+  if (!flagship) throw new Error("biweekly fixture has no flagship calendar");
+  for (const series of aggregate.state.showSeries ?? []) {
+    if (series.promotionId === independent.id && series.id !== flagship.id) series.active = false;
+  }
+  flagship.cadenceWeeks = 2;
+  flagship.anchorWeek = 0; // Week 1 show; Week 2 blank; Week 3 show.
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "biweekly-player", {
+    promotionId: independent.id, requestId: "biweekly-claim",
+  });
+  const state = (await repository.load(worldId)).state;
+  const firstShowWeek = addPpwWeeks(state.world.currentDate, 2, state.ruleset.weeksPerYear);
+  const pendingOfferId = formatEntityId("contractOffer",
+    snapshotEntityIdCounters(state).contractOffer + 1);
+  const view = await loadAlphaTalentSession(repository, worldId, "biweekly-player");
+  const sorted = view.market
+    .filter(entry => entry.availability === "FREE_AGENT" && entry.division === "MEN")
+    .map(entry => {
+      const person = state.people.find(p => p.id === entry.personId);
+      if (!person || person.status !== "ACTIVE" || serviceCapacityDatesPerWeek(person) < 1.05) return null;
+      const utility = evaluateContractOffer(state, {
+        id: pendingOfferId, worldId, personId: entry.personId,
+        promotionId: independent.id, submittedDate: { ...state.world.currentDate },
+        status: "PENDING", offerKind: "RECRUITMENT", resolvedUtility: null,
+        rejectionReason: null, family: "ONE_OFF", exclusivity: "OPEN",
+        roleExpectation: "MAIN_EVENT", startDate: { ...firstShowWeek, day: 1 },
+        endDate: { ...firstShowWeek, day: 7 }, dateEntitlement: 1,
+        weeklyGuarantee: 0, appearanceFee: entry.estimatedWeeklyValue * 2, signingBonus: 0,
+      });
+      return { entry, utility };
+    }).filter((v): v is { entry: (typeof view.market)[number]; utility: number } => v !== null)
+    .sort((a, b) => b.utility - a.utility);
+  const chosen = sorted[0];
+  if (!chosen || chosen.utility < state.ruleset.offerAcceptanceThreshold + 3) {
+    throw new Error(`biweekly fixture has no willing free agent, best utility ${chosen?.utility ?? "none"}`);
+  }
+  const offer = await submitAlphaTalentOffer(repository, worldId, "biweekly-player", {
+    requestId: "biweekly-one-off", personId: chosen.entry.personId,
+    family: "ONE_OFF", roleExpectation: "MAIN_EVENT", creativeControl: "NONE",
+    termWeeks: 1, dateEntitlement: 1, weeklyGuarantee: 0,
+    appearanceFee: chosen.entry.estimatedWeeklyValue * 2, signingBonus: 0,
+  });
+  const afterOffer = await repository.load(worldId);
+  const pending = afterOffer.state.contractOffers.find(o => o.id === offer.offerId);
+  ok(pending?.startDate.year === firstShowWeek.year && pending.startDate.week === firstShowWeek.week
+    && pending.startDate.day === 1 && pending.endDate.day === 7,
+    "biweekly one-off did not align with its actual next event");
+  const retry = await submitAlphaTalentOffer(repository, worldId, "biweekly-player", {
+    requestId: "biweekly-one-off", personId: chosen.entry.personId,
+    family: "ONE_OFF", roleExpectation: "MAIN_EVENT", creativeControl: "NONE",
+    termWeeks: 1, dateEntitlement: 1, weeklyGuarantee: 0,
+    appearanceFee: chosen.entry.estimatedWeeklyValue * 2, signingBonus: 0,
+  });
+  ok(retry.offerId === offer.offerId, "biweekly one-off replay duplicated the offer");
+
+  const initialSession = await loadAlphaPlayerSession(repository, worldId, "biweekly-player");
+  const emptyWeekSession = await advanceAlphaWorldWeek(repository, worldId, "biweekly-player", {
+    expectedRevision: initialSession.world.revision,
+  });
+  const afterAcceptance = await repository.load(worldId);
+  const decided = afterAcceptance.state.contractOffers.find(o => o.id === offer.offerId);
+  ok(decided?.status === "ACCEPTED", `biweekly one-off was rejected: ${decided?.rejectionReason ?? "unknown"}`);
+  const signed = afterAcceptance.state.contracts.find(c => c.sourceOfferId === offer.offerId);
+  if (!signed) throw new Error("accepted biweekly one-off has no signed contract");
+  ok(!contractIsActive(afterAcceptance.state, signed) && signed.datesUsed === 0,
+    "biweekly contract incorrectly starts in the no-show interim week");
+  const dueWeekSession = await advanceAlphaWorldWeek(repository, worldId, "biweekly-player", {
+    expectedRevision: emptyWeekSession.world.revision,
+  });
+  const showState = await repository.load(worldId);
+  ok(dueWeekSession.world.year === firstShowWeek.year && dueWeekSession.world.week === firstShowWeek.week
+    && contractIsActive(showState.state, signed),
+    "accepted biweekly one-off was not active when its actual show became due");
+  const promotion = dueWeekSession.promotion;
+  if (!promotion) throw new Error("biweekly promotion vanished");
+  ok(promotion.roster.some(p => p.personId === chosen.entry.personId && p.datesRemaining > 0),
+    "biweekly one-off missing from roster on event week");
+  const sameDivision = promotion.roster.filter(p => p.division === "MEN" && p.status === "ACTIVE"
+    && p.datesRemaining > 0 && p.personId !== chosen.entry.personId);
+  const evenCount = Math.max(4, promotion.showPlanning.minParticipants % 2
+    ? promotion.showPlanning.minParticipants + 1 : promotion.showPlanning.minParticipants);
+  const participants = [chosen.entry.personId, ...sameDivision.map(p => p.personId)].slice(0, evenCount);
+  if (participants.length < evenCount || evenCount > promotion.showPlanning.maxParticipants) {
+    throw new Error("biweekly fixture lacks valid same-division show participants");
+  }
+  const market = promotion.showPlanning.markets[0];
+  const venue = market?.venues[0];
+  if (!market || !venue) throw new Error("biweekly fixture missing venue or market");
+  const reserved = await saveAlphaCurrentWeekShowPlan(repository, worldId, "biweekly-player", {
+    requestId: "biweekly-book-show", expectedRevision: dueWeekSession.world.revision,
+    expectedPlanVersion: promotion.showPlanning.workspaceVersion, day: 6,
+    marketId: market.marketId, venueId: venue.venueId,
+    ticketStrategy: "STANDARD", participantIds: participants,
+  });
+  ok(reserved.promotion?.showPlanning.currentPlan?.participantIds.includes(chosen.entry.personId),
+    "biweekly event reservation rejected the accepted one-off");
+});
+
+await test("one-off refuses distant schedules instead of selling a date without a bookable show", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 73522, playerId: "sparse-player" });
+  const independent = aggregate.state.promotions.find(p =>
+    p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("sparse fixture has no promotion");
+  const flagship = aggregate.state.showSeries?.find(s =>
+    s.promotionId === independent.id && s.role === "FLAGSHIP");
+  if (!flagship) throw new Error("sparse fixture has no calendar");
+  for (const series of aggregate.state.showSeries ?? []) {
+    if (series.promotionId === independent.id && series.id !== flagship.id) series.active = false;
+  }
+  flagship.cadenceWeeks = 26;
+  flagship.anchorWeek = 0;
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "sparse-player", {
+    promotionId: independent.id, requestId: "sparse-claim",
+  });
+  const view = await loadAlphaTalentSession(repository, worldId, "sparse-player");
+  const wrestler = view.market.find(p => p.availability === "FREE_AGENT");
+  if (!wrestler) throw new Error("sparse fixture missing an available wrestler");
+  const pre = await repository.load(worldId);
+  let rejected = false;
+  try {
+    await submitAlphaTalentOffer(repository, worldId, "sparse-player", {
+      requestId: "sparse-one-off", personId: wrestler.personId,
+      family: "ONE_OFF", roleExpectation: "REGULAR", termWeeks: 1,
+      dateEntitlement: 1, weeklyGuarantee: 0,
+      appearanceFee: wrestler.estimatedWeeklyValue * 2, signingBonus: 0,
+    });
+  } catch (error) {
+    rejected = error instanceof Error && error.message.includes("No scheduled promotion show");
+  }
+  const after = await repository.load(worldId);
+  ok(rejected && after.runtime.revision === pre.runtime.revision
+    && after.state.contractOffers.length === pre.state.contractOffers.length,
+    "one-off with no near-term scheduled event mutated the World or sold an unusable date");
+});
+
 await test("talent date addendum is private, same-contract and idempotent", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 73042, playerId: "player-a" });
