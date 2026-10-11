@@ -25,6 +25,7 @@ import {
 } from "../packages/content/src/real-active-mixed-roster.js";
 import { marketWeeklyValue } from "../packages/sim-core/src/contracts.js";
 import { VERIFIED_WOMENS_CHARACTER_WAVE_3 } from "../packages/content/src/real-wrestler-characters-women-wave-3.js";
+import { VERIFIED_JAPAN_JOSHI_CHARACTER_WAVE_8 } from "../packages/content/src/real-wrestler-characters-japan-wave-8.js";
 import { CURATED_WRESTLER_CHARACTERS } from "../packages/content/src/real-wrestler-characters.js";
 import { GIMMICK_CATALOG } from "../packages/application/src/gimmick-catalog.js";
 import { FULL_REAL_ROSTER_IDENTITY_GUIDE, fullRealRosterIdentityFor } from "../packages/content/src/full-real-roster-identity-guide.js";
@@ -537,7 +538,7 @@ test("entire 643-person real-roster identity guide has individually keyed charac
     &&hechi.primaryStyle==="LUCHA",
     "recognisable wrestler was assigned an unsuitable random default");
   danhausen.signatureMoves[0]!.name="mutated private lookup";
-  ok(fullRealRosterIdentityFor("Danhausen")?.signatureMoves[0]?.name==="Very Nice Very Evil",
+  ok(fullRealRosterIdentityFor("Danhausen")?.signatureMoves[0]?.name==="Pump Kick",
     "guide lookup leaked mutable roster data");
   ok(fullRealRosterIdentityFor("Invented Future Prospect")===null,
     "future generated wrestlers must use deterministic generation, not a random real profile");
@@ -633,6 +634,83 @@ test("all seeded real wrestlers use curated or roster-specific identities; exist
   ok(completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD")===0
     &&JSON.stringify(sabreRecord)===agreed,
     "player's negotiated character was overwritten by the editorial guide");
+});
+
+test("all older name-targeted wrestlers lose mechanically invented signature labels",()=>{
+  const targeted=FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="TARGETED");
+  ok(targeted.length===138,"legacy targeted identity wave unexpectedly changed size");
+  for(const person of targeted){
+    const moves=person.signatureMoves;
+    ok(moves.length===2
+      &&moves[0]?.name!==moves[1]?.name
+      &&moves.every(m=>m.name.length>=2&&m.source==="PPW_AUTHORED")
+      &&moves.every(m=>m.name!==person.finishingMoves[0]?.name),
+      "old targeted profile still has incomplete or duplicate move slots: "+person.name);
+    const tag=person.name.replace(/["”“'.]/g,"")
+      .replace(/\\b(jr|the|dr|hijo|de|del|la|el)\\b/gi,"")
+      .trim().replace(/\\s+/g," ").split(" ").filter(x=>x.length>1).at(-1)
+      ?.toLocaleLowerCase("en-GB");
+    const generic=/(Cutter|Spinebuster|Lariat|Bridge Suplex|Armbar|Roundhouse|Tornado Rana|Springboard Crossbody)$/i;
+    ok(!moves.some(m=>tag&&m.name.split(" ")[0]?.toLocaleLowerCase("en-GB")===tag&&generic.test(m.name)),
+      "mechanically constructed surname move survived targeted review: "+person.name);
+  }
+  ok(fullRealRosterIdentityFor("Danhausen")?.signatureMoves[0]?.name==="Pump Kick"
+    &&fullRealRosterIdentityFor("Zack Sabre Jr.")?.signatureMoves[0]?.name
+      ==="Orienteering with Napalm Death",
+    "cleaning generic move slots lost an explicitly assigned signature manoeuvre");
+});
+
+test("NJPW and STARDOM publisher moves take priority over unverified editorial estimates",()=>{
+  const wave=VERIFIED_JAPAN_JOSHI_CHARACTER_WAVE_8;
+  const seen=new Set<string>();
+  const all=new Set([...REAL_ACTIVE_MENS_ROSTER_NAMES,...REAL_ACTIVE_WOMENS_ROSTER_NAMES]);
+  ok(wave.length===14,"publisher verification wave lost entries");
+  for(const entry of wave){
+    ok(!seen.has(entry.name)&&all.has(entry.name),
+      "publisher curated an absent or duplicate worker "+entry.name);
+    seen.add(entry.name);
+    ok(entry.sourceUrl.startsWith("https://wwr-stardom.com/")
+      ||entry.sourceUrl.startsWith("https://www.njpw1972.com/"),
+      "source is not an official Japanese wrestling publisher for "+entry.name);
+    ok(entry.finishingMoves.length>0
+      &&entry.finishingMove.name===entry.finishingMoves[0]!.name
+      &&entry.evidenceUrls.every(url=>url.startsWith("https://")),
+      "publisher-backed finishers require direct evidence for "+entry.name);
+  }
+  const state=createAlphaWorldAggregate({seed:77311,playerId:"japan-source-identity"}).state;
+  const persona=(name:string)=>{
+    const person=state.people.find(p=>p.name===name);
+    if(!person)throw Error("known wrestler absent "+name);
+    const active=state.wrestlerIdentities?.find(id=>id.personId===person.id)?.active;
+    if(!active)throw Error("authoritative persona absent "+name);
+    return active;
+  };
+  const saya=persona("Saya Kamitani");
+  ok(saya.provenance==="CURATED"&&saya.gimmickId==="QUEEN"
+    &&saya.finishingMoves[0]?.name==="Star Crusher"
+    &&saya.finishingMoves[0]?.source==="VERIFIED",
+    "publisher 'Phenex Queen' profile did not supersede a dated approximation");
+  const azm=persona("AZM");
+  const kid=persona("Starlight Kid");
+  ok(azm.finishingMoves[0]?.name==="AZM Sushi"
+    &&kid.finishingMoves[0]?.name==="Star Suplex Hold"
+    &&kid.signatureMoves.length>=2&&kid.signatureMoves.every(m=>m.source==="VERIFIED"),
+    "published STARDOM specialties were replaced by editorial guesses");
+  const yota=persona("Yota Tsuji");
+  const elDesperado=persona("El Desperado");
+  ok(yota.finishingMoves[0]?.name==="Gene Blaster"
+    &&yota.signatureMoves.some(m=>m.name==="Marlowe Crash")
+    &&elDesperado.finishingMoves[0]?.name==="Pinche Loco",
+    "publisher-referenced NJPW moves were not seeded");
+  const shota=persona("Shota Umino");
+  ok(shota.finishingMoves[0]?.name==="Death Rider"
+    &&shota.signatureMoves.length>=1
+    &&shota.signatureMoves.every(m=>m.source==="PPW_AUTHORED"),
+    "a verified single finisher was incorrectly expanded with fabricated verified signatures");
+  const before=JSON.stringify(state.wrestlerIdentities);
+  ok(completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD")===0
+    &&JSON.stringify(state.wrestlerIdentities)===before,
+    "subsequent NJPW/STARDOM source additions rewrote saved player careers");
 });
 
 console.log(`\nRoster source tests: ${passed} passed, ${failed} failed`);

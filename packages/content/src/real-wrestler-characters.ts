@@ -1,5 +1,6 @@
 import { VERIFIED_WRESTLER_CHARACTER_WAVE_2 } from "./real-wrestler-characters-wave-2.js";
 import { VERIFIED_WOMENS_CHARACTER_WAVE_3 } from "./real-wrestler-characters-women-wave-3.js";
+import { VERIFIED_JAPAN_JOSHI_CHARACTER_WAVE_8 } from "./real-wrestler-characters-japan-wave-8.js";
 
 /**
  * Auditable, incomplete first slice of real-world wrestler character identities.
@@ -417,7 +418,8 @@ export const CURATED_WRESTLER_CHARACTERS = [
     "sourceUrl": "https://www.wwe.com/superstars/shinsuke-nakamura"
   },
   ...VERIFIED_WRESTLER_CHARACTER_WAVE_2,
-  ...VERIFIED_WOMENS_CHARACTER_WAVE_3
+  ...VERIFIED_WOMENS_CHARACTER_WAVE_3,
+  ...VERIFIED_JAPAN_JOSHI_CHARACTER_WAVE_8
 ] as const;
 export type CuratedWrestlerCharacter = (typeof CURATED_WRESTLER_CHARACTERS)[number];
 export function curatedCharacterFor(name:string):CuratedWrestlerCharacter|null {

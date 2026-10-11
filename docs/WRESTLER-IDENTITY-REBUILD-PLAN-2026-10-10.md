@@ -280,3 +280,49 @@ Tests require exact individual review match for all 446 records,
 no unreviewed generic record except one independently curated, complete
 signature/finisher repertoires, world creation, no mutation leakage, and
 player-negotiated override protection. No live deployment.
+
+## Finishing the 643-person audit: targeted signatures and verified Japan specialties
+
+The remaining **138 existing individually targeted** wrestler profiles were
+checked for auto-concatenated pseudo-signature labels, e.g. a surname
+arbitrarily combined with "Cutter", "Lariat" or "Springboard Crossbody".
+Preserve genuinely wrestler-specific named candidate moves; replace those
+mechanical labels with TWO genuine wrestling manoeuvre types, coherently
+matched to each worker's style and still tagged `PPW_AUTHORED`. Danhausen's
+"Very Nice, Very Evil" is a character catchphrase, NOT a signature move;
+use plausible recognised move labels, while keeping his finisher name.
+
+Separate source research wave 8 upgrades **14 wrestlers** using official
+NJPW / STARDOM profiles and match reports. The publisher-source catalogue
+now covers **73 distinct names** (up from 59), while the remaining 570
+are still individually reviewed editorial starting identities rather
+than blank placeholders. Distinctive publisher-backed examples:
+
+- [Yota Tsuji: Gene Blaster, Marlowe Crash, Curb Stomp](https://www.njpw1972.com/profile/139488).
+- [El Desperado: Pinche Loco and Guitarra Del Angel](https://www.njpw1972.com/profile/732).
+- [Saya Kamitani: Phenex Queen / Star Crusher](https://wwr-stardom.com/en/fighters/kamitani/).
+- [Starlight Kid: Star Suplex Hold / Black Tiger Leg Kill](https://wwr-stardom.com/en/fighters/starlight-kid/).
+- [AZM: AZM Sushi and high-speed moves](https://wwr-stardom.com/en/fighters/azm-mg7r5zbd/).
+- [Maika: Michinoku Driver II](https://wwr-stardom.com/en/fighters/maika/).
+- [Momo Watanabe: Peach Thunder](https://wwr-stardom.com/en/fighters/watanabe/).
+- [Hazuki: vertical drop brainbuster and Face Wash](https://wwr-stardom.com/en/fighters/hazuki/).
+- [Hanan: Backdrop Hold](https://wwr-stardom.com/en/fighters/hanan/).
+- [Natsuko Tora: Cannonball and Swanton](https://wwr-stardom.com/en/fighters/toura/).
+- [Rina: Hydrangea and Jackknife Hold](https://wwr-stardom.com/en/fighters/rina/).
+- [NJPW Oct. 7 2026 official results](https://www.njpw1972.com/tornament/result/654878)
+  support Shota Umino's Death Rider, Robbie Eagles' Ron Miller Special,
+  and YOH's Direct Drive.
+
+"Signature" versus "finisher" is PPW game classification; a promotion
+calling a move a "specialty" doesn't guarantee exclusive historical finisher
+use. The sourced catalogue establishes identity and move **names**, and the
+game's slot is an editorial interpretation. All other selected moves remain
+labelled PPW-authored, never falsely marked as verified.
+
+**Completion gate:** 643/643 worker-name matches, one initial persona per
+worker, valid gimmick and style, two non-duplicated signature manoeuvres and
+a finisher, appropriate source provenance, distinct published-versus-edited
+characters, no cohort-only uncurated assignment, new generated wrestler
+coverage, and no mutation of saved or negotiated character state.
+No character editor or gimmick-negotiation feature starts before these
+checks are green and the user is satisfied with the roster data.

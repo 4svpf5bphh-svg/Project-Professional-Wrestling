@@ -124,6 +124,47 @@ function reviewedSignatures(name:string,style:string,finisher:string):PortableId
     name:moveName,category,source:"PPW_AUTHORED" as const,
   }));
 }
+/** First targeted batch predated the repertoire review and generated moves like
+ * "Kidd Lariat" or "Yano Cutter" by concatenating a surname with a move type.
+ * Preserve real recognisable signature candidates and replace only those
+ * mechanically fabricated labels with coherent, unbranded wrestling moves.
+ */
+function reviewedTargetedSignatures(entry:FullRosterIdentityGuideEntry):FullRosterIdentityGuideEntry{
+  if(entry.editorialBasis!=="TARGETED")return entry;
+  // "Very Nice, Very Evil" is Danhausen's catchphrase, not a move.
+  // The following are wrestling manoeuvre labels, not a real-life claim about
+  // which manoeuvre must be his in this fictional PPW World.
+  if(entry.name==="Danhausen")return {
+    ...entry,
+    signatureMoves:[
+      {name:"Pump Kick",category:"STRIKE",source:"PPW_AUTHORED"},
+      {name:"Very Nice, Very Knee-vil",category:"STRIKE",source:"PPW_AUTHORED"},
+    ],
+  };
+  const token=entry.name.replace(/["”“'.]/g,"")
+    .replace(/\b(jr|the|dr|hijo|de|del|la|el)\b/gi,"")
+    .trim().replace(/\s+/g," ").split(" ").filter(x=>x.length>1).at(-1);
+  const key=token?.toLocaleLowerCase("en-GB");
+  const manufacturedSuffix=/ (Cutter|Spinebuster|Lariat|Bridge Suplex|Armbar|Roundhouse|Tornado Rana|Springboard Crossbody)$/i;
+  const distinct:PortableIdentityMove[]=[];
+  for(const move of entry.signatureMoves){
+    const first=move.name.split(" ")[0]?.toLocaleLowerCase("en-GB");
+    if(key&&first===key&&manufacturedSuffix.test(move.name))continue;
+    if(move.name.toLocaleLowerCase("en-GB")
+      ===entry.finishingMoves[0]?.name.toLocaleLowerCase("en-GB"))continue;
+    if(!distinct.some(x=>x.name.toLocaleLowerCase("en-GB")
+      ===move.name.toLocaleLowerCase("en-GB")))distinct.push({...move});
+  }
+  for(const fallback of reviewedSignatures(entry.name,entry.primaryStyle,
+    entry.finishingMoves[0]!.name)){
+    if(distinct.length>=2)break;
+    if(!distinct.some(x=>x.name.toLocaleLowerCase("en-GB")
+      ===fallback.name.toLocaleLowerCase("en-GB")))distinct.push(fallback);
+  }
+  if(distinct.length<2)throw new Error("targeted wrestler is missing signature depth: "+entry.name);
+  return {...entry,signatureMoves:distinct.slice(0,2)};
+}
+
 const seenOriginal=new Set(BASE_FULL_REAL_ROSTER_IDENTITY_GUIDE.map(x=>x.name.toLocaleLowerCase("en-GB")));
 for(const name of REVIEW_BY_NAME.keys()){
   if(!seenOriginal.has(name))throw new Error("reviewed wrestler is absent from the 643-person seed: "+name);
@@ -131,7 +172,7 @@ for(const name of REVIEW_BY_NAME.keys()){
 export const FULL_REAL_ROSTER_IDENTITY_GUIDE:readonly FullRosterIdentityGuideEntry[]=
   BASE_FULL_REAL_ROSTER_IDENTITY_GUIDE.map(original=>{
     const review=REVIEW_BY_NAME.get(original.name.toLocaleLowerCase("en-GB"));
-    if(!review)return original;
+    if(!review)return reviewedTargetedSignatures(original);
     // Manual reviews cannot displace earlier name-targeted entries or verified
     // publisher evidence; they are specifically for broad COHORT defaults.
     if(original.editorialBasis!=="COHORT")
