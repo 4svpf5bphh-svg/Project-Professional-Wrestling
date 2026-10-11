@@ -17,6 +17,7 @@ import {
   canAddLimitedContractDates,
   wrestlerAlignment,
   wrestlerAlignmentForPromotion,
+  serviceCapacityDatesPerWeek,
 } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
@@ -196,6 +197,71 @@ await test("all four creative levels pass player-authored offers end-to-end and 
       ok(retry.offerId === saved.offerId, "legacy omitted-NONE request did not replay identically");
     }
   }
+});
+
+await test("exclusive creative offers have unlimited dates and retry with canonical or older transport entitlements", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 73501, playerId: "creative-exclusive-player" });
+  const independent = aggregate.state.promotions.find(p =>
+    p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("exclusive audit needs an indie promotion");
+  const freeAgent = aggregate.state.people.find(person => (
+    person.status === "ACTIVE"
+    && serviceCapacityDatesPerWeek(person) >= 1.05
+    && !aggregate.state.contracts.some(contract => contract.personId === person.id && contract.status === "SIGNED")
+  ));
+  if (!freeAgent) throw new Error("exclusive audit needs a free agent with sufficient service capacity");
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "creative-exclusive-player", {
+    promotionId: independent.id, requestId: "creative-exclusive-claim",
+  });
+  const before = await loadAlphaTalentSession(repository, worldId, "creative-exclusive-player");
+  const wrestler = before.market.find(entry => entry.personId === freeAgent.id);
+  if (!wrestler) throw new Error("eligible exclusive candidate missing from market");
+  const request = {
+    requestId: "creative-exclusive-offer",
+    personId: freeAgent.id,
+    sourceContractId: null,
+    family: "EXCLUSIVE" as const,
+    roleExpectation: "FEATURED" as const,
+    creativeControl: "FULL_APPROVAL" as const,
+    termWeeks: 13,
+    // Old clients may still supply an arbitrary positive purchased-dates
+    // field, even though the new exclusive agreement is unlimited.
+    dateEntitlement: 4,
+    weeklyGuarantee: wrestler.estimatedWeeklyValue * 2,
+    appearanceFee: 0,
+    signingBonus: wrestler.estimatedWeeklyValue * 5,
+  };
+  const first = await submitAlphaTalentOffer(repository, worldId, "creative-exclusive-player", request);
+  const after = await repository.load(worldId);
+  const offer = after.state.contractOffers.find(entry => entry.id === first.offerId);
+  ok(offer?.dateEntitlement === 13 && offer.creativeControl === "FULL_APPROVAL",
+    "exclusive offer did not canonicalise the compatibility field or preserve rights");
+  ok(first.view.pendingOffers.some(entry => entry.offerId === first.offerId
+    && entry.family === "EXCLUSIVE" && entry.creativeControl === "FULL_APPROVAL"),
+    "exclusive creative offer missing from player-visible pending summaries");
+  const revision = after.runtime.revision;
+  const retry = await submitAlphaTalentOffer(repository, worldId, "creative-exclusive-player", request);
+  ok(retry.offerId === first.offerId, "identical legacy exclusive retry was rejected");
+  const canonicalRetry = await submitAlphaTalentOffer(repository, worldId, "creative-exclusive-player", {
+    ...request, dateEntitlement: 13,
+  });
+  ok(canonicalRetry.offerId === first.offerId,
+    "equivalent canonical exclusive request was treated as a different real promise");
+  let rightsChangeRejected = false;
+  try {
+    await submitAlphaTalentOffer(repository, worldId, "creative-exclusive-player", {
+      ...request, creativeControl: "NONE",
+    });
+  } catch { rightsChangeRejected = true; }
+  ok(rightsChangeRejected, "reused exclusive request ID allowed rights downgrade");
+  const final = await repository.load(worldId);
+  ok(final.runtime.revision === revision
+    && final.state.contractOffers.filter(entry => entry.id === first.offerId).length === 1
+    && final.state.contractOffers.find(entry => entry.id === first.offerId)?.creativeControl === "FULL_APPROVAL",
+    "retry or altered-rights attempt mutated the authoritative World");
 });
 
 await test("talent date addendum is private, same-contract and idempotent", async () => {
