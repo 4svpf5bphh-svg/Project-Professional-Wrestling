@@ -1,6 +1,11 @@
 declare const process: { exitCode?: number };
 
-import { materializePersistedCurrentWeekReservations } from "../packages/application/src/index.js";
+import {
+  buildPlayerAttention,
+  lockPersistedWorldForResolution,
+  materializePersistedCurrentWeekReservations,
+  resolvePersistedWorldWeek,
+} from "../packages/application/src/index.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import {
   advanceAlphaWorldWeek,
@@ -1482,6 +1487,58 @@ await test("materialized card edits stay held until consent then apply the promo
     personId: loserId,
   });
   ok(retried.world.revision === approved.world.revision, "repeated approval advanced World revision");
+});
+
+
+await test("manual advance explains an unapproved show, but the scheduled lock records staff fallback", async () => {
+  const fixture = await reservedShowFixture(61263);
+  const loserId = fixture.participantIds[1]!;
+  const first = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const contract = aggregate.state.contracts.find((entry) => entry.status === "SIGNED"
+      && entry.personId === loserId && entry.promotionId === first.promotion.promotionId);
+    if (!contract) throw new Error("missing controlled wrestler contract");
+    contract.creativeControl = "PROTECTED_FINISHES";
+  });
+  const card = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "creative-lock-fallback-card",
+    expectedRevision: first.world.revision,
+    expectedPlanVersion: first.workspaceVersion,
+    matches: singlesCard(fixture.participantIds),
+    championshipAssignments: [],
+  });
+  ok(card.creativeConcerns.some((entry) => entry.personId === loserId && entry.consent === "NOT_REQUESTED"
+    && entry.requiresConsent), "saved card did not identify unapproved wrestler");
+  const revisionBeforeAdvance = card.world.revision;
+  let blocked = false;
+  try {
+    await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+      expectedRevision: revisionBeforeAdvance,
+    });
+  } catch (error) {
+    blocked = error instanceof Error && error.message.includes("Creative approval required");
+  }
+  ok(blocked, "manual week advancement did not explain the unresolved creative permission");
+  const afterAttempt = await fixture.repository.load(fixture.worldId);
+  ok(afterAttempt.runtime.revision === revisionBeforeAdvance
+    && afterAttempt.planning.showReservations.length === 1
+    && !afterAttempt.state.ledger.some((entry) => entry.type === "PLANNED_SHOW_CREATIVE_STAFF_FALLBACK"),
+    "blocked manual advancement mutated World or prematurely released the show");
+
+  const lockedRevision = await lockPersistedWorldForResolution(
+    fixture.repository, fixture.worldId, revisionBeforeAdvance,
+  );
+  const afterLock = await fixture.repository.load(fixture.worldId);
+  ok(afterLock.runtime.phase === "LOCKING", "scheduled lock did not progress after manual veto");
+  ok(afterLock.state.ledger.some((entry) => entry.type === "PLANNED_SHOW_CREATIVE_STAFF_FALLBACK"
+    && entry.entityIds.includes(first.promotion.promotionId)), "scheduled lock did not record staff takeover reason");
+  ok(afterLock.planning.showReservations.length === 0, "released unapproved reservation still claims scarce wrestlers");
+  await resolvePersistedWorldWeek(fixture.repository, fixture.worldId, lockedRevision);
+  const resolved = await fixture.repository.load(fixture.worldId);
+  ok(resolved.runtime.phase === "OPEN", "scheduled World was held hostage by another promoter's permission");
+  const notices = buildPlayerAttention(resolved, "alpha-player");
+  ok(notices.some((entry) => entry.title === "Unapproved booking handed to staff"),
+    "player was not shown the scripted booking fallback in Attention");
 });
 
 console.log(`\nAlpha web card service tests: ${passed} passed, ${failed} failed`);
