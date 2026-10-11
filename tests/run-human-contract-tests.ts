@@ -10,6 +10,7 @@ import {
   buildContractTerms,
   contractHasAppearanceRights,
   contractCoversBookedDate,
+  applicableCreativeContract,
   canAddLimitedContractDates,
   creativeBookingReview,
   creativeControlOfferBonus,
@@ -390,6 +391,13 @@ test("legacy and AI final-week terms cover all seven PPW show days without addin
     "legacy day-one expiry wrongly blocked the last calendar day of a covered PPW week");
   ok(!contractCoversBookedDate(state, contract, { year: 2, week: 2, day: 1 }),
     "booking incorrectly extended contractual rights into an extra week");
+  contract.creativeControl = "FULL_APPROVAL";
+  ok(applicableCreativeContract(state, promotionId, contract.personId,
+    { year: 2, week: 1, day: 6 })?.id === contract.id,
+    "final-week day-six creative approval was silently bypassed");
+  ok(!applicableCreativeContract(state, promotionId, contract.personId,
+    { year: 2, week: 2, day: 1 }),
+    "creative veto rights illegally extended into the next PPW week");
   contract.startDate = { year: 1, week: 51, day: 4 };
   ok(!contractCoversBookedDate(state, contract, { year: 1, week: 51, day: 3 }),
     "final-week accommodation allowed booking before a precise midweek commencement");
