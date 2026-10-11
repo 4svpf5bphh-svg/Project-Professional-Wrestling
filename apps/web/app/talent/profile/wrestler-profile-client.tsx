@@ -216,21 +216,13 @@ export default function WrestlerProfileClient({
           <p className={styles.note}>
             Shared wrestler identity: <strong>{view.person.portableIdentity.active.personaName}</strong>
             {" · "}{gimmickDefinition(view.person.portableIdentity.active.gimmickId).label}
-            {" · "}{view.person.portableIdentity.active.provenance==="ROSTER_APPROXIMATION"
-              ? "Roster-specific PPW-authored character (not independently verified)"
-              : view.person.portableIdentity.active.provenance==="GAME_AUTHORED"
-              ? "PPW-authored starting character (not verified real-world moves)"
-              : view.person.portableIdentity.source==="WORLD_RECORD"
-              ? "World career record"
-              : view.person.portableIdentity.source==="CURATED_BASELINE"
-                ? "Researched reference"
-                : "Research incomplete"}
+            {view.person.portableIdentity.source==="WORLD_RECORD" ? " · World career record" : ""}
           </p>
           <p className={styles.note}>
-            Known signatures: {view.person.portableIdentity.active.signatureMoves
-              .map(move=>move.name+(move.source==="PPW_AUTHORED"?" (PPW-created)":"")).join(", ")||"Not yet verified"}
-            {" · "}Known finishers: {view.person.portableIdentity.active.finishingMoves
-              .map(move=>move.name+(move.source==="PPW_AUTHORED"?" (PPW-created)":"")).join(", ")||"Not yet verified"}
+            Signature moves: {view.person.portableIdentity.active.signatureMoves
+              .map(move=>move.name).join(", ")||"None recorded"}
+            {" · "}Finishing moves: {view.person.portableIdentity.active.finishingMoves
+              .map(move=>move.name).join(", ")||"None recorded"}
           </p>
           {view.person.portableIdentity.documentedAlternates.length > 0 ? (
             <details className={styles.history}>
