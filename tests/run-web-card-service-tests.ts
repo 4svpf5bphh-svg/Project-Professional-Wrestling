@@ -7,6 +7,7 @@ import {
   lockPersistedWorldForResolution,
   materializePersistedCurrentWeekReservations,
   resolvePersistedWorldWeek,
+  requestStandingProgrammeCreativeAgreementCommand,
 } from "../packages/application/src/index.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import {
@@ -1832,6 +1833,100 @@ await test("a proposal saved after the 06:00 logistics lock is reconciled by the
     "final lock did not record the ignored late amendment");
   ok(world.runtime.phase === "OPEN" && world.state.world.currentDate.day === 1,
     "after-lock manual resolution left an inconsistent simulated date");
+});
+
+await test("Show Card persists an explicit Programme association and honours only its agreed match scope", async () => {
+  const fixture = await reservedShowFixture(61301);
+  const [leadId, rivalId] = fixture.participantIds;
+  if (!leadId || !rivalId) throw new Error("fixture missing two storyline wrestlers");
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await startAlphaManagedProgramme(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "programme-card-link-61301",
+    expectedRevision: before.world.revision,
+    sideA: [{ kind: "PERSON", entityId: leadId }],
+    sideB: [{ kind: "PERSON", entityId: rivalId }],
+    championshipId: null,
+  });
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const deal = aggregate.state.contracts.find((candidate) =>
+      candidate.promotionId === before.promotion.promotionId && candidate.personId === leadId
+      && candidate.status === "SIGNED");
+    if (!deal) throw new Error("missing storyline lead contract");
+    deal.creativeControl = "FULL_APPROVAL";
+    const wrestler = aggregate.state.people.find((p) => p.id === leadId)!;
+    wrestler.morale = 100; wrestler.fatigue = 0; wrestler.priorities.loyalty = 100; wrestler.priorities.role = 0;
+    const programme = aggregate.state.programmes?.find((p) => p.promotionId === before.promotion.promotionId
+      && p.status === "ACTIVE" && p.sideA.some((ref) => ref.entityId === leadId));
+    if (!programme) throw new Error("new Programme not found");
+    const result = requestStandingProgrammeCreativeAgreementCommand(
+      aggregate.state, aggregate.ownership, aggregate.planning, aggregate.commands, aggregate.runtime,
+      {
+        requestId: "programme-standing-61301",
+        worldId: fixture.worldId,
+        playerId: "alpha-player",
+        commandType: "REQUEST_STANDING_PROGRAMME_CREATIVE_AGREEMENT",
+        payload: {
+          promotionId: before.promotion.promotionId,
+          programmeId: programme.id,
+          personId: leadId,
+          matchType: "SINGLES",
+          permittedOutcome: "WIN_OR_PROTECTED_LOSS",
+          termWeeks: 3,
+        },
+      },
+    );
+    if (!result.approved) throw new Error("standing Programme was unexpectedly declined");
+  });
+  const ready = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const programmeId = ready.programmes.find((p) => p.participantIds.includes(leadId)
+    && p.participantIds.includes(rivalId))?.programmeId;
+  if (!programmeId) throw new Error("Show Card did not list the active Programme");
+  const matches = singlesCard(fixture.participantIds);
+  matches[0] = { ...matches[0]!, programmeId };
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "programme-linked-show",
+    expectedRevision: ready.world.revision,
+    expectedPlanVersion: ready.workspaceVersion,
+    matches,
+    championshipAssignments: [],
+  });
+  ok(saved.matches[0]?.programmeId === programmeId, "Programme match link did not round-trip the Show Card");
+  ok(saved.creativeConcerns.some((concern) => concern.personId === leadId
+    && concern.approvalSource === "STANDING_PROGRAMME" && concern.consent === "APPROVED"),
+    "Show Card failed to surface pre-negotiated Programme consent");
+  const persisted = await fixture.repository.load(fixture.worldId);
+  ok(persisted.planning.workspaces.some((workspace) =>
+    workspace.detailedShowDrafts.some((draft) => draft.matches[0]?.programmeId === programmeId)),
+    "explicit Programme link was not persisted by the authoritative planning command");
+
+  const unrelated = matches.map((match, index) =>
+    index === 0 ? { ...match, programmeId: null } : match);
+  const unlinked = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "programme-unlinked-show",
+    expectedRevision: saved.world.revision,
+    expectedPlanVersion: saved.workspaceVersion,
+    matches: unrelated,
+    championshipAssignments: [],
+  });
+  ok(unlinked.creativeConcerns.some((concern) => concern.personId === leadId
+    && concern.consent === "NOT_REQUESTED"),
+    "removing a Programme link did not restore exact-match consent");
+  const illegal = unlinked.matches.map((match, index) =>
+    index === 1 ? { ...match, programmeId } : match);
+  let denied = false;
+  try {
+    await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: "programme-foreign-competitors",
+      expectedRevision: unlinked.world.revision,
+      expectedPlanVersion: unlinked.workspaceVersion,
+      matches: illegal,
+      championshipAssignments: [],
+    });
+  } catch { denied = true; }
+  ok(denied, "server accepted a Programme link on a different set of match competitors");
+  const unchanged = await fixture.repository.load(fixture.worldId);
+  ok(unchanged.runtime.revision === unlinked.world.revision,
+    "rejected fraudulent Programme match link mutated World revision");
 });
 console.log(`\nAlpha web card service tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
