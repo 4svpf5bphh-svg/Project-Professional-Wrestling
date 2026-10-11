@@ -95,6 +95,7 @@ export interface PlayerRosterContractView extends PlayerPublicTalentIdentityView
     dateEntitlement: number;
     datesUsed: number;
     datesRemaining: number;
+    unlimitedAppearances: boolean;
     weeklyGuarantee: number;
     appearanceFee: number;
     signingBonus: number;
@@ -383,7 +384,7 @@ export function buildPlayerTalentManagementView(
       if (!person) return null;
       const remaining = weeksToExpiry(aggregate, contract.endDate);
       const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
-      const datesExhausted = contract.family !== "ONE_OFF" && datesRemaining === 0;
+      const datesExhausted = contract.family === "LIMITED_NON_EXCLUSIVE" && datesRemaining === 0;
       const expiryWindowOpen = remaining <= aggregate.state.ruleset.renewalWindowWeeks;
       const alignment = wrestlerAlignmentForPromotion(aggregate.state, promotion.id, person.id);
       const alignmentContext = promotionAlignmentChangeContext(aggregate.state, promotion.id, person.id);
@@ -411,6 +412,7 @@ export function buildPlayerTalentManagementView(
           dateEntitlement: contract.dateEntitlement,
           datesUsed: contract.datesUsed,
           datesRemaining,
+          unlimitedAppearances: contract.family === "EXCLUSIVE",
           weeklyGuarantee: contract.weeklyGuarantee,
           appearanceFee: contract.appearanceFee,
           signingBonus: contract.signingBonus,
