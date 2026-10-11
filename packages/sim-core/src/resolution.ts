@@ -22,6 +22,9 @@ import { processTalentTrustForWeek } from "./talent-trust.js";
 import { evolveCompletedWorkingPartnerships } from "./working-relationship-evolution.js";
 
 export interface WorldResolutionHooks {
+  /** Audit/test observation point before evaluation. Do not use for production
+   * wrestler decisions; ordinary World resolution supplies no such hook. */
+  afterAiContractOffers?: (state: WorldState) => void;
   afterProgrammeMatches?: (state: WorldState) => void;
   afterShowFlow?: (state: WorldState) => void;
 }
@@ -40,6 +43,7 @@ export function resolveWorldWeek(state: WorldState, hooks: WorldResolutionHooks 
   expireContracts(state);
   maintainChampionshipsForWeek(state);
   generateAiContractOffers(state);
+  hooks.afterAiContractOffers?.(state);
   applyRenewalRelationshipResistance(state);
   resolveContractOffers(state);
 
