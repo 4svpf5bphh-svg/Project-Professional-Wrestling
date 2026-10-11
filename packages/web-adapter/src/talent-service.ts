@@ -19,6 +19,7 @@ import {
   setTalentWatched,
   setWrestlerAlignmentCommand,
   submitContractOfferCommand,
+  submitContractDatesAddendumCommand,
   type ApplicationWorldAggregate,
   type ApplicationWorldRepository,
   type PlayerTalentDirectoryView,
@@ -46,6 +47,20 @@ export interface AlphaTalentOfferRequest {
   weeklyGuarantee: number;
   appearanceFee: number;
   signingBonus: number;
+}
+
+export interface AlphaDatesAddendumRequest {
+  requestId: string;
+  personId: string;
+  contractId: string;
+  additionalDates: number;
+  additionalPayment: number;
+}
+
+export interface AlphaDatesAddendumResult {
+  offerId: string;
+  offerKind: "DATES_ADDENDUM";
+  view: PlayerTalentManagementView;
 }
 
 export interface AlphaTalentOfferResult {
@@ -284,6 +299,53 @@ export async function submitAlphaTalentOffer(
   });
 
   return transaction.result;
+}
+
+/** Submits a consensual addendum through the same authoritative World command queue. */
+export async function submitAlphaDatesAddendum(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  rawRequest: AlphaDatesAddendumRequest,
+): Promise<AlphaDatesAddendumResult> {
+  const request: AlphaDatesAddendumRequest = {
+    requestId: boundedText(rawRequest.requestId, "requestId"),
+    personId: boundedText(rawRequest.personId, "personId"),
+    contractId: boundedText(rawRequest.contractId, "contractId"),
+    additionalDates: nonNegativeInteger(rawRequest.additionalDates, "additional dates", 104),
+    additionalPayment: nonNegativeInteger(rawRequest.additionalPayment, "additional payment"),
+  };
+  if (request.additionalDates < 1) throw new Error("additional dates must contain at least one appearance");
+
+  const result = await repository.transact(worldId, null, (aggregate) => {
+    const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
+    if (!control) throw new Error("player must control a promotion before negotiating dates");
+    const offer = submitContractDatesAddendumCommand(
+      aggregate.state,
+      aggregate.ownership,
+      aggregate.commands,
+      aggregate.runtime,
+      {
+        requestId: request.requestId,
+        worldId,
+        playerId,
+        commandType: "SUBMIT_CONTRACT_DATES_ADDENDUM",
+        payload: {
+          promotionId: control.promotionId,
+          personId: request.personId,
+          contractId: request.contractId,
+          additionalDates: request.additionalDates,
+          additionalPayment: request.additionalPayment,
+        },
+      },
+    );
+    return {
+      offerId: offer.id,
+      offerKind: "DATES_ADDENDUM" as const,
+      view: buildPlayerTalentManagementView(aggregate, playerId),
+    };
+  });
+  return result.result;
 }
 
 export async function setAlphaTalentWatch(
