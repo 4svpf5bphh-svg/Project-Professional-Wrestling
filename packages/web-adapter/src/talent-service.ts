@@ -226,7 +226,9 @@ function buildFreshPlan(
   if (request.family === "ONE_OFF"
     && ppwDateToWeekIndex(startDate, state.ruleset.weeksPerYear)
       <= ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear)) {
-    startDate = addPpwWeeks(state.world.currentDate, 1, state.ruleset.weeksPerYear);
+    // The new weekly planning window begins on day 1, even if a future
+    // scheduler or migrated World ever stores a later submission weekday.
+    startDate = { ...addPpwWeeks(state.world.currentDate, 1, state.ruleset.weeksPerYear), day: 1 };
   }
 
   const exclusivity = request.family === "ONE_OFF" ? "OPEN"
