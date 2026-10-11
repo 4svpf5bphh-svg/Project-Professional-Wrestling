@@ -219,6 +219,16 @@ function buildFreshPlan(
     if (alreadyOurs) throw new Error("wrestler is already on your active roster; use the renewal action");
   }
 
+  // Human one-offs are evaluated only at World Resolution, after this
+  // week's show commitments have closed. Their single purchased appearance
+  // must therefore belong to a week the booker can actually prepare.
+  // Ordinary future renewals still start after the existing signed term.
+  if (request.family === "ONE_OFF"
+    && ppwDateToWeekIndex(startDate, state.ruleset.weeksPerYear)
+      <= ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear)) {
+    startDate = addPpwWeeks(state.world.currentDate, 1, state.ruleset.weeksPerYear);
+  }
+
   const exclusivity = request.family === "ONE_OFF" ? "OPEN"
     : request.family === "EXCLUSIVE" ? "EXCLUSIVE"
       : "NON_EXCLUSIVE";
