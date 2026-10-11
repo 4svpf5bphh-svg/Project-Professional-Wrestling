@@ -1,4 +1,4 @@
-import type { Contract, Id, MatchFinish, MatchSide, MatchType, PpwDate, WorldState } from "../../domain/src/types.js";
+import type { Id, MatchSide, MatchType, PpwDate, WorldState } from "../../domain/src/types.js";
 import { addPpwWeeks, comparePpwDates } from "../../sim-core/src/clock.js";
 import {
   applicableCreativeContract,
