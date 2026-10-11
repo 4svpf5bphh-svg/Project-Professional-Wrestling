@@ -270,7 +270,7 @@ test("accepted date addendum extends the same non-exclusive contract with no new
   ok(JSON.stringify(source.endDate) === originalEnd && source.weeklyGuarantee === 1000
     && source.exclusivity === "NON_EXCLUSIVE", "addendum rewrote contract expiry, wage or rights");
   ok(promotion.cash === cashBefore - payment, "negotiated extra payment was not charged once");
-  ok(state.financialTransactions.some(tx => tx.sourceId === offer.id
+  ok(state.financialTransactions.some(tx => tx.source === offer.id
     && tx.category === "CONTRACT_SIGNING_BONUS" && tx.amount === -payment),
     "extra-date payment lacks an auditable financial record");
   ok(state.ledger.some(item => item.type === "CONTRACT_EXTRA_DATES_ACCEPTED"
