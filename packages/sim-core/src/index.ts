@@ -4,6 +4,7 @@ export * from "./career.js";
 export * from "./clock.js";
 export * from "./competition.js";
 export * from "./contracts.js";
+export * from "./creative-control.js";
 export * from "./events.js";
 export * from "./finance.js";
 export * from "./genesis.js";
