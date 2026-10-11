@@ -54,6 +54,13 @@ export function promotionContractPolicy(promotion: Promotion): PromotionContract
   return promotion.contractPolicy ?? defaultPromotionContractPolicy(promotion.tier);
 }
 
+/** Exclusive employment grants appearances throughout the term, subject to capacity,
+ * fitness and show scheduling. dateEntitlement on exclusive records is retained
+ * for historic snapshot compatibility, not enforced as a booking cap. */
+export function contractHasAppearanceRights(contract: Pick<Contract, "family" | "dateEntitlement" | "datesUsed">): boolean {
+  return contract.family === "EXCLUSIVE" || contract.datesUsed < contract.dateEntitlement;
+}
+
 export function contractIsActive(state: WorldState, contract: Contract): boolean {
   if (contract.status !== "SIGNED") return false;
   const weeksPerYear = state.ruleset.weeksPerYear;
@@ -168,7 +175,9 @@ export function serviceCapacityDatesPerWeek(person: Person): number {
 
 function contractDensity(terms: ContractTerms, weeksPerYear: number): number {
   const termWeeks = Math.max(1, weeksBetween(terms.startDate, terms.endDate, weeksPerYear) + 1);
-  return terms.dateEntitlement / termWeeks;
+  // Exclusive workers cannot take overlapping agreements; this is a
+  // representative booking load, never a purchased appearance cap.
+  return terms.family === "EXCLUSIVE" ? 1 : terms.dateEntitlement / termWeeks;
 }
 
 export function canAcceptContractTerms(
@@ -238,7 +247,8 @@ export function buildContractTerms(
       roleExpectation,
       startDate: { ...startDate },
       endDate: addPpwWeeks(startDate, termWeeks - 1, state.ruleset.weeksPerYear),
-      dateEntitlement: Math.max(12, Math.round(termWeeks * rng.float(0.5, 0.7))),
+      // Compatibility-only field: exclusive booking is not limited by this value.
+      dateEntitlement: termWeeks,
       weeklyGuarantee: Math.round(market * rng.float(1.0, 1.25) * generosity),
       appearanceFee: 0,
       signingBonus: Math.round(market * rng.float(3, 8) * generosity),
@@ -496,7 +506,7 @@ function exhaustedReplacementSource(state: WorldState, offer: ContractOffer): Co
     source.status !== "SIGNED"
     || source.personId !== offer.personId
     || source.promotionId !== offer.promotionId
-    || source.family === "ONE_OFF"
+    || source.family !== "LIMITED_NON_EXCLUSIVE"
     || source.datesUsed < source.dateEntitlement
   ) return null;
   return source;
@@ -598,7 +608,7 @@ export function evaluateContractOffer(state: WorldState, offer: ContractOffer): 
   const roleScore = ROLE_VALUE[offer.roleExpectation];
   const prestigeScore = TIER_PRESTIGE[promotion.tier];
   const termWeeks = Math.max(1, weeksBetween(offer.startDate, offer.endDate, state.ruleset.weeksPerYear) + 1);
-  const density = offer.dateEntitlement / termWeeks;
+  const density = contractDensity(offer, state.ruleset.weeksPerYear);
   const scheduleScore = Math.max(10, Math.min(100, 92 - density * 35 - (offer.exclusivity === "EXCLUSIVE" ? 18 : 0)));
   const loyaltyScore = relationshipLoyaltyScore(state, person, promotion);
   const exposureScore = promotion.mediaReach;
