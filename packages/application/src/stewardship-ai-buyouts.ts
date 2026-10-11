@@ -6,7 +6,7 @@ import {
   deterministicSeedFromText,
   targetRosterSize,
 } from "../../sim-core/src/index.js";
-import { activityForPlayer } from "./engagement.js";
+import { activityForPlayer, activeSchedulerDaysBetween } from "./engagement.js";
 import { activePromotionControls } from "./ownership.js";
 import {
   executeStewardshipRivalBuyout,
@@ -74,7 +74,7 @@ function eligibleRequests(
 
   return engagement.stewardshipExitRequests.filter((request) => {
     if (request.status !== "OPEN") return false;
-    if (daysBetween(request.requestedCycleKey, cycleKey) < STEWARDSHIP_BUYOUT_NOTICE_DAYS) return false;
+    if (activeSchedulerDaysBetween(engagement, request.requestedCycleKey, cycleKey) < STEWARDSHIP_BUYOUT_NOTICE_DAYS) return false;
     const control = controlsByPromotion.get(request.promotionId);
     if (!control) return false;
     if (activityForPlayer(engagement, control.playerId)?.status !== "STEWARDED") return false;
