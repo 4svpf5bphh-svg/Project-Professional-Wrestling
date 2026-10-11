@@ -35,3 +35,39 @@ The report writes machine-readable `artifacts/creative-multiseed-audit.json`, an
 - Smallest useful first gate is paired multi-seed 52-week runs with diagnostics and full invariant checks, not blindly choosing an untested rejection/offer cap.
 
 Audit release gate: review the recorded numbers before deciding if contract rights are ready for player-facing offer selection; a green CI run alone is insufficient.
+
+## Measured results — CI #913 (2026-10-11)
+
+**Result: simulation invariants PASS; creative-control release decision HOLD.** The audit tool returned success with all 14 runs complete, including the real-roster scenarios. CI #913 also passed the established full test suite, web/HTTP/PostgreSQL gates and 10-/100-year seed smoke tests. The audit's success is not a claim that creative economics needs no tuning.
+
+| Metric, treatment scenario across 7 seeds | Result |
+| --- | ---: |
+| AI offers generated | 5,792 |
+| Accepted | 4,793 (82.75%) |
+| No creative control | 2,610 (45.06% of offers) |
+| Consultation | 2,777 (47.94%) |
+| Protected finishes | 380 (6.56%) |
+| Full approval | 25 (0.43%) |
+| Offers with blocking rights (protected/full) | 405 (6.99%) |
+| Accepted with protected finishes | 268 |
+| Accepted with full approval | 20 |
+| 52-week seed pairs with any automated creative refusal | 1 of 7 |
+| Total automated creative refusals | 42 |
+| Refusals attributable to one wrestler | 42 |
+| Mean paired difference in completed matches | -1.86 per seed |
+| Mean paired difference in cancelled shows | -0.57 per seed |
+| Mean paired difference in minimum independently accessible candidates | -0.29 per seed |
+
+**Root-cause diagnostic: repeat booking of an unwilling fully protected wrestler.** Real-roster seed `91306` had 42 declined automated attempts involving fictional in-game **Gabe Kidd / NJPW** between PPW Year 1 Week 14 and Week 52. Consent score remained **49–51**, below 55. The AI rejected the match properly, but made new attempts repeatedly rather than recognising a sustained creative impasse. This seed completed **2,004 matches versus 2,035 in control** (-31, about -1.52%). Cancelled shows were **59 vs 60**; do not infer the match shortfall directly caused cancellations. No other seed recorded an automated creative refusal. This is fictional simulator behaviour, not a real-world statement about talent.
+
+Independent-market technical access remained large in all seven seeds; per-seed paired changes were between **-4 and +5** accessible wrestlers. This does **not** prove indie owners can sign most of them. The current market-willingness proxy uses a loose pre-negotiation threshold and counts nearly everyone contractually eligible. Test actual finite-budget indie offers and competitive bidding before asserting an economically healthy free-agent market.
+
+## Release gates after measured results
+
+1. **Required: fix repeated AI creative objections** without undermining wrestler control. A refusal should lead to a period of alternative AI booking (or renegotiated creative context), rather than 42 identical reattempts. Retain no rerolls/online advantages, honor all blocked results, and test long multiweek simulated careers.
+2. **Required: credible human-independent economic testing** with realistic available cash, wages, multi-offer competition, and term options—not just the signed-capacity/accessibility proxy.
+3. **Review consultation prevalence** (47.94% of AI offers) for alert noise and longer-term narrative consequences; consultation is not itself a veto.
+4. **Extend selected horizons** beyond one PPW year once the loop is fixed, watching accumulated protections, rosters and cancellations.
+5. Only after these gates, consider exposing full creative rights in the human contract offer editor with clear booking consequences, no deterministic acceptance promises.
+
+The machine-readable source of these figures is the GitHub Actions artifact `creative-control-multiseed-audit` at run #913 and the corresponding prefixed audit entries in workflow logs.
