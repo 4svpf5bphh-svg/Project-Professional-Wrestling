@@ -120,10 +120,14 @@ await test("scheduled World resolution evaluates real inactivity before lock", a
   ok(record?.status === "WARNING", "scheduler did not move seven-day inactive player to WARNING");
   ok(record?.statusSinceCycleKey === "2026-10-08", "scheduler did not record WARNING transition cycle");
 
-  await resolveScheduledWorldCycle(repository, worldId, "2026-10-15");
+  // All days between the warning and stewardship boundary were successfully
+  // resolved; a missing real-day cycle is now excluded by the outage clock.
+  for (let day = 9; day <= 15; day += 1) {
+    await resolveScheduledWorldCycle(repository, worldId, `2026-10-${String(day).padStart(2, "0")}`);
+  }
   after = await repository.load(worldId);
   record = after.engagement ? activityForPlayer(after.engagement, "player-a") : null;
-  ok(record?.status === "STEWARDED", "scheduler did not move fourteen-day inactive player to STEWARDED");
+  ok(record?.status === "STEWARDED", "scheduler did not move fourteen active-cycle days to STEWARDED");
   ok(record?.statusSinceCycleKey === "2026-10-15", "scheduler did not record STEWARDED transition cycle");
   ok(after.runtime.phase === "OPEN", "stewardship evaluation interfered with World resolution");
 });
