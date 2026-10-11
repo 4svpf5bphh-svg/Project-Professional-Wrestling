@@ -641,7 +641,7 @@ test("editorial wave four corrects 79 exact-name identities without claiming ver
     ["Dax Harwood","RING_GENERAL","ALL_ROUNDER","Sheer Drop Brainbuster"],
     ["Joe Hendry","SHOWMAN","POWERHOUSE","Standing Ovation"],
     ["Orange Cassidy","ECCENTRIC","ALL_ROUNDER","Orange Punch"],
-    ["Will Ospreay","HIGH_FLYING_DAREDEVIL","HIGH_FLYER","Storm Breaker"],
+    ["Will Ospreay","HIGH_FLYING_DAREDEVIL","HIGH_FLYER","Hidden Blade"],
     ["Josh Barnett","MMA_CROSSOVER","SUBMISSION","Cross Heel Hold"],
     ["Cedric Alexander","HIGH_FLYING_DAREDEVIL","ALL_ROUNDER","Lumbar Check"],
   ]){
