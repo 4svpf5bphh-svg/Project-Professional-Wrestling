@@ -14,6 +14,7 @@ import type {
 import { isWrestlerAlignment, wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
 import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
+import { comparePpwDates } from "../../sim-core/src/clock.js";
 import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
 
