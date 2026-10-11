@@ -46,7 +46,7 @@ export function generateBackstageConversations(aggregate: ApplicationWorldAggreg
 
   for (const control of controls) {
     const prior = engagement.backstageConversations.filter(
-      (conversation) => conversation.promotionId === control.promotionId,
+      (conversation) => conversation.promotionId === control.promotionId && conversation.kind !== "PROGRAMME_CREATIVE_AGREEMENT",
     );
     const unanswered = prior.filter((conversation) => conversation.status === "OPEN").length;
     const thisWeek = prior.filter((conversation) => (
