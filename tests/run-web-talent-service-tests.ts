@@ -552,8 +552,10 @@ await test("biweekly one-off targets the first actual show and survives the empt
   if (!promotion) throw new Error("biweekly promotion vanished");
   ok(promotion.roster.some(p => p.personId === chosen.entry.personId && p.datesRemaining > 0),
     "biweekly one-off missing from roster on event week");
-  const sameDivision = promotion.roster.filter(p => p.division === "MEN" && p.status === "ACTIVE"
-    && p.datesRemaining > 0 && p.personId !== chosen.entry.personId);
+  const sameDivision = promotion.roster.filter(p =>
+    showState.state.people.find(person => person.id === p.personId)?.division === "MEN"
+    && p.status === "ACTIVE" && p.datesRemaining > 0
+    && p.personId !== chosen.entry.personId);
   const evenCount = Math.max(4, promotion.showPlanning.minParticipants % 2
     ? promotion.showPlanning.minParticipants + 1 : promotion.showPlanning.minParticipants);
   const participants = [chosen.entry.personId, ...sameDivision.map(p => p.personId)].slice(0, evenCount);
