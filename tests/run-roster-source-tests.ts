@@ -555,6 +555,16 @@ test("all seeded real wrestlers use curated or roster-specific identities; exist
     const record=byPerson.get(person.id)!;
     ok(record?.active.personaName===person.name,
       "person did not retain their own ring identity: "+person.name);
+    const signatureNames=record.active.signatureMoves.map(m=>m.name.toLocaleLowerCase("en-GB"));
+    const finisherNames=record.active.finishingMoves.map(m=>m.name.toLocaleLowerCase("en-GB"));
+    ok(record.active.signatureMoves.length>=2 &&record.active.finishingMoves.length>=1,
+      "new World wrestler lacks two named signatures and a finisher: "+person.name);
+    ok(new Set(signatureNames).size===signatureNames.length &&
+      new Set(finisherNames).size===finisherNames.length,
+      "duplicate moves within a wrestler's seeded identity: "+person.name);
+    ok([...record.active.signatureMoves,...record.active.finishingMoves].every(m=>
+      m.name.trim().length>1 && (m.source==="VERIFIED"||m.source==="PPW_AUTHORED")),
+      "new World wrestler has unlabelled or incomplete move provenance: "+person.name);
     if(record.active.provenance==="CURATED"){verified++;continue;}
     ok(record.active.provenance==="ROSTER_APPROXIMATION",
       "non-curated real wrestler did not get their own roster guide: "+person.name);
@@ -577,6 +587,18 @@ test("all seeded real wrestlers use curated or roster-specific identities; exist
   ok(byPerson.get(asuka.id)?.active.finishingMoves[0]?.name==="Asuka Lock"
     &&byPerson.get(asuka.id)?.active.finishingMoves[0]?.source==="VERIFIED",
     "less-verified guide overrode sourced moves");
+  const asukaIdentity=byPerson.get(asuka.id)!;
+  ok(asukaIdentity.active.signatureMoves.length>=2 &&
+    asukaIdentity.active.signatureMoves.every(m=>m.source==="PPW_AUTHORED"),
+    "sourced Asuka finisher should be preserved while unknown signature slots remain PPW-authored");
+  const roman=state.people.find(p=>p.name==="Roman Reigns")!;
+  const romanIdentity=byPerson.get(roman.id)!;
+  ok(romanIdentity.active.signatureMoves.length>=2
+    &&romanIdentity.active.signatureMoves.some(m=>m.name==="Superman Punch"&&m.source==="VERIFIED")
+    &&romanIdentity.active.signatureMoves.some(m=>m.source==="PPW_AUTHORED")
+    &&romanIdentity.active.finishingMoves.some(m=>m.name==="Spear"&&m.source==="VERIFIED"),
+    "curated world wrestler source priority or editorial signature backfill was lost");
+
   const before=JSON.stringify(state.wrestlerIdentities);
   ok(completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD")===0
     &&JSON.stringify(state.wrestlerIdentities)===before,
