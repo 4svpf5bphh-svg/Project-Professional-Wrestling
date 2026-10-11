@@ -315,6 +315,7 @@ await test("Talent service renews only inside the renewal window and starts afte
   const source = aggregate.state.contracts.find((contract) => contract.promotionId === independent.id && contract.status === "SIGNED");
   if (!source) throw new Error("fixture takeover promotion has no signed contract");
   source.endDate = addPpwWeeks(aggregate.state.world.currentDate, 2, aggregate.state.ruleset.weeksPerYear);
+  source.creativeControl = "PROTECTED_FINISHES";
   await repository.initialize(aggregate);
   const worldId = aggregate.state.world.id;
   await claimAlphaPromotion(repository, worldId, "player-a", {
@@ -335,6 +336,7 @@ await test("Talent service renews only inside the renewal window and starts afte
     sourceContractId: source.id,
     family,
     roleExpectation: source.roleExpectation,
+    creativeControl: "FULL_APPROVAL",
     termWeeks,
     dateEntitlement: Math.min(source.dateEntitlement, termWeeks * 2),
     weeklyGuarantee: source.weeklyGuarantee,
@@ -342,10 +344,16 @@ await test("Talent service renews only inside the renewal window and starts afte
     signingBonus: source.signingBonus,
   });
   ok(result.offerKind === "RENEWAL", "renewal action produced the wrong offer kind");
+  ok(result.view.pendingOffers.some((offer) => offer.offerId === result.offerId
+    && offer.creativeControl === "FULL_APPROVAL"),
+    "new creative rights were not visible in the submitted renewal offer");
 
   const persisted = await repository.load(worldId);
   const offer = persisted.state.contractOffers.find((candidate) => candidate.id === result.offerId);
   if (!offer) throw new Error("renewal offer was not persisted");
+  ok(offer.creativeControl === "FULL_APPROVAL", "renewal consent upgrade was lost before acceptance");
+  ok(persisted.state.contracts.find(contract => contract.id === source.id)?.creativeControl === "PROTECTED_FINISHES",
+    "new renewal rights silently rewrote the still-active signed contract");
   const expectedStart = addPpwWeeks(source.endDate, 1, persisted.state.ruleset.weeksPerYear);
   ok(
     offer.startDate.year === expectedStart.year && offer.startDate.week === expectedStart.week && offer.startDate.day === expectedStart.day,
