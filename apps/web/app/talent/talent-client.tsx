@@ -74,7 +74,7 @@ const ROSTER_ROLE_ORDER: OfferRole[] = [
   "DEVELOPMENTAL",
 ];
 
-function isErrorPayload(payload: PlayerTalentManagementView | AlphaTalentOfferResult | AlphaRosterAlignmentResult | AlphaTalentWatchResult | ErrorPayload): payload is ErrorPayload {
+function isErrorPayload(payload: PlayerTalentManagementView | AlphaTalentOfferResult | AlphaDatesAddendumResult | AlphaRosterAlignmentResult | AlphaTalentWatchResult | ErrorPayload): payload is ErrorPayload {
   return "error" in payload;
 }
 
