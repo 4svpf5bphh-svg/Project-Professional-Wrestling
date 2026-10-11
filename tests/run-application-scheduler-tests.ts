@@ -3,6 +3,7 @@ declare const process: { exitCode?: number };
 import {
   createWorldCommandState,
   activityForPlayer,
+  claimIndependentPromotionForPlayer,
   joinPlayerToWorld,
   recordPlayerActivity,
   activeSchedulerDaysBetween,
@@ -371,6 +372,10 @@ await test("PPW's internal day 1–7 calendar stays distinct from daily UTC sche
 await test("outage resumes exactly one PPW week and protects accrued inactivity days", async () => {
   const aggregate = fixture(18030);
   joinPlayerToWorld(aggregate.ownership, "offline-player", aggregate.state.world.currentDate);
+  const independent = aggregate.state.promotions.find((entry) =>
+    entry.tier === "INDEPENDENT" && entry.lifecycle === "ACTIVE");
+  ok(independent, "fixture has no claimable independent promotion");
+  claimIndependentPromotionForPlayer(aggregate.state, aggregate.ownership, "offline-player", independent.id);
   aggregate.engagement = createWorldEngagementState(aggregate.state.world.id);
   recordPlayerActivity(
     aggregate.engagement, "offline-player", aggregate.state.world.currentDate, 0, "2026-10-01",
