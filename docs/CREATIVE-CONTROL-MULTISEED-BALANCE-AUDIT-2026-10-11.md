@@ -33,3 +33,5 @@ The report writes machine-readable `artifacts/creative-multiseed-audit.json`, an
 - Later unlocks a meaningful four-choice human contract-negotiation editor and repeated Backstage/Programme consent playtesting.
 - Metrics are from server-authoritative simulation and signed states; the reporting/graph is **presentation**, not a new balance rule.
 - Smallest useful first gate is paired multi-seed 52-week runs with diagnostics and full invariant checks, not blindly choosing an untested rejection/offer cap.
+
+Audit release gate: review the recorded numbers before deciding if contract rights are ready for player-facing offer selection; a green CI run alone is insufficient.
