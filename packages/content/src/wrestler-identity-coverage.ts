@@ -11,12 +11,28 @@ import type {WorldState,Person} from "../../domain/src/types.js";
 import type {PortableWrestlerIdentity,PortableIdentityMove} from "../../domain/src/wrestler-identity.js";
 import {authoredWrestlerIdentity} from "../../sim-core/src/identity-generation.js";
 import {curatedCharacterFor} from "./real-wrestler-characters.js";
+import {fullRealRosterIdentityFor} from "./full-real-roster-identity-guide.js";
 type CurationMode="NEW_WORLD"|"EXISTING_WORLD";
 
 function initialIdentity(state:WorldState,person:Person):PortableWrestlerIdentity {
   const authored=authoredWrestlerIdentity(state,person);
   const curated=curatedCharacterFor(person.name);
-  if(!curated)return authored;
+  if(!curated){
+    const guide=fullRealRosterIdentityFor(person.name);
+    if(!guide)return authored; // Only for future fictional prospects or unknown imports.
+    return {
+      ...authored,
+      active:{
+        ...authored.active,
+        gimmickId:guide.gimmickArchetype,
+        primaryStyle:guide.primaryStyle,
+        secondaryStyle:guide.secondaryStyle,
+        signatureMoves:guide.signatureMoves.map(move=>({...move})),
+        finishingMoves:guide.finishingMoves.map(move=>({...move})),
+        provenance:"ROSTER_APPROXIMATION",
+      },
+    };
+  }
   const signatures="signatureMoves" in curated
     ? curated.signatureMoves.map(m=>({...m,source:"VERIFIED" as const}))
     : curated.signatureMove?[{...curated.signatureMove,source:"VERIFIED" as const}]:[];
@@ -54,7 +70,7 @@ export function completeAlphaWrestlerIdentityCoverage(state:WorldState,mode:Cura
     // must be untouched, even when later source catalogues are expanded.
     if(mode==="NEW_WORLD" && current.active.provenance==="GAME_AUTHORED"
       &&current.revision===1&&current.history.length===0
-      &&curatedCharacterFor(person.name)){
+      &&(curatedCharacterFor(person.name)||fullRealRosterIdentityFor(person.name))){
       const index=records.indexOf(current);
       records[index]=initialIdentity(state,person);
       changes++;

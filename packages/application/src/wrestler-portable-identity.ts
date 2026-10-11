@@ -12,9 +12,10 @@ import {curatedCharacterFor} from "../../content/src/real-wrestler-characters.js
 import {alternatePersonaReferencesFor, type DocumentedAlternatePersona} from "../../content/src/verified-alternate-personas.js";
 import {defaultWrestlerCreativeFields} from "./wrestler-creative.js";
 import {authoredPersonaForPerson} from "../../sim-core/src/identity-generation.js";
+import {fullRealRosterIdentityFor} from "../../content/src/full-real-roster-identity-guide.js";
 
 export interface WrestlerPortableIdentityView {
-  source:"WORLD_RECORD"|"CURATED_BASELINE"|"UNCURATED_BASELINE"|"GAME_AUTHORED";
+  source:"WORLD_RECORD"|"CURATED_BASELINE"|"UNCURATED_BASELINE"|"GAME_AUTHORED"|"ROSTER_GUIDE";
   active:PortableIdentityPersona;
   history:PortableWrestlerIdentity["history"];
   /** Curated real-world context; never converted to PPW career history on read. */
@@ -27,7 +28,17 @@ export function wrestlerPortableIdentityFor(state:WorldState,person:Person):Wres
   const existing=portableWrestlerIdentityRecord(state,person.id);
   const curated=curatedCharacterFor(person.name);
   const base=defaultWrestlerCreativeFields(person);
+  const guide=fullRealRosterIdentityFor(person.name);
   const generated=authoredPersonaForPerson(person);
+  const guided:PortableIdentityPersona=guide?{
+    ...generated,
+    gimmickId:guide.gimmickArchetype,
+    primaryStyle:guide.primaryStyle,
+    secondaryStyle:guide.secondaryStyle,
+    signatureMoves:guide.signatureMoves.map(move=>({...move})),
+    finishingMoves:guide.finishingMoves.map(move=>({...move})),
+    provenance:"ROSTER_APPROXIMATION",
+  }:generated;
   const curatedSignatures=curated
     ? ("signatureMoves" in curated
       ? curated.signatureMoves.map(move=>({...move,source:"VERIFIED" as const}))
@@ -43,18 +54,18 @@ export function wrestlerPortableIdentityFor(state:WorldState,person:Person):Wres
     gimmickId:base.gimmickArchetype,
     primaryStyle:base.primaryStyle,
     secondaryStyle:base.secondaryStyle,
-    signatureMoves:curatedSignatures.length?curatedSignatures:generated.signatureMoves,
-    finishingMoves:curatedFinishers.length?curatedFinishers:generated.finishingMoves,
+    signatureMoves:curatedSignatures.length?curatedSignatures:guided.signatureMoves,
+    finishingMoves:curatedFinishers.length?curatedFinishers:guided.finishingMoves,
     introducedDate:{...person.debutDate},
     provenance:"CURATED",
-  }:generated);
+  }:guided);
   const complete={
     hasSignature:active.signatureMoves.length>0,
     hasFinisher:active.finishingMoves.length>0,
     hasGimmick:active.gimmickId!=="AUTHENTIC",
   };
   return {
-    source:existing?"WORLD_RECORD":curated?"CURATED_BASELINE":"GAME_AUTHORED",
+    source:existing?"WORLD_RECORD":curated?"CURATED_BASELINE":guide?"ROSTER_GUIDE":"GAME_AUTHORED",
     active:structuredClone(active),
     history:existing?structuredClone(existing.history):[],
     documentedAlternates:alternatePersonaReferencesFor(person.name),

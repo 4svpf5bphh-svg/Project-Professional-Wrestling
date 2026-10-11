@@ -10,7 +10,7 @@
 import type { Id, PpwDate } from "./types.js";
 
 export type IdentityMoveCategory = "STRIKE"|"GRAPPLE"|"SUBMISSION"|"AERIAL"|"POWER"|"OTHER";
-export type PortableIdentityProvenance = "CURATED"|"NEGOTIATED"|"LEGACY_MIGRATED"|"UNCURATED_BASELINE"|"GAME_AUTHORED";
+export type PortableIdentityProvenance = "CURATED"|"NEGOTIATED"|"LEGACY_MIGRATED"|"UNCURATED_BASELINE"|"GAME_AUTHORED"|"ROSTER_APPROXIMATION";
 export interface PortableIdentityMove {
   name: string;
   category: IdentityMoveCategory;

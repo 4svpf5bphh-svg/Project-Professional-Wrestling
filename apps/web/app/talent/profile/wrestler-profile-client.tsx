@@ -216,7 +216,9 @@ export default function WrestlerProfileClient({
           <p className={styles.note}>
             Shared wrestler identity: <strong>{view.person.portableIdentity.active.personaName}</strong>
             {" · "}{gimmickDefinition(view.person.portableIdentity.active.gimmickId).label}
-            {" · "}{view.person.portableIdentity.active.provenance==="GAME_AUTHORED"
+            {" · "}{view.person.portableIdentity.active.provenance==="ROSTER_APPROXIMATION"
+              ? "Roster-specific PPW-authored character (not independently verified)"
+              : view.person.portableIdentity.active.provenance==="GAME_AUTHORED"
               ? "PPW-authored starting character (not verified real-world moves)"
               : view.person.portableIdentity.source==="WORLD_RECORD"
               ? "World career record"

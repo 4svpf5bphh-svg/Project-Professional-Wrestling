@@ -25,6 +25,7 @@ export type WrestlingStyle = (typeof WRESTLING_STYLES)[number];
 import { GIMMICK_ARCHETYPES, gimmickUsableBy } from "./gimmick-catalog.js";
 import type { GimmickId } from "./gimmick-catalog.js";
 import { curatedCharacterFor } from "../../content/src/real-wrestler-characters.js";
+import {fullRealRosterIdentityFor} from "../../content/src/full-real-roster-identity-guide.js";
 import {authoredPersonaForPerson,authoredWrestlingStyle} from "../../sim-core/src/identity-generation.js";
 
 export { GIMMICK_ARCHETYPES };
@@ -69,16 +70,21 @@ export function baselineWrestlingStyle(person:Person):WrestlingStyle {
 
 export function defaultWrestlerCreativeFields(person: Person): WrestlerCreativeFields {
   const real = curatedCharacterFor(person.name);
+  const guide=fullRealRosterIdentityFor(person.name);
   const authored=authoredPersonaForPerson(person);
   return {
     ringName: person.name,
-    gimmickArchetype: (real?.gimmickArchetype ?? authored.gimmickId) as GimmickArchetype,
+    gimmickArchetype: (real?.gimmickArchetype ?? guide?.gimmickArchetype ?? authored.gimmickId) as GimmickArchetype,
     gimmickDescription: "",
-    primaryStyle: (real?.primaryStyle ?? authored.primaryStyle) as WrestlingStyle,
-    secondaryStyle: (real?.secondaryStyle ?? authored.secondaryStyle) as WrestlingStyle|null,
+    primaryStyle: (real?.primaryStyle ?? guide?.primaryStyle ?? authored.primaryStyle) as WrestlingStyle,
+    secondaryStyle: (real ? real.secondaryStyle : guide?.secondaryStyle ?? authored.secondaryStyle) as WrestlingStyle|null,
     signatureMove: real?.signatureMove ? {...real.signatureMove}
+      : guide?.signatureMoves[0]
+      ? {name:guide.signatureMoves[0].name,category:guide.signatureMoves[0].category}
       : {name:authored.signatureMoves[0]!.name,category:authored.signatureMoves[0]!.category},
     finishingMove: real?.finishingMove ? {...real.finishingMove}
+      : guide?.finishingMoves[0]
+      ? {name:guide.finishingMoves[0].name,category:guide.finishingMoves[0].category}
       : {name:authored.finishingMoves[0]!.name,category:authored.finishingMoves[0]!.category},
   };
 }

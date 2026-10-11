@@ -187,3 +187,48 @@ Tests assert exact roster matching, unique entries, publisher evidence,
 signature/finisher classification consistency, new-World seed correctness,
 PPW-authored provenance on missing moves and protection of existing
 negotiated characters. No live deployment.
+
+## Full real-roster character guide (11 October 2026)
+
+**643 total seed names**: 440 men's pool + 203 women's pool, covering
+WWE/NXT, AEW/ROH, NJPW/NOAH/STARDOM, TNA, CMLL/AAA and independent circuits.
+A new `full-real-roster-identity-guide.ts` contains **one explicit entry per
+real name**, each with a non-generic gimmick archetype, primary/secondary
+wrestling style, TWO signature move names and at least one finisher.
+
+This is a **tiered editorial system**, not 643 independently verified
+biographies. **138** higher-familiarity wrestlers have hand-targeted
+archetypes and recognisable candidate moves (e.g. Zack Sabre Jr. as a
+submission specialist, Danhausen as an eccentric comedy character,
+Maki Itoh as a cult favourite, and Hechicero as a lucha technician).
+The **other 505** have roster-context/style-cohort approximations, with
+individualized named moves based on their ring names. These are playable
+PPW FICTIONAL presentation details where independent research is absent.
+
+The **58 fully sourced** wrestler entries from the separate official-source
+catalogue ALWAYS override the editorial guide for newly created Worlds.
+Other move candidates remain tagged `PPW_AUTHORED`, including familiar move
+names not independently verified in the sourced catalogue. Never promote
+those names to `VERIFIED` merely because they sound recognisable.
+Gimmick/editorial provenance is `ROSTER_APPROXIMATION` until independently
+curated.
+
+Integration:
+- New real-roster Worlds replace the initial generated baseline for every
+  exact named worker using the 643-row roster guide; sourced profiles win.
+- Existing Worlds backfill **missing person identities only**; already
+  persisted persona records, negotiated changes, previous PPW history and
+  promotion-local edits remain unchanged, even when the guide improves.
+- The directory read fallback and promotion creative defaults use the same
+  exact-name guide, not a second random presentation.
+- Future procedurally generated fictional prospects still receive their
+  complete consistent identities from sim-core, with no randomised future
+  lookup of real-wrestler names.
+- Tests require one-to-one coverage, varied archetypes/styles, nonempty and
+  provenance-labelled moves, correct targeted reference examples and
+  data isolation across Worlds.
+
+The next quality step is **reviewing the 505 cohort-based approximations** by
+prominence, region and user-reported inaccuracies, not just declaring
+"643 historically researched." Then continue author-controlled promotion
+character negotiations and Roster editor. No production deployment.

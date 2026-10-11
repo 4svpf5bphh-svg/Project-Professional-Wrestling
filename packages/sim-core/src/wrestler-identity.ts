@@ -16,7 +16,7 @@ function validPersona(p:PortableIdentityPersona, state:WorldState):boolean {
     ||!Number.isInteger(p.introducedDate.week)||p.introducedDate.week<1
     ||p.introducedDate.week>state.ruleset.weeksPerYear
     ||!Number.isInteger(p.introducedDate.day)||p.introducedDate.day<1||p.introducedDate.day>7
-    ||!["CURATED","NEGOTIATED","LEGACY_MIGRATED","UNCURATED_BASELINE","GAME_AUTHORED"].includes(p.provenance)
+    ||!["CURATED","NEGOTIATED","LEGACY_MIGRATED","UNCURATED_BASELINE","GAME_AUTHORED","ROSTER_APPROXIMATION"].includes(p.provenance)
     ||!Array.isArray(p.signatureMoves)||!Array.isArray(p.finishingMoves)
     ||p.signatureMoves.length>12||p.finishingMoves.length>12) return false;
   const validMoves=(list:PortableIdentityPersona["signatureMoves"])=>{

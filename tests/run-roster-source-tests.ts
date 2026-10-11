@@ -27,6 +27,7 @@ import { marketWeeklyValue } from "../packages/sim-core/src/contracts.js";
 import { VERIFIED_WOMENS_CHARACTER_WAVE_3 } from "../packages/content/src/real-wrestler-characters-women-wave-3.js";
 import { CURATED_WRESTLER_CHARACTERS } from "../packages/content/src/real-wrestler-characters.js";
 import { GIMMICK_CATALOG } from "../packages/application/src/gimmick-catalog.js";
+import { FULL_REAL_ROSTER_IDENTITY_GUIDE, fullRealRosterIdentityFor } from "../packages/content/src/full-real-roster-identity-guide.js";
 import {completeAlphaWrestlerIdentityCoverage} from "../packages/content/src/wrestler-identity-coverage.js";
 import {
   createWorld,
@@ -488,6 +489,99 @@ test("new Alpha World uses researched women's gimmicks while protecting existing
   ok(completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD")===0
     &&JSON.stringify(asuka)===negotiated,
     "curation overrode an explicit in-World gimmick change");
+});
+
+test("entire 643-person real-roster identity guide has individually keyed character packages",()=>{
+  const all=[...REAL_ACTIVE_MENS_ROSTER_NAMES,...REAL_ACTIVE_WOMENS_ROSTER_NAMES];
+  const names=new Set(all);
+  const guide=FULL_REAL_ROSTER_IDENTITY_GUIDE;
+  const gimmicks=new Set(GIMMICK_CATALOG.map(x=>x.id));
+  ok(all.length===643&&guide.length===all.length,
+    "guide does not explicitly cover every existing real wrestler in the seed pool");
+  ok(new Set(guide.map(entry=>entry.name)).size===643,
+    "a wrestler is duplicated in the guide");
+  const assigned=new Set<string>(),families=new Set<string>(),styles=new Set<string>();
+  for(const entry of guide){
+    ok(names.has(entry.name)&&!assigned.has(entry.name),"guide entry is orphaned or duplicated: "+entry.name);
+    assigned.add(entry.name);
+    styles.add(entry.primaryStyle);
+    families.add(entry.gimmickArchetype);
+    ok(gimmicks.has(entry.gimmickArchetype)&&entry.gimmickArchetype!=="AUTHENTIC",
+      "guide has generic or unsupported gimmick: "+entry.name);
+    ok(entry.primaryStyle.length>0&&entry.secondaryStyle!==entry.primaryStyle,
+      "guide has invalid wrestling styles: "+entry.name);
+    ok(entry.signatureMoves.length>=2&&entry.finishingMoves.length>=1
+      &&[...entry.signatureMoves,...entry.finishingMoves].every(move=>
+        move.name.length>=3&&move.name.length<=80&&move.source==="PPW_AUTHORED"),
+      "guide contains empty or falsely verified move names: "+entry.name);
+    ok(entry.signatureMoves[0]!.name!==entry.signatureMoves[1]!.name,
+      "guide gave one wrestler duplicated signature moves: "+entry.name);
+  }
+  ok(families.size>=30&&styles.size===9,"roster-wide curation collapsed into too few archetypes");
+  ok(guide.filter(x=>x.editorialBasis==="TARGETED").length>=130,
+    "too few recognisable wrestlers received targeted character overrides");
+  ok(guide.filter(x=>x.editorialBasis==="COHORT").length>400,
+    "the obscure-wrestler approximation cohort is incomplete");
+  const danhausen=fullRealRosterIdentityFor("Danhausen")!;
+  const sabre=fullRealRosterIdentityFor("Zack Sabre Jr.")!;
+  const maki=fullRealRosterIdentityFor("Maki Itoh")!;
+  const hechi=fullRealRosterIdentityFor("Hechicero")!;
+  ok(danhausen.gimmickArchetype==="ECCENTRIC"&&danhausen.finishingMoves[0]?.name==="Goodnighthausen"
+    &&sabre.gimmickArchetype==="SUBMISSION_SPECIALIST"&&sabre.primaryStyle==="SUBMISSION"
+    &&maki.gimmickArchetype==="CULT_FAVOURITE"
+    &&hechi.primaryStyle==="LUCHA",
+    "recognisable wrestler was assigned an unsuitable random default");
+  danhausen.signatureMoves[0]!.name="mutated private lookup";
+  ok(fullRealRosterIdentityFor("Danhausen")?.signatureMoves[0]?.name==="Very Nice Very Evil",
+    "guide lookup leaked mutable roster data");
+  ok(fullRealRosterIdentityFor("Invented Future Prospect")===null,
+    "future generated wrestlers must use deterministic generation, not a random real profile");
+});
+
+test("all seeded real wrestlers use curated or roster-specific identities; existing agreements are protected",()=>{
+  const state=createAlphaWorldAggregate({seed:77305,playerId:"complete-643-guide"}).state;
+  const records=state.wrestlerIdentities??[];
+  ok(records.length===643&&state.people.length===643,
+    "fresh World missed real-roster character assignments");
+  const byPerson=new Map(records.map(x=>[x.personId,x]));
+  let verified=0,approx=0;
+  for(const person of state.people){
+    const record=byPerson.get(person.id);
+    ok(record?.active.personaName===person.name,
+      "person did not retain their own ring identity: "+person.name);
+    if(record.active.provenance==="CURATED"){verified++;continue;}
+    ok(record.active.provenance==="ROSTER_APPROXIMATION",
+      "non-curated real wrestler did not get their own roster guide: "+person.name);
+    const guide=fullRealRosterIdentityFor(person.name)!;
+    ok(record.active.gimmickId===guide.gimmickArchetype
+      &&record.active.primaryStyle===guide.primaryStyle
+      &&record.active.finishingMoves[0]?.name===guide.finishingMoves[0]?.name
+      &&record.active.finishingMoves[0]?.source==="PPW_AUTHORED",
+      "seeded wrestler did not receive their exact-name authored gimmick and moves: "+person.name);
+    approx++;
+  }
+  ok(verified===CURATED_WRESTLER_CHARACTERS.length&&approx===643-verified,
+    "not all researched and approximated wrestlers were assigned correctly");
+  const sabre=state.people.find(p=>p.name==="Zack Sabre Jr.")!;
+  const sabreRecord=byPerson.get(sabre.id)!;
+  ok(sabreRecord.active.gimmickId==="SUBMISSION_SPECIALIST"
+    &&sabreRecord.active.finishingMoves[0]?.name==="Zack Driver",
+    "notable non-curated wrestler still had a random gimmick or generic finisher");
+  const asuka=state.people.find(p=>p.name==="Asuka")!;
+  ok(byPerson.get(asuka.id)?.active.finishingMoves[0]?.name==="Asuka Lock"
+    &&byPerson.get(asuka.id)?.active.finishingMoves[0]?.source==="VERIFIED",
+    "less-verified guide overrode sourced moves");
+  const before=JSON.stringify(state.wrestlerIdentities);
+  ok(completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD")===0
+    &&JSON.stringify(state.wrestlerIdentities)===before,
+    "a new guide version silently overwrote in-game characters");
+  sabreRecord.revision=2;
+  sabreRecord.active.gimmickId="REBEL";
+  sabreRecord.active.provenance="NEGOTIATED";
+  const agreed=JSON.stringify(sabreRecord);
+  ok(completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD")===0
+    &&JSON.stringify(sabreRecord)===agreed,
+    "player's negotiated character was overwritten by the editorial guide");
 });
 
 console.log(`\nRoster source tests: ${passed} passed, ${failed} failed`);
