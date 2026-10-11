@@ -18,6 +18,10 @@ import {
   reservationForDraft,
   reserveDetailedShowDraftCommand,
   upsertDetailedShowDraftCommand,
+  requestCreativeBookingConsentCommand,
+  creativeConcernsForDraft,
+  creativeBlockersForDraft,
+  type CreativeBookingConcern,
   type ApplicationWorldRepository,
   type ChampionshipDraftAssignment,
   type DetailedMatchDraft,
@@ -188,6 +192,19 @@ export interface AlphaCardStableView {
   formerMemberIds: Id[];
 }
 
+export interface AlphaCardCreativeConcernView extends Omit<CreativeBookingConcern, "bookingSignature"> {
+  wrestlerName: string;
+}
+
+export interface AlphaCreativeConsentRequest {
+  requestId: string;
+  expectedRevision: number;
+  expectedPlanVersion: number;
+  draftId: string;
+  draftMatchId: string;
+  personId: Id;
+}
+
 export interface AlphaCurrentWeekCardView {
   world: {
     worldId: Id;
@@ -221,6 +238,9 @@ export interface AlphaCurrentWeekCardView {
   recentMeetings: AlphaRecentMeetingView[];
   championships: AlphaCardChampionshipView[];
   championshipAssignments: AlphaChampionshipAssignmentView[];
+  creativeConcerns: AlphaCardCreativeConcernView[];
+  /** A saved amendment to an already materialized show awaits wrestler consent. */
+  cardPendingConsent: boolean;
 }
 
 export interface AlphaShowCardRequest {
@@ -1190,6 +1210,11 @@ export async function loadAlphaShowCard(
     ),
     championships,
     championshipAssignments: draft.championshipAssignments.map((assignment) => ({ ...assignment })),
+    creativeConcerns: creativeConcernsForDraft(aggregate.state, aggregate.planning, draft).map(({ bookingSignature: _signature, ...concern }) => ({
+      ...concern, wrestlerName: peopleById.get(concern.personId)?.name ?? concern.personId,
+    })),
+    cardPendingConsent: status.eventId !== null
+      && creativeBlockersForDraft(aggregate.state, aggregate.planning, draft).length > 0,
   };
 }
 
@@ -1322,7 +1347,11 @@ export async function saveAlphaShowCard(
     );
 
     if (materializedEventId !== null) {
-      if (!cardReceipt) {
+      const storedDraft = nextWorkspace.detailedShowDrafts.find((entry) => entry.draftId === draftId)!;
+      // Keep the previously committed card in place until ALL protected
+      // participants approve this exact amended script. Saving a proposal
+      // never substitutes a different winner or silently overrides a veto.
+      if (!cardReceipt && creativeBlockersForDraft(aggregate.state, aggregate.planning, storedDraft).length === 0) {
         replaceMaterializedEventCard(
           aggregate.state,
           materializedEventId,
@@ -1363,4 +1392,62 @@ export async function saveAlphaCurrentWeekCard(
   request: AlphaShowCardRequest,
 ): Promise<AlphaCurrentWeekCardView> {
   return saveAlphaShowCard(repository, worldId, playerId, { ...request, draftId: undefined });
+}
+
+/**
+ * Request agreement to a saved booking, never an unsaved client-side script.
+ * The same World transaction both records the response and, once fully
+ * approved, applies a pending edit to an already-materialized show.
+ */
+export async function requestAlphaShowCreativeConsent(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  request: AlphaCreativeConsentRequest,
+): Promise<AlphaCurrentWeekCardView> {
+  const requestId = requiredText(request.requestId, "requestId");
+  const draftId = requiredText(request.draftId, "draftId", 128);
+  const draftMatchId = requiredText(request.draftMatchId, "draftMatchId", 128);
+  const personId = requiredText(request.personId, "personId", 128);
+  const expectedRevision = requireExpectedRevision(request.expectedRevision);
+  const expectedPlanVersion = requirePlanVersion(request.expectedPlanVersion);
+  await repository.transact(worldId, null, (aggregate) => {
+    const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
+    if (!control) throw new Error("Take control of a promotion before requesting consent");
+    const commandRequestId = `${requestId}:creative-consent`;
+    const oldReceipt = aggregate.commands.receipts.find((entry) => entry.requestId === commandRequestId);
+    if (!oldReceipt && aggregate.runtime.revision !== expectedRevision) {
+      throw new Error(`stale World revision for ${worldId}: expected ${expectedRevision}, current ${aggregate.runtime.revision}`);
+    }
+    const workspace = aggregate.planning.workspaces.find((entry) => entry.promotionId === control.promotionId);
+    const draft = workspace?.detailedShowDrafts.find((entry) => entry.draftId === draftId);
+    if (!workspace || !draft) throw new Error("Save this show before requesting wrestler consent");
+
+    const status = playerShowPlanningStatus(aggregate.state, aggregate.planning, aggregate.runtime, control.promotionId, draftId);
+    if (!oldReceipt && !status.availableActions.some((action) => action === "EDIT_DRAFT" || action === "EDIT_CARD")) {
+      throw new Error("Creative approval requests are closed for this show");
+    }
+
+    const result = requestCreativeBookingConsentCommand(
+      aggregate.state, aggregate.ownership, aggregate.planning, aggregate.commands, aggregate.runtime,
+      {
+        requestId: commandRequestId, worldId, playerId,
+        commandType: "REQUEST_CREATIVE_BOOKING_CONSENT",
+        payload: { promotionId: control.promotionId, draftId, draftMatchId, personId, expectedPlanVersion },
+      },
+    );
+    if (!oldReceipt && result.decision === "APPROVED" && status.eventId !== null
+      && creativeBlockersForDraft(aggregate.state, aggregate.planning, draft).length === 0) {
+      const plans = draft.matches.filter((match) => (
+        match.intendedWinnerSide !== null && match.intent !== null && match.plannedLengthMinutes !== null
+      ));
+      if (plans.length !== draft.matches.length || plans.length === 0) {
+        throw new Error("A complete show card is required before applying approved changes");
+      }
+      replaceMaterializedEventCard(
+        aggregate.state, status.eventId, plans, draft.championshipAssignments,
+      );
+    }
+  });
+  return loadAlphaShowCard(repository, worldId, playerId, draftId);
 }
