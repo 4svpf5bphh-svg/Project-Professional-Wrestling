@@ -102,6 +102,7 @@ export interface AlphaCardMatchReadinessView {
 
 export interface AlphaCardMatchView {
   draftMatchId: string;
+  programmeId?: Id | null;
   type: MatchType;
   sideAIds: Id[];
   sideBIds: Id[];
@@ -364,6 +365,7 @@ function normalizeCompleteCard(
     if (interfererPersonId) orderedParticipants.push(interfererPersonId);
     return {
       draftMatchId,
+      ...(match.programmeId ? { programmeId: requiredText(match.programmeId, "match programmeId", 128) } : {}),
       type: match.type,
       sideAIds: [...match.sideAIds],
       sideBIds: [...match.sideBIds],
@@ -1190,6 +1192,7 @@ export async function loadAlphaShowCard(
       match.intendedWinnerSide !== null && match.intent !== null && match.plannedLengthMinutes !== null
         ? [{
           draftMatchId: match.draftMatchId,
+          programmeId: match.programmeId ?? null,
           type: match.type,
           sideAIds: [...match.sideAIds],
           sideBIds: [...match.sideBIds],
