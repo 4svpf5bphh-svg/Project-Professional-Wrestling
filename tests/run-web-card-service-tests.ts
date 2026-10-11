@@ -1825,7 +1825,7 @@ await test("a proposal saved after the 06:00 logistics lock is reconciled by the
   const result = await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
     expectedRevision: proposal.world.revision,
   });
-  ok(result.world.currentDate.week === 2, "unapproved *amendment* blocked manual advance of complete card");
+  ok(result.world.week === 2, "unapproved *amendment* blocked manual advance of complete card");
   const world = await fixture.repository.load(fixture.worldId);
   ok(world.planning.pendingCardAmendments?.length === 0, "final lock did not clear late amendment");
   ok(world.state.ledger.some((entry) => entry.type === "PLANNED_SHOW_UNAPPROVED_AMENDMENT_IGNORED_AT_LOCK"),
