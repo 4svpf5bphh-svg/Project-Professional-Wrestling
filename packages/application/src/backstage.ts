@@ -123,7 +123,7 @@ export interface PlayerBackstageConversation {
   workingFollowThroughPartnerName: string | null;
   createdDate: PpwDate;
   status: "OPEN" | "ANSWERED" | "NOTED";
-  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH" | "WORKING_PARTNERSHIP_CONCERN";
+  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH" | "WORKING_PARTNERSHIP_CONCERN" | "PROGRAMME_CREATIVE_AGREEMENT";
   promisedRole: "MAIN_EVENT" | "UPPER_CARD" | null;
   observedMatchShows: number;
   partnerPersonId: Id | null;
