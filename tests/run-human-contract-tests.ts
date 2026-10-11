@@ -5,6 +5,7 @@ import type { WorldState } from "../packages/domain/src/types.js";
 import {
   activeContractsForPerson,
   activeContractsForPromotion,
+  applicableCreativeContract,
   addPpwWeeks,
   buildContractTerms,
   contractHasAppearanceRights,
@@ -373,6 +374,42 @@ test("a creative-control concession improves an offer and persists into the sign
     "accepted creative-control clause was lost between offer and signed contract");
   ok(signed.weeklyGuarantee === market * 4 && signed.appearanceFee === market * 3,
     "creative rights silently rewrote agreed compensation");
+});
+
+test("accepted future renewal changes creative rights only when the new term begins", () => {
+  const { state, promotionId } = fixture(11012);
+  const source = activeContractsForPromotion(state, promotionId).find(contract =>
+    contract.family === "LIMITED_NON_EXCLUSIVE"
+    && activeContractsForPerson(state, contract.personId).length === 1);
+  if (!source) throw new Error("creative renewal fixture needs a single-contract roster member");
+  source.creativeControl = "PROTECTED_FINISHES";
+  source.endDate = addPpwWeeks(state.world.currentDate, 2, state.ruleset.weeksPerYear);
+  const person = state.people.find(entry => entry.id === source.personId)!;
+  const market = marketWeeklyValue(person);
+  const startDate = addPpwWeeks(source.endDate, 1, state.ruleset.weeksPerYear);
+  const offer = submitHumanContractOffer(state, {
+    promotionId, personId: person.id, sourceContractId: source.id,
+    family: "LIMITED_NON_EXCLUSIVE", exclusivity: "NON_EXCLUSIVE",
+    roleExpectation: "MAIN_EVENT", creativeControl: "FULL_APPROVAL",
+    startDate, endDate: addPpwWeeks(startDate, 12, state.ruleset.weeksPerYear),
+    dateEntitlement: 3, weeklyGuarantee: market * 5,
+    appearanceFee: market * 4, signingBonus: market * 12,
+  });
+  ok(source.creativeControl === "PROTECTED_FINISHES",
+    "pending renewal prematurely changed current creative rights");
+  resolveContractOffers(state);
+  ok(offer.status === "ACCEPTED",
+    `strong creative renewal failed normal negotiation: ${offer.rejectionReason}`);
+  const renewed = state.contracts.find(contract => contract.sourceOfferId === offer.id);
+  if (!renewed) throw new Error("accepted renewal did not create the new agreement");
+  ok(renewed.creativeControl === "FULL_APPROVAL",
+    "new rights did not reach the accepted future agreement");
+  ok(source.creativeControl === "PROTECTED_FINISHES" && source.status === "SIGNED",
+    "new rights rewrote or terminated the current, unexpired contract");
+  ok(applicableCreativeContract(state, promotionId, person.id, state.world.currentDate)?.id === source.id,
+    "future Full Approval unexpectedly applied to a wrestler's current booking");
+  ok(applicableCreativeContract(state, promotionId, person.id, startDate)?.id === renewed.id,
+    "future Full Approval is not operative when its signed term starts");
 });
 
 console.log(`\nHuman contract tests: ${passed} passed, ${failed} failed`);
