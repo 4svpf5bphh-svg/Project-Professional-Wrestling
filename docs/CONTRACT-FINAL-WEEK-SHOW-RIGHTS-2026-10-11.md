@@ -10,7 +10,7 @@ Most multiweek AI/generated and existing signed contracts store an end date on *
 
 - Add a single shared simulation predicate for whether a **signed** contract covers a particular show date.
 - Preserve the precise start date, including deliberately midweek starts; treat the last PPW week as inclusive through day 7.
-- Use the same predicate for scarce-resource reservation and materialization rechecks.
+- Use the same predicate for scarce-resource reservation, materialization rechecks, **and applicable signed creative-control review**. Otherwise a FULL_APPROVAL or PROTECTED_FINISHES wrestler could be booked on day 6 without engaging their final-week veto.
 - Keep the signed end date, term length, dates bought, exclusive appearance rights, expiry schedule, billing, renewal rules and World history **unchanged**. Do not migrate or rewrite saves.
 - The rule is shared by player-controlled and AI-origin signed contracts used in player show planning. It does not grant extra appearances or bypass other promotions' reservations.
 
@@ -19,7 +19,7 @@ Most multiweek AI/generated and existing signed contracts store an end date on *
 1. Across the PPW year boundary, an existing contract ending Year 2 Week 1 Day 1 can be booked on Year 2 Week 1 Day 7, but not Week 2 Day 1.
 2. Future midweek start remains binding; unsigned/expired contracts remain invalid.
 3. A player with an unchanged legacy end-day-1 contract can reserve a day-6 final-week show, without changing the end date.
-4. Materialization revalidates the exact same show as READY and commits the scheduled appearance.
-5. All historical determinism, World invariants, multiplayer venue/talent conflict, human/AI parity, HTTP/PostgreSQL and long-running CI checks remain gating.
+4. Materialization revalidates the exact same show as READY and commits the scheduled appearance.\n5. Final-week day-6 creative veto survives, while the following PPW week carries no expired contractual creative rights.
+6. All historical determinism, World invariants, multiplayer venue/talent conflict, human/AI parity, HTTP/PostgreSQL and long-running CI checks remain gating.
 
 This is a **weekly contract semantics** consistency correction, not new contractual power. Full user-authorised reset is still deferred to the bundled release.
