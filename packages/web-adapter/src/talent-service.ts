@@ -221,6 +221,17 @@ function buildFreshPlan(
     if (alreadyOurs) throw new Error("wrestler is already on your active roster; use the renewal action");
   }
 
+  // New multiweek player agreements are accepted during World Resolution,
+  // after the submission week's player show is already locked. Starting and
+  // charging them in that week costs a week of guaranteed salary without a
+  // player-bookable week of service. Leave future renewals after the signed
+  // source term untouched, and retain the one-off's show-aware scheduling.
+  if (request.family !== "ONE_OFF"
+    && ppwDateToWeekIndex(startDate, state.ruleset.weeksPerYear)
+      <= ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear)) {
+    startDate = { ...addPpwWeeks(state.world.currentDate, 1, state.ruleset.weeksPerYear), day: 1 };
+  }
+
   // An accepted human one-off becomes bookable only after World Resolution,
   // not in the offer week. Align its single week with a real scheduled show,
   // otherwise a biweekly/irregular promotion can buy an unusable date.
