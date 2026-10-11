@@ -39,7 +39,38 @@ function initialIdentity(state:WorldState,person:Person):PortableWrestlerIdentit
   const finishers="finishingMoves" in curated
     ? curated.finishingMoves.map(m=>({...m,source:"VERIFIED" as const}))
     : curated.finishingMove?[{...curated.finishingMove,source:"VERIFIED" as const}]:[];
+  // The sourced catalogue is intentionally conservative: many publisher
+  // profiles document one move or only the finisher. Give the wrestler the
+  // game's complete two-signature / one-finisher baseline without inventing
+  // publisher evidence. Reviewed name-specific guide candidates win over
+  // generic generated moves; both remain PPW_AUTHORED.
+  const guide=fullRealRosterIdentityFor(person.name);
   const authoredOnly=(moves:PortableIdentityMove[])=>moves.map(m=>({...m,source:"PPW_AUTHORED" as const}));
+  const completeMoves=(
+    verified:PortableIdentityMove[],
+    reviewedCandidates:PortableIdentityMove[],
+    fallbackCandidates:PortableIdentityMove[],
+    minimum:number,
+    exclusions:readonly string[]=[],
+  ):PortableIdentityMove[]=>{
+    const out=verified.map(m=>({...m}));
+    const blocked=new Set([...exclusions,...out.map(m=>m.name)].map(n=>n.trim().toLocaleLowerCase("en-GB")));
+    for(const candidate of [...reviewedCandidates,...fallbackCandidates]){
+      if(out.length>=minimum)break;
+      const key=candidate.name.trim().toLocaleLowerCase("en-GB");
+      if(blocked.has(key))continue;
+      blocked.add(key);
+      out.push({...candidate,source:"PPW_AUTHORED"});
+    }
+    return out;
+  };
+  const finishingMoves=completeMoves(
+    finishers,guide?.finishingMoves??[],authoredOnly(authored.active.finishingMoves),1,
+  );
+  const signatureMoves=completeMoves(
+    signatures,guide?.signatureMoves??[],authoredOnly(authored.active.signatureMoves),2,
+    finishingMoves.map(m=>m.name),
+  );
   return {
     ...authored,
     active:{
@@ -47,8 +78,8 @@ function initialIdentity(state:WorldState,person:Person):PortableWrestlerIdentit
       gimmickId:curated.gimmickArchetype,
       primaryStyle:curated.primaryStyle,
       secondaryStyle:curated.secondaryStyle,
-      signatureMoves:signatures.length?signatures:authoredOnly(authored.active.signatureMoves),
-      finishingMoves:finishers.length?finishers:authoredOnly(authored.active.finishingMoves),
+      signatureMoves,
+      finishingMoves,
       provenance:"CURATED",
     },
   };
