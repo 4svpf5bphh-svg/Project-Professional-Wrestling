@@ -1,5 +1,6 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { CreativeConsentRecord } from "./creative-consent.js";
+import type { StandingProgrammeCreativeAgreement } from "./programme-creative-standing.js";
 import type {
   Id,
   MatchIntent,
@@ -167,6 +168,8 @@ export interface WorldPlanningState {
   showReservations: DetailedShowReservation[];
   /** Match-scoped wrestler agreements; absent in older World planning snapshots. */
   creativeConsents?: CreativeConsentRecord[];
+  /** Optional for old saves; Programme-bound agreements do not waive other bookings. */
+  standingProgrammeCreativeAgreements?: StandingProgrammeCreativeAgreement[];
   /** Optional for older World snapshots. One record per pending live amendment. */
   pendingCardAmendments?: PendingCreativeCardAmendment[];
 }
@@ -575,7 +578,7 @@ export function detailedShowRunningOrder(draft: DetailedShowDraft): DetailedShow
 }
 
 export function createWorldPlanningState(worldId: Id): WorldPlanningState {
-  return { worldId, workspaces: [], showReservations: [], creativeConsents: [], pendingCardAmendments: [] };
+  return { worldId, workspaces: [], showReservations: [], creativeConsents: [], standingProgrammeCreativeAgreements: [], pendingCardAmendments: [] };
 }
 
 export function promotionPlanningWorkspace(
@@ -593,6 +596,8 @@ export function normalizeWorldPlanningState(planning: WorldPlanningState): World
     workspaces: legacy.workspaces ?? [],
     showReservations: Array.isArray(legacy.showReservations) ? legacy.showReservations : [],
     creativeConsents: Array.isArray(legacy.creativeConsents) ? legacy.creativeConsents : [],
+    standingProgrammeCreativeAgreements: Array.isArray(legacy.standingProgrammeCreativeAgreements)
+      ? legacy.standingProgrammeCreativeAgreements : [],
     pendingCardAmendments: Array.isArray(legacy.pendingCardAmendments) ? legacy.pendingCardAmendments : [],
   });
 }
@@ -603,6 +608,10 @@ export function validateWorldPlanningStateShape(state: WorldState, planning: Wor
   if (!Array.isArray(planning.showReservations)) throw new Error("planning reservations must be an array");
   if (planning.creativeConsents !== undefined && !Array.isArray(planning.creativeConsents)) {
     throw new Error("creative consent records must be an array");
+  }
+  if (planning.standingProgrammeCreativeAgreements !== undefined
+    && !Array.isArray(planning.standingProgrammeCreativeAgreements)) {
+    throw new Error("standing Programme creative agreements must be an array");
   }
   if (planning.pendingCardAmendments !== undefined && !Array.isArray(planning.pendingCardAmendments)) {
     throw new Error("pending card amendments must be an array");
@@ -651,6 +660,37 @@ export function validateWorldPlanningStateShape(state: WorldState, planning: Wor
         || consent.draftId !== pending.draftId) {
         throw new Error("pending card amendment contains foreign approval record");
       }
+    }
+  }
+  const standingKeys = new Set<string>();
+  for (const agreement of planning.standingProgrammeCreativeAgreements ?? []) {
+    if (agreement.worldId !== state.world.id || !promotionIds.has(agreement.promotionId)) {
+      throw new Error("standing Programme creative agreement crosses World boundary");
+    }
+    const programme = (state.programmes ?? []).find((item) => item.id === agreement.programmeId);
+    if (!programme || programme.promotionId !== agreement.promotionId) {
+      throw new Error("standing Programme creative agreement references foreign Programme");
+    }
+    const contract = state.contracts.find((item) => item.id === agreement.contractId);
+    if (!contract || contract.promotionId !== agreement.promotionId || contract.personId !== agreement.personId) {
+      throw new Error("standing Programme creative agreement references unrelated contract");
+    }
+    if (agreement.matchType !== "SINGLES" && agreement.matchType !== "TAG"
+      || agreement.permittedOutcome !== "WIN_ONLY" && agreement.permittedOutcome !== "WIN_OR_PROTECTED_LOSS"
+      || typeof agreement.approved !== "boolean"
+      || !Number.isFinite(agreement.score) || agreement.score < 0 || agreement.score > 100) {
+      throw new Error("standing Programme creative agreement has invalid scope");
+    }
+    const key = JSON.stringify([agreement.promotionId, agreement.programmeId, agreement.personId, agreement.contractId]);
+    if (standingKeys.has(key)) throw new Error("duplicate standing Programme creative agreement");
+    standingKeys.add(key);
+    weekIndex(agreement.decidedDate, state.ruleset.weeksPerYear);
+    weekIndex(agreement.expiresDate, state.ruleset.weeksPerYear);
+    if (comparePpwDates(agreement.expiresDate, agreement.decidedDate, state.ruleset.weeksPerYear) < 0
+      || !Array.isArray(agreement.ownSidePersonIds) || !Array.isArray(agreement.opposingPersonIds)
+      || !agreement.ownSidePersonIds.includes(agreement.personId)
+      || agreement.opposingPersonIds.length === 0) {
+      throw new Error("standing Programme creative agreement has invalid participant evidence");
     }
   }
   const consentKeys = new Set<string>();
