@@ -13,6 +13,13 @@ import type {
 } from "../../domain/src/types.js";
 import { ppwDateToWeekIndex } from "./clock.js";
 import { activeContractsForPromotion, contractHasAppearanceRights, serviceCapacityDatesPerWeek } from "./contracts.js";
+import {
+  applicableCreativeContract,
+  creativeBookingAgreed,
+  creativeBookingDecisionScore,
+  recentAutomatedCreativeRefusalKeys,
+  resolvedCreativeControl,
+} from "./creative-control.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { contractById, personById } from "./indexes.js";
@@ -146,6 +153,7 @@ function selectAppearances(
   eventDate: WrestlingEvent["date"],
   weeklyCounts: Map<string, number>,
   dateBookings: Set<string>,
+  declinedContracts: ReadonlySet<string>,
 ): { person: Person; contract: Contract }[] {
   const contractsByPerson = new Map<string, Contract[]>();
   for (const contract of activeContractsForPromotion(state, promotion.id)) {
@@ -163,7 +171,19 @@ function selectAppearances(
     const capacity = Math.max(1, Math.floor(serviceCapacityDatesPerWeek(person)));
     if ((weeklyCounts.get(person.id) ?? 0) >= capacity) continue;
     const contract = chooseContractForPerson(contracts);
-    if (contract) candidates.push({ person, contract, score: personEventValue(person, contract, type) });
+    if (!contract) continue;
+    const creativeContract = applicableCreativeContract(state, promotion.id, person.id, eventDate);
+    if (creativeContract
+      && resolvedCreativeControl(creativeContract.creativeControl) === "FULL_APPROVAL"
+      && declinedContracts.has(`${promotion.id}:${person.id}:${creativeContract.id}`)
+      && !creativeBookingAgreed(creativeBookingDecisionScore(
+        person, creativeContract, "MATCH_APPROVAL",
+      ))) {
+      // The wrestler already refused this booking relationship. Do not take a
+      // roster slot again while their refusal is unchanged; select alternatives.
+      continue;
+    }
+    candidates.push({ person, contract, score: personEventValue(person, contract, type) });
   }
 
   candidates.sort((a, b) => b.score - a.score || a.person.id.localeCompare(b.person.id));
@@ -378,6 +398,7 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
 
   const weeklyCounts = new Map<string, number>();
   const dateBookings = new Set<string>();
+  const creativeCooling = recentAutomatedCreativeRefusalKeys(state, state.world.currentDate);
   for (let index = state.scheduledAppearances.length - 1; index >= 0; index -= 1) {
     const appearance = state.scheduledAppearances[index]!;
     const appearanceWeekIndex = ppwDateToWeekIndex(appearance.date, state.ruleset.weeksPerYear);
@@ -541,7 +562,7 @@ export function planWorldEvents(state: WorldState, execution: WorldEventExecutio
       const eventDate = { ...state.world.currentDate, day };
       const market = selectMarket(state, promotion, type, rng);
       const strategy = ticketStrategyFor(promotion, type);
-      const selected = selectAppearances(state, promotion, type, eventDate, weeklyCounts, dateBookings);
+      const selected = selectAppearances(state, promotion, type, eventDate, weeklyCounts, dateBookings, creativeCooling);
       const expectedDemand = estimateDemand(state, promotion, market, type, strategy, selected.map((entry) => entry.person));
       const venue = chooseVenue(state, market.id, eventDate, expectedDemand);
       const event: WrestlingEvent = {
