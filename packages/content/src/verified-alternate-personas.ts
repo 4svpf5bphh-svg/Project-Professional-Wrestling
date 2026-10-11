@@ -76,8 +76,16 @@ export const VERIFIED_ALTERNATE_PERSONAS = [
 ] as const;
 
 export type VerifiedAlternatePersona = (typeof VERIFIED_ALTERNATE_PERSONAS)[number];
-/** A read-only list for exact seeded identities; returns a detached copy. */
-export function alternatePersonaReferencesFor(name:string): VerifiedAlternatePersona[] {
+/** Public read-model values are detached and may be edited without changing
+ * the frozen curated catalogue or another player's profile response. */
+export interface DocumentedAlternatePersona {
+  personName:string;
+  personaName:string;
+  kind:VerifiedAlternatePersona["kind"];
+  gimmickId:string;
+  sourceUrl:string;
+}
+export function alternatePersonaReferencesFor(name:string): DocumentedAlternatePersona[] {
   const normalized=name.trim().toLocaleLowerCase("en-GB");
   return VERIFIED_ALTERNATE_PERSONAS.filter(entry=>
     entry.personName.toLocaleLowerCase("en-GB")===normalized

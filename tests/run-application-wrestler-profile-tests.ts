@@ -594,7 +594,7 @@ test("Researched real-world persona references are distinct from World career hi
     && (entry.sourceUrl.startsWith("https://www.wwe.com/")
       ||entry.sourceUrl.startsWith("https://www.allelitewrestling.com/"))
     && entry.personaName.length>2
-    && entry.personaName!==entry.personName
+    && entry.personaName.toLocaleLowerCase("en-GB")!==entry.personName.toLocaleLowerCase("en-GB")
   ),"historic persona source was unverified or assigned to a non-roster wrestler");
   const keys=VERIFIED_ALTERNATE_PERSONAS.map(x=>x.personName+"|"+x.personaName);
   ok(new Set(keys).size===keys.length,"same wrestler's historical identity was duplicated");

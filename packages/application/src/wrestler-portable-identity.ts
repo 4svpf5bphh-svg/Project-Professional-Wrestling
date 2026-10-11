@@ -9,7 +9,7 @@ import type {Person,WorldState} from "../../domain/src/types.js";
 import type {PortableWrestlerIdentity,PortableIdentityPersona} from "../../domain/src/wrestler-identity.js";
 import {portableWrestlerIdentityRecord} from "../../sim-core/src/wrestler-identity.js";
 import {curatedCharacterFor} from "../../content/src/real-wrestler-characters.js";
-import {alternatePersonaReferencesFor, type VerifiedAlternatePersona} from "../../content/src/verified-alternate-personas.js";
+import {alternatePersonaReferencesFor, type DocumentedAlternatePersona} from "../../content/src/verified-alternate-personas.js";
 import {defaultWrestlerCreativeFields} from "./wrestler-creative.js";
 
 export interface WrestlerPortableIdentityView {
@@ -17,7 +17,7 @@ export interface WrestlerPortableIdentityView {
   active:PortableIdentityPersona;
   history:PortableWrestlerIdentity["history"];
   /** Curated real-world context; never converted to PPW career history on read. */
-  documentedAlternates:VerifiedAlternatePersona[];
+  documentedAlternates:DocumentedAlternatePersona[];
   revision:number;
   /** Empty fields mean genuinely uncurated / undocumented repertoire. */
   completeness:{hasSignature:boolean;hasFinisher:boolean;hasGimmick:boolean};
