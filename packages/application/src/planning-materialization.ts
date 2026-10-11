@@ -584,6 +584,61 @@ export function closeCurrentWeekReservationsAtLock(
   return closeCurrentWeekReservationsAtCommitmentLock(state, planning);
 }
 
+/**
+ * An already-materialized show has its own fully committed match card. A
+ * proposed amendment that lacks approval is not a missing show; at lock we
+ * restore its last committed draft/approvals and run that original card.
+ * This runs before final resolution too, covering changes saved between the
+ * 06:00 UTC commitment lock and 08:00 UTC resolution.
+ *
+ * Returns the number of actually withdrawn proposals so the caller can
+ * advance the World revision in the same authoritative transaction.
+ */
+export function discardUnapprovedMaterializedCardAmendmentsAtLock(
+  state: WorldState,
+  planning: WorldPlanningState,
+): number {
+  if (planning.worldId !== state.world.id) throw new Error("card amendment crosses World boundary");
+  const active = planning.pendingCardAmendments ?? [];
+  let discarded = 0;
+  for (const pending of [...active]) {
+    const workspace = planning.workspaces.find((entry) => entry.promotionId === pending.promotionId);
+    const index = workspace?.detailedShowDrafts.findIndex((entry) => entry.draftId === pending.draftId) ?? -1;
+    if (!workspace || index < 0) continue;
+    const draft = workspace.detailedShowDrafts[index]!;
+    if (!samePpwWeek(draft.targetDate, state.world.currentDate)) continue;
+    const event = state.events.find((entry) =>
+      entry.id === pending.eventId && entry.promotionId === pending.promotionId && entry.status === "SCHEDULED");
+    if (!event) continue;
+    if (creativeBlockersForDraft(state, planning, draft).length === 0) {
+      // No longer waiting on approval; only the earlier card application
+      // path may replace the committed card. Never silently apply here.
+      continue;
+    }
+    workspace.detailedShowDrafts[index] = structuredClone(pending.committedDraft);
+    planning.creativeConsents = [
+      ...(planning.creativeConsents ?? []).filter((entry) =>
+        entry.promotionId !== pending.promotionId || entry.draftId !== pending.draftId),
+      ...structuredClone(pending.committedConsents),
+    ];
+    planning.pendingCardAmendments = (planning.pendingCardAmendments ?? [])
+      .filter((entry) => entry !== pending);
+    workspace.version += 1;
+    new LedgerWriter(state.world.id, state.ledger).append({
+      date: state.world.currentDate,
+      type: "PLANNED_SHOW_UNAPPROVED_AMENDMENT_IGNORED_AT_LOCK",
+      significance: "NOTABLE",
+      entityIds: [pending.promotionId, pending.eventId],
+      payload: {
+        sourceDraftId: pending.draftId,
+        reason: "unapproved creative amendment discarded; existing committed card retained",
+      },
+    });
+    discarded += 1;
+  }
+  return discarded;
+}
+
 /** Pending protected bookings belonging to a controller's actual due show.
  * A loose incomplete draft does not hold an entire multiplayer World hostage. */
 export interface DueCreativeApprovalSummary {
@@ -609,6 +664,11 @@ export function unresolvedDueCreativeApprovals(
       entry.type === "PLANNED_SHOW_MATERIALIZED" && entry.entityIds.includes(promotionId)
       && entry.payload.sourceDraftId === draft.draftId);
     if (!reserved && !alreadyMaterialized) continue;
+    // A saved but unapproved amendment never replaces the complete live card,
+    // so it must not prevent the controlling promoter from advancing their
+    // already-committed show. The lock reconciler will discard the proposal.
+    if (alreadyMaterialized && !reserved && (planning.pendingCardAmendments ?? []).some((entry) =>
+      entry.promotionId === promotionId && entry.draftId === draft.draftId)) continue;
     const blockers = creativeBlockersForDraft(state, planning, draft);
     if (!blockers.length) continue;
     const wrestlerNames = [...new Set(blockers.map((entry) =>
