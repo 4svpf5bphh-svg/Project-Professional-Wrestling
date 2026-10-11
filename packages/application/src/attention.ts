@@ -272,7 +272,9 @@ export function buildPlayerAttention(
         pushIfVisible(aggregate, playerId, items, {
           attentionId: `contract-offer-result:${offer.id}`,
           category: "IMPORTANT",
-          title: accepted ? `${name} accepted your contract offer` : `${name} rejected your contract offer`,
+          title: accepted
+            ? (offer.offerKind === "DATES_ADDENDUM" ? `${name} agreed to extra dates` : `${name} accepted your contract offer`)
+            : (offer.offerKind === "DATES_ADDENDUM" ? `${name} declined extra dates` : `${name} rejected your contract offer`),
           summary: accepted
             ? `${offer.offerKind === "DATES_ADDENDUM"
               ? `${name} agreed to additional appearances under the existing non-exclusive contract. No renewal was required.`
@@ -295,7 +297,7 @@ export function buildPlayerAttention(
           attentionId: `contract-dates-exhausted:${contract.id}`,
           category: "ACTION_REQUIRED",
           title: `${name} has no contracted dates remaining`,
-          summary: `${name}'s calendar contract is still active, but every purchased appearance has been used. Renegotiate now to buy more dates; an accepted replacement takes effect immediately.`,
+          summary: `${name}'s calendar contract is still active, but every purchased appearance has been used. Renegotiate now to buy more dates; an accepted addendum adds dates to the existing deal.`,
           deadline: null,
           deepLink: "/talent",
           dismissible: false,
