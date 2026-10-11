@@ -149,12 +149,26 @@ export interface PromotionPlanningWorkspace {
   detailedShowDrafts: DetailedShowDraft[];
 }
 
+/**
+ * The last committed version of a materialized show, retained only while a
+ * proposed amendment waits on wrestler approval. This is never the live card.
+ */
+export interface PendingCreativeCardAmendment {
+  promotionId: Id;
+  draftId: string;
+  eventId: Id;
+  committedDraft: DetailedShowDraft;
+  committedConsents: CreativeConsentRecord[];
+}
+
 export interface WorldPlanningState {
   worldId: Id;
   workspaces: PromotionPlanningWorkspace[];
   showReservations: DetailedShowReservation[];
   /** Match-scoped wrestler agreements; absent in older World planning snapshots. */
   creativeConsents?: CreativeConsentRecord[];
+  /** Optional for older World snapshots. One record per pending live amendment. */
+  pendingCardAmendments?: PendingCreativeCardAmendment[];
 }
 
 const TICKET_STRATEGIES = new Set<TicketStrategy>(["ACCESSIBLE", "STANDARD", "PREMIUM", "PRESTIGE"]);
@@ -561,7 +575,7 @@ export function detailedShowRunningOrder(draft: DetailedShowDraft): DetailedShow
 }
 
 export function createWorldPlanningState(worldId: Id): WorldPlanningState {
-  return { worldId, workspaces: [], showReservations: [], creativeConsents: [] };
+  return { worldId, workspaces: [], showReservations: [], creativeConsents: [], pendingCardAmendments: [] };
 }
 
 export function promotionPlanningWorkspace(
@@ -579,6 +593,7 @@ export function normalizeWorldPlanningState(planning: WorldPlanningState): World
     workspaces: legacy.workspaces ?? [],
     showReservations: Array.isArray(legacy.showReservations) ? legacy.showReservations : [],
     creativeConsents: Array.isArray(legacy.creativeConsents) ? legacy.creativeConsents : [],
+    pendingCardAmendments: Array.isArray(legacy.pendingCardAmendments) ? legacy.pendingCardAmendments : [],
   });
 }
 
@@ -588,6 +603,9 @@ export function validateWorldPlanningStateShape(state: WorldState, planning: Wor
   if (!Array.isArray(planning.showReservations)) throw new Error("planning reservations must be an array");
   if (planning.creativeConsents !== undefined && !Array.isArray(planning.creativeConsents)) {
     throw new Error("creative consent records must be an array");
+  }
+  if (planning.pendingCardAmendments !== undefined && !Array.isArray(planning.pendingCardAmendments)) {
+    throw new Error("pending card amendments must be an array");
   }
   const promotionIds = new Set(state.promotions.map((promotion) => promotion.id));
   const seenPromotions = new Set<Id>();
@@ -609,6 +627,32 @@ export function validateWorldPlanningStateShape(state: WorldState, planning: Wor
     }
   }
 
+  const pendingKeys = new Set<string>();
+  for (const pending of planning.pendingCardAmendments ?? []) {
+    const key = JSON.stringify([pending.promotionId, pending.draftId]);
+    if (pendingKeys.has(key)) throw new Error("duplicate pending creative card amendments");
+    pendingKeys.add(key);
+    const workspace = planning.workspaces.find((item) => item.promotionId === pending.promotionId);
+    if (!workspace?.detailedShowDrafts.some((draft) => draft.draftId === pending.draftId)) {
+      throw new Error("pending card amendment references missing show draft");
+    }
+    if (!state.events.some((event) => event.id === pending.eventId
+      && event.promotionId === pending.promotionId)) {
+      throw new Error("pending card amendment references unrelated live event");
+    }
+    if (pending.committedDraft.promotionId !== pending.promotionId
+      || pending.committedDraft.draftId !== pending.draftId
+      || !Array.isArray(pending.committedConsents)) {
+      throw new Error("pending card amendment references invalid committed snapshot");
+    }
+    for (const consent of pending.committedConsents) {
+      if (consent.worldId !== state.world.id
+        || consent.promotionId !== pending.promotionId
+        || consent.draftId !== pending.draftId) {
+        throw new Error("pending card amendment contains foreign approval record");
+      }
+    }
+  }
   const consentKeys = new Set<string>();
   for (const consent of planning.creativeConsents ?? []) {
     if (consent.worldId !== state.world.id) throw new Error("creative consent crosses World boundary");
@@ -871,6 +915,9 @@ export function removeDetailedShowDraft(
   workspace.detailedShowDrafts.splice(index, 1);
   // Removing a draft must revoke approvals for its matches.
   planning.creativeConsents = (planning.creativeConsents ?? []).filter((entry) => !(
+    entry.promotionId === promotionId && entry.draftId === draftId
+  ));
+  planning.pendingCardAmendments = (planning.pendingCardAmendments ?? []).filter((entry) => !(
     entry.promotionId === promotionId && entry.draftId === draftId
   ));
   workspace.version += 1;
