@@ -274,7 +274,9 @@ export function buildPlayerAttention(
           category: "IMPORTANT",
           title: accepted ? `${name} accepted your contract offer` : `${name} rejected your contract offer`,
           summary: accepted
-            ? `${name} accepted your ${contractFamilyLabel(offer.family)} offer for ${offer.dateEntitlement} date${offer.dateEntitlement === 1 ? "" : "s"}. The contract is now signed.`
+            ? `${offer.offerKind === "DATES_ADDENDUM"
+              ? `${name} agreed to additional appearances under the existing non-exclusive contract. No renewal was required.`
+              : `${name} accepted your ${contractFamilyLabel(offer.family)} offer for ${offer.family === "EXCLUSIVE" ? "unlimited appearances" : `${offer.dateEntitlement} dates`}. The contract is now signed.`}`
             : contractOfferRejectionSummary(offer.rejectionReason),
           deadline: null,
           deepLink: "/business",
@@ -287,7 +289,7 @@ export function buildPlayerAttention(
     for (const contract of activeContracts) {
       if (contract.family === "ONE_OFF") continue;
       const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
-      if (datesRemaining === 0) {
+      if (contract.family === "LIMITED_NON_EXCLUSIVE" && datesRemaining === 0) {
         const name = personName(aggregate, contract.personId);
         items.push({
           attentionId: `contract-dates-exhausted:${contract.id}`,
