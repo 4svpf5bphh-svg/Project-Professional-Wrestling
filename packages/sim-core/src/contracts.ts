@@ -12,6 +12,7 @@ import type {
   WorldState,
 } from "../../domain/src/types.js";
 import { addPpwWeeks, comparePpwDates, ppwDateToWeekIndex, weeksBetween } from "./clock.js";
+export { contractCoversBookedDate } from "./contract-calendar.js";
 import { recordFinancialTransaction } from "./transactions.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
