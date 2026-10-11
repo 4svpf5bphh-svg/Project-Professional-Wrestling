@@ -1,6 +1,7 @@
 import type {
   ContractFamily,
   ContractOffer,
+  CreativeControlLevel,
   RoleExpectation,
 } from "../../domain/src/types.js";
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
@@ -9,6 +10,8 @@ import {
   contractIsActive,
   ppwDateToWeekIndex,
   weeksBetween,
+  resolvedCreativeControl,
+  validCreativeControl,
 } from "../../sim-core/src/index.js";
 import {
   activePromotionControlForPlayer,
@@ -42,6 +45,8 @@ export interface AlphaTalentOfferRequest {
   sourceContractId?: string | null;
   family: ContractFamily;
   roleExpectation: RoleExpectation;
+  /** Optional for older clients; default is no creative control. */
+  creativeControl?: CreativeControlLevel;
   termWeeks: number;
   dateEntitlement: number;
   weeklyGuarantee: number;
@@ -112,6 +117,9 @@ function nonNegativeInteger(value: number, label: string, max = 1_000_000_000): 
 function validateRequestShape(request: AlphaTalentOfferRequest): void {
   if (!CONTRACT_FAMILIES.has(request.family)) throw new Error("unsupported contract family");
   if (!ROLES.has(request.roleExpectation)) throw new Error("unsupported role expectation");
+  if (request.creativeControl !== undefined && !validCreativeControl(request.creativeControl)) {
+    throw new Error("unsupported creative control clause");
+  }
   nonNegativeInteger(request.dateEntitlement, "date entitlement", 104);
   if (request.dateEntitlement < 1) throw new Error("date entitlement must contain at least one date");
   nonNegativeInteger(request.weeklyGuarantee, "weekly guarantee");
@@ -142,6 +150,7 @@ function replayPlanFromOffer(offer: ContractOffer) {
     family: offer.family,
     exclusivity: offer.exclusivity,
     roleExpectation: offer.roleExpectation,
+    creativeControl: resolvedCreativeControl(offer.creativeControl),
     startDate: { ...offer.startDate },
     endDate: { ...offer.endDate },
     dateEntitlement: offer.dateEntitlement,
@@ -161,6 +170,7 @@ function requestMatchesOffer(
     && (offer.sourceContractId ?? null) === (request.sourceContractId ?? null)
     && offer.family === request.family
     && offer.roleExpectation === request.roleExpectation
+    && resolvedCreativeControl(offer.creativeControl) === resolvedCreativeControl(request.creativeControl)
     && termWeeks === request.termWeeks
     && offer.dateEntitlement === request.dateEntitlement
     && offer.weeklyGuarantee === request.weeklyGuarantee
@@ -218,6 +228,7 @@ function buildFreshPlan(
     family: request.family,
     exclusivity,
     roleExpectation: request.roleExpectation,
+    creativeControl: resolvedCreativeControl(request.creativeControl),
     startDate,
     endDate,
     dateEntitlement: request.family === "EXCLUSIVE" ? request.termWeeks : request.dateEntitlement,
