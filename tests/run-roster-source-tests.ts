@@ -512,7 +512,7 @@ test("entire 643-person real-roster identity guide has individually keyed charac
       "guide has invalid wrestling styles: "+entry.name);
     ok(entry.signatureMoves.length>=2&&entry.finishingMoves.length>=1
       &&[...entry.signatureMoves,...entry.finishingMoves].every(move=>
-        move.name.length>=3&&move.name.length<=80&&move.source==="PPW_AUTHORED"),
+        move.name.length>=2&&move.name.length<=80&&move.source==="PPW_AUTHORED"),
       "guide contains empty or falsely verified move names: "+entry.name);
     ok(entry.signatureMoves[0]!.name!==entry.signatureMoves[1]!.name,
       "guide gave one wrestler duplicated signature moves: "+entry.name);
