@@ -2,6 +2,8 @@ import type { Contract, Id, MatchSide, Person, PpwDate, WorldState } from "../..
 import { comparePpwDates } from "../../sim-core/src/clock.js";
 import {
   creativeBookingReview,
+  creativeBookingDecisionScore,
+  creativeBookingAgreed,
   resolvedCreativeControl,
   type CreativeBookingReviewReason,
 } from "../../sim-core/src/creative-control.js";
@@ -134,19 +136,6 @@ export function creativeBlockersForDraft(
     .filter((concern) => concern.requiresConsent && concern.consent !== "APPROVED");
 }
 
-function decisionScore(person: Person, contract: Contract, concern: CreativeBookingConcern): number {
-  // Fictional game-state resistance. No guesses about real-world personalities.
-  // No RNG and no benefit to repeatedly requesting the identical waiver.
-  const importance = contract.roleExpectation === "MAIN_EVENT" || contract.roleExpectation === "SPECIAL_ATTRACTION" ? 13
-    : contract.roleExpectation === "UPPER_CARD" ? 8 : 3;
-  const protectedLoss = concern.reason === "PROTECTED_LOSS";
-  const raw = 67 + (person.morale - 50) * 0.38
-    + (person.priorities.loyalty - person.priorities.role) * 0.08
-    - person.fatigue * 0.09
-    - (protectedLoss ? importance + 13 : importance * 0.45);
-  return Math.max(0, Math.min(100, Math.round(raw)));
-}
-
 /**
  * Request one wrestler's agreement to an already saved, fully authored match.
  * Retries return the same result. Draft edits invalidate the signature; stale
@@ -191,13 +180,13 @@ export function requestCreativeBookingConsent(
   const person = state.people.find((entry) => entry.id === input.personId);
   const contract = state.contracts.find((entry) => entry.id === concern.contractId);
   if (!person || !contract) throw new Error("creative consent wrestler or contract unavailable");
-  const score = decisionScore(person, contract, concern);
+  const score = creativeBookingDecisionScore(person, contract, concern.reason);
   const consent: CreativeConsentRecord = {
     worldId: state.world.id, promotionId: input.promotionId,
     draftId: input.draftId, draftMatchId: input.draftMatchId, personId: input.personId,
     contractId: contract.id, bookingSignature: concern.bookingSignature,
     requestedPlanVersion: workspace.version, decidedDate: { ...state.world.currentDate },
-    decision: score >= 55 ? "APPROVED" : "DECLINED", score,
+    decision: creativeBookingAgreed(score) ? "APPROVED" : "DECLINED", score,
   };
   planning.creativeConsents ??= [];
   // Only the latest decision for a given booking/person survives in stored state.
