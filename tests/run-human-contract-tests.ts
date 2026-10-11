@@ -6,6 +6,9 @@ import {
   activeContractsForPerson,
   activeContractsForPromotion,
   addPpwWeeks,
+  buildContractTerms,
+  contractHasAppearanceRights,
+  DeterministicRng,
   claimIndependentPromotionForHuman,
   createWorld,
   marketWeeklyValue,
@@ -209,6 +212,29 @@ test("AI promotions cannot use the human contract command", () => {
     rejected = true;
   }
   ok(rejected, "AI promotion could invoke a human-only contract command");
+});
+
+test("exclusive appearance rights survive exhausting the legacy date count, non-exclusive dates do not", () => {
+  const { state, promotionId, freeAgentId } = fixture(11007);
+  const promotion = state.promotions.find((entry) => entry.id === promotionId)!;
+  const person = state.people.find((entry) => entry.id === freeAgentId)!;
+  const exclusive = buildContractTerms(
+    state, promotion, person, new DeterministicRng(11007), state.world.currentDate, "EXCLUSIVE",
+  );
+  ok(exclusive.family === "EXCLUSIVE" && exclusive.exclusivity === "EXCLUSIVE",
+    "forced exclusive proposal changed contractual employment type");
+  ok(exclusive.weeklyGuarantee > 0 && exclusive.appearanceFee === 0,
+    "exclusive employment lost guaranteed pay or invented an appearance charge");
+  ok(contractHasAppearanceRights({ family: "EXCLUSIVE", dateEntitlement: 1, datesUsed: 600 }),
+    "exclusive wrestler became unbookable despite an active exclusive term");
+  ok(contractHasAppearanceRights({ family: "EXCLUSIVE", dateEntitlement: 26, datesUsed: 26 }),
+    "exclusive booking rights were incorrectly limited by a legacy numeric entitlement");
+  ok(contractHasAppearanceRights({ family: "LIMITED_NON_EXCLUSIVE", dateEntitlement: 6, datesUsed: 5 }),
+    "non-exclusive booking was denied before all six purchased dates were used");
+  ok(!contractHasAppearanceRights({ family: "LIMITED_NON_EXCLUSIVE", dateEntitlement: 6, datesUsed: 6 }),
+    "non-exclusive agreement allowed an unpaid seventh appearance");
+  ok(!contractHasAppearanceRights({ family: "ONE_OFF", dateEntitlement: 1, datesUsed: 1 }),
+    "one-off agreement allowed a second appearance");
 });
 
 console.log(`\nHuman contract tests: ${passed} passed, ${failed} failed`);
