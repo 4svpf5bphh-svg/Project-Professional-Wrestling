@@ -5,7 +5,6 @@ import {
   applicableCreativeContract,
   creativeBookingDecisionScore,
   creativeBookingAgreed,
-  resolvedCreativeControl,
   type CreativeBookingReviewReason,
 } from "../../sim-core/src/creative-control.js";
 import { defaultPlannedFinishForIntent } from "../../sim-core/src/match-finishes.js";
