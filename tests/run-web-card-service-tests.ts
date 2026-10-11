@@ -13,6 +13,7 @@ import {
   loadAlphaShowCard,
   saveAlphaCurrentWeekCard,
   saveAlphaShowCard,
+  requestAlphaShowCreativeConsent,
   type AlphaCardMatchView,
   type AlphaCardSegmentView,
 } from "../packages/web-adapter/src/card-service.js";
@@ -1356,6 +1357,130 @@ await test("Alpha six-week card booking targets the selected future draft withou
     strangerRejected = error instanceof Error && error.message.includes("Take control");
   }
   ok(strangerRejected, "non-controller could read a future match card by draft ID");
+});
+
+
+await test("unapproved protected losses hold a future reservation until an explicit wrestler decision", async () => {
+  const fixture = await reservedShowFixture(61261);
+  const loserId = fixture.participantIds[1]!;
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const contract = aggregate.state.contracts.find((entry) =>
+      entry.personId === loserId && entry.promotionId === aggregate.ownership.memberships.find((m) => m.playerId === "alpha-player")?.promotionId
+    ) ?? aggregate.state.contracts.find((entry) => entry.personId === loserId);
+    if (!contract) throw new Error("fixture missing loser contract");
+    contract.creativeControl = "PROTECTED_FINISHES";
+    const person = aggregate.state.people.find((entry) => entry.id === loserId)!;
+    person.morale = 100;
+    person.fatigue = 0;
+    person.priorities.loyalty = 100;
+    person.priorities.role = 0;
+  });
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "protected-future-save",
+    expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion,
+    matches: singlesCard(fixture.participantIds),
+    championshipAssignments: [],
+  });
+  ok(saved.creativeConcerns.some((c) => c.personId === loserId && c.requiresConsent && c.consent === "NOT_REQUESTED"),
+    "saved protected loss did not report the contract objection");
+  const beforeMaterialization = await fixture.repository.load(fixture.worldId);
+  const countBefore = beforeMaterialization.state.events.length;
+  const riskPass = await materializePersistedCurrentWeekReservations(
+    fixture.repository, fixture.worldId, saved.world.revision,
+  );
+  ok(riskPass.pass.atRisk.some((r) => r.reasons.includes("CREATIVE_APPROVAL_REQUIRED")),
+    "future reservation ignored unresolved creative rights");
+  const waiting = await fixture.repository.load(fixture.worldId);
+  ok(waiting.state.events.length === countBefore && waiting.planning.showReservations.length === 1,
+    "unapproved future card was materialized or had its reservation silently discarded");
+
+  const consentView = await requestAlphaShowCreativeConsent(
+    fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: "protected-future-consent",
+      expectedRevision: waiting.runtime.revision,
+      expectedPlanVersion: saved.workspaceVersion,
+      draftId: saved.draftId,
+      draftMatchId: saved.matches[0]!.draftMatchId,
+      personId: loserId,
+    },
+  );
+  ok(consentView.creativeConcerns.some((c) => c.personId === loserId && c.consent === "APPROVED"),
+    "granted wrestler consent did not appear on saved card");
+  const approvedPass = await materializePersistedCurrentWeekReservations(
+    fixture.repository, fixture.worldId, consentView.world.revision,
+  );
+  ok(approvedPass.pass.materialized.length === 1 && approvedPass.pass.materialized[0]!.cardMaterialized,
+    "fully approved future card did not materialize normally");
+});
+
+await test("materialized card edits stay held until consent then apply the promoter's exact intended finish", async () => {
+  const fixture = await reservedShowFixture(61262);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await materializePersistedCurrentWeekReservations(fixture.repository, fixture.worldId, before.world.revision);
+  const materialized = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const original = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "creative-current-original",
+    expectedRevision: materialized.world.revision,
+    expectedPlanVersion: materialized.workspaceVersion,
+    matches: singlesCard(fixture.participantIds),
+    championshipAssignments: [],
+  });
+  const loserId = fixture.participantIds[1]!;
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const contract = aggregate.state.contracts.find((entry) =>
+      entry.personId === loserId && entry.promotionId === original.promotion.promotionId && entry.status === "SIGNED"
+    );
+    if (!contract) throw new Error("missing contracted losing wrestler");
+    contract.creativeControl = "PROTECTED_FINISHES";
+    const person = aggregate.state.people.find((entry) => entry.id === loserId)!;
+    person.morale = 100; person.fatigue = 0;
+    person.priorities.loyalty = 100; person.priorities.role = 0;
+  });
+  const prior = await fixture.repository.load(fixture.worldId);
+  const event = prior.state.events.find((entry) => entry.promotionId === original.promotion.promotionId
+    && entry.status === "SCHEDULED" && entry.date.week === prior.state.world.currentDate.week)!;
+  const originalIds = prior.state.matches.filter((entry) => entry.eventId === event.id && entry.status === "SCHEDULED").map((entry) => entry.id);
+  const requested = original.matches.map((match, index) =>
+    index === 0 ? { ...match, plannedLengthMinutes: match.plannedLengthMinutes + 1, plannedFinish: "CLEAN_PIN" as const } : match);
+  const proposed = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "creative-current-proposed",
+    expectedRevision: original.world.revision,
+    expectedPlanVersion: original.workspaceVersion,
+    matches: requested,
+    championshipAssignments: [],
+  });
+  ok(proposed.cardPendingConsent, "materialized card replacement did not expose pending creative approval");
+  const parked = await fixture.repository.load(fixture.worldId);
+  const parkedIds = parked.state.matches.filter((entry) => entry.eventId === event.id && entry.status === "SCHEDULED").map((entry) => entry.id);
+  ok(parkedIds.join("|") === originalIds.join("|"), "unapproved proposal replaced a committed match");
+
+  const approved = await requestAlphaShowCreativeConsent(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "creative-current-approve",
+    expectedRevision: proposed.world.revision,
+    expectedPlanVersion: proposed.workspaceVersion,
+    draftId: proposed.draftId,
+    draftMatchId: proposed.matches[0]!.draftMatchId,
+    personId: loserId,
+  });
+  ok(!approved.cardPendingConsent, "approved booking still claims a contractual veto");
+  const applied = await fixture.repository.load(fixture.worldId);
+  const actual = applied.state.matches.filter((entry) => entry.eventId === event.id && entry.status === "SCHEDULED")
+    .sort((a, b) => a.order - b.order);
+  ok(actual[0]?.plannedLengthMinutes === requested[0]!.plannedLengthMinutes
+    && actual[0]?.intendedWinnerSide === requested[0]!.intendedWinnerSide,
+    "approved revision did not apply the promoter-authored match");
+  ok(!originalIds.includes(actual[0]!.id), "original card was not replaced after consent");
+  const retried = await requestAlphaShowCreativeConsent(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "creative-current-approve",
+    expectedRevision: proposed.world.revision,
+    expectedPlanVersion: proposed.workspaceVersion,
+    draftId: proposed.draftId,
+    draftMatchId: proposed.matches[0]!.draftMatchId,
+    personId: loserId,
+  });
+  ok(retried.world.revision === approved.world.revision, "repeated approval advanced World revision");
 });
 
 console.log(`\nAlpha web card service tests: ${passed} passed, ${failed} failed`);
