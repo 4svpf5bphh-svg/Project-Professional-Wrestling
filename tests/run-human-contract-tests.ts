@@ -8,6 +8,10 @@ import {
   addPpwWeeks,
   buildContractTerms,
   contractHasAppearanceRights,
+  canAddLimitedContractDates,
+  createSignedContract,
+  submitHumanDatesAddendum,
+  validateWorldInvariants,
   DeterministicRng,
   claimIndependentPromotionForHuman,
   createWorld,
@@ -235,6 +239,78 @@ test("exclusive appearance rights survive exhausting the legacy date count, non-
     "non-exclusive agreement allowed an unpaid seventh appearance");
   ok(!contractHasAppearanceRights({ family: "ONE_OFF", dateEntitlement: 1, datesUsed: 1 }),
     "one-off agreement allowed a second appearance");
+});
+
+test("accepted date addendum extends the same non-exclusive contract with no new term or weekly wage", () => {
+  const { state, promotionId, freeAgentId } = fixture(11008);
+  const person = state.people.find(item => item.id === freeAgentId)!;
+  const promotion = state.promotions.find(item => item.id === promotionId)!;
+  const market = marketWeeklyValue(person);
+  const source = createSignedContract(state, person, promotion, {
+    family: "LIMITED_NON_EXCLUSIVE", exclusivity: "NON_EXCLUSIVE", roleExpectation: "FEATURED",
+    startDate: { ...state.world.currentDate },
+    endDate: addPpwWeeks(state.world.currentDate, 12, state.ruleset.weeksPerYear),
+    dateEntitlement: 2, weeklyGuarantee: 1000, appearanceFee: market, signingBonus: 0,
+  }, null, false);
+  const originalEnd = JSON.stringify(source.endDate);
+  const countBefore = state.contracts.length;
+  const cashBefore = promotion.cash;
+  const payment = market * 20;
+  const offer = submitHumanDatesAddendum(state, {
+    promotionId, personId: person.id, contractId: source.id,
+    additionalDates: 2, additionalPayment: payment,
+  });
+  ok(offer.offerKind === "DATES_ADDENDUM" && offer.sourceContractId === source.id
+    && offer.dateEntitlement === 4, "proposal did not target total dates on the signed agreement");
+  ok(source.dateEntitlement === 2, "pending addendum amended the contract before wrestler accepted");
+  resolveContractOffers(state);
+  ok(offer.status === "ACCEPTED", `wrestler did not accept a strong extra-dates proposal: ${offer.rejectionReason}`);
+  ok(state.contracts.length === countBefore, "accepted extra dates created a second overlapping contract");
+  ok(source.dateEntitlement === 4 && source.status === "SIGNED", "existing deal did not gain two dates");
+  ok(JSON.stringify(source.endDate) === originalEnd && source.weeklyGuarantee === 1000
+    && source.exclusivity === "NON_EXCLUSIVE", "addendum rewrote contract expiry, wage or rights");
+  ok(promotion.cash === cashBefore - payment, "negotiated extra payment was not charged once");
+  ok(state.financialTransactions.some(tx => tx.sourceId === offer.id
+    && tx.category === "CONTRACT_SIGNING_BONUS" && tx.amount === -payment),
+    "extra-date payment lacks an auditable financial record");
+  ok(state.ledger.some(item => item.type === "CONTRACT_EXTRA_DATES_ACCEPTED"
+    && item.entityIds.includes(source.id)), "accepted addendum not recorded in World history");
+  const errors = validateWorldInvariants(state);
+  ok(errors.length === 0, "accepted date addendum broke shared World invariants: " + errors.slice(0, 3).join("; "));
+});
+
+test("extra-date proposals reject exclusive contracts and impossible workloads before any mutation", () => {
+  const { state, promotionId, freeAgentId } = fixture(11009);
+  const person = state.people.find(item => item.id === freeAgentId)!;
+  const promotion = state.promotions.find(item => item.id === promotionId)!;
+  const source = createSignedContract(state, person, promotion, {
+    family: "LIMITED_NON_EXCLUSIVE", exclusivity: "NON_EXCLUSIVE", roleExpectation: "REGULAR",
+    startDate: { ...state.world.currentDate },
+    endDate: addPpwWeeks(state.world.currentDate, 1, state.ruleset.weeksPerYear),
+    dateEntitlement: 1, weeklyGuarantee: 250, appearanceFee: 900, signingBonus: 0,
+  }, null, false);
+  const offersBefore = state.contractOffers.length;
+  ok(!canAddLimitedContractDates(state, person, source, 100).ok, "impossible two-week workload passed capacity guard");
+  let rejected = false;
+  try {
+    submitHumanDatesAddendum(state, {
+      promotionId, personId: freeAgentId, contractId: source.id,
+      additionalDates: 100, additionalPayment: 1000,
+    });
+  } catch { rejected = true; }
+  ok(rejected && state.contractOffers.length === offersBefore,
+    "rejected addendum changed World offers");
+  source.family = "EXCLUSIVE";
+  source.exclusivity = "EXCLUSIVE";
+  rejected = false;
+  try {
+    submitHumanDatesAddendum(state, {
+      promotionId, personId: freeAgentId, contractId: source.id,
+      additionalDates: 1, additionalPayment: 1000,
+    });
+  } catch { rejected = true; }
+  ok(rejected && state.contractOffers.length === offersBefore,
+    "exclusive contract incorrectly offered limited-date addendum");
 });
 
 console.log(`\nHuman contract tests: ${passed} passed, ${failed} failed`);
