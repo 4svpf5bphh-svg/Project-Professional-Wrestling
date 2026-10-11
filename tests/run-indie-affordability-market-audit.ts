@@ -341,6 +341,47 @@ for (const cohort of ["PROCEDURAL", "REAL_ROSTER"] as const) {
   }
 }
 
+// Each printed period is incremental, not another cumulative sum.
+// Preserve every original Indie in the denominator after closure.
+const financeByCohort = (["PROCEDURAL", "REAL_ROSTER"] as const).map(cohort => ({
+  cohort,
+  intervals: CHECKPOINTS.slice(1).map((end, i) => {
+    const start = CHECKPOINTS[i]!;
+    const previous = new Map(rows.filter(row => row.cohort === cohort && row.elapsedWeeks === start)
+      .flatMap(row => row.indies.map(indie => [`${row.seed}:${indie.id}`, indie.finance] as const)));
+    const relevant = rows.filter(row => row.cohort === cohort && row.elapsedWeeks === end)
+      .flatMap(row => row.indies.map(indie => ({
+        current: indie.finance,
+        previous: previous.get(`${row.seed}:${indie.id}`),
+        cash: indie.cash, name: indie.name, seed: row.seed,
+      })));
+    const categories = emptyFinance();
+    let completedShows = 0, cancelledShows = 0;
+    for (const row of relevant) {
+      for (const category of FINANCE_CATEGORIES) {
+        categories[category] += row.current.transactionCategories[category]
+          - (row.previous?.transactionCategories[category] ?? 0);
+      }
+      completedShows += row.current.completedShows - (row.previous?.completedShows ?? 0);
+      cancelledShows += row.current.cancelledShows - (row.previous?.cancelledShows ?? 0);
+    }
+    const periodShowNet = sumCategories(categories, SHOW_CATEGORIES);
+    const recurringNet = sumCategories(categories, RECURRING_CATEGORIES);
+    return {
+      fromWeek: start, throughWeek: end, indieCount: relevant.length,
+      totalCashChange: sumCategories(categories, FINANCE_CATEGORIES),
+      baselineRecurringNet: recurringNet,
+      showNet: periodShowNet,
+      averageNetPerCompletedShow: completedShows ? round(periodShowNet / completedShows) : null,
+      completedShows, cancelledShows,
+      medianClosingCash: median(relevant.map(x => x.cash)),
+      worstThreeClosingCash: [...relevant].sort((a, b) => a.cash - b.cash)
+        .slice(0, 3).map(x => ({ name: x.name, seed: x.seed, cash: x.cash })),
+      categories,
+    };
+  }),
+}));
+
 // Source-of-truth cash must reconcile to posted transactions. Flag any
 // direct, unrecorded cash mutation separately from legitimate poor economics.
 const financeReconciliationErrors = rows.flatMap(row => row.indies
@@ -388,6 +429,7 @@ const summary = {
     noConcurrentNonexclusiveWorkersAtYearEnd: rows.some(r => r.elapsedWeeks === 52 && r.multiPromotionWorkers === 0),
     baselineRecurringDeficitAtGenesis: rows.some(r => r.elapsedWeeks === 0 && r.indies.some(p => p.staticNetBeforeShows < 0)),
   },
+  financeByCohort,
   financeReconciliationErrors,
   invariantFailures,
 };
@@ -398,6 +440,11 @@ for (const result of summary.byCohort) {
   for (const point of result.checkpoints) {
     console.log("INDIE_AUDIT_CHECKPOINT " + JSON.stringify({ cohort: result.cohort, ...point }));
   }
+}
+for (const cohort of financeByCohort) for (const interval of cohort.intervals) {
+  console.log("INDIE_FINANCE_ATTRIBUTION " + JSON.stringify({
+    cohort: cohort.cohort, ...interval,
+  }));
 }
 console.log("INDIE_AUDIT_SUMMARY " + JSON.stringify({
   worlds: summary.worlds, totalSimulatedWeeks: summary.totalSimulatedWeeks,
