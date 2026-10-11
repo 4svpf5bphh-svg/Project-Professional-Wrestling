@@ -731,6 +731,115 @@ await test("Talent service stores promotion-specific alignment without rewriting
   );
 });
 
+for (const family of ["LIMITED_NON_EXCLUSIVE", "EXCLUSIVE"] as const) {
+  await test(`new human ${family} starts paying only in its first player-bookable PPW week`, async () => {
+    const playerId = `first-paid-${family}`;
+    const repository = new InMemoryApplicationWorldRepository();
+    const aggregate = createAlphaWorldAggregate({
+      seed: family === "EXCLUSIVE" ? 73611 : 73610, playerId,
+    });
+    const independent = aggregate.state.promotions.find(p =>
+      p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
+    if (!independent) throw new Error("paid-week fixture has no eligible indie");
+    await repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    await claimAlphaPromotion(repository, worldId, playerId, {
+      promotionId: independent.id, requestId: `claim-${family}`,
+    });
+    const before = await loadAlphaTalentSession(repository, worldId, playerId);
+    const initial = (await repository.load(worldId)).state;
+    const submissionWeek = initial.world.currentDate;
+    const effectiveStart = { ...addPpwWeeks(submissionWeek, 1, initial.ruleset.weeksPerYear), day: 1 };
+    const termWeeks = 13;
+    const endDate = addPpwWeeks(effectiveStart, termWeeks - 1, initial.ruleset.weeksPerYear);
+    const predictedOfferId = formatEntityId("contractOffer",
+      snapshotEntityIdCounters(initial).contractOffer + 1);
+    const termsFor = (personId: string, market: number) => ({
+      id: predictedOfferId,
+      worldId, personId, promotionId: independent.id,
+      submittedDate: { ...submissionWeek }, status: "PENDING" as const,
+      offerKind: "RECRUITMENT" as const, resolvedUtility: null, rejectionReason: null,
+      family,
+      exclusivity: family === "EXCLUSIVE" ? "EXCLUSIVE" as const : "NON_EXCLUSIVE" as const,
+      roleExpectation: "MAIN_EVENT" as const, creativeControl: "NONE" as const,
+      startDate: effectiveStart, endDate, dateEntitlement: family === "EXCLUSIVE" ? termWeeks : 5,
+      weeklyGuarantee: market * (family === "EXCLUSIVE" ? 4 : 2),
+      appearanceFee: family === "EXCLUSIVE" ? 0 : market * 3,
+      signingBonus: market * 10,
+    });
+    const candidates = before.market
+      .filter(p => p.availability === "FREE_AGENT")
+      .map(p => {
+        const person = initial.people.find(x => x.id === p.personId);
+        if (!person || person.status !== "ACTIVE"
+          || serviceCapacityDatesPerWeek(person) < 1.05) return null;
+        return { entry: p, score: evaluateContractOffer(initial, termsFor(p.personId, p.estimatedWeeklyValue)) };
+      })
+      .filter((x): x is { entry: (typeof before.market)[number]; score: number } => x !== null)
+      .sort((a, b) => b.score - a.score);
+    const chosen = candidates[0];
+    if (!chosen || chosen.score < initial.ruleset.offerAcceptanceThreshold + 3) {
+      throw new Error(`no willing ${family} first-paid-week fixture candidate: ${chosen?.score ?? "none"}`);
+    }
+    const requestTerms = termsFor(chosen.entry.personId, chosen.entry.estimatedWeeklyValue);
+    const request = {
+      requestId: `first-paid-offer-${family}`,
+      personId: chosen.entry.personId, sourceContractId: null,
+      family, roleExpectation: requestTerms.roleExpectation,
+      creativeControl: requestTerms.creativeControl, termWeeks,
+      dateEntitlement: requestTerms.dateEntitlement,
+      weeklyGuarantee: requestTerms.weeklyGuarantee,
+      appearanceFee: requestTerms.appearanceFee,
+      signingBonus: requestTerms.signingBonus,
+    };
+    const submitted = await submitAlphaTalentOffer(repository, worldId, playerId, request);
+    const offer = (await repository.load(worldId)).state.contractOffers.find(o => o.id === submitted.offerId);
+    if (!offer) throw new Error("pending paid-week offer was not saved");
+    ok(offer.startDate.year === effectiveStart.year && offer.startDate.week === effectiveStart.week
+      && offer.startDate.day === 1, "13-week offer begins in the already locked submission week");
+    ok(offer.endDate.year === endDate.year && offer.endDate.week === endDate.week,
+      "paid-week offer shortened its 13-week entitlement");
+    ok(!submitted.view.roster.some(p => p.personId === chosen.entry.personId),
+      "pending agreement granted player booking rights before acceptance");
+    const afterSubmission = await loadAlphaPlayerSession(repository, worldId, playerId);
+    const first = await advanceAlphaWorldWeek(repository, worldId, playerId, {
+      expectedRevision: afterSubmission.world.revision,
+    });
+    const afterTick = await repository.load(worldId);
+    const resolved = afterTick.state.contractOffers.find(o => o.id === submitted.offerId);
+    ok(resolved?.status === "ACCEPTED",
+      `paid-week offer was not accepted: ${resolved?.rejectionReason ?? "missing"}`);
+    const signed = afterTick.state.contracts.find(c => c.sourceOfferId === submitted.offerId);
+    if (!signed) throw new Error("accepted agreement did not create signed rights");
+    ok(contractIsActive(afterTick.state, signed),
+      "agreement is not active when first player-bookable week opens");
+    ok(first.world.week === effectiveStart.week && first.world.year === effectiveStart.year,
+      "World did not advance into the first paid booking week");
+    ok(first.promotion?.roster.some(p => p.personId === signed.personId && p.datesRemaining > 0),
+      "player cannot use the accepted contract in its first paid week");
+    ok(!afterTick.state.financialTransactions.some(t => t.source === signed.id
+      && t.category === "CONTRACT_GUARANTEE"),
+      "player was charged weekly wages in the unbookable offer-resolution week");
+    ok(contractCoversBookedDate(afterTick.state, signed, { ...endDate, day: 6 })
+      && !contractCoversBookedDate(afterTick.state, signed,
+        addPpwWeeks(endDate, 1, afterTick.state.ruleset.weeksPerYear)),
+      "signed agreement does not cover exactly the promised 13 booking weeks");
+    const retry = await submitAlphaTalentOffer(repository, worldId, playerId, request);
+    ok(retry.offerId === submitted.offerId,
+      "retry of accepted contract created another offer instead of replaying original receipt");
+
+    await advanceAlphaWorldWeek(repository, worldId, playerId, {
+      expectedRevision: first.world.revision,
+    });
+    const afterFirstPaidWeek = await repository.load(worldId);
+    const guaranteeTransactions = afterFirstPaidWeek.state.financialTransactions.filter(t =>
+      t.source === signed.id && t.category === "CONTRACT_GUARANTEE");
+    ok(guaranteeTransactions.length === 1
+      && guaranteeTransactions[0]!.amount === -request.weeklyGuarantee,
+      "first bookable PPW week did not charge exactly one negotiated weekly guarantee");
+  });
+}
+
 await test("Talent service renews only inside the renewal window and starts after the current deal", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 73002, playerId: "player-a" });
@@ -830,11 +939,12 @@ await test("Talent service opens renegotiation when purchased dates are exhauste
   const persisted = await repository.load(worldId);
   const offer = persisted.state.contractOffers.find((candidate) => candidate.id === result.offerId);
   if (!offer) throw new Error("exhausted renewal offer was not persisted");
+  const firstBookableWeek = addPpwWeeks(persisted.state.world.currentDate, 1, persisted.state.ruleset.weeksPerYear);
   ok(
-    offer.startDate.year === persisted.state.world.currentDate.year
-      && offer.startDate.week === persisted.state.world.currentDate.week
-      && offer.startDate.day === persisted.state.world.currentDate.day,
-    "exhausted-date renewal did not start immediately",
+    offer.startDate.year === firstBookableWeek.year
+      && offer.startDate.week === firstBookableWeek.week
+      && offer.startDate.day === 1,
+    "exhausted-date replacement should begin in the first bookable paid PPW week",
   );
   ok(offer.sourceContractId === source.id, "exhausted-date renewal lost source contract identity");
   const revisionAfterFirst = persisted.runtime.revision;
