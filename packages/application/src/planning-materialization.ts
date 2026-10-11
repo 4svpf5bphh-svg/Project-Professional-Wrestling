@@ -610,11 +610,9 @@ export function discardUnapprovedMaterializedCardAmendmentsAtLock(
     const event = state.events.find((entry) =>
       entry.id === pending.eventId && entry.promotionId === pending.promotionId && entry.status === "SCHEDULED");
     if (!event) continue;
-    if (creativeBlockersForDraft(state, planning, draft).length === 0) {
-      // No longer waiting on approval; only the earlier card application
-      // path may replace the committed card. Never silently apply here.
-      continue;
-    }
+    // Any outstanding pending snapshot means the amended card was never
+    // applied, even if the contract has changed since it was saved.
+    // Always prefer the last committed card at World Lock.
     workspace.detailedShowDrafts[index] = structuredClone(pending.committedDraft);
     planning.creativeConsents = [
       ...(planning.creativeConsents ?? []).filter((entry) =>
