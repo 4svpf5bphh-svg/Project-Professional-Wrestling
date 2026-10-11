@@ -1,6 +1,21 @@
 # PPW contract usability review — 11 October 2026
 
-Status: **reviewed, not approved for economic/schema changes**. Next dependency before contractual creative control. Development-only: no deployment or World reset.
+Status: **design superseded by approved simple contract structure**. Implementation in protected development branches only; no deployment or World reset.
+
+## Approved direction (supersedes the original audit below)
+
+- **Exclusive** = term-based employment with unlimited *contractual* appearances during the term. Health, fatigue, workload, booked dates and World scheduling limits still apply. A signed exclusive wrestler cannot take incompatible outside engagements. Weekly guarantees continue.
+- **Limited non-exclusive** = period + purchased appearances; wrestler may work for multiple compatible promotions. When purchased dates are exhausted, work for that promotion pauses but the underlying contract and any weekly guarantee remain.
+- **Additional dates** = negotiated addendum **on the existing limited/non-exclusive contract**. Wrestler consent is required. Acceptance only increases total purchased appearances and optionally charges a one-time incremental payment. Original expiry, exclusivity, weekly guarantee, per-appearance fee, role and contract ID remain unchanged. No automatic extension/refund at expiry.
+- **One-off** = one purchased show, no weekly wage.
+- The extra-dates offer is server-authoritative, idempotent, accepted or declined before it changes the contract, and recorded in ledger/finances.
+- Do not add a compulsory fourth contract form. Creative-control options follow contract validation and should be an opt-in concession.
+- Existing World compatibility is preserved in the code, but the user has chosen a fresh World reset **after further development and immediately before a future explicitly authorised release**, not now.
+
+### Deferred evaluation
+
+Price/recruitment calibration under unlimited exclusive usage, repeatability of addendum negotiations, save migration stress tests, late-term workload guardrails, proper casual-player cost guidance, special-attraction exceptions, and final mobile UI polish.
+
 
 ## Decision: simplify understanding before altering simulation
 
