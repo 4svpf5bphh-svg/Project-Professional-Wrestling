@@ -269,3 +269,38 @@ to women, Mexican lucha and less-obvious independent workers; add genuinely
 sourced move sets to the separate verified catalogue where evidence exists.
 Do not begin gimmick-negotiation/editor work until this roster audit is
 complete. No main merge, deployment or live World reset authorised.
+
+
+## Editorial identity audit — wave 5 (11 October 2026)
+
+**129 additional exact-name identity improvements** are layered into the
+new-World roster guide, focusing on women's wrestling (WWE/NXT, AEW, TNA
+and STARDOM), misassigned male stars, Mexican luchadoras and cross-promotion
+specialists. Koguma is no longer a powerhouse monster, MJF is no longer a
+high-flying underdog, and Kazuchika Okada now carries an appropriate
+Rainmaker-based candidate repertoire.
+
+All wave-five move candidates retain `PPW_AUTHORED` provenance. No entry
+becomes `VERIFIED` without separately curated exact move/publisher evidence.
+Source-backed 58-wrestler catalogue has priority; negotiated and previously
+saved wrestler-owned identities remain untouched.
+
+Coverage: 138 original TARGETED + 77 cohort promotions in wave four + 129
+cohort promotions in wave five = **344 TARGETED / 299 COHORT** of 643
+exact-name real-roster records. Future fictional wrestlers still acquire
+complete deterministic identities at debut. Wave-five tests check every
+reviewed name, no overlap with wave four, valid genres/styles/moves,
+new-World bootstrap and saved World non-overwrite.
+
+The 299 remaining cohort approximations are the next editorial backlog,
+not yet reviewed one by one. Neither full CI nor new deployment is claimed.
+
+## Future contract dependency — creative control (11 October 2026)
+
+See [Creative Control Contract Design](./CREATIVE-CONTROL-CONTRACT-DESIGN-2026-10-11.md).
+Creative control is a valuable optional offer term, with escalating
+consultation/approval rights and meaningful risk of refusing protected
+finishes, losses, character changes or matches. The player still authors
+all scripted match and segment outcomes. Refusals are pre-lock
+contract/Backstage decisions, never hidden simulation rewrites.
+This is a **deferred design**, not yet implemented in booking or contracts.
