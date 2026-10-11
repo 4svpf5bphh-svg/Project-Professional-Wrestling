@@ -1,4 +1,4 @@
-import type { Id, MatchSide, WorldState } from "../../domain/src/types.js";
+import type { Id, MatchSide, PpwDate, WorldState } from "../../domain/src/types.js";
 import { comparePpwDates } from "../../sim-core/src/clock.js";
 import {
   creativeBookingReview,
