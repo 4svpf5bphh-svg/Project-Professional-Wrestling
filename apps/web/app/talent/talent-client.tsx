@@ -958,8 +958,8 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       .filter((entry) => rosterContractFilter === "ALL" || entry.contract.exclusivity === rosterContractFilter);
     return [...entries].sort((left, right) => {
       if (rosterSort === "RECOGNITION") return right.recognition - left.recognition || left.name.localeCompare(right.name);
-      if (rosterSort === "DATES_ASC") return left.contract.datesRemaining - right.contract.datesRemaining || left.name.localeCompare(right.name);
-      if (rosterSort === "DATES_DESC") return right.contract.datesRemaining - left.contract.datesRemaining || left.name.localeCompare(right.name);
+      if (rosterSort === "DATES_ASC") return (left.contract.unlimitedAppearances ? Number.MAX_SAFE_INTEGER : left.contract.datesRemaining) - (right.contract.unlimitedAppearances ? Number.MAX_SAFE_INTEGER : right.contract.datesRemaining) || left.name.localeCompare(right.name);
+      if (rosterSort === "DATES_DESC") return (right.contract.unlimitedAppearances ? Number.MAX_SAFE_INTEGER : right.contract.datesRemaining) - (left.contract.unlimitedAppearances ? Number.MAX_SAFE_INTEGER : left.contract.datesRemaining) || left.name.localeCompare(right.name);
       if (rosterSort === "EXPIRY") return left.contract.weeksToExpiry - right.contract.weeksToExpiry || left.name.localeCompare(right.name);
       if (rosterSort === "WAGE_HIGH") return right.contract.weeklyGuarantee - left.contract.weeklyGuarantee || left.name.localeCompare(right.name);
       if (rosterSort === "WAGE_LOW") return left.contract.weeklyGuarantee - right.contract.weeklyGuarantee || left.name.localeCompare(right.name);
