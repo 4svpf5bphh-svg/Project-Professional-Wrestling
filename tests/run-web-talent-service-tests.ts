@@ -318,6 +318,7 @@ await test("accepted player one-off is bookable on the following PPW show, not s
   const accepted = afterFirst.state.contractOffers.find(o => o.id === offerResult.offerId);
   ok(accepted?.status === "ACCEPTED",
     `strong one-off offer did not resolve as accepted: ${accepted?.rejectionReason ?? "unknown"}`);
+  if (!accepted) throw new Error("one-off offer disappeared during World resolution");
   const signed = afterFirst.state.contracts.find(c => c.sourceOfferId === accepted.id);
   if (!signed) throw new Error("accepted one-off created no signed contract");
   ok(contractIsActive(afterFirst.state, signed) && contractHasAppearanceRights(signed),
