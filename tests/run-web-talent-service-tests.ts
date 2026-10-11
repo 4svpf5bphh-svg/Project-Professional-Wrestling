@@ -107,6 +107,7 @@ await test("Talent service submits a recruitment offer through the idempotent ap
     sourceContractId: null,
     family: "LIMITED_NON_EXCLUSIVE" as const,
     roleExpectation: "REGULAR" as const,
+    creativeControl: "PROTECTED_FINISHES" as const,
     termWeeks: 13,
     dateEntitlement: 5,
     weeklyGuarantee: Math.round(candidate.estimatedWeeklyValue * 0.2),
@@ -116,10 +117,15 @@ await test("Talent service submits a recruitment offer through the idempotent ap
 
   const first = await submitAlphaTalentOffer(repository, worldId, "player-a", request);
   ok(first.offerKind === "RECRUITMENT", "recruitment action produced the wrong offer kind");
+  ok(first.view.pendingOffers.some((offer) => offer.offerId === first.offerId
+    && offer.creativeControl === "PROTECTED_FINISHES"),
+    "player-selected creative rights did not reach the pending-offer UI");
   ok(first.view.pendingOffers.some((offer) => offer.offerId === first.offerId), "submitted recruitment offer is missing from the player-safe view");
   const afterFirst = await repository.load(worldId);
   const revision = afterFirst.runtime.revision;
   ok(afterFirst.state.contractOffers.filter((offer) => offer.id === first.offerId && offer.status === "PENDING").length === 1, "recruitment offer was not persisted exactly once");
+  ok(afterFirst.state.contractOffers.find((offer) => offer.id === first.offerId)?.creativeControl === "PROTECTED_FINISHES",
+    "selected clause was not stored on the authoritative pending contract");
   ok(afterFirst.commands.receipts.filter((receipt) => receipt.requestId === request.requestId).length === 1, "recruitment command receipt was not persisted exactly once");
 
   const retry = await submitAlphaTalentOffer(repository, worldId, "player-a", request);
@@ -127,6 +133,69 @@ await test("Talent service submits a recruitment offer through the idempotent ap
   const afterRetry = await repository.load(worldId);
   ok(afterRetry.runtime.revision === revision, "idempotent recruitment retry advanced the World revision");
   ok(afterRetry.state.contractOffers.filter((offer) => offer.id === first.offerId).length === 1, "idempotent recruitment retry duplicated the offer");
+  let rejectedRightsChange = false;
+  try {
+    await submitAlphaTalentOffer(repository, worldId, "player-a", {
+      ...request, creativeControl: "FULL_APPROVAL",
+    });
+  } catch { rejectedRightsChange = true; }
+  ok(rejectedRightsChange, "a reused request ID was allowed to escalate the wrestler's creative clause");
+  const afterAlteredReplay = await repository.load(worldId);
+  ok(afterAlteredReplay.runtime.revision === revision
+    && afterAlteredReplay.state.contractOffers.find((offer) => offer.id === first.offerId)?.creativeControl === "PROTECTED_FINISHES",
+    "replayed clause-change mutated the existing offer");
+  let invalidRejected = false;
+  try {
+    await submitAlphaTalentOffer(repository, worldId, "player-a", {
+      ...request, requestId: "talent-creative-forged", creativeControl: "SECRET_OVERRIDE" as never,
+    });
+  } catch { invalidRejected = true; }
+  ok(invalidRejected && (await repository.load(worldId)).runtime.revision === revision,
+    "invalid creative rights slipped through server validation or changed the World");
+
+});
+
+await test("all four creative levels pass player-authored offers end-to-end and legacy requests default to NONE", async () => {
+  const levels = ["NONE", "CONSULTATION", "PROTECTED_FINISHES", "FULL_APPROVAL"] as const;
+  for (const [index, level] of levels.entries()) {
+    const repository = new InMemoryApplicationWorldRepository();
+    const aggregate = createAlphaWorldAggregate({ seed: 73400 + index, playerId: "creative-player" });
+    await repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const independent = aggregate.state.promotions.find(p =>
+      p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
+    if (!independent) throw new Error("no indie promotion to take over");
+    await claimAlphaPromotion(repository, worldId, "creative-player", {
+      promotionId: independent.id, requestId: `creative-claim-${index}`,
+    });
+    const view = await loadAlphaTalentSession(repository, worldId, "creative-player");
+    const wrestler = view.market.find(person => person.availability === "FREE_AGENT" && !person.hasOurPendingOffer);
+    if (!wrestler) throw new Error("no free agent for creative contract fixture");
+    const request = {
+      requestId: `creative-level-${index}`, personId: wrestler.personId, sourceContractId: null,
+      family: "LIMITED_NON_EXCLUSIVE" as const,
+      roleExpectation: "REGULAR" as const,
+      creativeControl: level,
+      termWeeks: 13, dateEntitlement: 5,
+      weeklyGuarantee: Math.round(wrestler.estimatedWeeklyValue * 0.2),
+      appearanceFee: wrestler.estimatedWeeklyValue,
+      signingBonus: wrestler.estimatedWeeklyValue,
+    };
+    const saved = await submitAlphaTalentOffer(repository, worldId, "creative-player", request);
+    const pending = saved.view.pendingOffers.find(offer => offer.offerId === saved.offerId);
+    const state = await repository.load(worldId);
+    ok(pending?.creativeControl === level && state.state.contractOffers
+      .find(offer => offer.id === saved.offerId)?.creativeControl === level,
+      `wrestler's selected ${level} rights were not consistently persisted/displayed`);
+    if (level === "NONE") {
+      // Older clients that omit the optional field should safely read it as
+      // standard terms and keep the same idempotent command receipt.
+      const retry = await submitAlphaTalentOffer(repository, worldId, "creative-player", {
+        ...request, creativeControl: undefined,
+      });
+      ok(retry.offerId === saved.offerId, "legacy omitted-NONE request did not replay identically");
+    }
+  }
 });
 
 await test("talent date addendum is private, same-contract and idempotent", async () => {
