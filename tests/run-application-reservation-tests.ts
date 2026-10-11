@@ -282,7 +282,8 @@ test("two non-exclusive promotions can reserve the same wrestler on different da
   const second = reserve(f, "player-b", f.promotionB.id, "reserve-shared-b", 1, draftB.draftId);
   const workerA = first.participants.find(p => p.personId === sharedPersonId);
   const workerB = second.participants.find(p => p.personId === sharedPersonId);
-  ok(workerA?.contractId === source.id && workerB && workerB.contractId !== workerA.contractId,
+  if (!workerA || !workerB) throw new Error("either promotion omitted the shared contracted wrestler");
+  ok(workerA.contractId === source.id && workerB.contractId !== workerA.contractId,
     "concurrent non-exclusive commitments did not bind separate signed agreements");
   ok(f.planning.showReservations.length === 2
     && f.planning.showReservations[0]!.targetDate.day !== f.planning.showReservations[1]!.targetDate.day,
