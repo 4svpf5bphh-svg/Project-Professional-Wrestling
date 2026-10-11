@@ -36,28 +36,38 @@ const CASES = [
   { seed: 94272, playerId: "indie-baseline-b", promotionIndex: 1, ticketStrategy: "STANDARD" as const },
 ] as const;
 
-function usableSameDivisionRoster(
+function usablePairedRoster(
   state: WorldState, view: NonNullable<Awaited<ReturnType<typeof loadAlphaPlayerSession>>["promotion"]>,
 ): string[] {
+  // Individual matches must never mix divisions, but a wrestling EVENT can
+  // have separate men's and women's singles. The inherited-roster baseline
+  // unintentionally required the entire event to come from one division.
   const divisionById = new Map(state.people.map(person => [person.id, person.division ?? "MEN"] as const));
-  const usable = view.roster.filter(person => person.status === "ACTIVE" && person.datesRemaining > 0);
-  // A modest indie card rather than the inherited-roster stress test's
-  // ten-wrestler bill. Prioritise dates still owed, then lower appearance
-  // fees. This consumes real contractual rights and real event payroll.
   const feeById = new Map(state.contracts
     .filter(contract => contract.promotionId === view.promotionId && contract.status === "SIGNED")
     .map(contract => [contract.personId, contract.appearanceFee] as const));
-  usable.sort((a, b) => b.datesRemaining - a.datesRemaining
-    || (feeById.get(a.personId) ?? 0) - (feeById.get(b.personId) ?? 0)
-    || a.personId.localeCompare(b.personId));
-  const groups = (["MEN", "WOMEN"] as const)
-    .map(division => usable.filter(person => divisionById.get(person.personId) === division))
-    .sort((a, b) => b.length - a.length);
-  const minimum = view.showPlanning.minParticipants + (view.showPlanning.minParticipants % 2);
-  const largest = groups.find(group => group.length >= minimum);
-  if (!largest) return [];
-  const count = Math.min(largest.length - (largest.length % 2), view.showPlanning.maxParticipants, 6);
-  return count >= minimum ? largest.slice(0, count).map(person => person.personId) : [];
+  const roster = view.roster.filter(person => person.status === "ACTIVE" && person.datesRemaining > 0);
+  const pairPool: Array<{ ids: [string, string]; dates: number; fees: number }> = [];
+  for (const division of ["MEN", "WOMEN"] as const) {
+    const group = roster.filter(person => divisionById.get(person.personId) === division)
+      .sort((a, b) => b.datesRemaining - a.datesRemaining
+        || (feeById.get(a.personId) ?? 0) - (feeById.get(b.personId) ?? 0)
+        || a.personId.localeCompare(b.personId));
+    for (let i = 0; i + 1 < group.length; i += 2) {
+      const a = group[i]!, b = group[i + 1]!;
+      pairPool.push({
+        ids: [a.personId, b.personId],
+        dates: Math.min(a.datesRemaining, b.datesRemaining),
+        fees: (feeById.get(a.personId) ?? 0) + (feeById.get(b.personId) ?? 0),
+      });
+    }
+  }
+  pairPool.sort((a, b) => b.dates - a.dates || a.fees - b.fees
+    || a.ids[0].localeCompare(b.ids[0]));
+  const maxPairs = Math.floor(Math.min(6, view.showPlanning.maxParticipants) / 2);
+  const minimumPairs = Math.ceil(view.showPlanning.minParticipants / 2);
+  const chosen = pairPool.slice(0, maxPairs);
+  return chosen.length < minimumPairs ? [] : chosen.flatMap(pair => pair.ids);
 }
 
 function authoredSinglesCard(ids: readonly string[], week: number): AlphaCardMatchView[] {
@@ -222,7 +232,7 @@ async function scenario(c: typeof CASES[number]) {
     await makeFairOffers(repository, worldId, c.playerId, independent.id, week, negotiations);
     const session = await loadAlphaPlayerSession(repository, worldId, c.playerId);
     if (!session.promotion) throw new Error("owned indie not exposed in session");
-    const participants = usableSameDivisionRoster(state, session.promotion);
+    const participants = usablePairedRoster(state, session.promotion);
     let booked = false, authored = false, bookingError: string | null = null;
     if (due > 0) {
       if (!participants.length) {
