@@ -1,4 +1,4 @@
-import type { CreativeControlLevel, Person } from "../../domain/src/types.js";
+import type { Contract, CreativeControlLevel, Person } from "../../domain/src/types.js";
 
 /**
  * Creative control is a contracted right, not a hidden AI ability to rewrite
@@ -77,4 +77,30 @@ export function creativeBookingReview(
     reasons: proposal.repackaging ? ["MATCH_APPROVAL", "GIMMICK_APPROVAL"] : ["MATCH_APPROVAL"],
     requiresConsent: true,
   };
+}
+
+/**
+ * Unified fictional booking-approval score for human requests and automated
+ * booking. No real-world personality claims; changes are based on World state.
+ * The proposed reason is important: an objection to a protected loss is harder
+ * to clear than an ordinary match assignment.
+ */
+export function creativeBookingDecisionScore(
+  person: Person,
+  contract: Contract,
+  reason: CreativeBookingReviewReason,
+): number {
+  const importance = contract.roleExpectation === "MAIN_EVENT" || contract.roleExpectation === "SPECIAL_ATTRACTION" ? 13
+    : contract.roleExpectation === "UPPER_CARD" ? 8 : 3;
+  const protectedLoss = reason === "PROTECTED_LOSS";
+  const raw = 67 + (person.morale - 50) * 0.38
+    + (person.priorities.loyalty - person.priorities.role) * 0.08
+    - person.fatigue * 0.09
+    - (protectedLoss ? importance + 13 : importance * 0.45);
+  return Math.max(0, Math.min(100, Math.round(raw)));
+}
+
+/** Shared acceptance threshold; no random retries or faster-online advantage. */
+export function creativeBookingAgreed(score: number): boolean {
+  return score >= 55;
 }
