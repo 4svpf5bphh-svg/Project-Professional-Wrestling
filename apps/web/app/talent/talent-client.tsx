@@ -20,7 +20,8 @@ type ErrorPayload = { error?: string };
 export type TalentTab = "ROSTER" | "MARKET" | "OFFERS";
 type OfferFamily = AlphaTalentOfferRequest["family"];
 type OfferRole = AlphaTalentOfferRequest["roleExpectation"];
-type RosterSort = "POPULARITY" | "RECOGNITION" | "DATES_ASC" | "DATES_DESC" | "EXPIRY" | "NAME";
+type RosterSort = "POPULARITY" | "RECOGNITION" | "DATES_ASC" | "DATES_DESC" | "EXPIRY" | "WAGE_HIGH" | "WAGE_LOW" | "FEE_HIGH" | "FEE_LOW" | "NAME";
+type RosterGroupKey = OfferRole | "ALL_ROLES";
 type RosterContractFilter = "ALL" | "EXCLUSIVE" | "NON_EXCLUSIVE";
 type RosterDivisionFilter = "ALL" | "MEN" | "WOMEN";
 type MarketSort = "INTEREST" | "POPULARITY" | "RECOGNITION" | "VALUE_HIGH" | "VALUE_LOW" | "NAME";
@@ -415,12 +416,14 @@ function InjuryBadge({ injury }: { injury: { severity: string; weeksRemaining: n
 
 function RosterCard({
   wrestler,
+  rosterSort,
   pending,
   alignmentSaving,
   onAlignment,
   onRenew,
 }: {
   wrestler: PlayerRosterContractView;
+  rosterSort: RosterSort;
   pending: boolean;
   alignmentSaving: boolean;
   onAlignment: (alignment: Alignment) => void;
@@ -441,8 +444,12 @@ function RosterCard({
           <span>{label(wrestler.careerStage)} · {label(contract.family)} · {contract.exclusivity === "EXCLUSIVE" ? "Exclusive" : "Non-exclusive"}</span>
         </div>
         <div className={styles.scoreBlock}>
-          <b>POP {Math.round(wrestler.popularity)}</b>
-          <small>{contract.datesRemaining}/{contract.dateEntitlement} dates</small>
+          <b>{rosterSort.startsWith("WAGE_")
+            ? `${money(contract.weeklyGuarantee)}/week`
+            : rosterSort.startsWith("FEE_")
+              ? `${money(contract.appearanceFee)}/show`
+              : `POP ${Math.round(wrestler.popularity)}`}</b>
+          <small>{contract.datesRemaining}/{contract.dateEntitlement} dates · {contract.weeksToExpiry}w left</small>
         </div>
       </summary>
       <div className={styles.cardBody}>
@@ -734,7 +741,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
   const [rosterSort, setRosterSort] = useState<RosterSort>("POPULARITY");
   const [rosterContractFilter, setRosterContractFilter] = useState<RosterContractFilter>("ALL");
   const [rosterDivisionFilter, setRosterDivisionFilter] = useState<RosterDivisionFilter>("ALL");
-  const [collapsedRosterRoles, setCollapsedRosterRoles] = useState<Set<OfferRole>>(() => new Set());
+  const [collapsedRosterRoles, setCollapsedRosterRoles] = useState<Set<RosterGroupKey>>(() => new Set());
   const [marketSort, setMarketSort] = useState<MarketSort>("INTEREST");
   const [marketAvailabilityFilter, setMarketAvailabilityFilter] = useState<MarketAvailabilityFilter>("ALL");
   const [marketDivisionFilter, setMarketDivisionFilter] = useState<MarketDivisionFilter>("ALL");
@@ -947,19 +954,26 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       if (rosterSort === "DATES_ASC") return left.contract.datesRemaining - right.contract.datesRemaining || left.name.localeCompare(right.name);
       if (rosterSort === "DATES_DESC") return right.contract.datesRemaining - left.contract.datesRemaining || left.name.localeCompare(right.name);
       if (rosterSort === "EXPIRY") return left.contract.weeksToExpiry - right.contract.weeksToExpiry || left.name.localeCompare(right.name);
+      if (rosterSort === "WAGE_HIGH") return right.contract.weeklyGuarantee - left.contract.weeklyGuarantee || left.name.localeCompare(right.name);
+      if (rosterSort === "WAGE_LOW") return left.contract.weeklyGuarantee - right.contract.weeklyGuarantee || left.name.localeCompare(right.name);
+      if (rosterSort === "FEE_HIGH") return right.contract.appearanceFee - left.contract.appearanceFee || left.name.localeCompare(right.name);
+      if (rosterSort === "FEE_LOW") return left.contract.appearanceFee - right.contract.appearanceFee || left.name.localeCompare(right.name);
       if (rosterSort === "NAME") return left.name.localeCompare(right.name);
       return right.popularity - left.popularity || right.recognition - left.recognition || left.name.localeCompare(right.name);
     });
   }, [view, query, rosterContractFilter, rosterDivisionFilter, rosterSort]);
-  const rosterGroups = useMemo(
-    () => ROSTER_ROLE_ORDER
+  const rosterGroups = useMemo(() => {
+    // Compare pay globally rather than hiding high earners under card roles.
+    if (rosterSort.startsWith("WAGE_") || rosterSort.startsWith("FEE_")) {
+      return [{ role: "ALL_ROLES" as const, entries: roster }];
+    }
+    return ROSTER_ROLE_ORDER
       .map((role) => ({
         role,
         entries: roster.filter((entry) => entry.contract.roleExpectation === role),
       }))
-      .filter((group) => group.entries.length > 0),
-    [roster],
-  );
+      .filter((group) => group.entries.length > 0);
+  }, [roster, rosterSort]);
   const market = useMemo(() => {
     const entries = (view?.market ?? [])
       .filter((entry) => matchesQuery(entry.name, query))
@@ -1024,7 +1038,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
     marketSort,
   ]);
 
-  function toggleRosterRole(role: OfferRole): void {
+  function toggleRosterRole(role: RosterGroupKey): void {
     setCollapsedRosterRoles((current) => {
       const next = new Set(current);
       if (next.has(role)) next.delete(role);
@@ -1146,6 +1160,10 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
                     <option value="DATES_ASC">Dates low</option>
                     <option value="DATES_DESC">Dates high</option>
                     <option value="EXPIRY">Expiry</option>
+                    <option value="WAGE_HIGH">Weekly wage: highest</option>
+                    <option value="WAGE_LOW">Weekly wage: lowest</option>
+                    <option value="FEE_HIGH">Appearance fee: highest</option>
+                    <option value="FEE_LOW">Appearance fee: lowest</option>
                     <option value="NAME">Name</option>
                   </select>
                 </label>
@@ -1280,7 +1298,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
                         aria-expanded={!collapsed}
                         onClick={() => toggleRosterRole(group.role)}
                       >
-                        <span className={styles.rosterGroupTitle}>{label(group.role)}</span>
+                        <span className={styles.rosterGroupTitle}>{group.role === "ALL_ROLES" ? "All roster · pay comparison" : label(group.role)}</span>
                         <span className={styles.rosterGroupMeta}>{group.entries.length} {group.entries.length === 1 ? "wrestler" : "wrestlers"} · {collapsed ? "Show" : "Hide"}</span>
                       </button>
                       {!collapsed ? (
@@ -1289,6 +1307,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
                             <RosterCard
                               key={entry.contractId}
                               wrestler={entry}
+                              rosterSort={rosterSort}
                               pending={pendingPeople.has(entry.personId)}
                               alignmentSaving={alignmentSaving === entry.personId}
                               onAlignment={(alignment) => void changeAlignment(entry, alignment)}
