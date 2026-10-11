@@ -3,7 +3,14 @@ declare const process: { exitCode?: number };
 import {
   createAlphaWorldAggregate,
   claimAlphaPromotion,
+  advanceAlphaWorldWeek,
+  loadAlphaPlayerSession,
+  saveAlphaCurrentWeekShowPlan,
 } from "../packages/web-adapter/src/alpha-service.js";
+import {
+  loadAlphaCurrentWeekCard,
+  saveAlphaCurrentWeekCard,
+} from "../packages/web-adapter/src/card-service.js";
 import {
   loadAlphaTalentSession,
   setAlphaRosterAlignment,
@@ -15,6 +22,8 @@ import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/
 import {
   addPpwWeeks,
   canAddLimitedContractDates,
+  contractHasAppearanceRights,
+  contractIsActive,
   wrestlerAlignment,
   wrestlerAlignmentForPromotion,
   serviceCapacityDatesPerWeek,
@@ -262,6 +271,168 @@ await test("exclusive creative offers have unlimited dates and retry with canoni
     && final.state.contractOffers.filter(entry => entry.id === first.offerId).length === 1
     && final.state.contractOffers.find(entry => entry.id === first.offerId)?.creativeControl === "FULL_APPROVAL",
     "retry or altered-rights attempt mutated the authoritative World");
+});
+
+await test("accepted player one-off is bookable on the following PPW show, not spent at offer resolution", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 73510, playerId: "one-off-player" });
+  const independent = aggregate.state.promotions.find(p =>
+    p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("one-off fixture has no takeover-eligible indie");
+  const flagship = aggregate.state.showSeries?.find(series =>
+    series.promotionId === independent.id && series.role === "FLAGSHIP");
+  if (!flagship) throw new Error("one-off fixture has no flagship show series");
+  flagship.cadenceWeeks = 1;
+  flagship.anchorWeek = 0;
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "one-off-player", {
+    promotionId: independent.id, requestId: "one-off-claim",
+  });
+  const before = await loadAlphaTalentSession(repository, worldId, "one-off-player");
+  const wrestler = before.market.find(entry =>
+    entry.availability === "FREE_AGENT" && entry.division === "MEN"
+    && serviceCapacityDatesPerWeek(aggregate.state.people.find(p => p.id === entry.personId)!) >= 1.05);
+  if (!wrestler) throw new Error("one-off test lacks eligible male free agent");
+  const now = (await repository.load(worldId)).state.world.currentDate;
+  const nextWeek = addPpwWeeks(now, 1, aggregate.state.ruleset.weeksPerYear);
+  const offerResult = await submitAlphaTalentOffer(repository, worldId, "one-off-player", {
+    requestId: "one-off-offer", personId: wrestler.personId, sourceContractId: null,
+    family: "ONE_OFF", roleExpectation: "MAIN_EVENT", creativeControl: "NONE",
+    termWeeks: 1, dateEntitlement: 1, weeklyGuarantee: 0,
+    appearanceFee: wrestler.estimatedWeeklyValue * 25, signingBonus: 0,
+  });
+  const offered = (await repository.load(worldId)).state.contractOffers.find(o => o.id === offerResult.offerId);
+  ok(offered?.startDate.year === nextWeek.year && offered.startDate.week === nextWeek.week
+    && offered.endDate.year === nextWeek.year && offered.endDate.week === nextWeek.week,
+    "human one-off is not dated for the next bookable PPW week");
+  ok(!offerResult.view.roster.some(entry => entry.personId === wrestler.personId),
+    "unaccepted one-off appeared as owned, available talent");
+
+  // Contract bids resolve during this tick, *after* the previous show's booking window.
+  const beforeTick = await loadAlphaPlayerSession(repository, worldId, "one-off-player");
+  const acceptedWeek = await advanceAlphaWorldWeek(repository, worldId, "one-off-player", {
+    expectedRevision: beforeTick.world.revision,
+  });
+  const afterFirst = await repository.load(worldId);
+  const accepted = afterFirst.state.contractOffers.find(o => o.id === offerResult.offerId);
+  ok(accepted?.status === "ACCEPTED",
+    `strong one-off offer did not resolve as accepted: ${accepted?.rejectionReason ?? "unknown"}`);
+  const signed = afterFirst.state.contracts.find(c => c.sourceOfferId === accepted.id);
+  if (!signed) throw new Error("accepted one-off created no signed contract");
+  ok(contractIsActive(afterFirst.state, signed) && contractHasAppearanceRights(signed),
+    "accepted one-off expired or exhausted before the booker could use it");
+  ok(acceptedWeek.world.week === nextWeek.week && acceptedWeek.world.year === nextWeek.year,
+    "World did not advance to the exact accepted one-off booking week");
+  const promotion = acceptedWeek.promotion;
+  if (!promotion) throw new Error("one-off player lost their promotion after acceptance");
+  ok(promotion.roster.some(person => person.personId === wrestler.personId && person.datesRemaining > 0),
+    "accepted one-off does not appear as available on the player roster");
+
+  // Prove the actual reservation and authored card pipeline admits this signing.
+  const eligibleIds = promotion.roster
+    .filter(person => person.status === "ACTIVE" && person.datesRemaining > 0)
+    .map(person => person.personId);
+  const eligibleSameDivision = afterFirst.state.people.filter(person =>
+    person.division === wrestler.division && eligibleIds.includes(person.id)
+    && person.id !== wrestler.personId).map(person => person.id);
+  const targetCount = Math.min(promotion.showPlanning.maxParticipants,
+    Math.max(promotion.showPlanning.minParticipants, 4));
+  const evenCount = targetCount % 2 === 0 ? targetCount : targetCount + 1;
+  const participants = [wrestler.personId, ...eligibleSameDivision].slice(0, evenCount);
+  if (participants.length !== evenCount || evenCount > promotion.showPlanning.maxParticipants) {
+    throw new Error("one-off booking fixture lacks sufficient same-division participants");
+  }
+  const market = promotion.showPlanning.markets[0];
+  const venue = market?.venues[0];
+  if (!market || !venue) throw new Error("one-off test has no event market/venue");
+  await saveAlphaCurrentWeekShowPlan(repository, worldId, "one-off-player", {
+    requestId: "one-off-reserve-show", expectedRevision: acceptedWeek.world.revision,
+    expectedPlanVersion: promotion.showPlanning.workspaceVersion,
+    day: 6, marketId: market.marketId, venueId: venue.venueId,
+    ticketStrategy: "STANDARD", participantIds: participants,
+  });
+  const card = await loadAlphaCurrentWeekCard(repository, worldId, "one-off-player");
+  ok(card.canEdit && card.participants.some(p => p.personId === wrestler.personId),
+    "one-off does not make it onto the player-editable reserved Show Card");
+  const matches = Array.from({ length: participants.length / 2 }, (_, i) => ({
+    draftMatchId: `one-off-match-${i + 1}`,
+    type: "SINGLES" as const,
+    sideAIds: [participants[2 * i]!],
+    sideBIds: [participants[2 * i + 1]!],
+    intendedWinnerSide: "A" as const,
+    intent: "COMPETITIVE" as const,
+    plannedLengthMinutes: 12,
+  }));
+  const saved = await saveAlphaCurrentWeekCard(repository, worldId, "one-off-player", {
+    requestId: "one-off-book-card",
+    expectedRevision: card.world.revision,
+    expectedPlanVersion: card.workspaceVersion,
+    matches, championshipAssignments: [],
+  });
+  ok(saved.matches.some(match => match.sideAIds.includes(wrestler.personId)),
+    "one-off was not retained in the saved player-authored match");
+  const resolved = await advanceAlphaWorldWeek(repository, worldId, "one-off-player", {
+    expectedRevision: saved.world.revision,
+  });
+  ok((resolved.promotion?.lastResolvedShow?.matchCount ?? 0) >= matches.length,
+    "signed one-off could not be materialized into the player's next show");
+  const afterShow = await repository.load(worldId);
+  ok(afterShow.state.contracts.find(c => c.id === signed.id)?.datesUsed === 1,
+    "the one purchased date was not consumed by the completed booked show");
+});
+
+await test("exhausted-date renewal to a one-off starts next week without premature rights", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 73511, playerId: "one-off-renewal-player" });
+  const independent = aggregate.state.promotions.find(p =>
+    p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("one-off renewal fixture lacks a promotion");
+  const source = aggregate.state.contracts.find(c =>
+    c.promotionId === independent.id && c.status === "SIGNED" && c.family === "LIMITED_NON_EXCLUSIVE"
+    && serviceCapacityDatesPerWeek(aggregate.state.people.find(p => p.id === c.personId)!) >= 1.05);
+  if (!source) throw new Error("one-off renewal fixture lacks a limited roster contract");
+  source.datesUsed = source.dateEntitlement;
+  source.endDate = addPpwWeeks(aggregate.state.world.currentDate, 7, aggregate.state.ruleset.weeksPerYear);
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "one-off-renewal-player", {
+    promotionId: independent.id, requestId: "one-off-renewal-claim",
+  });
+  const view = await loadAlphaTalentSession(repository, worldId, "one-off-renewal-player");
+  const wrestler = view.roster.find(p => p.contractId === source.id);
+  if (!wrestler || wrestler.contract.renewalReason !== "DATES_EXHAUSTED") {
+    throw new Error("one-off renewal fixture did not expose exhausted dates");
+  }
+  const current = (await repository.load(worldId)).state.world.currentDate;
+  const nextWeek = addPpwWeeks(current, 1, aggregate.state.ruleset.weeksPerYear);
+  const offer = await submitAlphaTalentOffer(repository, worldId, "one-off-renewal-player", {
+    requestId: "one-off-renewal-offer", personId: source.personId, sourceContractId: source.id,
+    family: "ONE_OFF", roleExpectation: "MAIN_EVENT", creativeControl: "CONSULTATION",
+    termWeeks: 1, dateEntitlement: 1, weeklyGuarantee: 0,
+    appearanceFee: wrestler.estimatedWeeklyValue * 25, signingBonus: 0,
+  });
+  const beforeAcceptance = await repository.load(worldId);
+  const pending = beforeAcceptance.state.contractOffers.find(o => o.id === offer.offerId);
+  ok(pending?.startDate.week === nextWeek.week && pending.startDate.year === nextWeek.year
+    && pending.endDate.week === nextWeek.week && pending.endDate.year === nextWeek.year,
+    "exhausted-to-one-off replacement still starts in the already-locked offer week");
+  ok(beforeAcceptance.state.contracts.find(c => c.id === source.id)?.status === "SIGNED",
+    "submitting a future one-off prematurely terminated the source contract");
+  const beforeTick = await loadAlphaPlayerSession(repository, worldId, "one-off-renewal-player");
+  await advanceAlphaWorldWeek(repository, worldId, "one-off-renewal-player", {
+    expectedRevision: beforeTick.world.revision,
+  });
+  const afterAcceptance = await repository.load(worldId);
+  const decided = afterAcceptance.state.contractOffers.find(o => o.id === offer.offerId);
+  ok(decided?.status === "ACCEPTED",
+    `strong one-off renewal was not accepted: ${decided?.rejectionReason ?? "unknown"}`);
+  const replacement = afterAcceptance.state.contracts.find(c => c.sourceOfferId === offer.offerId);
+  ok(replacement?.status === "SIGNED" && contractIsActive(afterAcceptance.state, replacement)
+    && contractHasAppearanceRights(replacement),
+    "accepted one-off renewal did not become an active next-week appearance");
+  ok(afterAcceptance.state.contracts.find(c => c.id === source.id)?.status === "TERMINATED",
+    "accepted exhausted renewal left a superseded contract overlapping the new booking");
 });
 
 await test("talent date addendum is private, same-contract and idempotent", async () => {
