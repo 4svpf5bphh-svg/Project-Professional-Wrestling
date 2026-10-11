@@ -688,6 +688,22 @@ test("Second verified move wave covers real roster identities without fabricated
     &&bronView.active.finishingMoves[0]?.name==="Spear"
     &&bronView.active.finishingMoves[0]?.source==="VERIFIED",
     "unverified PPW-authored signatures were not distinguished from sourced finishers");
+  for(const sourceBackedName of ["Roman Reigns","Randy Orton","Asuka",
+    "Will Ospreay","Penta","Liv Morgan","Bianca Belair"]){
+    const sourceBacked={...template,id:"read-only-"+sourceBackedName,name:sourceBackedName};
+    const identity=wrestlerPortableIdentityFor(aggregate.state,sourceBacked);
+    const signatures=identity.active.signatureMoves;
+    const finishers=identity.active.finishingMoves;
+    ok(identity.source==="CURATED_BASELINE" &&
+      signatures.length>=2 &&finishers.length>=1,
+      "read-only profile missing two signatures or finisher: "+sourceBackedName);
+    const allNames=[...signatures,...finishers].map(m=>m.name.trim().toLocaleLowerCase("en-GB"));
+    ok(new Set(allNames).size===allNames.length,
+      "read-only profile duplicates a signature and finisher: "+sourceBackedName);
+    ok([...signatures,...finishers].every(m=>
+      m.source==="VERIFIED"||m.source==="PPW_AUTHORED"),
+      "source annotations were lost internally: "+sourceBackedName);
+  }
   const unknown={...template,id:"reference-unknown",name:"A Nonexistent Wrestling Character"};
   ok(wrestlerPortableIdentityFor(aggregate.state,unknown).active.finishingMoves.length>0
     &&wrestlerPortableIdentityFor(aggregate.state,unknown).active.finishingMoves[0]?.source==="PPW_AUTHORED",
