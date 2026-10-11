@@ -11,6 +11,8 @@ import type {
   AlphaRosterAlignmentResult,
   AlphaTalentOfferRequest,
   AlphaTalentOfferResult,
+  AlphaDatesAddendumRequest,
+  AlphaDatesAddendumResult,
   AlphaTalentWatchResult,
 } from "../../../../dist/packages/web-adapter/src/talent-service.js";
 import RosterNav from "./roster-nav";
@@ -423,6 +425,7 @@ function RosterCard({
   alignmentSaving,
   onAlignment,
   onRenew,
+  onAddDates,
 }: {
   wrestler: PlayerRosterContractView;
   rosterSort: RosterSort;
@@ -430,6 +433,7 @@ function RosterCard({
   alignmentSaving: boolean;
   onAlignment: (alignment: Alignment) => void;
   onRenew: () => void;
+  onAddDates: () => void;
 }): React.JSX.Element {
   const contract = wrestler.contract;
   return (
@@ -513,11 +517,16 @@ function RosterCard({
             Gimmick, moves &amp; profile →
           </a>
           <p className={styles.subtle}>Age {wrestler.biologicalAge.toFixed(1)} · Fatigue {Math.round(wrestler.fatigue)} · Wear {Math.round(wrestler.wear)} · Skill {averageSkill(wrestler)}</p>
-          {pending ? <span className={styles.pending}>Your offer pending</span> : contract.renewalWindowOpen ? (
-            <button className={styles.actionButton} type="button" onClick={onRenew}>
-              {contract.renewalReason === "DATES_EXHAUSTED" ? "Renegotiate dates" : "Negotiate renewal"}
-            </button>
-          ) : null}
+          {pending ? <span className={styles.pending}>Your offer pending</span> : (
+            <>
+              {contract.family === "LIMITED_NON_EXCLUSIVE" ? (
+                <button className={styles.actionButton} type="button" onClick={onAddDates}>Negotiate more dates</button>
+              ) : null}
+              {contract.renewalWindowOpen && contract.renewalReason === "EXPIRY_WINDOW" ? (
+                <button className={styles.actionButton} type="button" onClick={onRenew}>Negotiate renewal</button>
+              ) : null}
+            </>
+          )}
         </div>
       </div>
     </details>
@@ -605,13 +614,13 @@ function OfferCard({ offer }: { offer: PlayerPendingContractOfferView }): React.
       </div>
       <div className={styles.contractBox}>
         <div>
-          <span>{label(offer.family)} · {label(offer.exclusivity)}</span>
-          <strong>{label(offer.roleExpectation)} · {offer.family === "EXCLUSIVE" ? "Unlimited dates" : `${offer.dateEntitlement} dates`} · to {ppwDate(offer.endDate)}</strong>
+          <span>{offer.offerKind === "DATES_ADDENDUM" ? "Additional-dates proposal · same contract" : `${label(offer.family)} · ${label(offer.exclusivity)}`}</span>
+          <strong>{label(offer.roleExpectation)} · {offer.family === "EXCLUSIVE" ? "Unlimited dates" : `${offer.dateEntitlement} ${offer.offerKind === "DATES_ADDENDUM" ? "total dates proposed" : "dates"}`} · to {ppwDate(offer.endDate)}</strong>
         </div>
         <div className={styles.moneyRows}>
           <span>Weekly <b>{money(offer.weeklyGuarantee)}</b></span>
           <span>Appearance <b>{money(offer.appearanceFee)}</b></span>
-          <span>Signing <b>{money(offer.signingBonus)}</b></span>
+          <span>{offer.offerKind === "DATES_ADDENDUM" ? "Extra payment" : "Signing"} <b>{money(offer.signingBonus)}</b></span>
         </div>
       </div>
     </article>
@@ -768,6 +777,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
   const [watchSaving, setWatchSaving] = useState<string | null>(null);
   const [target, setTarget] = useState<OfferTarget | null>(null);
   const [draft, setDraft] = useState<OfferDraft | null>(null);
+  const [dateAddendum, setDateAddendum] = useState<{ wrestler: PlayerRosterContractView; requestId: string; extraDates: number; payment: number } | null>(null);
   const offerOpen = Boolean(target && draft);
 
   useEffect(() => {
@@ -818,6 +828,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
   }, [initialTab]);
 
   function openMarketOffer(wrestler: PlayerTalentMarketView): void {
+    setDateAddendum(null);
     const next: OfferTarget = {
       requestId: requestIdFor(wrestler.personId),
       personId: wrestler.personId,
@@ -836,6 +847,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
   }
 
   function openRenewal(wrestler: PlayerRosterContractView): void {
+    setDateAddendum(null);
     const next: OfferTarget = {
       requestId: requestIdFor(wrestler.personId),
       personId: wrestler.personId,
@@ -851,6 +863,54 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
     setDraft(defaultDraft(next));
     setError(null);
     setNotice(null);
+  }
+
+  function openMoreDates(wrestler: PlayerRosterContractView): void {
+    if (wrestler.contract.family !== "LIMITED_NON_EXCLUSIVE") return;
+    setTarget(null);
+    setDraft(null);
+    setDateAddendum({
+      wrestler,
+      requestId: requestIdFor(wrestler.personId),
+      extraDates: 3,
+      payment: Math.round(wrestler.estimatedWeeklyValue * 2),
+    });
+    setError(null);
+    setNotice(null);
+  }
+
+  async function submitMoreDates(): Promise<void> {
+    if (!dateAddendum || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const body: AlphaDatesAddendumRequest = {
+        requestId: dateAddendum.requestId,
+        personId: dateAddendum.wrestler.personId,
+        contractId: dateAddendum.wrestler.contractId,
+        additionalDates: dateAddendum.extraDates,
+        additionalPayment: dateAddendum.payment,
+      };
+      const response = await fetch("/api/talent/dates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json() as AlphaDatesAddendumResult | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to negotiate additional dates");
+      }
+      setView(payload.view);
+      setNotice(`${dateAddendum.wrestler.name}: additional-dates offer submitted. The wrestler can accept or reject it.`);
+      setDateAddendum(null);
+      setTab("OFFERS");
+      setQuery("");
+      if (typeof window !== "undefined") window.history.replaceState(window.history.state, "", "/talent?view=offers");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to negotiate additional dates");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function changeAlignment(wrestler: PlayerRosterContractView, alignment: Alignment): Promise<void> {
@@ -1104,6 +1164,35 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       {notice ? <div className={styles.notice}>{notice}</div> : null}
       {view && !view.promotion ? <section className={styles.panel}><p>Take control of a promotion before managing talent.</p></section> : null}
 
+      {dateAddendum ? (
+        <section className={styles.editor} aria-label={`Additional dates for ${dateAddendum.wrestler.name}`}>
+          <div className={styles.editorHeader}>
+            <div>
+              <span className={styles.eyebrow}>ADD DATES · SAME CONTRACT</span>
+              <h2>{dateAddendum.wrestler.name}</h2>
+              <p>{dateAddendum.wrestler.contract.datesRemaining} dates left · expires {ppwDate(dateAddendum.wrestler.contract.endDate)} · weekly wage unchanged.</p>
+            </div>
+            <button className={styles.button} type="button" disabled={submitting} onClick={() => setDateAddendum(null)}>Cancel</button>
+          </div>
+          <div className={styles.formGrid}>
+            <label>
+              <span>Additional appearances</span>
+              <IntegerInput value={dateAddendum.extraDates} min={1} max={104} disabled={submitting}
+                onChange={(extraDates) => setDateAddendum(current => current ? { ...current, extraDates } : null)} />
+            </label>
+            <label>
+              <span>One-time extra payment</span>
+              <MoneyInput value={dateAddendum.payment} disabled={submitting}
+                onChange={(payment) => setDateAddendum(current => current ? { ...current, payment } : null)} />
+            </label>
+          </div>
+          <div className={styles.editorFooter}>
+            <span>Wrestler acceptance is not guaranteed. Expiry, exclusivity, regular wage and appearance fee stay unchanged.</span>
+            <button className={styles.primaryButton} type="button" disabled={submitting}
+              onClick={() => void submitMoreDates()}>{submitting ? "Submitting…" : "Offer more dates"}</button>
+          </div>
+        </section>
+      ) : null}
       {target && draft ? (
         <OfferEditor
           target={target}
@@ -1319,6 +1408,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
                               alignmentSaving={alignmentSaving === entry.personId}
                               onAlignment={(alignment) => void changeAlignment(entry, alignment)}
                               onRenew={() => openRenewal(entry)}
+                              onAddDates={() => openMoreDates(entry)}
                             />
                           ))}
                         </div>
