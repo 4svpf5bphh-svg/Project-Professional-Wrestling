@@ -108,6 +108,16 @@ test("AI policy differentiates talent, promotion, consent severity and financial
 
 test("actual AI offers use the same bounded policy, without changing cash or giving hidden extra dates", () => {
   const state = createWorld(92054, DEFAULT_RULESET);
+  // Genesis deliberately starts with staffed AI rosters. Give a smaller AI
+  // promotion a genuine vacancy without deleting contracts, spoofing player
+  // activity or touching production generation logic.
+  const needingTalent = state.promotions.find((promotion) =>
+    promotion.controllerType === "AI" && promotion.tier === "LOCAL" && promotion.lifecycle === "ACTIVE")
+    ?? state.promotions.find((promotion) =>
+      promotion.controllerType === "AI" && promotion.tier === "INDEPENDENT" && promotion.lifecycle === "ACTIVE");
+  if (!needingTalent) throw new Error("fixture needs an AI promotion to recruit talent");
+  needingTalent.tier = "GLOBAL"; // larger target roster creates genuine new-offer slots
+  needingTalent.financialDistress = "HEALTHY";
   const beforeCount = state.contractOffers.length;
   generateAiContractOffers(state);
   const generated = state.contractOffers.slice(beforeCount);
