@@ -44,7 +44,7 @@ export function generateWorkingPartnershipConcerns(aggregate: ApplicationWorldAg
 
   for (const control of controls) {
     const promotionId = control.promotionId;
-    const existing = engagement.backstageConversations.filter(c => c.promotionId === promotionId);
+    const existing = engagement.backstageConversations.filter(c => c.promotionId === promotionId && c.kind !== "PROGRAMME_CREATIVE_AGREEMENT");
     const openedThisWeek = existing.filter(c =>
       ppwDateToWeekIndex(c.createdDate, state.ruleset.weeksPerYear) === currentWeek).length;
     const open = existing.filter(c => c.status === "OPEN").length;
