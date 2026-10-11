@@ -54,6 +54,7 @@ export function wrestlerPortableIdentityFor(state:WorldState,person:Person):Wres
   // without duplicating an existing signature or finisher.
   const finishers=curatedFinishers.length?curatedFinishers:guided.finishingMoves;
   const signatureCandidates=[...curatedSignatures,...guided.signatureMoves,...generated.signatureMoves];
+  const verifiedNames=new Set(curatedSignatures.map(move=>move.name.trim().toLocaleLowerCase("en-GB")));
   const already=new Set(finishers.map(move=>move.name.trim().toLocaleLowerCase("en-GB")));
   const signatures:PortableIdentityPersona["signatureMoves"]=[];
   for(const candidate of signatureCandidates){
@@ -61,7 +62,7 @@ export function wrestlerPortableIdentityFor(state:WorldState,person:Person):Wres
     const key=candidate.name.trim().toLocaleLowerCase("en-GB");
     if(already.has(key))continue;
     already.add(key);
-    signatures.push({...candidate,source:curatedSignatures.includes(candidate)?"VERIFIED":"PPW_AUTHORED"});
+    signatures.push({...candidate,source:verifiedNames.has(key)?"VERIFIED":"PPW_AUTHORED"});
   }
   const active:PortableIdentityPersona=existing?.active??(curated?{
     personaName:base.ringName,
