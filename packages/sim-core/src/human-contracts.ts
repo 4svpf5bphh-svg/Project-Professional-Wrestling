@@ -78,7 +78,7 @@ export function submitHumanContractOffer(state: WorldState, plan: HumanContractO
   }
   const replacingExhausted = Boolean(
     source
-    && source.family !== "ONE_OFF"
+    && source.family === "LIMITED_NON_EXCLUSIVE"
     && source.datesUsed >= source.dateEntitlement
     && contractOverlaps(source, plan, state.ruleset.weeksPerYear)
   );
