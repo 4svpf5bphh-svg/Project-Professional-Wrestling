@@ -49,13 +49,27 @@ export function wrestlerPortableIdentityFor(state:WorldState,person:Person):Wres
       ? curated.finishingMoves.map(move=>({...move,source:"VERIFIED" as const}))
       : curated.finishingMove?[{...curated.finishingMove,source:"VERIFIED" as const}]:[])
     : [];
+  // Display the same complete repertoire a fresh World seeds. Published
+  // moves retain their source internally; editorial guide moves fill gaps
+  // without duplicating an existing signature or finisher.
+  const finishers=curatedFinishers.length?curatedFinishers:guided.finishingMoves;
+  const signatureCandidates=[...curatedSignatures,...guided.signatureMoves,...generated.signatureMoves];
+  const already=new Set(finishers.map(move=>move.name.trim().toLocaleLowerCase("en-GB")));
+  const signatures:PortableIdentityPersona["signatureMoves"]=[];
+  for(const candidate of signatureCandidates){
+    if(signatures.length>=2)break;
+    const key=candidate.name.trim().toLocaleLowerCase("en-GB");
+    if(already.has(key))continue;
+    already.add(key);
+    signatures.push({...candidate,source:curatedSignatures.includes(candidate)?"VERIFIED":"PPW_AUTHORED"});
+  }
   const active:PortableIdentityPersona=existing?.active??(curated?{
     personaName:base.ringName,
-    gimmickId:base.gimmickArchetype,
-    primaryStyle:base.primaryStyle,
-    secondaryStyle:base.secondaryStyle,
-    signatureMoves:curatedSignatures.length?curatedSignatures:guided.signatureMoves,
-    finishingMoves:curatedFinishers.length?curatedFinishers:guided.finishingMoves,
+    gimmickId:curated.gimmickArchetype,
+    primaryStyle:curated.primaryStyle,
+    secondaryStyle:curated.secondaryStyle,
+    signatureMoves:signatures,
+    finishingMoves:finishers,
     introducedDate:{...person.debutDate},
     provenance:"CURATED",
   }:guided);
