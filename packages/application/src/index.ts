@@ -43,3 +43,4 @@ export * from "./wrestler-profile-view.js";
 export * from "./wrestler-creative.js";
 export * from "./wrestler-personality.js";
 export * from "./wrestler-creative-interests.js";
+export * from "./wrestler-portable-identity.js";

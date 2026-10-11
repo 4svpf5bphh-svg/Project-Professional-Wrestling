@@ -10,7 +10,8 @@
   "git": {
     "deploymentEnabled": {
       "alpha1a-freeze-*": false,
-      "alpha-freeze-*": false
+      "alpha-freeze-*": false,
+      "work/**": false
     }
   },
   "crons": [

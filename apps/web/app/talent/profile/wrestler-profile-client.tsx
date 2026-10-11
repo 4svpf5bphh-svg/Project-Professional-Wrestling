@@ -212,6 +212,49 @@ export default function WrestlerProfileClient({
           {creative ? " Your promotion can set its own character and style emphasis. Nothing here changes match ratings yet."
             : " Promotional gimmicks and move lists can be edited by the promotion booking this wrestler."}
         </p>
+        <div className={styles.stack}>
+          <p className={styles.note}>
+            Shared wrestler identity: <strong>{view.person.portableIdentity.active.personaName}</strong>
+            {" · "}{gimmickDefinition(view.person.portableIdentity.active.gimmickId).label}
+            {view.person.portableIdentity.source==="WORLD_RECORD" ? " · World career record" : ""}
+          </p>
+          <p className={styles.note}>
+            Signature moves: {view.person.portableIdentity.active.signatureMoves
+              .map(move=>move.name).join(", ")||"None recorded"}
+            {" · "}Finishing moves: {view.person.portableIdentity.active.finishingMoves
+              .map(move=>move.name).join(", ")||"None recorded"}
+          </p>
+          {view.person.portableIdentity.documentedAlternates.length > 0 ? (
+            <details className={styles.history}>
+              <summary>
+                Established alternate / former personas ({view.person.portableIdentity.documentedAlternates.length})
+              </summary>
+              <p className={styles.note}>
+                Real-world historical references only — these are not changes to this PPW World,
+                available gimmicks or proof the wrestler would accept a rebrand.
+              </p>
+              <div className={styles.stack}>
+                {view.person.portableIdentity.documentedAlternates.map(persona => (
+                  <div className={styles.historyCard} key={persona.personaName}>
+                    <strong>{persona.personaName}</strong>
+                    <p className={styles.note}>
+                      {persona.kind === "FORMER_RING_NAME" ? "Former ring name"
+                        : persona.kind === "HISTORICAL_CHARACTER" ? "Historical character"
+                        : "Recurring alternate persona"}
+                      {" · "}{gimmickDefinition(persona.gimmickId).label}
+                    </p>
+                    <a href={persona.sourceUrl} target="_blank" rel="noopener noreferrer">
+                      View historical source
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ) : null}
+          {creative ? <p className={styles.note}>
+            Your promotion edits below remain local until a shared-world character change is negotiated.
+          </p>:null}
+        </div>
         {creativeDraft && creative ? (
           <div className={styles.creativeEditor}>
             <label className={styles.field}>

@@ -1,3 +1,6 @@
+import { VERIFIED_WRESTLER_CHARACTER_WAVE_2 } from "./real-wrestler-characters-wave-2.js";
+import { VERIFIED_WOMENS_CHARACTER_WAVE_3 } from "./real-wrestler-characters-women-wave-3.js";
+
 /**
  * Auditable, incomplete first slice of real-world wrestler character identities.
  * Sources: official WWE superstar profiles and AEW roster profiles.
@@ -154,7 +157,7 @@ export const CURATED_WRESTLER_CHARACTERS = [
   },
   {
     "name": "Finn Bálor",
-    "gimmickArchetype": "DEMON",
+    "gimmickArchetype": "DARK_ANTI_HERO",
     "primaryStyle": "HIGH_FLYER",
     "secondaryStyle": null,
     "signatureMove": {
@@ -412,7 +415,9 @@ export const CURATED_WRESTLER_CHARACTERS = [
       "category": "STRIKE"
     },
     "sourceUrl": "https://www.wwe.com/superstars/shinsuke-nakamura"
-  }
+  },
+  ...VERIFIED_WRESTLER_CHARACTER_WAVE_2,
+  ...VERIFIED_WOMENS_CHARACTER_WAVE_3
 ] as const;
 export type CuratedWrestlerCharacter = (typeof CURATED_WRESTLER_CHARACTERS)[number];
 export function curatedCharacterFor(name:string):CuratedWrestlerCharacter|null {

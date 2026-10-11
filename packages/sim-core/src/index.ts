@@ -41,3 +41,5 @@ export * from "./talent-trust.js";
 export * from "./team-seeding.js";
 export * from "./transactions.js";
 export * from "./wrestler-division.js";
+export * from "./wrestler-identity.js";
+export * from "./identity-generation.js";

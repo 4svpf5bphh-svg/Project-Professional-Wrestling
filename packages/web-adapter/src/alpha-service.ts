@@ -5,6 +5,7 @@ import { realPromotionShowSeriesSource } from "../../content/src/real-show-serie
 import { realWorldInitialRosterAssignmentSource } from "../../content/src/real-aew-roh-cmll-rosters.js";
 import { seedRealActiveTagTeams } from "../../content/src/real-active-tag-teams.js";
 import { seedRealWrestlerRelationships } from "../../content/src/real-wrestler-relationships.js";
+import { completeAlphaWrestlerIdentityCoverage } from "../../content/src/wrestler-identity-coverage.js";
 import type { Promotion, PromotionShowSeries, TicketStrategy } from "../../domain/src/types.js";
 import {
   activePromotionControlForPlayer,
@@ -231,6 +232,7 @@ export function createAlphaWorldAggregate(options: AlphaWorldBootstrapOptions): 
   );
   seedRealActiveTagTeams(state);
   seedRealWrestlerRelationships(state);
+  completeAlphaWrestlerIdentityCoverage(state,"NEW_WORLD");
   ensureWorldChampionships(state);
   const ownership = createWorldOwnershipState(state.world.id, 1);
   joinPlayerToWorld(ownership, options.playerId, state.world.currentDate);
@@ -249,7 +251,13 @@ export async function ensureAlphaWorld(
 ): Promise<string> {
   const worldId = alphaWorldId(options.seed);
   try {
-    await repository.load(worldId);
+    const existing=await repository.load(worldId);
+    if ((existing.state.wrestlerIdentities?.length??0)<existing.state.people.length) {
+      await repository.transact(worldId,null,current=>{
+        if(completeAlphaWrestlerIdentityCoverage(current.state,"EXISTING_WORLD")>0)
+          incrementWorldRevision(current.runtime);
+      });
+    }
     await upgradePersistedLegacyRealPromotionCalendars(repository, worldId);
     return worldId;
   } catch (error) {

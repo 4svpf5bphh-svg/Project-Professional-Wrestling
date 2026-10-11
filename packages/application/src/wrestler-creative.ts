@@ -7,7 +7,6 @@
  */
 import type { Id, Person, PpwDate, WorldState } from "../../domain/src/types.js";
 import { currentRosterPersonIds } from "../../sim-core/src/contracts.js";
-import { deterministicSeedFromText } from "../../sim-core/src/rng.js";
 import {
   executeIdempotentCommand, type ApplicationCommandEnvelope, type WorldCommandState,
 } from "./commands.js";
@@ -26,6 +25,8 @@ export type WrestlingStyle = (typeof WRESTLING_STYLES)[number];
 import { GIMMICK_ARCHETYPES, gimmickUsableBy } from "./gimmick-catalog.js";
 import type { GimmickId } from "./gimmick-catalog.js";
 import { curatedCharacterFor } from "../../content/src/real-wrestler-characters.js";
+import {fullRealRosterIdentityFor} from "../../content/src/full-real-roster-identity-guide.js";
+import {authoredPersonaForPerson,authoredWrestlingStyle} from "../../sim-core/src/identity-generation.js";
 
 export { GIMMICK_ARCHETYPES };
 export type GimmickArchetype = GimmickId;
@@ -63,34 +64,28 @@ export interface WrestlerCreativeRecord {
 }
 
 /** Non-competitive legacy fallback. It is not a scouting claim or rating. */
-export function baselineWrestlingStyle(person: Person): WrestlingStyle {
-  const hash = deterministicSeedFromText("ppw-style:" + person.id);
-  const scores: Array<{ style: WrestlingStyle; score: number }> = [
-    { style:"ALL_ROUNDER",score:person.skills.inRingQuality * 0.4 + person.skills.matchCraft * 0.3 + 13 },
-    { style:"TECHNICAL",score:person.skills.matchCraft * 0.58 + person.skills.safety * 0.2 + 12 },
-    { style:"BRAWLER",score:person.skills.presentation * 0.42 + person.skills.stamina * 0.18 + 14 },
-    { style:"HIGH_FLYER",score:person.skills.stamina * 0.45 + person.skills.inRingQuality * 0.26 + 8 },
-    { style:"POWERHOUSE",score:person.skills.presentation * 0.46 + person.skills.inRingQuality * 0.19 + 10 },
-    { style:"STRIKER",score:person.skills.inRingQuality * 0.39 + person.skills.stamina * 0.28 + 9 },
-    { style:"SUBMISSION",score:person.skills.matchCraft * 0.56 + person.skills.safety * 0.16 + 11 },
-    { style:"LUCHA",score:person.skills.stamina * 0.48 + person.skills.inRingQuality * 0.25 + 8 },
-    { style:"STRONG_STYLE",score:person.skills.inRingQuality * 0.40 + person.skills.matchCraft * 0.27 + 11 },
-  ];
-  return [...scores].sort((a,b) => (b.score + ((hash >>> (WRESTLING_STYLES.indexOf(b.style) % 16)) & 15) * 0.9)
-    - (a.score + ((hash >>> (WRESTLING_STYLES.indexOf(a.style) % 16)) & 15) * 0.9)
-    || a.style.localeCompare(b.style))[0]!.style;
+export function baselineWrestlingStyle(person:Person):WrestlingStyle {
+  return authoredWrestlingStyle(person);
 }
 
 export function defaultWrestlerCreativeFields(person: Person): WrestlerCreativeFields {
   const real = curatedCharacterFor(person.name);
+  const guide=fullRealRosterIdentityFor(person.name);
+  const authored=authoredPersonaForPerson(person);
   return {
     ringName: person.name,
-    gimmickArchetype: real?.gimmickArchetype ?? "AUTHENTIC",
+    gimmickArchetype: (real?.gimmickArchetype ?? guide?.gimmickArchetype ?? authored.gimmickId) as GimmickArchetype,
     gimmickDescription: "",
-    primaryStyle: real?.primaryStyle ?? baselineWrestlingStyle(person),
-    secondaryStyle: real?.secondaryStyle ?? null,
-    signatureMove: real?.signatureMove ? {...real.signatureMove} : null,
-    finishingMove: real?.finishingMove ? {...real.finishingMove} : null,
+    primaryStyle: (real?.primaryStyle ?? guide?.primaryStyle ?? authored.primaryStyle) as WrestlingStyle,
+    secondaryStyle: (real ? real.secondaryStyle : guide?.secondaryStyle ?? authored.secondaryStyle) as WrestlingStyle|null,
+    signatureMove: real?.signatureMove ? {...real.signatureMove}
+      : guide?.signatureMoves[0]
+      ? {name:guide.signatureMoves[0].name,category:guide.signatureMoves[0].category}
+      : {name:authored.signatureMoves[0]!.name,category:authored.signatureMoves[0]!.category},
+    finishingMove: real?.finishingMove ? {...real.finishingMove}
+      : guide?.finishingMoves[0]
+      ? {name:guide.finishingMoves[0].name,category:guide.finishingMoves[0].category}
+      : {name:authored.finishingMoves[0]!.name,category:authored.finishingMoves[0]!.category},
   };
 }
 

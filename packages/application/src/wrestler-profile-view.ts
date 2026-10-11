@@ -30,6 +30,7 @@ import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 import { baselineWrestlingStyle, defaultWrestlerCreativeFields, wrestlerCreativeProfileFor, type WrestlerCreativeFields, type WrestlerCreativeChange, type WrestlingStyle } from "./wrestler-creative.js";
 import { wrestlerPersonalityFor, type WrestlerPersonalityView } from "./wrestler-personality.js";
 import { wrestlerCreativeInterestFor, type WrestlerCreativeInterestView } from "./wrestler-creative-interests.js";
+import { wrestlerPortableIdentityFor, type WrestlerPortableIdentityView } from "./wrestler-portable-identity.js";
 import { workingConnectionsForWrestler, type WrestlerWorkingConnectionView } from "./wrestler-working-connections.js";
 
 export type WrestlerProfileEmploymentStatus =
@@ -100,6 +101,8 @@ export interface PlayerWrestlerProfileView {
     baselineStyle: WrestlingStyle;
     /** Visible neutral character entry even before a player books this wrestler. */
     baselinePresentation: WrestlerCreativeFields;
+    /** The public shared World persona; distinct from private local booking edits. */
+    portableIdentity: WrestlerPortableIdentityView;
     currentInjury: {
       severity: InjurySeverity;
       weeksRemaining: number;
@@ -464,6 +467,7 @@ export function buildPlayerWrestlerProfileView(
       creativeInterests: wrestlerCreativeInterestFor(person),
       baselineStyle: baselineWrestlingStyle(person),
       baselinePresentation: defaultWrestlerCreativeFields(person),
+      portableIdentity: wrestlerPortableIdentityFor(aggregate.state, person),
       currentInjury: currentInjuryFor(aggregate, person.id),
     },
     relationship,
