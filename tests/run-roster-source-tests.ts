@@ -27,6 +27,7 @@ import { marketWeeklyValue } from "../packages/sim-core/src/contracts.js";
 import { VERIFIED_WOMENS_CHARACTER_WAVE_3 } from "../packages/content/src/real-wrestler-characters-women-wave-3.js";
 import { CURATED_WRESTLER_CHARACTERS } from "../packages/content/src/real-wrestler-characters.js";
 import { GIMMICK_CATALOG } from "../packages/application/src/gimmick-catalog.js";
+import { authoredPersonaForPerson } from "../packages/sim-core/src/identity-generation.js";
 import { FULL_REAL_ROSTER_IDENTITY_GUIDE, fullRealRosterIdentityFor } from "../packages/content/src/full-real-roster-identity-guide.js";
 import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4 } from "../packages/content/src/real-roster-editorial-audit-wave4.js";
 import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE5 } from "../packages/content/src/real-roster-editorial-audit-wave5.js";
@@ -972,6 +973,33 @@ test("the entire exact-name real roster keeps complete stable move records",()=>
     ok(fullRealRosterIdentityFor(row.name)!.signatureMoves[0]!.name!=="shared-reference mutation",
       "guide returned another World's mutable wrestler move: "+row.name);
   }
+});
+
+
+test("future generated wrestlers begin with complete deterministic portable character repertoires",()=>{
+  const fixture=createAlphaWorldAggregate({seed:88273,playerId:"future-prospect-coverage"}).state;
+  const template=fixture.people[0]!;
+  const prior=JSON.stringify(fixture.people);
+  const gimmicks=new Set(GIMMICK_CATALOG.map(x=>x.id));
+  for(let n=0;n<96;n++){
+    const prospect={...template,id:"future-prospect-"+n,name:"Generated Prospect "+n};
+    const active=authoredPersonaForPerson(prospect);
+    const again=authoredPersonaForPerson(prospect);
+    ok(JSON.stringify(active)===JSON.stringify(again)
+      &&active.personaName===prospect.name
+      &&active.provenance==="GAME_AUTHORED",
+      "future wrestler persona must be stable across retries: "+prospect.name);
+    ok(gimmicks.has(active.gimmickId)
+      &&active.primaryStyle!==active.secondaryStyle
+      &&active.signatureMoves.length===2 &&active.finishingMoves.length===1,
+      "future wrestler spawned without gimmick, styles and complete moves: "+prospect.name);
+    const moves=[...active.signatureMoves,...active.finishingMoves];
+    ok(new Set(moves.map(m=>m.name.trim().toLocaleLowerCase("en-GB"))).size===3
+      &&moves.every(m=>m.name.trim().length>1 &&m.source==="PPW_AUTHORED"),
+      "future generated wrestler has missing, duplicate or misleading move metadata: "+prospect.name);
+  }
+  ok(JSON.stringify(fixture.people)===prior,
+    "generating prospect personas mutated the shared World people");
 });
 
 console.log(`\nRoster source tests: ${passed} passed, ${failed} failed`);
