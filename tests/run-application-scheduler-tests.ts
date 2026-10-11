@@ -2,6 +2,13 @@ declare const process: { exitCode?: number };
 
 import {
   createWorldCommandState,
+  activityForPlayer,
+  joinPlayerToWorld,
+  recordPlayerActivity,
+  activeSchedulerDaysBetween,
+  createWorldEngagementState,
+  recordMissedSchedulerCycles,
+  evaluatePlayerInactivity,
   createWorldOwnershipState,
   createWorldPlanningState,
   createWorldRuntimeState,
@@ -361,5 +368,62 @@ await test("PPW's internal day 1–7 calendar stays distinct from daily UTC sche
     "new PPW week did not restart at Monday after Sunday/year rollover");
 });
 
+await test("outage resumes exactly one PPW week and protects accrued inactivity days", async () => {
+  const aggregate = fixture(18030);
+  joinPlayerToWorld(aggregate.ownership, "offline-player", aggregate.state.world.currentDate);
+  aggregate.engagement = createWorldEngagementState(aggregate.state.world.id);
+  recordPlayerActivity(
+    aggregate.engagement, "offline-player", aggregate.state.world.currentDate, 0, "2026-10-01",
+  );
+  const repository = new InMemoryApplicationWorldRepository();
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await resolveScheduledWorldCycle(repository, worldId, "2026-10-01");
+  const first = await repository.load(worldId);
+  const recovered = await resolveScheduledWorldCycle(repository, worldId, "2026-10-12");
+  ok(recovered.status === "RESOLVED", "World did not resume after 10 missing cycles");
+  let after = await repository.load(worldId);
+  ok(after.state.world.currentDate.week === first.state.world.currentDate.week + 1,
+    "scheduler replayed multiple unplanned PPW weeks after outage");
+  ok(after.runtime.lastResolvedRealCycleKey === "2026-10-12", "resumed cycle did not become authoritative");
+  ok(after.engagement?.schedulerPauseSpans?.length === 1
+    && after.engagement.schedulerPauseSpans[0]?.firstMissedCycleKey === "2026-10-02"
+    && after.engagement.schedulerPauseSpans[0]?.lastMissedCycleKey === "2026-10-11",
+    "missing real calendar days were not persisted exactly once");
+  ok(after.engagement
+    && activeSchedulerDaysBetween(after.engagement, "2026-10-01", "2026-10-12") === 1,
+    "missed dates counted toward effective inactive days");
+  ok(activityForPlayer(after.engagement!, "offline-player")?.status === "ACTIVE",
+    "offline player was unfairly warned or stewarded on recovery");
+  ok(after.state.ledger.filter((entry) => entry.type === "SCHEDULER_MISSED_CYCLES_PROTECTED").length === 1,
+    "outage was not auditable");
+
+  const duplicate = await resolveScheduledWorldCycle(repository, worldId, "2026-10-12");
+  after = await repository.load(worldId);
+  ok(duplicate.status === "ALREADY_RESOLVED"
+    && after.engagement?.schedulerPauseSpans?.length === 1,
+    "retry duplicated outage credit or advanced the World again");
+  await resolveScheduledWorldCycle(repository, worldId, "2026-10-18");
+  after = await repository.load(worldId);
+  ok(after.engagement?.schedulerPauseSpans?.length === 2,
+    "second disconnected run of missed cycles was not tracked");
+  ok(after.engagement && activeSchedulerDaysBetween(after.engagement, "2026-10-01", "2026-10-18") === 2,
+    "second pause did not protect multiple disjoint outages");
+});
+
+await test("next normal days accrue inactivity after missed-cycle credit without resetting player activity", async () => {
+  const aggregate = fixture(18031);
+  const engagement = createWorldEngagementState(aggregate.state.world.id);
+  recordPlayerActivity(engagement, "player-a", aggregate.state.world.currentDate, 0, "2026-10-01");
+  recordMissedSchedulerCycles(engagement, "2026-10-01", "2026-10-06");
+  ok(activeSchedulerDaysBetween(engagement, "2026-10-01", "2026-10-06") === 1,
+    "recording a skipped window did not exclude four real dates");
+  ok(evaluatePlayerInactivity(engagement, "player-a", "2026-10-11") === "ACTIVE",
+    "missing days prematurely caused a warning");
+  ok(evaluatePlayerInactivity(engagement, "player-a", "2026-10-12") === "WARNING",
+    "normal successful days no longer trigger fair inactivity warnings");
+  ok(evaluatePlayerInactivity(engagement, "player-a", "2026-10-19") === "STEWARDED",
+    "normal inactivity can no longer progress into Stewardship");
+});
 console.log(`\nApplication scheduler tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
