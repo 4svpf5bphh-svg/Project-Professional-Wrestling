@@ -68,6 +68,7 @@ export interface PlayerPlannerTalentOptionView {
   momentum: number;
   morale: number;
   datesRemaining: number;
+  unlimitedAppearances: boolean;
 }
 
 export type PlayerPlannerMarketPresence = "STRONG" | "ESTABLISHED" | "DEVELOPING" | "LIGHT";
@@ -234,7 +235,9 @@ function eligibleParticipantsForWeek(
 
   for (const contract of aggregate.state.contracts) {
     if (contract.promotionId !== promotionId || contract.status !== "SIGNED") continue;
-    const remaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
+    const remaining = contract.family === "EXCLUSIVE"
+      ? Number.MAX_SAFE_INTEGER
+      : Math.max(0, contract.dateEntitlement - contract.datesUsed);
     if (remaining <= 0) continue;
     if (!contractTouchesWeek(aggregate, contract.startDate, contract.endDate, targetDate)) continue;
     remainingByPerson.set(contract.personId, (remainingByPerson.get(contract.personId) ?? 0) + remaining);
@@ -251,7 +254,8 @@ function eligibleParticipantsForWeek(
       popularity: person.popularity,
       momentum: person.momentum,
       morale: person.morale,
-      datesRemaining,
+      datesRemaining: datesRemaining === Number.MAX_SAFE_INTEGER ? 0 : datesRemaining,
+      unlimitedAppearances: datesRemaining >= Number.MAX_SAFE_INTEGER,
     });
   }
   return result.sort((left, right) => right.popularity - left.popularity || left.name.localeCompare(right.name));
