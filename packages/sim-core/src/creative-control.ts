@@ -1,5 +1,6 @@
 import type { Contract, CreativeControlLevel, Person, PpwDate, WorldState } from "../../domain/src/types.js";
-import { comparePpwDates, ppwDateToWeekIndex } from "./clock.js";
+import { ppwDateToWeekIndex } from "./clock.js";
+import { contractCoversBookedDate } from "./contract-calendar.js";
 import { contractsForPerson } from "./indexes.js";
 
 /**
@@ -212,9 +213,8 @@ export function applicableCreativeContract(
   date: PpwDate,
 ): Contract | null {
   return contractsForPerson(state, personId)
-    .filter((contract) => contract.promotionId === promotionId && contract.status === "SIGNED"
-      && comparePpwDates(date, contract.startDate, state.ruleset.weeksPerYear) >= 0
-      && comparePpwDates(date, contract.endDate, state.ruleset.weeksPerYear) <= 0)
+    .filter((contract) => contract.promotionId === promotionId
+      && contractCoversBookedDate(state, contract, date))
     .sort((a, b) => CREATIVE_RIGHTS_WEIGHT[resolvedCreativeControl(b.creativeControl)]
       - CREATIVE_RIGHTS_WEIGHT[resolvedCreativeControl(a.creativeControl)]
       || a.id.localeCompare(b.id))[0] ?? null;
