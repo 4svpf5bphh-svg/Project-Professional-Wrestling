@@ -533,6 +533,21 @@ export function generateAiContractOffers(state: WorldState): void {
   }
 }
 
+/** A date addendum does not replace, renew or otherwise rewrite its parent deal. */
+function datesAddendumSource(state: WorldState, offer: ContractOffer): Contract | null {
+  if (offer.offerKind !== "DATES_ADDENDUM" || !offer.sourceContractId) return null;
+  const source = state.contracts.find(c => c.id === offer.sourceContractId);
+  if (!source || !contractIsActive(state, source)
+    || source.personId !== offer.personId || source.promotionId !== offer.promotionId
+    || source.family !== "LIMITED_NON_EXCLUSIVE"
+    || offer.family !== source.family || offer.exclusivity !== source.exclusivity
+    || offer.roleExpectation !== source.roleExpectation
+    || offer.weeklyGuarantee !== source.weeklyGuarantee || offer.appearanceFee !== source.appearanceFee
+    || comparePpwDates(offer.endDate, source.endDate, state.ruleset.weeksPerYear) !== 0
+    || offer.dateEntitlement <= source.dateEntitlement) return null;
+  return source;
+}
+
 function exhaustedReplacementSource(state: WorldState, offer: ContractOffer): Contract | null {
   const sourceContractId = offer.sourceContractId ?? null;
   if (!sourceContractId) return null;
@@ -550,6 +565,26 @@ function exhaustedReplacementSource(state: WorldState, offer: ContractOffer): Co
 
 function acceptContractOffer(state: WorldState, person: Person, offer: ContractOffer): void {
   const promotion = state.promotions.find((candidate) => candidate.id === offer.promotionId)!;
+  if (offer.offerKind === "DATES_ADDENDUM") {
+    const source = datesAddendumSource(state, offer);
+    if (!source) throw new Error("date addendum no longer matches an active contract");
+    const additionalDates = offer.dateEntitlement - source.dateEntitlement;
+    source.dateEntitlement = offer.dateEntitlement;
+    // The extra consideration is a new ledger transaction, NOT a new contract
+    // or a rewrite of the original signing bonus or recurring guarantee.
+    if (offer.signingBonus > 0) {
+      recordFinancialTransaction(state, promotion, "CONTRACT_SIGNING_BONUS", -offer.signingBonus, offer.id);
+    }
+    new LedgerWriter(state.world.id, state.ledger).append({
+      date: state.world.currentDate,
+      type: "CONTRACT_EXTRA_DATES_ACCEPTED",
+      significance: "ROUTINE",
+      entityIds: [offer.id, source.id, person.id, promotion.id],
+      payload: { additionalDates, newTotalDates: source.dateEntitlement, additionalPayment: offer.signingBonus },
+    });
+    offer.status = "ACCEPTED";
+    return;
+  }
   const source = exhaustedReplacementSource(state, offer);
   if (source) {
     source.status = "TERMINATED";
@@ -640,12 +675,24 @@ export function evaluateContractOffer(state: WorldState, offer: ContractOffer): 
   if (!person || !promotion) return 0;
 
   const market = Math.max(1, marketWeeklyValue(person));
-  const moneyScore = Math.max(0, Math.min(100, 50 + ((weeklyEquivalent(offer, state) - market * 0.7) / market) * 65));
+  const addendum = offer.offerKind === "DATES_ADDENDUM" ? datesAddendumSource(state, offer) : null;
+  if (offer.offerKind === "DATES_ADDENDUM" && !addendum) return 0;
+  const extraDates = addendum ? offer.dateEntitlement - addendum.dateEntitlement : 0;
+  const offeredPerDate = addendum ? addendum.appearanceFee + offer.signingBonus / extraDates : 0;
+  const moneyScore = Math.max(0, Math.min(100,
+    addendum
+      ? 50 + ((offeredPerDate - market * 0.8) / market) * 65
+      : 50 + ((weeklyEquivalent(offer, state) - market * 0.7) / market) * 65,
+  ));
   const roleScore = ROLE_VALUE[offer.roleExpectation];
   const prestigeScore = TIER_PRESTIGE[promotion.tier];
   const termWeeks = Math.max(1, weeksBetween(offer.startDate, offer.endDate, state.ruleset.weeksPerYear) + 1);
-  const density = contractDensity(offer, state.ruleset.weeksPerYear);
-  const scheduleScore = Math.max(10, Math.min(100, 92 - density * 35 - (offer.exclusivity === "EXCLUSIVE" ? 18 : 0)));
+  const density = addendum
+    ? extraDates / Math.max(1, weeksBetween(state.world.currentDate, addendum.endDate, state.ruleset.weeksPerYear) + 1)
+    : contractDensity(offer, state.ruleset.weeksPerYear);
+  const scheduleScore = Math.max(10, Math.min(100,
+    92 - density * (addendum ? 55 : 35) - (offer.exclusivity === "EXCLUSIVE" ? 18 : 0),
+  ));
   const loyaltyScore = relationshipLoyaltyScore(state, person, promotion);
   const exposureScore = promotion.mediaReach;
   const priorities = person.priorities;
@@ -710,6 +757,22 @@ export function resolveContractOffers(state: WorldState): void {
       if ((offer.resolvedUtility ?? 0) < state.ruleset.offerAcceptanceThreshold) {
         offer.status = "REJECTED";
         offer.rejectionReason = "offer utility below acceptance threshold";
+        continue;
+      }
+      if (offer.offerKind === "DATES_ADDENDUM") {
+        const source = datesAddendumSource(state, offer);
+        if (!source) {
+          offer.status = "REJECTED";
+          offer.rejectionReason = "date addendum no longer matches a live agreement";
+          continue;
+        }
+        const capacity = canAddLimitedContractDates(state, person, source, offer.dateEntitlement - source.dateEntitlement);
+        if (!capacity.ok) {
+          offer.status = "REJECTED";
+          offer.rejectionReason = capacity.reason;
+          continue;
+        }
+        acceptContractOffer(state, person, offer);
         continue;
       }
       const source = exhaustedReplacementSource(state, offer);
