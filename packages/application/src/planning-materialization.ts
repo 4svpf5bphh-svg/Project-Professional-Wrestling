@@ -7,7 +7,7 @@ import type {
   WorldState,
   WrestlingEvent,
 } from "../../domain/src/types.js";
-import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { contractCoversBookedDate, serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
 import { creativeBlockersForDraft } from "./creative-consent.js";
 import { prepareHumanShow } from "../../sim-core/src/events.js";
