@@ -291,6 +291,9 @@ export async function submitAlphaTalentOffer(
       },
     );
 
+    // This endpoint only creates full recruitment / renewal offers.
+    // Dates addenda use their dedicated same-contract endpoint.
+    if (offer.offerKind === "DATES_ADDENDUM") throw new Error("unexpected additional-dates offer type");
     return {
       offerId: offer.id,
       offerKind: offer.offerKind,
