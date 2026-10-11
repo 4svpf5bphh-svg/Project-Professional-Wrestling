@@ -32,6 +32,7 @@ import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4 } from "../packages/content/src/r
 import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE5 } from "../packages/content/src/real-roster-editorial-audit-wave5.js";
 import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE6 } from "../packages/content/src/real-roster-editorial-audit-wave6.js";
 import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE7 } from "../packages/content/src/real-roster-editorial-audit-wave7.js";
+import { REVIEWED_REAL_ROSTER_IDENTITIES_WAVE8 } from "../packages/content/src/real-roster-editorial-audit-wave8.js";
 import {completeAlphaWrestlerIdentityCoverage} from "../packages/content/src/wrestler-identity-coverage.js";
 import {
   createWorld,
@@ -524,7 +525,7 @@ test("entire 643-person real-roster identity guide has individually keyed charac
   ok(families.size>=30&&styles.size===9,"roster-wide curation collapsed into too few archetypes");
   ok(guide.filter(x=>x.editorialBasis==="TARGETED").length>=130,
     "too few recognisable wrestlers received targeted character overrides");
-  ok(guide.filter(x=>x.editorialBasis==="COHORT").length===148,
+  ok(guide.filter(x=>x.editorialBasis==="COHORT").length===96,
     "the obscure-wrestler approximation cohort is incomplete");
   const danhausen=fullRealRosterIdentityFor("Danhausen")!;
   const sabre=fullRealRosterIdentityFor("Zack Sabre Jr.")!;
@@ -593,7 +594,7 @@ test("editorial wave four corrects 79 exact-name identities without claiming ver
   const reviewed=REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4;
   ok(reviewed.length===79 && new Set(reviewed.map(row=>row.name)).size===79,
     "wave-four review must retain 79 individually keyed identities");
-  ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="COHORT").length===148,
+  ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="COHORT").length===96,
     "reviewed cohort count changed without an audit");
   for(const row of reviewed){
     const merged=fullRealRosterIdentityFor(row.name);
@@ -637,8 +638,8 @@ test("editorial wave five preserves exact wrestler ownership and improves 129 wo
   ok(reviewed.every(row=>!earlier.has(row.name)),
     "review waves overlap or accidentally overwrite earlier curation");
   ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.length===643 &&
-    FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="TARGETED").length===495 &&
-    FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="COHORT").length===148,
+    FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="TARGETED").length===547 &&
+    FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(row=>row.editorialBasis==="COHORT").length===96,
     "editorial audit coverage changed without review");
   const gimmicks=new Set(GIMMICK_CATALOG.map(row=>row.id));
   for(const row of reviewed){
@@ -693,7 +694,7 @@ test("identity audit wave six replaces 89 conspicuously wrong profiles, without 
     "wave-six review overwrote prior wrestler review");
   ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.length===643 &&
     FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="TARGETED").length===433 &&
-    FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="COHORT").length===148,
+    FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="COHORT").length===96,
     "audit-six coverage counts changed without review");
   const gimmicks=new Set(GIMMICK_CATALOG.map(x=>x.id));
   for(const row of batch){
@@ -751,7 +752,7 @@ test("WWE and NXT wave seven replaces all 62 outstanding cohort identities witho
   const gimmicks=new Set(GIMMICK_CATALOG.map(x=>x.id));
   ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.length===643
     &&FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="TARGETED").length===495
-    &&FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="COHORT").length===148,
+    &&FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="COHORT").length===96,
     "roster review counts are not 495 targeted and 148 cohort");
   for(const row of batch){
     const guide=fullRealRosterIdentityFor(row.name)!;
@@ -797,6 +798,57 @@ test("WWE and NXT wave seven replaces all 62 outstanding cohort identities witho
   ok(completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD")===0
     &&JSON.stringify(identity)===prior,
     "a guide update overwrote existing wrestler career");
+});
+
+
+test("identity audit wave eight completes AEW TNA NOAH and lucha cohort curation",()=>{
+  const wave=REVIEWED_REAL_ROSTER_IDENTITIES_WAVE8;
+  const priorNames=new Set([...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4,
+    ...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE5,
+    ...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE6,
+    ...REVIEWED_REAL_ROSTER_IDENTITIES_WAVE7].map(x=>x.name));
+  const cohortCounts=new Map<string,number>();
+  const gimmicks=new Set(GIMMICK_CATALOG.map(g=>g.id));
+  ok(wave.length===52 && new Set(wave.map(x=>x.name)).size===52,
+    "wave eight must include 52 unique wrestler identities");
+  for(const row of wave){
+    ok(!priorNames.has(row.name),"overlapping audit rows for "+row.name);
+    const mapped=fullRealRosterIdentityFor(row.name)!;
+    ok(mapped && mapped.editorialBasis==="TARGETED"
+      &&mapped.gimmickArchetype===row.gimmickArchetype
+      &&mapped.primaryStyle===row.primaryStyle
+      &&mapped.secondaryStyle===row.secondaryStyle
+      &&gimmicks.has(row.gimmickArchetype)
+      &&row.primaryStyle!==row.secondaryStyle,
+      "wave eight identity mismatched wrestler and styles: "+row.name);
+    ok(JSON.stringify(mapped.signatureMoves)===JSON.stringify(row.signatureMoves)
+      &&JSON.stringify(mapped.finishingMoves)===JSON.stringify(row.finishingMoves)
+      &&row.signatureMoves.length===2 &&row.finishingMoves.length===1
+      &&[...row.signatureMoves,...row.finishingMoves].every(m=>m.source==="PPW_AUTHORED"),
+      "wave eight move classification or provenance invalid: "+row.name);
+    cohortCounts.set(mapped.cohort,(cohortCounts.get(mapped.cohort)??0)+1);
+  }
+  for(const [cohort,count] of [
+    ["AEW_ROH",30],["TNA",9],["JAPAN_LUCHA",5],["LUCHA",8]
+  ]){
+    ok(cohortCounts.get(cohort)===count,"incomplete wave-eight review for "+cohort);
+  }
+  ok(FULL_REAL_ROSTER_IDENTITY_GUIDE.length===643
+    &&FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="COHORT").length===96
+    &&FULL_REAL_ROSTER_IDENTITY_GUIDE.filter(x=>x.editorialBasis==="TARGETED").length===547,
+    "roster audit counts after wave eight are wrong");
+  for(const [name,gimmick,style,finish] of [
+    ["Alec Price","HIGH_FLYING_DAREDEVIL","HIGH_FLYER","Suicide Dive DDT"],
+    ["Tay Melo","MMA_CROSSOVER","STRIKER","Tay-KO"],
+    ["OZAWA","ARROGANT_ACE","HIGH_FLYER","Real Rebel"],
+    ["Mara Sadé","HIGH_FLYING_DAREDEVIL","HIGH_FLYER","Diving Double Stomp"],
+    ["Candela","HIGH_FLYING_DAREDEVIL","LUCHA","Diving Senton"],
+  ]){
+    const row=fullRealRosterIdentityFor(name)!;
+    ok(row.gimmickArchetype===gimmick&&row.primaryStyle===style
+      &&row.finishingMoves[0]?.name===finish,
+      "wrestler still has incoherent approximation: "+name);
+  }
 });
 
 console.log(`\nRoster source tests: ${passed} passed, ${failed} failed`);
