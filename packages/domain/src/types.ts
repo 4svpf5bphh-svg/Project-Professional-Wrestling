@@ -31,6 +31,7 @@ export type FinancialTransactionCategory =
   | "RESTRUCTURING_SETTLEMENT";
 
 export type ContractFamily = "ONE_OFF" | "LIMITED_NON_EXCLUSIVE" | "EXCLUSIVE";
+export type CreativeControlLevel = "NONE" | "CONSULTATION" | "PROTECTED_FINISHES" | "FULL_APPROVAL";
 export type ExclusivityType = "OPEN" | "NON_EXCLUSIVE" | "EXCLUSIVE";
 export type ContractStatus = "SIGNED" | "EXPIRED" | "TERMINATED";
 export type ContractOfferStatus = "PENDING" | "ACCEPTED" | "REJECTED" | "WITHDRAWN";
@@ -309,6 +310,8 @@ export interface ContractTerms {
   family: ContractFamily;
   exclusivity: ExclusivityType;
   roleExpectation: RoleExpectation;
+  /** Optional for compatibility with established Worlds; absent means NONE. */
+  creativeControl?: CreativeControlLevel;
   startDate: PpwDate;
   endDate: PpwDate;
   dateEntitlement: number;
