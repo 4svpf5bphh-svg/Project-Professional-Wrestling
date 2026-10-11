@@ -34,3 +34,21 @@ F. One review/play-test batch only when the user explicitly authorises deploymen
 
 ## Deferred, deliberately
 Entrance production, elaborate mic scripts, mechanical finisher ratings/counter sequences, AI result prose, production polish beyond direct Roster editor, and commercial-use personality/likeness rights review.
+
+## Development checkpoint — World schema v9, identity foundations
+
+This is the first **non-deployed** coding increment after the relationship
+wave. It establishes a validated `wrestlerIdentities` World collection keyed
+by person (one active portable persona, explicit historical eras, multiple
+named moves and fixed provenance). Older schema versions migrate to an **empty**
+global override collection, never an invented career rebrand. Existing
+promotion-local character edits and their history remain in engagement.
+Uncurated wrestlers retain a clearly marked read-only fallback rather than
+invented signature/finisher names. Public wrestler profile responses now
+expose `portableIdentity` separately from any private promotion edit.
+
+This checkpoint introduces **no automatic wrestler gimmick changes** and
+**no player write command** to the global identity collection: that requires
+the future consent/contract and multi-promotion fairness gate. Existing local
+creative edits remain editable under the legacy command until that migration.
+No main merge, preview/production deploy or live World reset is authorised.

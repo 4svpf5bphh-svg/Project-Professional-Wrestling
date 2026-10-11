@@ -286,6 +286,39 @@ test("wrestler profile rejects unknown wrestlers and non-members", () => {
 });
 
 
+test("portable identity resolves curated baseline without mutating the World or exposing private local edits", () => {
+  const {aggregate,promotionAId}=fixture(73180);
+  const state=aggregate.state;
+  const person=state.people.find(p=>p.name==="Roman Reigns")??state.people[0]!;
+  const before=JSON.stringify(state);
+  const profile=buildPlayerWrestlerProfileView(aggregate,"player-a",person.id);
+  ok(profile.person.portableIdentity.revision===0
+    &&profile.person.portableIdentity.history.length===0,
+    "read-only legacy baseline should not invent an authoritative negotiated persona");
+  ok(profile.person.portableIdentity.source==="CURATED_BASELINE"
+    ||profile.person.portableIdentity.source==="UNCURATED_BASELINE",
+    "uncurated and researched move data must be clearly distinguished");
+  ok(JSON.stringify(state)===before,
+    "looking at the wrestler directory persisted a speculative global identity");
+  const c=activeContractsForPromotion(state,promotionAId)[0]!;
+  const contracted=state.people.find(p=>p.id===c.personId)!;
+  aggregate.engagement=createWorldEngagementState(state.world.id);
+  const current=defaultWrestlerCreativeFields(contracted);
+  setWrestlerCreativeProfileCommand(state,aggregate.engagement,aggregate.ownership,aggregate.commands,aggregate.runtime,{
+    requestId:"local-identity-migration-test",worldId:state.world.id,playerId:"player-a",
+    commandType:"SET_WRESTLER_CREATIVE_PROFILE",
+    payload:{promotionId:promotionAId,personId:contracted.id,
+      fields:{...current,ringName:"Existing Local Identity"}},
+  });
+  const restored=cloneApplicationWorld(aggregate);
+  const after=buildPlayerWrestlerProfileView(restored,"player-a",contracted.id);
+  ok(after.creativeProfile?.fields.ringName==="Existing Local Identity",
+    "v9 save lost the player's established promotion character");
+  ok(after.person.portableIdentity.active.personaName===contracted.name
+    &&after.person.portableIdentity.revision===0,
+    "promotion-only rename was silently exported into shared wrestler career");
+});
+
 test("Creative gimmicks and finishers are promotion-scoped, persistent and have no sim effect", () => {
   const { aggregate, promotionAId, promotionBId } = fixture(73120);
   const contract = activeContractsForPromotion(aggregate.state,promotionAId)[0]!;

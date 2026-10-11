@@ -247,6 +247,62 @@ test("schema v5 migrates with empty relationship and roster-affiliation collecti
   ok(restored.wrestlerPromotionAffiliations?.length === 0, "v5 migration invented roster affiliations");
 });
 
+test("v8 saves migrate to empty portable identities without inventing global character changes", () => {
+  const state=createWorld(22910,DEFAULT_RULESET);
+  const old=createPersistedWorldState(state);
+  const legacy:any=structuredClone(old);
+  legacy.stateSchemaVersion=8;
+  delete legacy.wrestlerIdentities;
+  const restored=restorePersistedWorldState(legacy);
+  ok(Array.isArray(restored.wrestlerIdentities)&&restored.wrestlerIdentities.length===0,
+    "legacy promotion-local characters were incorrectly promoted to global identities");
+  ok(deterministicWorldHash(restored)===deterministicWorldHash(state),
+    "v8 migration changed unrelated simulation output");
+  const reSaved=createPersistedWorldState(restored);
+  ok(reSaved.stateSchemaVersion===9&&Array.isArray(reSaved.wrestlerIdentities),
+    "v8 save did not upgrade safely to the portable identity schema");
+});
+
+test("v9 preserves unique wrestler-owned persona eras, move repertoire and clone isolation", () => {
+  const state=createWorld(22911,DEFAULT_RULESET);
+  const person=state.people[0]!;
+  state.wrestlerIdentities=[{
+    worldId:state.world.id,personId:person.id,revision:2,
+    active:{
+      personaName:"The Ring Specialist",gimmickId:"RING_GENERAL",
+      primaryStyle:"TECHNICAL",secondaryStyle:"SUBMISSION",
+      signatureMoves:[{name:"Bridge Lock",category:"SUBMISSION"}],
+      finishingMoves:[{name:"Final Hold",category:"SUBMISSION"}],
+      introducedDate:{year:2,week:4,day:1},provenance:"NEGOTIATED",
+    },
+    history:[{
+      persona:{
+        personaName:person.name,gimmickId:"AUTHENTIC",
+        primaryStyle:"ALL_ROUNDER",secondaryStyle:null,
+        signatureMoves:[],finishingMoves:[],
+        introducedDate:{year:1,week:1,day:1},provenance:"LEGACY_MIGRATED",
+      },
+      endedDate:{year:2,week:4,day:1},changedByPromotionId:state.promotions[0]!.id,
+    }],
+  }];
+  const saved=createPersistedWorldState(state);
+  const restored=restorePersistedWorldState(JSON.parse(JSON.stringify(saved)));
+  ok(restored.wrestlerIdentities?.[0]?.active.signatureMoves[0]?.name==="Bridge Lock"
+    &&restored.wrestlerIdentities[0]?.history[0]?.persona.personaName===person.name,
+    "portable persona, era or move set lost during persistence");
+  restored.wrestlerIdentities![0]!.active.signatureMoves[0]!.name="Altered In Copy";
+  ok(saved.wrestlerIdentities[0]!.active.signatureMoves[0]!.name==="Bridge Lock",
+    "restored identity mutated the saved snapshot");
+  state.wrestlerIdentities.push(structuredClone(state.wrestlerIdentities[0]!));
+  let refused=false;
+  try{createPersistedWorldState(state);}catch{refused=true;}
+  ok(refused,"duplicate wrestler career records must never be accepted");
+  state.wrestlerIdentities[1]!.personId="missing-person";
+  refused=false;
+  try{createPersistedWorldState(state);}catch{refused=true;}
+  ok(refused,"orphaned portable persona records must never be accepted");
+});
+
 test("current schema persists relationship and multi-promotion roster state", () => {
   const state = createWorld(22012, DEFAULT_RULESET);
   const person = state.people[0]!;
