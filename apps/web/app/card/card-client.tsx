@@ -510,6 +510,7 @@ export default function CardClient(): React.JSX.Element {
     const size = type === "TAG" ? 2 : 1;
     setMatches((current) => [...current, {
       draftMatchId: id,
+      programmeId: null,
       type,
       sideAIds: Array.from({ length: size }, () => ""),
       sideBIds: Array.from({ length: size }, () => ""),
@@ -1348,6 +1349,33 @@ export default function CardClient(): React.JSX.Element {
                     <button className={match.type === "TAG" ? styles.typeActive : styles.secondaryButton} type="button" onClick={() => setMatchType(match.draftMatchId, "TAG")} disabled={!view.canEdit}>Tag Team</button>
                   </div>
 
+                  <div className={styles.control}>
+                    <label htmlFor={`programme-match-${match.draftMatchId}`}>Programme · optional</label>
+                    <select
+                      id={`programme-match-${match.draftMatchId}`}
+                      value={match.programmeId ?? ""}
+                      disabled={!view.canEdit}
+                      onChange={(event) => updateMatch(match.draftMatchId, {
+                        programmeId: event.target.value || null,
+                      })}
+                    >
+                      <option value="">No Programme association</option>
+                      {view.programmes.map((programme) => {
+                        const booked = [...match.sideAIds, ...match.sideBIds].filter(Boolean);
+                        const eligible = booked.length > 0
+                          && booked.every((personId) => programme.participantIds.includes(personId));
+                        return (
+                          <option
+                            key={programme.programmeId}
+                            value={programme.programmeId}
+                            disabled={!eligible}
+                          >{programme.label}{eligible ? "" : " · different participants"}</option>
+                        );
+                      })}
+                    </select>
+                    <small>Link this specific match to its storyline. An existing standing agreement applies only when this booking fits its exact terms. No storyline is inferred automatically.</small>
+                  </div>
+
                   <div className={styles.sides}>
                     <div className={styles.side}>
                       <span className={styles.sideLabel}>Side A</span>
@@ -2006,7 +2034,8 @@ export default function CardClient(): React.JSX.Element {
               {view.creativeConcerns.map((concern) => (
                 <li key={`${concern.draftMatchId}:${concern.personId}:${concern.reason}`}>
                   <strong>{concern.wrestlerName}</strong> · {pretty(concern.reason)} · {
-                    !concern.requiresConsent ? "Consultation only — no veto"
+                    concern.approvalSource === "STANDING_PROGRAMME" ? "Covered by Programme agreement"
+                      : !concern.requiresConsent ? "Consultation only — no veto"
                       : concern.consent === "APPROVED" ? "Approved"
                         : concern.consent === "DECLINED" ? "Declined — revise the booking"
                           : "Permission required"
