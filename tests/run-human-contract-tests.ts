@@ -10,7 +10,6 @@ import {
   buildContractTerms,
   contractHasAppearanceRights,
   contractCoversBookedDate,
-  applicableCreativeContract,
   canAddLimitedContractDates,
   creativeBookingReview,
   creativeControlOfferBonus,
