@@ -24,6 +24,9 @@ import {
   calibratedRealActiveMixedRosterSource,
 } from "../packages/content/src/real-active-mixed-roster.js";
 import { marketWeeklyValue } from "../packages/sim-core/src/contracts.js";
+import { VERIFIED_WOMENS_CHARACTER_WAVE_3 } from "../packages/content/src/real-wrestler-characters-women-wave-3.js";
+import { CURATED_WRESTLER_CHARACTERS } from "../packages/content/src/real-wrestler-characters.js";
+import { GIMMICK_CATALOG } from "../packages/application/src/gimmick-catalog.js";
 import {completeAlphaWrestlerIdentityCoverage} from "../packages/content/src/wrestler-identity-coverage.js";
 import {
   createWorld,
@@ -412,6 +415,79 @@ test("every regenerated prospect debuts with a fully populated persistent person
   const reloaded=restorePersistedWorldState(createPersistedWorldState(state));
   ok(newPeople.every(person=>reloaded.wrestlerIdentities?.some(x=>x.personId===person.id)),
     "prospect gimmicks disappeared after save/restore");
+});
+
+test("third curated identity wave improves 19 real women without missing move provenance",()=>{
+  const names=new Set(REAL_ACTIVE_WOMENS_ROSTER_NAMES);
+  const knownGimmicks=new Set(GIMMICK_CATALOG.map(entry=>entry.id));
+  const wave=VERIFIED_WOMENS_CHARACTER_WAVE_3;
+  ok(wave.length===19,"women's curation wave is incomplete");
+  ok(new Set(wave.map(entry=>entry.name)).size===wave.length
+    &&new Set(CURATED_WRESTLER_CHARACTERS.map(entry=>entry.name)).size===CURATED_WRESTLER_CHARACTERS.length,
+    "a wrestler has duplicate curation entries");
+  for (const entry of wave) {
+    ok(names.has(entry.name)&&knownGimmicks.has(entry.gimmickArchetype),
+      "new women's curation lacks an existing wrestler or uses unknown gimmick "+entry.name);
+    ok(entry.sourceUrl.startsWith("https://www.wwe.com/")
+      ||entry.sourceUrl.startsWith("https://www.allelitewrestling.com/"),
+      "unsupported publisher link in women's curation");
+    ok(entry.evidenceUrls.every(url=>url.startsWith("https://www.wwe.com/")
+      ||url.startsWith("https://www.allelitewrestling.com/")),
+      "move evidence references a non-publisher domain");
+    ok(entry.finishingMoves.length>0&&entry.finishingMove?.name===entry.finishingMoves[0]?.name,
+      "new curated record lost its verified real-world finisher");
+    ok(entry.signatureMove?.name===(entry.signatureMoves[0]?.name??undefined),
+      "new curated record mismatches primary and full signature repertoire");
+  }
+});
+
+test("new Alpha World uses researched women's gimmicks while protecting existing World personas",()=>{
+  const state=createAlphaWorldAggregate({seed:77212,playerId:"womens-identity-audit"}).state;
+  const persona=(name:string)=>{
+    const person=state.people.find(x=>x.name===name);
+    if(!person)throw Error("required seeded woman was missing: "+name);
+    const identity=state.wrestlerIdentities?.find(x=>x.personId===person.id);
+    if(!identity)throw Error("missing wrestler identity: "+name);
+    return identity;
+  };
+  const asuka=persona("Asuka");
+  const sky=persona("IYO SKY");
+  const jade=persona("Jade Cargill");
+  const mercedes=persona("Mercedes Moné");
+  const stephanie=persona("Stephanie Vaquer");
+  const tiffany=persona("Tiffany Stratton");
+  const kris=persona("Kris Statlander");
+  ok(asuka.active.gimmickId==="SUBMISSION_SPECIALIST"
+    &&asuka.active.finishingMoves.some(m=>m.name==="Asuka Lock"&&m.source==="VERIFIED"),
+    "Asuka retained an invented finishing move");
+  ok(sky.active.gimmickId==="HIGH_FLYING_DAREDEVIL"
+    &&sky.active.finishingMoves.some(m=>m.name==="Over The Moonsault"&&m.source==="VERIFIED"),
+    "IYO SKY lost her recognised finisher");
+  ok(jade.active.finishingMoves.some(m=>m.name==="Jaded"&&m.source==="VERIFIED")
+    &&mercedes.active.finishingMoves.some(m=>m.name==="Statement Maker"&&m.source==="VERIFIED")
+    &&mercedes.active.signatureMoves.some(m=>m.name==="Moné Maker"&&m.source==="VERIFIED"),
+    "prominent women were still using generic finishers");
+  ok(stephanie.active.signatureMoves.length===2
+    &&stephanie.active.signatureMoves.every(m=>m.source==="VERIFIED"),
+    "multiple published signatures were lost for Stephanie Vaquer");
+  ok(tiffany.active.finishingMoves[0]?.name==="Prettiest Moonsault Ever"
+    &&kris.active.finishingMoves[0]?.name==="Night Fever",
+    "distinctive women's character moves were not seeded");
+  const withoutDocumentedSignature=persona("Tiffany Stratton");
+  ok(withoutDocumentedSignature.active.signatureMoves.length>=1
+    &&withoutDocumentedSignature.active.signatureMoves[0]?.source==="PPW_AUTHORED",
+    "unsourced signature move was falsely labelled as verified");
+  const before=JSON.stringify(state.wrestlerIdentities);
+  ok(completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD")===0
+    &&JSON.stringify(state.wrestlerIdentities)===before,
+    "new research rewrote an already persisted World identity");
+  asuka.active.gimmickId="REBEL";
+  asuka.active.provenance="NEGOTIATED";
+  asuka.revision=2;
+  const negotiated=JSON.stringify(asuka);
+  ok(completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD")===0
+    &&JSON.stringify(asuka)===negotiated,
+    "curation overrode an explicit in-World gimmick change");
 });
 
 console.log(`\nRoster source tests: ${passed} passed, ${failed} failed`);

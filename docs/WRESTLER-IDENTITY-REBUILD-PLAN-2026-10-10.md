@@ -145,3 +145,45 @@ newcomers but does not imply that hundreds of approximate records have been
 individually researched.
 
 No merge to main, Vercel deployment or live save reset authorised.
+
+## High-recognition women's roster curation, wave 3 (11 October 2026)
+
+This increment replaces approximate **new-World** default characters for
+19 additional exact-name women's-roster wrestlers with documented official
+WWE and AEW gimmick/style contexts and **30 named move entries**. It is not
+a catalogue of their off-screen identities, and move assignment to a
+"signature" versus "finisher" role remains gameplay/editorial metadata.
+
+WWE: Asuka, IYO SKY, Liv Morgan, Jade Cargill, Tiffany Stratton, Nia Jax,
+Bayley, Kairi Sane, Chelsea Green, Stephanie Vaquer, Giulia, Sol Ruca,
+Roxanne Perez and Alexa Bliss.
+
+AEW/ROH: Mercedes Moné, Kris Statlander, Athena, Jamie Hayter and
+Willow Nightingale.
+
+Sources are stored per curated row, with WWE superstar profiles or
+match results and AEW roster/match reports. Examples include
+[WWE's Asuka Lock](https://www.wwe.com/superstars/asuka),
+[WWE's Over the Moonsault](https://www.wwe.com/superstars/iyo-sky),
+[WWE's Stephanie Vaquer move profile](https://www.wwe.com/superstars/stephanie-vaquer),
+[AEW's 2026 Moné/Nightingale title match](https://www.allelitewrestling.com/post/aew-all-in-london-results-august-30-2026),
+and [AEW's Night Fever listing](https://www.allelitewrestling.com/womens-roster/kris-statlander).
+
+Source coverage is intentionally mixed: when we have one supported move,
+we do not invent a *verified* secondary move. The global complete-identity
+generator still supplies any other required move with the explicit
+PPW_AUTHORED provenance. The full curation catalogue now contains 58
+wrestlers (26 original, 13 second wave, 19 third wave); all others still
+have complete PPW-authored initial characters.
+
+Crucial compatibility boundary: **curation only replaces untouched
+generated defaults during new-World bootstrap**. Existing active World
+identity records, local promotions' edits and negotiated personas are not
+silently rewritten by later research. Additional player-facing ways to
+propose an updated identity belong to the negotiation/editor workstream,
+not automatic data upgrade.
+
+Tests assert exact roster matching, unique entries, publisher evidence,
+signature/finisher classification consistency, new-World seed correctness,
+PPW-authored provenance on missing moves and protection of existing
+negotiated characters. No live deployment.
