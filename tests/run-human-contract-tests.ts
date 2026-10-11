@@ -255,6 +255,7 @@ test("accepted date addendum extends the same non-exclusive contract with no new
     startDate: { ...state.world.currentDate },
     endDate: addPpwWeeks(state.world.currentDate, 12, state.ruleset.weeksPerYear),
     dateEntitlement: 2, weeklyGuarantee: 1000, appearanceFee: market, signingBonus: 0,
+    creativeControl: "CONSULTATION",
   }, null, false);
   const originalEnd = JSON.stringify(source.endDate);
   const countBefore = state.contracts.length;
@@ -272,7 +273,9 @@ test("accepted date addendum extends the same non-exclusive contract with no new
   ok(state.contracts.length === countBefore, "accepted extra dates created a second overlapping contract");
   ok(source.dateEntitlement === 4 && source.status === "SIGNED", "existing deal did not gain two dates");
   ok(JSON.stringify(source.endDate) === originalEnd && source.weeklyGuarantee === 1000
-    && source.exclusivity === "NON_EXCLUSIVE", "addendum rewrote contract expiry, wage or rights");
+    && source.exclusivity === "NON_EXCLUSIVE"
+    && source.creativeControl === "CONSULTATION",
+    "addendum rewrote contract expiry, wage, creative rights or exclusivity");
   ok(promotion.cash === cashBefore - payment, "negotiated extra payment was not charged once");
   ok(state.financialTransactions.some(tx => tx.source === offer.id
     && tx.category === "CONTRACT_SIGNING_BONUS" && tx.amount === -payment),
