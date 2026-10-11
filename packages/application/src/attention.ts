@@ -447,6 +447,23 @@ export function buildPlayerAttention(
         sourceOpportunityCategory: null,
       });
     }
+    const keptCommittedCards = aggregate.state.ledger.filter((entry) =>
+      entry.type === "PLANNED_SHOW_UNAPPROVED_AMENDMENT_IGNORED_AT_LOCK"
+      && entry.entityIds.includes(promotion.id)
+      && sameWeek(entry.date, resolvedDate)
+    );
+    for (const entry of keptCommittedCards) {
+      pushIfVisible(aggregate, playerId, items, {
+        attentionId: `unapproved-amendment-ignored:${entry.id}`,
+        category: "IMPORTANT",
+        title: "Your original card ran",
+        summary: "The proposed card amendment did not receive creative approval before World Lock. PPW kept your previously committed matches and finishes; staff did not take over this show.",
+        deadline: null,
+        deepLink: "/results",
+        dismissible: true,
+        sourceOpportunityCategory: null,
+      });
+    }
     const latestEvent = aggregate.state.events
       .filter((event) => event.promotionId === promotion.id && event.status === "COMPLETED" && sameWeek(event.date, resolvedDate))
       .sort((left, right) => right.date.day - left.date.day || right.id.localeCompare(left.id))[0];
