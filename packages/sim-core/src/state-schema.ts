@@ -334,7 +334,7 @@ function migrateV8ToV9(snapshot:PersistedWorldStateV8):PersistedWorldStateV9 {
   return {...rest,stateSchemaVersion:9,wrestlerIdentities:[]};
 }
 
-function validateChampionshipMatchBookings(snapshot: PersistedWorldStateV2 | PersistedWorldStateV3 | PersistedWorldStateV4 | PersistedWorldStateV5 | PersistedWorldStateV6 | PersistedWorldStateV7 | PersistedWorldStateV8): void {
+function validateChampionshipMatchBookings(snapshot: PersistedWorldStateV2 | PersistedWorldStateV3 | PersistedWorldStateV4 | PersistedWorldStateV5 | PersistedWorldStateV6 | PersistedWorldStateV7 | PersistedWorldStateV8 | PersistedWorldStateV9): void {
   const promotionIds = new Set(snapshot.promotions.map((promotion) => promotion.id));
   const eventById = new Map(snapshot.events.map((event) => [event.id, event]));
   const matchById = new Map(snapshot.matches.map((match) => [match.id, match]));
