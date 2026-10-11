@@ -64,7 +64,10 @@ export function creativeBookingReview(
   const rights = resolvedCreativeControl(level);
   if (rights === "NONE") return { reasons: [], requiresConsent: false };
   if (rights === "CONSULTATION") {
-    return { reasons: ["CONSULTATION_REQUESTED"], requiresConsent: false };
+    // Ordinary routine bookings must not spam the player's Desk. Ask for an
+    // opinion only when an important loss or identity change is proposed.
+    const significant = proposal.repackaging || (proposal.loses && proposal.cleanOrSubmission);
+    return { reasons: significant ? ["CONSULTATION_REQUESTED"] : [], requiresConsent: false };
   }
   if (rights === "PROTECTED_FINISHES") {
     const protectedLoss = proposal.loses && proposal.cleanOrSubmission;
