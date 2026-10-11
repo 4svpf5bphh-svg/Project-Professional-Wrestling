@@ -277,6 +277,92 @@ test("AI exclusive generation is paid and pre-existing signed bargains remain un
     "new offer guardrails retroactively rewrote or invalidated a signed legacy deal");
 });
 
+test("exhausted nonexclusive dates free capacity without ending the original signed agreement", () => {
+  const { state, promotionId, freeAgentId } = fixture(11018);
+  const person = state.people.find(p => p.id === freeAgentId)!;
+  // Deterministically model a modest one-show-a-week worker: a parallel
+  // 10-of-13 commitment is too heavy until those dates have actually worked.
+  person.careerStage = "SPECIAL_ATTRACTION";
+  person.skills.stamina = 100;
+  person.fatigue = 0;
+  ok(serviceCapacityDatesPerWeek(person) >= 1
+    && serviceCapacityDatesPerWeek(person) < 1.5, "capacity fixture drifted");
+  const rival = state.promotions.find(p =>
+    p.id !== promotionId && p.tier === "INDEPENDENT" && p.lifecycle === "ACTIVE");
+  if (!rival) throw new Error("need a rival indie for concurrent signing");
+  claimIndependentPromotionForHuman(state, rival.id, { name: "Rival Indie" });
+  const host = state.promotions.find(p => p.id === promotionId)!;
+  const current = { ...state.world.currentDate };
+  const original = createSignedContract(state, person, host, {
+    family: "LIMITED_NON_EXCLUSIVE", exclusivity: "NON_EXCLUSIVE",
+    roleExpectation: "FEATURED", startDate: current,
+    endDate: addPpwWeeks(current, 12, state.ruleset.weeksPerYear),
+    dateEntitlement: 10, weeklyGuarantee: 1000, appearanceFee: 1500,
+    signingBonus: 0,
+  }, null, false);
+  const nextDate = addPpwWeeks(current, 1, state.ruleset.weeksPerYear);
+  const next = {
+    family: "ONE_OFF" as const, exclusivity: "OPEN" as const,
+    roleExpectation: "MAIN_EVENT" as const, startDate: nextDate,
+    endDate: { ...nextDate, day: 7 }, dateEntitlement: 1,
+    weeklyGuarantee: 0, appearanceFee: marketWeeklyValue(person) * 5,
+    signingBonus: 0,
+  };
+  ok(!canAcceptContractTerms(state, person, next).ok,
+    "unworked ten-date promise failed to reserve any service capacity");
+  original.datesUsed = original.dateEntitlement;
+  ok(!contractHasAppearanceRights(original) && original.status === "SIGNED",
+    "exhausted deal must remain signed without remaining purchased appearances");
+  ok(canAcceptContractTerms(state, person, next).ok,
+    "ten already-worked appearances still prevented a valid rival one-off");
+  const offer = submitHumanContractOffer(state, {
+    promotionId: rival.id, personId: person.id, ...next,
+  });
+  ok(offer.status === "PENDING" && offer.promotionId === rival.id,
+    "rival promoter could not submit an otherwise compatible concurrent deal");
+  ok(original.status === "SIGNED" && original.datesUsed === 10,
+    "new rival offer prematurely rewrote the first promotion's contract");
+  const exclusive = { ...next, family: "EXCLUSIVE" as const, exclusivity: "EXCLUSIVE" as const,
+    weeklyGuarantee: marketWeeklyValue(person), appearanceFee: 0 };
+  ok(!canAcceptContractTerms(state, person, exclusive).ok,
+    "remaining calendar term wrongly stopped blocking an overlapping EXCLUSIVE");
+});
+
+test("remaining unworked dates, not historical purchases, govern extra-date negotiations", () => {
+  const { state, promotionId, freeAgentId } = fixture(11019);
+  const person = state.people.find(p => p.id === freeAgentId)!;
+  person.careerStage = "SPECIAL_ATTRACTION";
+  person.skills.stamina = 100;
+  person.fatigue = 0;
+  const host = state.promotions.find(p => p.id === promotionId)!;
+  const rival = state.promotions.find(p =>
+    p.id !== host.id && p.tier === "INDEPENDENT" && p.lifecycle === "ACTIVE");
+  if (!rival) throw new Error("additional dates fixture lacks a rival");
+  const current = { ...state.world.currentDate };
+  const endDate = addPpwWeeks(current, 12, state.ruleset.weeksPerYear);
+  const existing = createSignedContract(state, person, host, {
+    family: "LIMITED_NON_EXCLUSIVE", exclusivity: "NON_EXCLUSIVE",
+    roleExpectation: "REGULAR", startDate: current, endDate,
+    dateEntitlement: 1, weeklyGuarantee: 100, appearanceFee: 1500,
+    signingBonus: 0,
+  }, null, false);
+  const elsewhere = createSignedContract(state, person, rival, {
+    family: "LIMITED_NON_EXCLUSIVE", exclusivity: "NON_EXCLUSIVE",
+    roleExpectation: "REGULAR", startDate: current, endDate,
+    dateEntitlement: 13, weeklyGuarantee: 100, appearanceFee: 1500,
+    signingBonus: 0,
+  }, null, false);
+  // The previous density calculation counted all thirteen *worked* rival
+  // dates forever, falsely preventing the host buying one extra date.
+  ok(!canAddLimitedContractDates(state, person, existing, 1).ok,
+    "active rival's thirteen unworked dates did not constrain additions");
+  elsewhere.datesUsed = 13;
+  ok(canAddLimitedContractDates(state, person, existing, 1).ok,
+    "already-worked rival dates still blocked new dates on the same agreement");
+  ok(existing.dateEntitlement === 1 && elsewhere.status === "SIGNED",
+    "eligibility check mutated a wrestler's signed terms");
+});
+
 test("structurally impossible overlapping exclusive terms are rejected before submission", () => {
   const { state, promotionId } = fixture(11004);
   const current = activeContractsForPromotion(state, promotionId)[0]!;
