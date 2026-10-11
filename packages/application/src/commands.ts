@@ -1,5 +1,7 @@
 import type { ContractOffer, Id, PpwDate, Promotion, Team, WorldState } from "../../domain/src/types.js";
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
+import type { WorldPlanningState } from "./planning.js";
+import { requestCreativeBookingConsent, type CreativeConsentRecord } from "./creative-consent.js";
 import type { Programme, ProgrammeParticipantRef } from "../../domain/src/programmes.js";
 import {
   submitHumanContractOffer,
@@ -33,6 +35,7 @@ export type ApplicationCommandType =
   | "CLAIM_INDEPENDENT_PROMOTION"
   | "SUBMIT_CONTRACT_OFFER"
   | "SUBMIT_CONTRACT_DATES_ADDENDUM"
+  | "REQUEST_CREATIVE_BOOKING_CONSENT"
   | "PURSUE_TALENT_OPPORTUNITY"
   | "UPSERT_DETAILED_SHOW_DRAFT"
   | "REMOVE_DETAILED_SHOW_DRAFT"
@@ -77,6 +80,14 @@ export interface WorldCommandState {
 export interface ClaimIndependentPromotionPayload {
   promotionId: Id;
   options?: HumanPromotionClaimOptions;
+}
+
+export interface RequestCreativeBookingConsentPayload {
+  promotionId: Id;
+  draftId: string;
+  draftMatchId: string;
+  personId: Id;
+  expectedPlanVersion: number;
 }
 
 export interface StartProgrammePayload {
@@ -265,6 +276,34 @@ export function submitContractDatesAddendumCommand(
       throw new Error("player cannot amend another promotion's signed contract");
     }
     return submitHumanDatesAddendum(state, envelope.payload);
+  });
+}
+
+/**
+ * Explicit pre-lock negotiation command. It never changes any intended winner,
+ * finish, booking or match outcome; only the approval evidence is persisted.
+ */
+export function requestCreativeBookingConsentCommand(
+  state: WorldState,
+  ownership: WorldOwnershipState,
+  planning: WorldPlanningState,
+  commandState: WorldCommandState,
+  runtime: WorldRuntimeState,
+  envelope: ApplicationCommandEnvelope<RequestCreativeBookingConsentPayload>,
+): CreativeConsentRecord {
+  if (envelope.commandType !== "REQUEST_CREATIVE_BOOKING_CONSENT") {
+    throw new Error("expected REQUEST_CREATIVE_BOOKING_CONSENT command");
+  }
+  if (envelope.worldId !== state.world.id || ownership.worldId !== state.world.id
+    || planning.worldId !== state.world.id) {
+    throw new Error("creative consent command World boundary mismatch");
+  }
+  return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
+    if (!activeWorldMembership(ownership, envelope.playerId)
+      || !playerControlsPromotion(ownership, envelope.playerId, envelope.payload.promotionId)) {
+      throw new Error("player cannot request creative consent for another promotion");
+    }
+    return requestCreativeBookingConsent(state, planning, envelope.payload);
   });
 }
 
