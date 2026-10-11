@@ -9,6 +9,7 @@ import {
   addPpwWeeks,
   contractIsActive,
   ppwDateToWeekIndex,
+  promotionShowSeriesDueForDate,
   weeksBetween,
   resolvedCreativeControl,
   validCreativeControl,
@@ -16,6 +17,7 @@ import {
 import {
   activePromotionControlForPlayer,
   activeWorldMembership,
+  DETAILED_PLANNING_HORIZON_WEEKS,
   buildPlayerTalentDirectoryView,
   buildPlayerTalentManagementView,
   createWorldEngagementState,
@@ -219,17 +221,30 @@ function buildFreshPlan(
     if (alreadyOurs) throw new Error("wrestler is already on your active roster; use the renewal action");
   }
 
-  // Human one-offs resolve after the submission week's commitments close.
-  // Their single appearance must belong to a *future* PPW week. A future
-  // renewal retains the next week after its signed source contract ends.
+  // An accepted human one-off becomes bookable only after World Resolution,
+  // not in the offer week. Align its single week with a real scheduled show,
+  // otherwise a biweekly/irregular promotion can buy an unusable date.
+  // Do not reserve speculative one-offs beyond the six-week player planner.
   if (request.family === "ONE_OFF") {
-    if (ppwDateToWeekIndex(startDate, state.ruleset.weeksPerYear)
-      <= ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear)) {
-      startDate = addPpwWeeks(state.world.currentDate, 1, state.ruleset.weeksPerYear);
+    const currentWeek = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
+    const earliestWeek = Math.max(currentWeek + 1, ppwDateToWeekIndex(startDate, state.ruleset.weeksPerYear));
+    let showDate: typeof startDate | null = null;
+    for (let offset = earliestWeek - currentWeek; offset <= DETAILED_PLANNING_HORIZON_WEEKS; offset += 1) {
+      const candidate = addPpwWeeks(state.world.currentDate, offset, state.ruleset.weeksPerYear);
+      if (promotionShowSeriesDueForDate(state, promotionId, candidate).length > 0) {
+        showDate = { ...candidate, day: 1 };
+        break;
+      }
     }
-    // Reservation and materialization check the exact show DAY: a one-show
-    // weekly deal must allow any day 1–7, while buying just ONE appearance.
-    startDate = { ...startDate, day: 1 };
+    if (!showDate) {
+      throw new Error(
+        `No scheduled promotion show within the next ${DETAILED_PLANNING_HORIZON_WEEKS} PPW weeks `
+        + "after this offer can take effect. Arrange a show or negotiate closer to the next event.",
+      );
+    }
+    // Exact-day reservation checks require the entire show week. This is
+    // still ONE purchased appearance, not seven separate dates.
+    startDate = showDate;
   }
 
   const exclusivity = request.family === "ONE_OFF" ? "OPEN"
