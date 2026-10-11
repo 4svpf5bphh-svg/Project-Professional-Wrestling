@@ -839,15 +839,15 @@ export const REVIEWED_REAL_ROSTER_IDENTITIES_WAVE4: readonly ReviewedRosterIdent
         "source": "PPW_AUTHORED"
       },
       {
-        "name": "Hidden Blade",
-        "category": "STRIKE",
+        "name": "Storm Breaker",
+        "category": "GRAPPLE",
         "source": "PPW_AUTHORED"
       }
     ],
     "finishingMoves": [
       {
-        "name": "Storm Breaker",
-        "category": "GRAPPLE",
+        "name": "Hidden Blade",
+        "category": "STRIKE",
         "source": "PPW_AUTHORED"
       }
     ]
