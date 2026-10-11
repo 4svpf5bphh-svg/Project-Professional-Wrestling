@@ -22,6 +22,9 @@ import {
   claimIndependentPromotionForHuman,
   createWorld,
   marketWeeklyValue,
+  minimumExclusiveWeeklyGuarantee,
+  canAcceptContractTerms,
+  serviceCapacityDatesPerWeek,
   resolveContractOffers,
   resolveWorldWeek,
   submitHumanContractOffer,
@@ -169,6 +172,109 @@ test("an exhausted limited-date deal can be replaced immediately without stackin
   ok(Boolean(replacement) && replacement!.status === "SIGNED", "accepted exhausted replacement did not create a live contract");
   ok(replacement!.datesUsed === 0 && replacement!.dateEntitlement === 5, "replacement did not restore purchased dates");
   ok(activeContractsForPromotion(state, promotionId).filter((contract) => contract.personId === source.personId).length === 1, "exhausted replacement stacked multiple active contracts");
+});
+
+test("exclusive offers cannot warehouse talent with appearance-only or underpaid weekly terms", () => {
+  const { state, promotionId } = fixture(11015);
+  const person = state.people.find(p =>
+    p.status === "ACTIVE" && serviceCapacityDatesPerWeek(p) >= 1.05
+    && activeContractsForPerson(state, p.id).length === 0);
+  if (!person) throw new Error("no genuinely available wrestler for exclusive pay audit");
+  const market = marketWeeklyValue(person);
+  const minimum = minimumExclusiveWeeklyGuarantee(person);
+  ok(minimum === Math.ceil(market * 0.5) && minimum > 0,
+    "exclusive pay floor has drifted from the transparent market-value rule");
+  const startDate = { ...state.world.currentDate };
+  const endDate = addPpwWeeks(startDate, 25, state.ruleset.weeksPerYear);
+  const base = {
+    promotionId, personId: person.id,
+    family: "EXCLUSIVE" as const, exclusivity: "EXCLUSIVE" as const,
+    roleExpectation: "MAIN_EVENT" as const,
+    startDate, endDate, dateEntitlement: 26,
+    weeklyGuarantee: 0, appearanceFee: market * 100,
+    signingBonus: market * 100,
+  };
+  const beforeOffers = state.contractOffers.length;
+  const beforeLedger = state.ledger.length;
+  const beforeCash = state.promotions.find(p => p.id === promotionId)!.cash;
+  for (const invalid of [base,
+    { ...base, appearanceFee: 0, weeklyGuarantee: minimum - 1 },
+    { ...base, appearanceFee: market, weeklyGuarantee: market * 3 }]) {
+    let rejected = false;
+    try {
+      submitHumanContractOffer(state, invalid);
+    } catch (error) {
+      rejected = error instanceof Error
+        && (error.message.includes("exclusive agreement requires")
+          || error.message.includes("exclusive agreements include"));
+    }
+    ok(rejected, "unsafe exclusive structure passed the shared contract command");
+    ok(state.contractOffers.length === beforeOffers && state.ledger.length === beforeLedger
+      && state.promotions.find(p => p.id === promotionId)!.cash === beforeCash,
+      "invalid exclusive proposal created an offer, ledger event or financial debit");
+  }
+  const valid = { ...base, weeklyGuarantee: minimum, appearanceFee: 0 };
+  ok(canAcceptContractTerms(state, person, valid).ok,
+    "minimum-price exclusive employment was rejected solely for its structure");
+  const offer = submitHumanContractOffer(state, valid);
+  ok(offer.weeklyGuarantee === minimum && offer.appearanceFee === 0,
+    "valid guaranteed-pay terms were silently repriced");
+});
+
+test("fairly paid exclusive bid beats a competing same-world offer without double-signing", () => {
+  const { state, promotionId } = fixture(11016);
+  const person = state.people.find(p =>
+    p.status === "ACTIVE" && serviceCapacityDatesPerWeek(p) >= 1.05
+    && activeContractsForPerson(state, p.id).length === 0);
+  const rival = state.promotions.find(p =>
+    p.id !== promotionId && p.tier === "INDEPENDENT" && p.lifecycle === "ACTIVE");
+  if (!person || !rival) throw new Error("multi-promoter exclusive fixture needs a free agent and rival indie");
+  claimIndependentPromotionForHuman(state, rival.id, { name: "Rival Wrestling" });
+  const market = marketWeeklyValue(person);
+  const startDate = { ...state.world.currentDate };
+  const endDate = addPpwWeeks(startDate, 12, state.ruleset.weeksPerYear);
+  const outside = submitHumanContractOffer(state, {
+    promotionId, personId: person.id,
+    family: "LIMITED_NON_EXCLUSIVE", exclusivity: "NON_EXCLUSIVE",
+    roleExpectation: "REGULAR", startDate, endDate, dateEntitlement: 3,
+    weeklyGuarantee: 0, appearanceFee: market, signingBonus: 0,
+  });
+  const exclusive = submitHumanContractOffer(state, {
+    promotionId: rival.id, personId: person.id,
+    family: "EXCLUSIVE", exclusivity: "EXCLUSIVE",
+    roleExpectation: "MAIN_EVENT", startDate, endDate, dateEntitlement: 13,
+    weeklyGuarantee: market * 5, appearanceFee: 0, signingBonus: market * 15,
+  });
+  resolveContractOffers(state);
+  ok(exclusive.status === "ACCEPTED",
+    `credible exclusive rival bid was not accepted: ${exclusive.rejectionReason}`);
+  ok(outside.status === "REJECTED",
+    "same-world rival managed to sign non-exclusive overlap after exclusivity acceptance");
+  const matching = state.contracts.filter(c => c.sourceOfferId === exclusive.id);
+  ok(matching.length === 1 && matching[0]!.promotionId === rival.id
+    && matching[0]!.weeklyGuarantee === market * 5,
+    "winner of conflicting offers did not create exactly one paid exclusive agreement");
+  ok(state.contracts.every(c => c.sourceOfferId !== outside.id),
+    "rejected competing offer received a second signed contract");
+  ok(!canAcceptContractTerms(state, person, {
+    ...outside, appearanceFee: market,
+  }).ok, "accepted exclusive did not lock only the overlapping competitor terms");
+});
+
+test("AI exclusive generation is paid and pre-existing signed bargains remain unchanged", () => {
+  const { state, promotionId, freeAgentId } = fixture(11017);
+  const person = state.people.find(p => p.id === freeAgentId)!;
+  const promotion = state.promotions.find(p => p.id === promotionId)!;
+  const terms = buildContractTerms(
+    state, promotion, person, new DeterministicRng(11017), state.world.currentDate, "EXCLUSIVE");
+  ok(terms.weeklyGuarantee >= minimumExclusiveWeeklyGuarantee(person) && terms.appearanceFee === 0,
+    "AI-exclusive generator fell outside shared fair-pay bounds");
+  const oldSigned = createSignedContract(state, person, promotion, {
+    ...terms, weeklyGuarantee: 0, appearanceFee: marketWeeklyValue(person),
+  }, null, false);
+  ok(oldSigned.status === "SIGNED" && oldSigned.weeklyGuarantee === 0
+    && activeContractsForPromotion(state, promotionId).some(c => c.id === oldSigned.id),
+    "new offer guardrails retroactively rewrote or invalidated a signed legacy deal");
 });
 
 test("structurally impossible overlapping exclusive terms are rejected before submission", () => {
