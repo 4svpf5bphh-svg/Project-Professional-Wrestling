@@ -3,7 +3,9 @@ import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { Programme, ProgrammeParticipantRef } from "../../domain/src/programmes.js";
 import {
   submitHumanContractOffer,
+  submitHumanDatesAddendum,
   type HumanContractOfferPlan,
+  type HumanDatesAddendumPlan,
 } from "../../sim-core/src/human-contracts.js";
 import type { HumanPromotionClaimOptions } from "../../sim-core/src/human-control.js";
 import { createProgramme } from "../../sim-core/src/programmes.js";
@@ -30,6 +32,7 @@ import {
 export type ApplicationCommandType =
   | "CLAIM_INDEPENDENT_PROMOTION"
   | "SUBMIT_CONTRACT_OFFER"
+  | "SUBMIT_CONTRACT_DATES_ADDENDUM"
   | "PURSUE_TALENT_OPPORTUNITY"
   | "UPSERT_DETAILED_SHOW_DRAFT"
   | "REMOVE_DETAILED_SHOW_DRAFT"
@@ -240,6 +243,28 @@ export function submitContractOfferCommand(
       throw new Error(`${envelope.playerId} does not control ${envelope.payload.promotionId}`);
     }
     return submitHumanContractOffer(state, envelope.payload);
+  });
+}
+
+export function submitContractDatesAddendumCommand(
+  state: WorldState,
+  ownership: WorldOwnershipState,
+  commandState: WorldCommandState,
+  runtime: WorldRuntimeState,
+  envelope: ApplicationCommandEnvelope<HumanDatesAddendumPlan>,
+): ContractOffer {
+  if (envelope.commandType !== "SUBMIT_CONTRACT_DATES_ADDENDUM") {
+    throw new Error("expected SUBMIT_CONTRACT_DATES_ADDENDUM command");
+  }
+  if (envelope.worldId !== state.world.id || ownership.worldId !== state.world.id) {
+    throw new Error("date-addendum command ownership/World mismatch");
+  }
+  return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
+    if (!activeWorldMembership(ownership, envelope.playerId)
+      || !playerControlsPromotion(ownership, envelope.playerId, envelope.payload.promotionId)) {
+      throw new Error("player cannot amend another promotion's signed contract");
+    }
+    return submitHumanDatesAddendum(state, envelope.payload);
   });
 }
 
