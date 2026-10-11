@@ -24,6 +24,7 @@ export interface StandingProgrammeCreativeAgreement {
   personId: Id;
   contractId: Id;
   decidedDate: PpwDate;
+  /** Exclusive boundary: first PPW date after the negotiated duration. */
   expiresDate: PpwDate;
   approved: boolean;
   score: number;
@@ -148,7 +149,7 @@ export function standingProgrammeAgreementCoversMatch(
     && entry.programmeId === input.programmeId && entry.personId === input.personId
     && entry.approved && entry.matchType === match.type);
   if (!agreement || comparePpwDates(input.targetDate, agreement.decidedDate, state.ruleset.weeksPerYear) < 0
-    || comparePpwDates(input.targetDate, agreement.expiresDate, state.ruleset.weeksPerYear) > 0) return false;
+    || comparePpwDates(input.targetDate, agreement.expiresDate, state.ruleset.weeksPerYear) >= 0) return false;
   const contract = applicableCreativeContract(state, input.promotionId, input.personId, input.targetDate);
   if (!contract || contract.id !== agreement.contractId
     || resolvedCreativeControl(contract.creativeControl) !== "FULL_APPROVAL") return false;
