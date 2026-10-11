@@ -1,5 +1,5 @@
 import type { Contract, CreativeControlLevel, Person, PpwDate, WorldState } from "../../domain/src/types.js";
-import { comparePpwDates } from "./clock.js";
+import { comparePpwDates, ppwDateToWeekIndex } from "./clock.js";
 import { contractsForPerson } from "./indexes.js";
 
 /**
@@ -99,6 +99,38 @@ export function suggestedAiCreativeControl(
   if (star >= 55 && autonomy >= person.priorities.money * 0.8
     && promotion.financialDistress !== "DISTRESSED") return "CONSULTATION";
   return "NONE";
+}
+
+/**
+ * A rejected autonomous match proposal must not be attempted every week.
+ * Read recent ledger decisions, not an ephemeral process cache; this remains
+ * deterministic across World Lock retries and persisted-world reloads.
+ *
+ * On the same contract, a materially improved willingness score can still
+ * permit booking immediately. Otherwise reconsider after 12 PPW weeks.
+ */
+export function recentAutomatedCreativeRefusalKeys(
+  state: WorldState,
+  date: PpwDate,
+  coolingWeeks = 12,
+): ReadonlySet<string> {
+  if (!Number.isSafeInteger(coolingWeeks) || coolingWeeks < 1) {
+    throw new Error("creative refusal cooling window must be a positive integer");
+  }
+  const now = ppwDateToWeekIndex(date, state.ruleset.weeksPerYear);
+  const blocked = new Set<string>();
+  for (let index = state.ledger.length - 1; index >= 0; index--) {
+    const incident = state.ledger[index]!;
+    const recordedWeek = ppwDateToWeekIndex(incident.date, state.ruleset.weeksPerYear);
+    if (recordedWeek > now) continue;
+    if (now - recordedWeek >= coolingWeeks) break;
+    if (incident.type !== "AUTOMATED_CREATIVE_MATCH_DECLINED") continue;
+    const [, promotionId, personId, contractId] = incident.entityIds;
+    if (promotionId && personId && contractId) {
+      blocked.add(`${promotionId}:${personId}:${contractId}`);
+    }
+  }
+  return blocked;
 }
 
 export interface CreativeBookingProposal {
