@@ -43,7 +43,7 @@ export function generateTeamMoments(aggregate: ApplicationWorldAggregate): numbe
     .map((item) => [pairKey(item.personAId, item.personBId), item]));
   let created = 0;
   for (const control of controls) {
-    const prior = engagement.backstageConversations.filter((entry) => entry.promotionId === control.promotionId);
+    const prior = engagement.backstageConversations.filter((entry) => entry.promotionId === control.promotionId && entry.kind !== "PROGRAMME_CREATIVE_AGREEMENT");
     const openCount = prior.filter((entry) => entry.status === "OPEN").length;
     const weekCount = prior.filter((entry) => entry.createdDate.year === state.world.currentDate.year
       && entry.createdDate.week === state.world.currentDate.week).length;
