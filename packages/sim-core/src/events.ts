@@ -398,7 +398,6 @@ export function prepareHumanShow(state: WorldState, plan: HumanShowPlan): Wrestl
 
   const weeklyCounts = new Map<string, number>();
   const dateBookings = new Set<string>();
-  const creativeCooling = recentAutomatedCreativeRefusalKeys(state, state.world.currentDate);
   for (let index = state.scheduledAppearances.length - 1; index >= 0; index -= 1) {
     const appearance = state.scheduledAppearances[index]!;
     const appearanceWeekIndex = ppwDateToWeekIndex(appearance.date, state.ruleset.weeksPerYear);
@@ -515,6 +514,7 @@ export function planWorldEvents(state: WorldState, execution: WorldEventExecutio
   );
   const weeklyCounts = new Map<string, number>();
   const dateBookings = new Set<string>();
+  const creativeCooling = recentAutomatedCreativeRefusalKeys(state, state.world.currentDate);
   const currentWeekIndex = weekIndex;
 
   for (let i = state.scheduledAppearances.length - 1; i >= 0; i -= 1) {
