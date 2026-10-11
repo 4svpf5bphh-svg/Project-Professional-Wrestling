@@ -11,9 +11,10 @@ import {portableWrestlerIdentityRecord} from "../../sim-core/src/wrestler-identi
 import {curatedCharacterFor} from "../../content/src/real-wrestler-characters.js";
 import {alternatePersonaReferencesFor, type DocumentedAlternatePersona} from "../../content/src/verified-alternate-personas.js";
 import {defaultWrestlerCreativeFields} from "./wrestler-creative.js";
+import {authoredPersonaForPerson} from "../../sim-core/src/identity-generation.js";
 
 export interface WrestlerPortableIdentityView {
-  source:"WORLD_RECORD"|"CURATED_BASELINE"|"UNCURATED_BASELINE";
+  source:"WORLD_RECORD"|"CURATED_BASELINE"|"UNCURATED_BASELINE"|"GAME_AUTHORED";
   active:PortableIdentityPersona;
   history:PortableWrestlerIdentity["history"];
   /** Curated real-world context; never converted to PPW career history on read. */
@@ -26,27 +27,34 @@ export function wrestlerPortableIdentityFor(state:WorldState,person:Person):Wres
   const existing=portableWrestlerIdentityRecord(state,person.id);
   const curated=curatedCharacterFor(person.name);
   const base=defaultWrestlerCreativeFields(person);
-  const active=existing?.active??{
+  const generated=authoredPersonaForPerson(person);
+  const curatedSignatures=curated
+    ? ("signatureMoves" in curated
+      ? curated.signatureMoves.map(move=>({...move,source:"VERIFIED" as const}))
+      : curated.signatureMove?[{...curated.signatureMove,source:"VERIFIED" as const}]:[])
+    : [];
+  const curatedFinishers=curated
+    ? ("finishingMoves" in curated
+      ? curated.finishingMoves.map(move=>({...move,source:"VERIFIED" as const}))
+      : curated.finishingMove?[{...curated.finishingMove,source:"VERIFIED" as const}]:[])
+    : [];
+  const active:PortableIdentityPersona=existing?.active??(curated?{
     personaName:base.ringName,
     gimmickId:base.gimmickArchetype,
     primaryStyle:base.primaryStyle,
     secondaryStyle:base.secondaryStyle,
-    signatureMoves:curated && "signatureMoves" in curated
-      ? curated.signatureMoves.map(move=>({...move}))
-      : base.signatureMove?[{...base.signatureMove}]:[],
-    finishingMoves:curated && "finishingMoves" in curated
-      ? curated.finishingMoves.map(move=>({...move}))
-      : base.finishingMove?[{...base.finishingMove}]:[],
+    signatureMoves:curatedSignatures.length?curatedSignatures:generated.signatureMoves,
+    finishingMoves:curatedFinishers.length?curatedFinishers:generated.finishingMoves,
     introducedDate:{...person.debutDate},
-    provenance:curated?"CURATED" as const:"UNCURATED_BASELINE" as const,
-  };
+    provenance:"CURATED",
+  }:generated);
   const complete={
     hasSignature:active.signatureMoves.length>0,
     hasFinisher:active.finishingMoves.length>0,
     hasGimmick:active.gimmickId!=="AUTHENTIC",
   };
   return {
-    source:existing?"WORLD_RECORD":curated?"CURATED_BASELINE":"UNCURATED_BASELINE",
+    source:existing?"WORLD_RECORD":curated?"CURATED_BASELINE":"GAME_AUTHORED",
     active:structuredClone(active),
     history:existing?structuredClone(existing.history):[],
     documentedAlternates:alternatePersonaReferencesFor(person.name),

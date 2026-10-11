@@ -16,7 +16,7 @@ function validPersona(p:PortableIdentityPersona, state:WorldState):boolean {
     ||!Number.isInteger(p.introducedDate.week)||p.introducedDate.week<1
     ||p.introducedDate.week>state.ruleset.weeksPerYear
     ||!Number.isInteger(p.introducedDate.day)||p.introducedDate.day<1||p.introducedDate.day>7
-    ||!["CURATED","NEGOTIATED","LEGACY_MIGRATED","UNCURATED_BASELINE"].includes(p.provenance)
+    ||!["CURATED","NEGOTIATED","LEGACY_MIGRATED","UNCURATED_BASELINE","GAME_AUTHORED"].includes(p.provenance)
     ||!Array.isArray(p.signatureMoves)||!Array.isArray(p.finishingMoves)
     ||p.signatureMoves.length>12||p.finishingMoves.length>12) return false;
   const validMoves=(list:PortableIdentityPersona["signatureMoves"])=>{
@@ -24,7 +24,8 @@ function validPersona(p:PortableIdentityPersona, state:WorldState):boolean {
     for(const m of list){
       if(!m || typeof m.name!=="string" || !m.name.trim() || m.name.length>80
         || !["STRIKE","GRAPPLE","SUBMISSION","AERIAL","POWER","OTHER"].includes(m.category)
-        ||names.has(m.name.toLocaleLowerCase("en-GB"))) return false;
+        ||names.has(m.name.toLocaleLowerCase("en-GB"))
+        || (m.source!==undefined && m.source!=="VERIFIED" && m.source!=="PPW_AUTHORED")) return false;
       names.add(m.name.toLocaleLowerCase("en-GB"));
     }
     return true;

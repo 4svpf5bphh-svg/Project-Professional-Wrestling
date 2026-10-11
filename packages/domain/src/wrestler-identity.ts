@@ -10,10 +10,12 @@
 import type { Id, PpwDate } from "./types.js";
 
 export type IdentityMoveCategory = "STRIKE"|"GRAPPLE"|"SUBMISSION"|"AERIAL"|"POWER"|"OTHER";
-export type PortableIdentityProvenance = "CURATED"|"NEGOTIATED"|"LEGACY_MIGRATED"|"UNCURATED_BASELINE";
+export type PortableIdentityProvenance = "CURATED"|"NEGOTIATED"|"LEGACY_MIGRATED"|"UNCURATED_BASELINE"|"GAME_AUTHORED";
 export interface PortableIdentityMove {
   name: string;
   category: IdentityMoveCategory;
+  /** Exact move provenance: sourced fact or plausible PPW-authored placeholder. */
+  source?: "VERIFIED"|"PPW_AUTHORED";
 }
 export interface PortableIdentityPersona {
   personaName: string;

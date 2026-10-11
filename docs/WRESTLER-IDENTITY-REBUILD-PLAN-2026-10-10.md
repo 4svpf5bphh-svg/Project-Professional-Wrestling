@@ -110,3 +110,38 @@ negotiation is required before an alternate becomes a new active PPW persona.
 Other wrestler characters, era dates, changing publisher portrayals and
 historical move variations remain research backlog. The master roster contains
 hundreds of names; this is a sample of well-sourced cases, not full coverage.
+
+## Roster-wide identity coverage, phase 1 (11 October 2026)
+
+**Policy locked:** No initial wrestler or newly generated prospect may enter
+the World without a defined persona, gimmick archetype, primary and secondary
+style, at least two named signatures and a named finisher. An undefined
+secondary style is allowed only for specifically curated workers.
+
+**Provenance matters.** The current small verified real-wrestler catalogue
+retains sourced gimmicks and moves. A deterministic, variety-weighted
+PPW-authored generator covers every other wrestler and any missing named move.
+This is an **in-game approximation**, NOT an unsupported claim that an actual
+person uses the invented move, believes in the gimmick or has a certain
+temperament. Each move carries VERlFIED or PPW_AUTHORED provenance
+(the literal machine tag is VERIFIED, with an uppercase I).
+
+The generator uses person ID, display name and seeded wrestling skill profile
+to choose a plausible, style-coherent archetype and repertoire. It consumes
+no game RNG, gives no simulation advantage and is deterministic across
+multiplayer replay. On World creation it establishes one person-owned identity
+record per wrestler. The World-locked career generator adds a complete,
+persisted identity whenever a new prospect debuts. The Alpha bootstrap overlays
+researched real-world identities on those default identities **only before
+any gameplay**. Migrated existing Worlds get missing records only, never a
+new persona forced on a wrestler who already has a saved identity.
+
+Existing owner-specific character edits and historical agreements remain
+independent; the backfill never promotes local edits into global consent.
+Public identity profiles label PPW-created moves. Versioned history,
+consent-aware repackaging, roster editing and deep real-world curation remain
+separate work. This policy covers the existing real-roster pool and simulated
+newcomers but does not imply that hundreds of approximate records have been
+individually researched.
+
+No merge to main, Vercel deployment or live save reset authorised.

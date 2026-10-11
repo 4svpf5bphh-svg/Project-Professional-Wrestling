@@ -24,9 +24,14 @@ import {
   calibratedRealActiveMixedRosterSource,
 } from "../packages/content/src/real-active-mixed-roster.js";
 import { marketWeeklyValue } from "../packages/sim-core/src/contracts.js";
+import {completeAlphaWrestlerIdentityCoverage} from "../packages/content/src/wrestler-identity-coverage.js";
 import {
   createWorld,
   generatedFictionalRosterSource,
+  replenishTalentPopulation,
+  createPersistedWorldState,
+  restorePersistedWorldState,
+  validatePortableWrestlerIdentities,
   type WorldRosterSource,
 } from "../packages/sim-core/src/index.js";
 import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
@@ -323,6 +328,90 @@ test("player-facing Alpha World genesis uses the audited mixed real-world roster
   ok(rhea?.popularity !== undefined && rhea.popularity >= 90, "Alpha World did not apply women's megastar calibration");
   ok(rhea?.division === "WOMEN", "Alpha World did not preserve women's division data");
   ok(prospect?.careerStage === "PROSPECT", "Alpha World did not apply prospect career calibration");
+});
+
+
+test("every real-roster wrestler starts with a complete labelled character and move set",()=>{
+  const {state}=createAlphaWorldAggregate({seed:77201,playerId:"identity-coverage-check"});
+  const personIds=new Set(state.people.map(person=>person.id));
+  const records=state.wrestlerIdentities??[];
+  ok(records.length===state.people.length
+    &&new Set(records.map(record=>record.personId)).size===state.people.length
+    &&records.every(record=>personIds.has(record.personId)),
+    "Alpha's full real-world roster is missing portable identity records");
+  for(const record of records){
+    const active=record.active;
+    ok(record.revision===1&&record.history.length===0
+      &&active.personaName.trim().length>0
+      &&active.gimmickId!=="AUTHENTIC"
+      &&active.primaryStyle.length>0
+      &&active.secondaryStyle!==active.primaryStyle
+      &&active.signatureMoves.length>=1
+      &&active.finishingMoves.length>=1
+      &&[...active.signatureMoves,...active.finishingMoves].every(move=>move.name.length>0
+        &&(move.source==="VERIFIED"||move.source==="PPW_AUTHORED")),
+      "Alpha roster character coverage has incomplete or unattributed move data");
+  }
+  const roman=state.people.find(person=>person.name==="Roman Reigns")!;
+  const romanIdentity=records.find(x=>x.personId===roman.id)!.active;
+  ok(romanIdentity.gimmickId==="TRIBAL_CHIEF"
+    &&romanIdentity.finishingMoves.some(move=>move.name==="Spear"&&move.source==="VERIFIED")
+    &&romanIdentity.signatureMoves.some(move=>move.name==="Superman Punch"&&move.source==="VERIFIED"),
+    "curated household-name character was replaced by an invented approximation");
+  const snapshot=createPersistedWorldState(state);
+  const restored=restorePersistedWorldState(JSON.parse(JSON.stringify(snapshot)));
+  validatePortableWrestlerIdentities(restored);
+  ok(restored.wrestlerIdentities?.length===records.length
+    &&restored.wrestlerIdentities[0]!.active.signatureMoves.length>=1,
+    "full initial identity roster was lost during database-format persistence");
+  const before=JSON.stringify(restored.wrestlerIdentities);
+  ok(completeAlphaWrestlerIdentityCoverage(restored)===0
+    &&JSON.stringify(restored.wrestlerIdentities)===before,
+    "checking coverage later silently repackaged existing wrestlers");
+});
+
+test("legacy identity backfill protects established characters and fills only empty records",()=>{
+  const {state}=createAlphaWorldAggregate({seed:77202,playerId:"legacy-identity-check"});
+  const protectedIdentity=structuredClone(state.wrestlerIdentities![0]!);
+  protectedIdentity.active.personaName="Player Approved Name";
+  protectedIdentity.active.provenance="NEGOTIATED";
+  protectedIdentity.revision=2;
+  state.wrestlerIdentities=[protectedIdentity];
+  const count=completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD");
+  ok(count===state.people.length-1
+    &&state.wrestlerIdentities.length===state.people.length,
+    "legacy identity migration omitted wrestlers or duplicated records");
+  ok(state.wrestlerIdentities[0]!.revision===2
+    &&state.wrestlerIdentities[0]!.active.personaName==="Player Approved Name",
+    "legacy migration rewrote a wrestler's negotiated identity");
+  ok(completeAlphaWrestlerIdentityCoverage(state,"EXISTING_WORLD")===0,
+    "migrating identity records a second time created extra changes");
+});
+
+test("every regenerated prospect debuts with a fully populated persistent persona",()=>{
+  const state=createWorld(77203,DEFAULT_RULESET);
+  ok(state.wrestlerIdentities?.length===state.people.length,
+    "new fictional Worlds did not seed complete wrestler identities");
+  for(const person of state.people.slice(0,70))person.status="RETIRED";
+  const before=state.people.length;
+  const added=replenishTalentPopulation(state);
+  ok(added>0&&state.people.length===before+added,
+    "future prospect fixture did not generate replacement wrestlers");
+  const newPeople=state.people.slice(-added);
+  for(const person of newPeople){
+    const identity=state.wrestlerIdentities?.find(x=>x.personId===person.id);
+    ok(person.generatedTalent&&identity?.active.provenance==="GAME_AUTHORED"
+      &&identity.active.gimmickId!=="AUTHENTIC"
+      &&identity.active.primaryStyle.length>0
+      &&identity.active.signatureMoves.length>=2
+      &&identity.active.finishingMoves.length>=1
+      &&identity.active.signatureMoves.every(m=>m.source==="PPW_AUTHORED")
+      &&identity.active.finishingMoves.every(m=>m.source==="PPW_AUTHORED"),
+      "new prospect entered the free market without a complete distinct identity");
+  }
+  const reloaded=restorePersistedWorldState(createPersistedWorldState(state));
+  ok(newPeople.every(person=>reloaded.wrestlerIdentities?.some(x=>x.personId===person.id)),
+    "prospect gimmicks disappeared after save/restore");
 });
 
 console.log(`\nRoster source tests: ${passed} passed, ${failed} failed`);

@@ -4,6 +4,7 @@ import { allocateEntityId, nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { personById } from "./indexes.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
+import { authoredWrestlerIdentity } from "./identity-generation.js";
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -260,6 +261,7 @@ export function replenishTalentPopulation(state: WorldState): number {
     const allocation = allocateEntityId(state, "person");
     const person = generatedProspect(state, allocation.sequence, allocation.id);
     state.people.push(person);
+    (state.wrestlerIdentities ??= []).push(authoredWrestlerIdentity(state,person));
     writer.append({
       date: state.world.currentDate,
       type: "WRESTLER_DEBUTED",

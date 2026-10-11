@@ -19,6 +19,7 @@ import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 import { registerEntityIdCounters } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { seedWorldPromotionShowSeries } from "./show-calendar.js";
+import { fillUnassignedWrestlerIdentities } from "./identity-generation.js";
 
 export type WorldShowSeriesSource = (
   worldId: string,
@@ -174,6 +175,7 @@ export function createWorld(
     financialTransactions: [],
     ledger: [],
   };
+  fillUnassignedWrestlerIdentities(state);
   registerEntityIdCounters(state);
   const writer = new LedgerWriter(worldId, state.ledger);
   writer.append({
