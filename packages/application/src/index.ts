@@ -5,6 +5,7 @@ export * from "./backstage-consequences.js";
 export * from "./business-view.js";
 export * from "./championship-history-view.js";
 export * from "./commands.js";
+export * from "./creative-consent.js";
 export * from "./engagement.js";
 export * from "./industry-view.js";
 export * from "./opportunity-actions.js";
