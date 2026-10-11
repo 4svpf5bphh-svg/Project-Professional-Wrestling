@@ -104,8 +104,21 @@ function independentMarket(state: WorldState): AccessibleMarket {
   };
 }
 
+interface CreativeRefusalPattern {
+  wrestlerId: string;
+  wrestlerName: string;
+  promotionName: string;
+  refusals: number;
+  firstPpwWeek: string;
+  lastPpwWeek: string;
+  minDecisionScore: number;
+  maxDecisionScore: number;
+}
+
 interface AuditRow {
   cohort: Cohort; seed: number; scenario: Scenario; weeks: number;
+  distinctCreativeRefusers: number;
+  topCreativeRefusers: CreativeRefusalPattern[];
   offers: number; accepted: number; acceptedPercent: number | null;
   offersByRight: Record<CreativeControlLevel, number>;
   acceptedByRight: Record<CreativeControlLevel, number>;
@@ -177,8 +190,37 @@ function measure(cohort: Cohort, seed: number, scenario: Scenario): AuditRow {
   }
   const eventCount = events(state);
   const cancelledCount = cancelled(state);
+  const refusalCounts = new Map<string, CreativeRefusalPattern>();
+  for (const item of state.ledger.filter(x => x.type === "AUTOMATED_CREATIVE_MATCH_DECLINED")) {
+    // Ledger entityIds: event, promotion, wrestler, contract.
+    const wrestlerId = item.entityIds[2] ?? "";
+    const promotionId = item.entityIds[1] ?? "";
+    const key = `${promotionId}:${wrestlerId}`;
+    const decisionScore = Number(item.payload.score);
+    const dateLabel = `Y${item.date.year} W${item.date.week}`;
+    const prior = refusalCounts.get(key);
+    if (prior) {
+      prior.refusals += 1;
+      prior.lastPpwWeek = dateLabel;
+      prior.minDecisionScore = Math.min(prior.minDecisionScore, decisionScore);
+      prior.maxDecisionScore = Math.max(prior.maxDecisionScore, decisionScore);
+    } else {
+      refusalCounts.set(key, {
+        wrestlerId,
+        wrestlerName: state.people.find(person => person.id === wrestlerId)?.name ?? wrestlerId,
+        promotionName: state.promotions.find(promotion => promotion.id === promotionId)?.name ?? promotionId,
+        refusals: 1, firstPpwWeek: dateLabel, lastPpwWeek: dateLabel,
+        minDecisionScore: decisionScore, maxDecisionScore: decisionScore,
+      });
+    }
+  }
+  const topRefusers = [...refusalCounts.values()]
+    .sort((a, b) => b.refusals - a.refusals || a.wrestlerId.localeCompare(b.wrestlerId))
+    .slice(0, 5);
   return {
     cohort, seed, scenario, weeks: WEEKS,
+    distinctCreativeRefusers: refusalCounts.size,
+    topCreativeRefusers: topRefusers,
     offers: offers.length, accepted: accepted.length,
     acceptedPercent: pct(accepted.length, offers.length),
     offersByRight: offerRights, acceptedByRight: acceptedRights,
@@ -233,6 +275,8 @@ for (const cohort of ["PROCEDURAL", "REAL_ROSTER"] as const) {
         acceptedPercent: policy.acceptedPercent,
         completedMatches: policy.matchCount, cancelled: policy.cancelledShows,
         creativeDeclines: policy.automatedDeclined,
+        distinctCreativeRefusers: policy.distinctCreativeRefusers,
+        topCreativeRefusers: policy.topCreativeRefusers,
         market: policy.marketAtYearEnd,
       },
       control: {
@@ -285,6 +329,9 @@ const summary = {
   avgDeltaMinIndependentAccess: avg(differences.map(d => d.deltaIndependentAccess)),
   avgDeltaMinIndependentInterest: avg(differences.map(d => d.deltaIndependentInterest)),
   minIndependentMarketInterested: Math.min(...totals.map(r => r.marketAtYearEnd.minInterestedWrestlers)),
+  maxRefusalsFromOneWrestler: Math.max(0,
+    ...totals.flatMap(r => r.topCreativeRefusers.map(person => person.refusals))),
+  maxDistinctRefusersInOneSeed: Math.max(...totals.map(r => r.distinctCreativeRefusers)),
   anyInvariantViolations: failed,
   // Diagnostics rather than an arbitrary tuning verdict; thresholds for
   // acceptable match loss, market access and rights prevalence require review.
@@ -295,6 +342,8 @@ const summary = {
     anyScenarioWithNoInterestedIndieCandidates: totals.some(r =>
       r.marketAtYearEnd.independentPromotions > 0 && r.marketAtYearEnd.minInterestedWrestlers === 0),
     noBlockingRightsActuallyOffered: rightCounts.PROTECTED_FINISHES + rightCounts.FULL_APPROVAL === 0,
+    repeatedRefusalLoopFourOrMoreWeeks: totals.some(r =>
+      r.topCreativeRefusers.some(person => person.refusals >= 4)),
   },
 };
 mkdirSync("artifacts", { recursive: true });
