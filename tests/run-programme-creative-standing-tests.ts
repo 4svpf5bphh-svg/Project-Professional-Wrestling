@@ -5,6 +5,7 @@ import { createWorld, createProgramme } from "../packages/sim-core/src/index.js"
 import type { Contract, WorldState } from "../packages/domain/src/types.js";
 import {
   createWorldPlanningState,
+  validateDetailedShowDraft,
   normalizeWorldPlanningState,
   validateWorldPlanningStateShape,
   type DetailedMatchDraft,
@@ -22,6 +23,7 @@ import {
   createWorldOwnershipState, joinPlayerToWorld, claimIndependentPromotionForPlayer,
 } from "../packages/application/src/ownership.js";
 import { createWorldRuntimeState, lockWorldForResolution } from "../packages/application/src/runtime.js";
+import { creativeBlockersForDraft, creativeConcernsForDraft } from "../packages/application/src/creative-consent.js";
 
 let passed = 0;
 let failed = 0;
@@ -182,6 +184,53 @@ test("standing creative negotiations are owned, idempotent and blocked by World 
   rejects(() => requestStandingProgrammeCreativeAgreementCommand(f.state, ownership, f.planning, commands, runtime,
     { ...request, requestId: "after-world-lock" }), "creative agreement modified a locked World");
   ok(runtime.revision === 1, "locked or unauthorized consent changed World revision");
+});
+
+test("only explicitly linked valid Programme matches inherit standing approval; changing the scripted scope revokes it", () => {
+  const f = fixture(91705);
+  const terms = {
+    promotionId: f.promotion.id, programmeId: f.programme.id, personId: f.lead.personId,
+    matchType: "SINGLES" as const, permittedOutcome: "WIN_OR_PROTECTED_LOSS" as const, termWeeks: 2,
+  };
+  const accepted = requestStandingProgrammeCreativeAgreement(f.state, f.planning, terms);
+  ok(accepted.approved, "willing Programme lead refused the fixture agreement");
+  const draft = {
+    draftId: "explicit-link-show", promotionId: f.promotion.id,
+    targetDate: { ...f.state.world.currentDate },
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: [f.lead.personId, f.rival.personId],
+    matches: [f.match], championshipAssignments: [],
+  };
+  ok(creativeBlockersForDraft(f.state, f.planning, draft).length === 1,
+    "unlinked matches received a standing waiver just from coincident opponents");
+  draft.matches = [{ ...f.match, programmeId: f.programme.id }];
+  const approved = creativeConcernsForDraft(f.state, f.planning, draft);
+  ok(approved.length === 1 && approved[0]?.consent === "APPROVED"
+    && approved[0]?.approvalSource === "STANDING_PROGRAMME",
+    "explicitly linked match failed to report its Programme approval source");
+  ok(creativeBlockersForDraft(f.state, f.planning, draft).length === 0,
+    "valid standing Programme still forced redundant one-match approval");
+  draft.matches = [{ ...f.match, programmeId: f.programme.id,
+    intendedWinnerSide: "B", plannedFinish: "PROTECTED_FINISH" }];
+  ok(creativeBlockersForDraft(f.state, f.planning, draft).length === 0,
+    "agreed protected loss failed to reuse Programme scope");
+  draft.matches[0]!.plannedFinish = "CLEAN_PIN";
+  ok(creativeBlockersForDraft(f.state, f.planning, draft).length === 1,
+    "unapproved clean loss inherited protected-finish waiver");
+  draft.matches[0]!.intendedWinnerSide = "A";
+  draft.matches[0]!.interfererPersonId = "outside-actor";
+  ok(creativeBlockersForDraft(f.state, f.planning, draft).length === 1,
+    "third-party interference incorrectly inherited Programme approval");
+  draft.matches = [{ ...f.match, programmeId: "foreign-programme" }];
+  rejects(() => validateDetailedShowDraft(f.state, draft), "invalid Programme link bypassed server draft validation");
+  draft.matches = [{ ...f.match, programmeId: f.programme.id, sideBIds: ["not-a-programme-member"] }];
+  rejects(() => validateDetailedShowDraft(f.state, draft),
+    "server accepted unrelated talent under an active Programme's creative waiver");
+  draft.matches = [{ ...f.match, programmeId: f.programme.id }];
+  validateDetailedShowDraft(f.state, draft);
+  const oldStyle = { ...f.match };
+  ok(creativeBlockersForDraft(f.state, f.planning,
+    { ...draft, matches: [oldStyle] }).length === 1, "unlinking Programme silently preserved waiver");
 });
 
 console.log(`Standing Programme creative tests: ${passed} passed, ${failed} failed`);
