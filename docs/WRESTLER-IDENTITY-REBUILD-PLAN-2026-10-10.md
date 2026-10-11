@@ -172,7 +172,7 @@ and [AEW's Night Fever listing](https://www.allelitewrestling.com/womens-roster/
 Source coverage is intentionally mixed: when we have one supported move,
 we do not invent a *verified* secondary move. The global complete-identity
 generator still supplies any other required move with the explicit
-PPW_AUTHORED provenance. The full curation catalogue now contains 58
+PPW_AUTHORED provenance. The full curation catalogue now contains 60
 wrestlers (26 original, 13 second wave, 19 third wave); all others still
 have complete PPW-authored initial characters.
 
@@ -205,7 +205,7 @@ The **other 505** have roster-context/style-cohort approximations, with
 individualized named moves based on their ring names. These are playable
 PPW FICTIONAL presentation details where independent research is absent.
 
-The **58 fully sourced** wrestler entries from the separate official-source
+The **60 source-backed** wrestler entries from the separate official-source
 catalogue ALWAYS override the editorial guide for newly created Worlds.
 Other move candidates remain tagged `PPW_AUTHORED`, including familiar move
 names not independently verified in the sourced catalogue. Never promote
@@ -246,7 +246,7 @@ The separate `real-roster-editorial-audit-wave4.ts` contains deliberate
 character archetypes, compatible primary/secondary styles and distinctive
 two-signature/one-finisher candidates. **77 previously COHORT-based records**
 are now editorially targeted: **215 TARGETED / 428 COHORT**, still 643
-exact-name real-roster records in total. The 58 independently source-backed
+exact-name real-roster records in total. The 60 independently source-backed
 records remain a higher-priority overlay for new-World bootstrap.
 
 Evidence pointers for selected wrestler/move pairs are included in the review
@@ -282,7 +282,7 @@ Rainmaker-based candidate repertoire.
 
 All wave-five move candidates retain `PPW_AUTHORED` provenance. No entry
 becomes `VERIFIED` without separately curated exact move/publisher evidence.
-Source-backed 58-wrestler catalogue has priority; negotiated and previously
+Source-backed 60-wrestler catalogue has priority; negotiated and previously
 saved wrestler-owned identities remain untouched.
 
 Coverage: 138 original TARGETED + 77 cohort promotions in wave four + 129
@@ -327,7 +327,7 @@ editorial suggestions, not claims about off-screen personalities or a
 wrestler's historical contract, and exact move-era accuracy remains subject
 to subsequent manual verification.
 
-Existing publisher-backed entries (58 currently) retain priority on new
+Existing publisher-backed entries (60 currently) retain priority on new
 World bootstrap. The guide overlays affect new Worlds and explicitly missing
 identities only; they do not mutate negotiated career eras, previously
 persisted records, or promotional creative edits. Regression assertions were
