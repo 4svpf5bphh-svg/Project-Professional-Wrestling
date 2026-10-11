@@ -249,7 +249,7 @@ export function assessDetailedShowReservation(
     const committedDates = contract.datesUsed
       + scheduledContractDates(state, contract.id)
       + reservedContractDates(planning, contract.id, reservation.reservationId);
-    if (committedDates >= contract.dateEntitlement) reasons.push("CONTRACT_DATE_EXHAUSTED");
+    if (contract.family !== "EXCLUSIVE" && committedDates >= contract.dateEntitlement) reasons.push("CONTRACT_DATE_EXHAUSTED");
   }
 
   const draft = sourceDraft(planning, reservation);
