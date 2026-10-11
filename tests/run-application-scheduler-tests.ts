@@ -8,9 +8,13 @@ import {
   lockPersistedWorldForResolution,
   lockScheduledShowCommitments,
   resolveScheduledWorldCycle,
+  PPW_COMMITMENT_UTC_HOUR,
+  PPW_RESOLUTION_UTC_HOUR,
+  utcScheduledCycleKey,
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
+import { readFileSync } from "node:fs";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/memory-world-repository.js";
 import { createWorld } from "../packages/sim-core/src/index.js";
 
@@ -260,6 +264,83 @@ await test("scheduler rejects malformed real-cycle keys", async () => {
     rejected = true;
   }
   ok(rejected, "malformed cycle key was accepted");
+});
+
+
+await test("all seven UTC weekdays lock then resolve once, with Sunday and duplicate delivery safe", async () => {
+  const aggregate = fixture(18020);
+  const repository = new InMemoryApplicationWorldRepository();
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  for (let offset = 0; offset < 7; offset += 1) {
+    const cycle = new Date(Date.UTC(2026, 9, 5 + offset));
+    const cycleKey = utcScheduledCycleKey(cycle);
+    const weekday = new Intl.DateTimeFormat("en-GB", { weekday: "long", timeZone: "UTC" }).format(cycle);
+    ok(weekday === weekdays[offset], `calendar drift on day ${offset}: got ${weekday}`);
+    const commitment = await lockScheduledShowCommitments(repository, worldId, cycleKey);
+    ok(commitment.status === "COMMITTED", `${weekday} was not committed`);
+    const beforeResolution = await repository.load(worldId);
+    ok(beforeResolution.runtime.commitmentLockedRealCycleKey === cycleKey,
+      `${weekday} commitment used a different UTC date`);
+    ok(beforeResolution.state.world.currentDate.week === offset + 1,
+      `${weekday} commitment advanced the World prematurely`);
+    const resolution = await resolveScheduledWorldCycle(repository, worldId, cycleKey);
+    ok(resolution.status === "RESOLVED", `${weekday} did not resolve once`);
+    const after = await repository.load(worldId);
+    ok(after.state.world.currentDate.year === 1 && after.state.world.currentDate.week === offset + 2
+      && after.state.world.currentDate.day === 1,
+      `${weekday} did not advance exactly one complete seven-day PPW week`);
+    ok(after.runtime.lastResolvedRealCycleKey === cycleKey, `${weekday} cycle was not recorded`);
+    const repeated = await resolveScheduledWorldCycle(repository, worldId, cycleKey);
+    ok(repeated.status === "ALREADY_RESOLVED", `${weekday} duplicate caused another resolution`);
+  }
+  const mondayAfterSunday = utcScheduledCycleKey(new Date(Date.UTC(2026, 9, 12)));
+  const nextCommitment = await lockScheduledShowCommitments(repository, worldId, mondayAfterSunday);
+  ok(nextCommitment.status === "COMMITTED", "Monday after Sunday rollover could not commit");
+  await resolveScheduledWorldCycle(repository, worldId, mondayAfterSunday);
+  const nextWeek = await repository.load(worldId);
+  ok(nextWeek.state.world.currentDate.week === 9 && nextWeek.state.world.currentDate.day === 1,
+    "Monday rollover lost or duplicated an in-game week");
+});
+
+await test("daily production cron rules and shared UTC lock/resolve keys stay aligned", async () => {
+  const config = JSON.parse(readFileSync("vercel.json", "utf8")) as {
+    crons: Array<{ path: string; schedule: string }>;
+  };
+  const commit = config.crons.find((entry) => entry.path === "/api/internal/commit-shows");
+  const resolve = config.crons.find((entry) => entry.path === "/api/internal/resolve-week");
+  ok(commit?.schedule === `0 ${PPW_COMMITMENT_UTC_HOUR} * * *`,
+    "production commitment cron must run all 7 UTC weekdays at the canonical hour");
+  ok(resolve?.schedule === `0 ${PPW_RESOLUTION_UTC_HOUR} * * *`,
+    "production resolution cron must run all 7 UTC weekdays at the canonical hour");
+  ok(PPW_COMMITMENT_UTC_HOUR < PPW_RESOLUTION_UTC_HOUR,
+    "the full World cannot resolve before the show commitment deadline");
+  for (const timestamp of [
+    "2026-10-10T23:59:59.999Z", "2026-10-11T00:00:00.000Z",
+    "2026-10-24T23:59:59.999Z", "2026-10-25T00:00:00.000Z",
+    "2027-03-28T00:00:00.000Z", "2028-02-29T08:00:00.000Z",
+  ]) {
+    const instant = new Date(timestamp);
+    ok(utcScheduledCycleKey(instant) === timestamp.slice(0, 10),
+      `UTC cycle key drifted at ${timestamp}`);
+  }
+  function londonTime(utcIso: string): string {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).format(new Date(utcIso));
+  }
+  // Vercel schedules UTC, not British wall-clock time. Tests make the
+  // shift explicit rather than accidentally declaring both as 06/08 UK.
+  ok(londonTime("2026-10-24T06:00:00Z") === "07:00"
+    && londonTime("2026-10-24T08:00:00Z") === "09:00",
+    "BST scheduler display is not one hour ahead of UTC");
+  ok(londonTime("2026-10-25T06:00:00Z") === "06:00"
+    && londonTime("2026-10-25T08:00:00Z") === "08:00",
+    "GMT scheduler display did not adjust after autumn clock change");
+  ok(londonTime("2027-03-27T06:00:00Z") === "06:00"
+    && londonTime("2027-03-28T06:00:00Z") === "07:00",
+    "spring clock change was not recognized");
 });
 
 console.log(`\nApplication scheduler tests: ${passed} passed, ${failed} failed`);
