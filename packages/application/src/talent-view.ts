@@ -1,6 +1,7 @@
 import type {
   CareerStage,
   ContractFamily,
+  CreativeControlLevel,
   ContractOfferStatus,
   ExclusivityType,
   Id,
@@ -18,6 +19,7 @@ import {
   comparePpwDates,
   contractIsActive,
   contractRoleExpectationForPerson,
+  resolvedCreativeControl,
   currentRosterPersonIds,
   marketWeeklyValue,
   ppwDateToWeekIndex,
@@ -89,6 +91,7 @@ export interface PlayerRosterContractView extends PlayerPublicTalentIdentityView
     family: ContractFamily;
     exclusivity: ExclusivityType;
     roleExpectation: RoleExpectation;
+    creativeControl: CreativeControlLevel;
     startDate: PpwDate;
     endDate: PpwDate;
     weeksToExpiry: number;
@@ -155,6 +158,7 @@ export interface PlayerPendingContractOfferView {
   family: ContractFamily;
   exclusivity: ExclusivityType;
   roleExpectation: RoleExpectation;
+  creativeControl: CreativeControlLevel;
   endDate: PpwDate;
   dateEntitlement: number;
   weeklyGuarantee: number;
@@ -406,6 +410,7 @@ export function buildPlayerTalentManagementView(
           family: contract.family,
           exclusivity: contract.exclusivity,
           roleExpectation: contract.roleExpectation,
+          creativeControl: resolvedCreativeControl(contract.creativeControl),
           startDate: { ...contract.startDate },
           endDate: { ...contract.endDate },
           weeksToExpiry: remaining,
@@ -469,6 +474,7 @@ export function buildPlayerTalentManagementView(
       family: offer.family,
       exclusivity: offer.exclusivity,
       roleExpectation: offer.roleExpectation,
+      creativeControl: resolvedCreativeControl(offer.creativeControl),
       endDate: { ...offer.endDate },
       dateEntitlement: offer.dateEntitlement,
       weeklyGuarantee: offer.weeklyGuarantee,
