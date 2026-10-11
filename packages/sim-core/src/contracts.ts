@@ -5,6 +5,7 @@ import type {
   ContractTerms,
   Id,
   Person,
+  PpwDate,
   Promotion,
   PromotionContractPolicy,
   PromotionTier,
@@ -60,6 +61,28 @@ export function promotionContractPolicy(promotion: Promotion): PromotionContract
  * for historic snapshot compatibility, not enforced as a booking cap. */
 export function contractHasAppearanceRights(contract: Pick<Contract, "family" | "dateEntitlement" | "datesUsed">): boolean {
   return contract.family === "EXCLUSIVE" || contract.datesUsed < contract.dateEntitlement;
+}
+
+/**
+ * A PPW contract's final week is inclusive for show booking on any of its
+ * seven days. Older and AI-generated terms usually store endDate.day = 1:
+ * interpreting that as a real-world midnight expiry made a day-6 show
+ * unreservable even though the wrestler still belonged to the Week roster.
+ *
+ * Retain the precise first-day boundary for deliberately future/late starts.
+ * Do not rewrite persisted contract dates, exclusive overlap economics,
+ * expiry ticks, the one-date entitlement, or signed creative rights.
+ */
+export function contractCoversBookedDate(
+  state: Pick<WorldState, "ruleset">,
+  contract: Contract,
+  showDate: PpwDate,
+): boolean {
+  if (contract.status !== "SIGNED") return false;
+  const weeksPerYear = state.ruleset.weeksPerYear;
+  return comparePpwDates(showDate, contract.startDate, weeksPerYear) >= 0
+    && ppwDateToWeekIndex(showDate, weeksPerYear)
+      <= ppwDateToWeekIndex(contract.endDate, weeksPerYear);
 }
 
 export function contractIsActive(state: WorldState, contract: Contract): boolean {
