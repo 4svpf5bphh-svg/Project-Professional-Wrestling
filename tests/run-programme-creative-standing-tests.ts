@@ -92,6 +92,14 @@ test("one explicit Programme agreement covers routine assignment and protected l
     programmeId: f.programme.id, promotionId: f.promotion.id, personId: f.lead.personId,
     targetDate: { year: 1, week: 5, day: 1 }, match: f.match,
   }), "expired standing agreement kept granting consent");
+  ok(standingProgrammeAgreementCoversMatch(f.state, f.planning, {
+    programmeId: f.programme.id, promotionId: f.promotion.id, personId: f.lead.personId,
+    targetDate: { year: 1, week: 3, day: 7 }, match: f.match,
+  }), "third agreed PPW week should include its final Sunday");
+  ok(!standingProgrammeAgreementCoversMatch(f.state, f.planning, {
+    programmeId: f.programme.id, promotionId: f.promotion.id, personId: f.lead.personId,
+    targetDate: { year: 1, week: 4, day: 1 }, match: f.match,
+  }), "agreement improperly covers Monday after the third PPW week");
   validateWorldPlanningStateShape(f.state, f.planning);
 });
 
