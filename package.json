@@ -82,7 +82,8 @@
     "test:creative-consent": "node dist/tests/run-creative-consent-tests.js",
     "test:automated-creative": "node dist/tests/run-automated-creative-booking-tests.js",
     "test:programme-creative": "node dist/tests/run-programme-creative-standing-tests.js",
-    "test:creative-economics": "node dist/tests/run-creative-control-economics-tests.js"
+    "test:creative-economics": "node dist/tests/run-creative-control-economics-tests.js",
+    "audit:creative": "node dist/tests/run-creative-control-multiseed-audit.js"
   },
   "dependencies": {
     "next": "16.3.8",
