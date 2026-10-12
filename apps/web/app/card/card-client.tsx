@@ -1646,7 +1646,26 @@ export default function CardClient(): React.JSX.Element {
                   </div>
                 </div>
 
-                {expanded ? <>
+                {expanded ? (
+                  <div className={styles.editorOverlay} onClick={() => setExpandedSlotKey(null)}>
+                    <section className={styles.editorSheet} role="dialog" aria-modal="true"
+                      aria-labelledby={`booking-title-${slotKey}`} onClick={(event) => event.stopPropagation()}>
+                      <header className={styles.editorHeading}>
+                        <div>
+                          <span className="eyebrow">SEGMENT {slotIndex + 1} · SHOW RUNDOWN</span>
+                          <h2 id={`booking-title-${slotKey}`}>{segmentSummary(segment)}</h2>
+                          <small>Script the story you want the audience to see.</small>
+                        </div>
+                        <button ref={editorCloseRef} className={styles.editorClose} type="button"
+                          onClick={() => setExpandedSlotKey(null)} aria-label="Return to running order">✕</button>
+                      </header>
+                      <div className={styles.editorTabs} role="group" aria-label="Segment detail">
+                        <button type="button" className={bookingMode === "QUICK" ? styles.editorTabActive : styles.editorTab}
+                          aria-pressed={bookingMode === "QUICK"} onClick={() => setBookingMode("QUICK")}>Quick Book</button>
+                        <button type="button" className={bookingMode === "ADVANCED" ? styles.editorTabActive : styles.editorTab}
+                          aria-pressed={bookingMode === "ADVANCED"} onClick={() => setBookingMode("ADVANCED")}>Advanced Booking</button>
+                      </div>
+                      <div className={styles.editorBody}>
                 <div className={styles.controls}>
                   <div className={styles.control}>
                     <label>What happens?</label>
@@ -2040,8 +2059,12 @@ export default function CardClient(): React.JSX.Element {
                         <button type="button" className={styles.secondaryButton} disabled={!view.canEdit || !segment.participantIds[0] || !segment.participantIds[1]} onClick={() => swapDirectedPair(segment.draftSegmentId)}>Swap initiator / target</button>
                       </div>
                     ) : null}
-                    <button type="button" className={styles.secondaryButton} disabled={!view.canEdit || segment.participantIds.length >= 4} onClick={() => addSegmentParticipant(segment.draftSegmentId)}>+ Add wrestler</button>
-                    {view.programmes.length > 0 ? <a className={styles.programmeLink} href="/programmes">Manage Programmes →</a> : <a className={styles.programmeLink} href="/programmes">Start a Programme →</a>}
+                    {bookingMode === "ADVANCED" ? (
+                      <div className={styles.advancedSection}>
+                        <button type="button" className={styles.secondaryButton} disabled={!view.canEdit || segment.participantIds.length >= 4} onClick={() => addSegmentParticipant(segment.draftSegmentId)}>+ Add extra wrestler</button>
+                        {view.programmes.length > 0 ? <a className={styles.programmeLink} href="/programmes">Manage Programmes →</a> : <a className={styles.programmeLink} href="/programmes">Start a Programme →</a>}
+                      </div>
+                    ) : null}
                   </div>
                 )}
 
@@ -2050,7 +2073,14 @@ export default function CardClient(): React.JSX.Element {
                   
                   <button className={styles.removeButton} type="button" disabled={!view.canEdit} onClick={() => removeSlot(slot)}>Remove</button>
                 </div>
-                </> : null}
+                      </div>
+                      <footer className={styles.editorFooter}>
+                        <span>{dirty ? "Unsaved card changes" : "No new changes"}</span>
+                        <button className={styles.editorDone} type="button" onClick={() => setExpandedSlotKey(null)}>Done · Return to card</button>
+                      </footer>
+                    </section>
+                  </div>
+                ) : null}
               </article>
             );
           })}
