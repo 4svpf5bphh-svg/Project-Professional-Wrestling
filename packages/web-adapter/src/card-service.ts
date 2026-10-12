@@ -868,6 +868,7 @@ function availableCardParticipants(
   promotionId: Id,
   targetDate: PpwDate,
   ownReservationId: string | null,
+  ownCommittedEventIds: ReadonlySet<Id> | null,
 ): AlphaCardParticipantView[] {
   const contractRows = state.contracts.filter(contract =>
     contract.promotionId === promotionId && contractCoversBookedDate(state, contract, targetDate));
@@ -876,7 +877,7 @@ function availableCardParticipants(
     const assessment = assessPersonShowDateAvailability(
       state, planning, promotionId, personId, targetDate, ownReservationId ?? "",
     );
-    if (!assessment.contractId) continue;
+    if (!assessment.contractId && !ownCommittedEventIds?.has(personId)) continue;
     const person = state.people.find(candidate => candidate.id === personId);
     if (!person) continue;
     const contracts = contractRows.filter(contract => contract.personId === personId);
@@ -1017,16 +1018,17 @@ export async function loadAlphaShowCard(
     draftId,
   );
   const peopleById = new Map(aggregate.state.people.map((person) => [person.id, person]));
+  const committedIds = status.eventId === null
+    ? null
+    : new Set(committedEventParticipantIds(aggregate.state, status.eventId));
   const candidateParticipants = availableCardParticipants(
     aggregate.state,
     aggregate.planning,
     promotion.id,
     draft.targetDate,
     reservation?.reservationId ?? null,
+    committedIds,
   );
-  const committedIds = status.eventId === null
-    ? null
-    : new Set(committedEventParticipantIds(aggregate.state, status.eventId));
   const availableParticipants = committedIds === null
     ? candidateParticipants
     : candidateParticipants.filter((person) => committedIds.has(person.personId));
