@@ -51,7 +51,7 @@ function fixture(seed: number) {
     state.scheduledAppearances.push({
       id: `history-appearance-${state.scheduledAppearances.length}`,
       worldId: state.world.id, eventId: event.id, promotionId: event.promotionId,
-      personId, contractId: state.contracts.find((c) => c.personId === personId)!.id,
+      personId: personId!, contractId: state.contracts.find((c) => c.personId === personId)!.id,
       date: {...event.date}, serviceCapacityAtBooking: 1, status,
     });
   }
