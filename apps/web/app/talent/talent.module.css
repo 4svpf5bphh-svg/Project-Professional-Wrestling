@@ -1524,3 +1524,31 @@
     flex: 1 1 160px;
   }
 }
+
+
+/* An expiry alert should find its existing submitted proposal, not another blank form. */
+.pendingFocusLink {
+  display: grid;
+  gap: 4px;
+  border: 1px solid rgba(93, 233, 206, .54);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(93, 233, 206, .1);
+  color: #b8ffe9;
+  text-decoration: none;
+  line-height: 1.4;
+}
+.pendingFocusLink span {
+  color: #afd0c9;
+  font-size: 12px;
+}
+.focusedOffer {
+  border-color: rgba(93, 233, 206, .78) !important;
+  box-shadow: inset 0 0 0 1px rgba(93, 233, 206, .2);
+  scroll-margin-top: 90px;
+}
+.focusedOffer:focus-visible,
+.pendingFocusLink:focus-visible {
+  outline: 2px solid #adffe5;
+  outline-offset: 3px;
+}
