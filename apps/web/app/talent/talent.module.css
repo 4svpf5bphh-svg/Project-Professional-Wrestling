@@ -1440,3 +1440,87 @@
   .creativeGrid { grid-template-columns: 1fr; }
   .creativeChoice, .creativeSelected { min-height: 0; }
 }
+
+
+/* Contract workbench: one mobile-friendly place for expiry, date and offer decisions. */
+.contractNavLinks {
+  max-width: 900px;
+  margin: 0 auto 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+
+.contractNavLinks .backLink {
+  margin: 0 0 10px;
+}
+
+.contractDesk {
+  display: grid;
+  gap: 24px;
+  width: 100%;
+}
+
+.contractDesk > section {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.contractDesk h2 {
+  margin: 0;
+  font-size: 19px;
+  color: #e4fff8;
+}
+
+.contractDeskCard {
+  border: 1px solid rgba(93, 233, 206, .3);
+  border-radius: 14px;
+  background: rgba(12, 25, 29, .98);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.contractDeskHeader,
+.contractDeskActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.contractDeskHeader > div {
+  display: grid;
+  gap: 5px;
+}
+
+.contractDeskHeader strong {
+  font-size: 17px;
+}
+
+.contractDeskHeader > div > span {
+  font-size: 12px;
+  color: #abc3bc;
+}
+
+.contractDeskActions {
+  justify-content: flex-start;
+}
+
+.contractDeskActions .actionButton,
+.contractDeskActions .primaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  text-align: center;
+  text-decoration: none;
+}
+
+@media (max-width: 560px) {
+  .contractDeskActions > * {
+    flex: 1 1 160px;
+  }
+}
