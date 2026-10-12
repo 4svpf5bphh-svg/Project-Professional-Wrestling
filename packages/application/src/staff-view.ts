@@ -1,0 +1,83 @@
+import type { Id } from "../../domain/src/types.js";
+import { activeTalentManager } from "../../sim-core/src/staff.js";
+import { marketWeeklyValue } from "../../sim-core/src/contracts.js";
+import { activePromotionControlForPlayer, activeWorldMembership } from "./ownership.js";
+import { buildPlayerTalentManagementView } from "./talent-view.js";
+import type { ApplicationWorldAggregate } from "./world-aggregate.js";
+
+export interface PlayerStaffView {
+  world: { worldId: Id; year: number; week: number };
+  promotion: { promotionId: Id; name: string } | null;
+  talentManager: {
+    employmentId: Id;
+    staffId: Id;
+    name: string;
+    weeklySalary: number;
+    insight: number;
+  } | null;
+  availableManagers: Array<{
+    staffId: Id;
+    name: string;
+    insight: number;
+    weeklySalary: number;
+  }>;
+  renewals: Array<{
+    personId: Id;
+    personName: string;
+    contractId: Id;
+    weeksToExpiry: number;
+    termWeeks: number;
+    dates: number;
+    weeklyGuarantee: number;
+    appearanceFee: number;
+    totalPotential: number;
+    creativeControl: string;
+  }>;
+}
+export function buildPlayerStaffView(aggregate: ApplicationWorldAggregate, playerId: string): PlayerStaffView {
+  const state = aggregate.state;
+  if (!activeWorldMembership(aggregate.ownership, playerId)) throw new Error("player is not a World member");
+  const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
+  const promotion = state.promotions.find(p => p.id === control?.promotionId);
+  const manager = promotion ? activeTalentManager(state, promotion.id) : null;
+  const busy = new Set((state.staffEmployments ?? []).filter(e => e.status === "ACTIVE").map(e => e.staffId));
+  const availableManagers = promotion
+    ? (state.staffMembers ?? []).filter(s => s.specialty === "TALENT_MANAGER" && !busy.has(s.id))
+      .map(s => ({ staffId: s.id, name: s.name, insight: s.insight, weeklySalary: s.requestedWeeklySalary }))
+      .sort((a, b) => a.weeklySalary - b.weeklySalary)
+    : [];
+  const roster = promotion ? buildPlayerTalentManagementView(aggregate, playerId).roster : [];
+  const renewals = roster.flatMap(row => {
+    const terms = row.contract.sameTermsRenewal;
+    if (!terms || row.contract.renewalReason !== "EXPIRY_WINDOW") return [];
+    // Explicit floor applies to all existing exclusive proposals at submission.
+    if (terms.family === "EXCLUSIVE"
+      && terms.weeklyGuarantee < Math.ceil(marketWeeklyValue(
+        state.people.find(person => person.id === row.personId)!) * 0.5)) return [];
+    return [{
+      personId: row.personId,
+      personName: row.name,
+      contractId: row.contractId,
+      weeksToExpiry: row.contract.weeksToExpiry,
+      termWeeks: terms.termWeeks,
+      dates: terms.dateEntitlement,
+      weeklyGuarantee: terms.weeklyGuarantee,
+      appearanceFee: terms.appearanceFee,
+      totalPotential: terms.weeklyGuarantee * terms.termWeeks
+        + (terms.family === "EXCLUSIVE" ? 0 : terms.appearanceFee * terms.dateEntitlement),
+      creativeControl: terms.creativeControl,
+    }];
+  }).filter(row => !state.contractOffers.some(offer =>
+    offer.status === "PENDING" && offer.promotionId === promotion?.id && offer.personId === row.personId));
+  return {
+    world: { worldId: state.world.id, year: state.world.currentDate.year, week: state.world.currentDate.week },
+    promotion: promotion ? { promotionId: promotion.id, name: promotion.name } : null,
+    talentManager: manager ? {
+      employmentId: manager.employment.id, staffId: manager.member.id,
+      name: manager.member.name, insight: manager.member.insight,
+      weeklySalary: manager.employment.weeklySalary,
+    } : null,
+    availableManagers: manager ? [] : availableManagers,
+    renewals: manager ? renewals.sort((a,b)=>a.weeksToExpiry-b.weeksToExpiry) : [],
+  };
+}
