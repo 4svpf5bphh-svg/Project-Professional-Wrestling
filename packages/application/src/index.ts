@@ -7,6 +7,7 @@ export * from "./championship-history-view.js";
 export * from "./commands.js";
 export * from "./contract-renewal.js";
 export * from "./staff-commands.js";
+export * from "./staff-view.js";
 export * from "./creative-consent.js";
 export * from "./programme-creative-standing.js";
 export * from "./engagement.js";
