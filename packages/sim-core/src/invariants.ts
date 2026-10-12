@@ -1,5 +1,6 @@
 import type { Contract, WorldState } from "../../domain/src/types.js";
 import { contractOverlaps } from "./contracts.js";
+import { validateWorldStaff } from "./staff.js";
 import { validatePromotionShowSeriesState } from "./show-calendar.js";
 
 function samePpwWeek(a: { year: number; week: number }, b: { year: number; week: number }): boolean {
@@ -19,6 +20,7 @@ export function validateWorldInvariants(state: WorldState): string[] {
   const venueById = new Map(state.venues.map((venue) => [venue.id, venue]));
 
   errors.push(...validatePromotionShowSeriesState(state));
+  errors.push(...validateWorldStaff(state));
   const showSeriesById = new Map((state.showSeries ?? []).map((series) => [series.id, series]));
 
   for (const venue of state.venues) {
