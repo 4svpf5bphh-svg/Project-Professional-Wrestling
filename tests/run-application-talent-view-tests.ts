@@ -1,6 +1,7 @@
 declare const process: { exitCode?: number };
 
 import {
+  buildPlayerAttention,
   buildPlayerTalentDirectoryView,
   buildPlayerTalentManagementView,
   claimIndependentPromotionForPlayer,
@@ -253,6 +254,28 @@ test("contract workbench can show an expiring roster deal alongside its pending 
     "pending renewal is not available to the roster badge and consolidated Contracts queue");
   ok(view.pendingOffers.every((entry) => entry.personId !== undefined),
     "the Contracts pending queue cannot identify its wrestler");
+  const alert = buildPlayerAttention(aggregate, "player-a")
+    .find((item) => item.attentionId === `contract-expiry:${contract.id}`);
+  ok(alert?.category === "WATCHING", "submitted renewal still appeared as a required decision");
+  ok(alert?.deepLink === "/talent/contracts?personId=" + encodeURIComponent(contract.personId),
+    "pending renewal alert did not open the wrestler's Contracts proposal");
+});
+
+test("exhausted appearance dates with an open addendum are waiting, not an unhandled action", () => {
+  const { aggregate, promotionAId } = fixture(73019);
+  const contract = activeContractsForPromotion(aggregate.state, promotionAId)
+    .find((entry) => entry.family === "LIMITED_NON_EXCLUSIVE");
+  if (!contract) throw new Error("extra-dates fixture has no limited contract");
+  contract.datesUsed = contract.dateEntitlement;
+  pushPendingOffer(aggregate, promotionAId, contract.personId, "pending-more-dates", contract.weeklyGuarantee);
+  const pending = aggregate.state.contractOffers.find((entry) => entry.id === "pending-more-dates");
+  if (!pending) throw new Error("extra-dates fixture missing pending proposal");
+  pending.offerKind = "DATES_ADDENDUM";
+  const alert = buildPlayerAttention(aggregate, "player-a")
+    .find((item) => item.attentionId === `contract-dates-exhausted:${contract.id}`);
+  ok(alert?.category === "WATCHING", "submitted addendum incorrectly demands a second action");
+  ok(alert?.deepLink === "/talent/contracts?personId=" + encodeURIComponent(contract.personId),
+    "pending extra dates must open the wrestler's existing proposal");
 });
 
 test("pending contract offers are private to the controlling promotion", () => {
