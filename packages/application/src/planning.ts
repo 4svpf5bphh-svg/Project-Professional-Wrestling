@@ -15,6 +15,7 @@ import { isWrestlerAlignment, wrestlerAlignmentForPromotion } from "../../sim-co
 import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
 import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
 import { comparePpwDates } from "../../sim-core/src/clock.js";
+import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
 import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
 
@@ -62,7 +63,12 @@ export type DetailedShowSegmentType =
   | "RESCUE"
   | "POST_MATCH_ASSAULT"
   | "CELEBRATION"
-  | "TURN";
+  | "TURN"
+  | "VIDEO_PACKAGE";
+
+export type VideoPackageKind = "DEBUT_TEASER" | "RETURN_TEASER" | "CHARACTER_SPOTLIGHT" | "RIVALRY_RECAP" | "EVENT_HYPE" | "TRAINING_MONTAGE";
+export type VideoPackageObjective = "CREATE_INTRIGUE" | "BUILD_ANTICIPATION" | "ESTABLISH_THREAT" | "BUILD_SYMPATHY" | "RECAP_STAKES";
+export type VideoPackageReveal = "CRYPTIC" | "NAMED" | "FULL";
 
 export type AttackPresentation = "BLINDSIDE" | "BEATDOWN" | "PULL_APART_BRAWL";
 export type AttackObjective = "GENERATE_HEAT" | "BUILD_SYMPATHY" | "ESCALATE_RIVALRY";
@@ -81,6 +87,11 @@ export interface DetailedShowSegmentDraft {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  /** The subject of licensed pre-recorded footage, never a live show participant. */
+  videoSubjectPersonId?: Id | null;
+  videoKind?: VideoPackageKind | null;
+  videoObjective?: VideoPackageObjective | null;
+  videoReveal?: VideoPackageReveal | null;
   // Roles are authored intent; participants alone must not invent attack direction.
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
@@ -211,6 +222,7 @@ const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "POST_MATCH_ASSAULT",
   "CELEBRATION",
   "TURN",
+  "VIDEO_PACKAGE",
 ]);
 
 function normalizedId(value: string, label: string, maxLength = 128): string {
@@ -373,8 +385,12 @@ function validateShowSegmentDraft(
 ): DetailedShowSegmentDraft {
   const draftSegmentId = normalizedId(draft.draftSegmentId, "draftSegmentId");
   if (!SHOW_SEGMENT_TYPES.has(draft.type)) throw new Error(`unsupported show segment type ${String(draft.type)}`);
-  if (!Array.isArray(draft.participantIds) || draft.participantIds.length < 1 || draft.participantIds.length > 4) {
-    throw new Error("show segment requires one to four wrestlers");
+  if (!Array.isArray(draft.participantIds)
+    || (draft.type === "VIDEO_PACKAGE" ? draft.participantIds.length !== 0
+      : draft.participantIds.length < 1 || draft.participantIds.length > 4)) {
+    throw new Error(draft.type === "VIDEO_PACKAGE"
+      ? "pre-recorded video package cannot reserve live wrestlers"
+      : "show segment requires one to four wrestlers");
   }
   if (new Set(draft.participantIds).size !== draft.participantIds.length) {
     throw new Error("show segment cannot include the same wrestler twice");
@@ -396,6 +412,25 @@ function validateShowSegmentDraft(
   }
 
   const programmeId = draft.programmeId === null ? null : normalizedId(draft.programmeId, "programmeId");
+  const videoSubjectPersonId = draft.type === "VIDEO_PACKAGE"
+    ? normalizedId(draft.videoSubjectPersonId ?? "", "videoSubjectPersonId") : null;
+  const videoKind = draft.type === "VIDEO_PACKAGE" ? (draft.videoKind ?? null) : null;
+  const videoObjective = draft.type === "VIDEO_PACKAGE" ? (draft.videoObjective ?? null) : null;
+  const videoReveal = draft.type === "VIDEO_PACKAGE" ? (draft.videoReveal ?? null) : null;
+  if (draft.type === "VIDEO_PACKAGE") {
+    if (!["DEBUT_TEASER", "RETURN_TEASER", "CHARACTER_SPOTLIGHT", "RIVALRY_RECAP", "EVENT_HYPE", "TRAINING_MONTAGE"].includes(videoKind ?? "")) {
+      throw new Error("video package needs a supported subtype");
+    }
+    if (!["CREATE_INTRIGUE", "BUILD_ANTICIPATION", "ESTABLISH_THREAT", "BUILD_SYMPATHY", "RECAP_STAKES"].includes(videoObjective ?? "")) {
+      throw new Error("video package needs a clear objective");
+    }
+    if (!["CRYPTIC", "NAMED", "FULL"].includes(videoReveal ?? "")) {
+      throw new Error("video package needs a reveal level");
+    }
+    if (!activeContractsForPromotion(state, promotionId).some((contract) => contract.personId === videoSubjectPersonId)) {
+      throw new Error("video footage must feature a wrestler currently contracted to your promotion");
+    }
+  }
   const turnPersonId = draft.type === "TURN"
     ? (draft.turnPersonId === null || draft.turnPersonId === undefined
       ? null
@@ -530,6 +565,9 @@ function validateShowSegmentDraft(
     if (!programme || programme.status !== "ACTIVE") throw new Error(`active Programme ${programmeId} was not found`);
     if (programme.promotionId !== promotionId) throw new Error("show segment Programme belongs to another promotion");
     const storyPeople = programmePersonIds(state, programmeId);
+    if (videoSubjectPersonId && !storyPeople.has(videoSubjectPersonId)) {
+      throw new Error("video subject must belong to the attached Programme");
+    }
     for (const personId of draft.participantIds) {
       // A rescuer can intervene in an existing feud without becoming a
       // Programme participant. Aggressor and victim still belong to it.
@@ -545,6 +583,7 @@ function validateShowSegmentDraft(
     participantIds: [...draft.participantIds],
     programmeId,
     plannedLengthMinutes: draft.plannedLengthMinutes,
+    ...(draft.type === "VIDEO_PACKAGE" ? { videoSubjectPersonId, videoKind, videoObjective, videoReveal } : {}),
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
     ...(draft.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
