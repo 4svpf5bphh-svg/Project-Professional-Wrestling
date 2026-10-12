@@ -32,6 +32,8 @@ import {
   type VideoPackageKind,
   type VideoPackageObjective,
   type VideoPackageReveal,
+  type LiveAppearanceKind,
+  type LiveAppearanceObjective,
   type AttackPresentation,
   type AttackObjective,
   type TurnPresentation,
@@ -47,6 +49,7 @@ import {
 import { wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
+import { liveAppearanceHistoryError } from "../../application/src/live-appearances.js";
 import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
 import type { WorldPlanningState } from "../../application/src/planning.js";
 import {
@@ -136,6 +139,8 @@ export interface AlphaCardSegmentView {
   videoKind?: VideoPackageKind | null;
   videoObjective?: VideoPackageObjective | null;
   videoReveal?: VideoPackageReveal | null;
+  liveKind?: LiveAppearanceKind | null;
+  liveObjective?: LiveAppearanceObjective | null;
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
   rescuerPersonId?: Id | null;
@@ -306,6 +311,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CELEBRATION",
   "TURN",
   "VIDEO_PACKAGE",
+  "LIVE_APPEARANCE",
 ]);
 
 function requiredText(value: string, label: string, maxLength = 220): string {
@@ -552,6 +558,17 @@ function normalizeSegments(
         throw new Error("video package subject must have a signed promotion contract covering the show date");
       }
     }
+    const liveKind = segment.type === "LIVE_APPEARANCE" ? (segment.liveKind ?? null) : null;
+    const liveObjective = segment.type === "LIVE_APPEARANCE" ? (segment.liveObjective ?? null) : null;
+    if (segment.type === "LIVE_APPEARANCE") {
+      if (people.length !== 1) throw new Error("live appearance needs one on-site wrestler");
+      if (!["DEBUT", "RETURN", "INTRODUCTION", "SURPRISE_REVEAL"].includes(liveKind ?? "")
+        || !["ESTABLISH_STAR", "BUILD_SYMPATHY", "SHOCK_RIVAL", "REIGNITE_PROGRAMME"].includes(liveObjective ?? "")) {
+        throw new Error("live appearance requires a type and scripted objective");
+      }
+      const error = liveAppearanceHistoryError(state, promotionId, people[0]!, targetDate, liveKind as LiveAppearanceKind);
+      if (error) throw new Error(error);
+    }
     const turnPersonId = segment.type === "TURN"
       ? requiredText(segment.turnPersonId ?? "", `segments[${index}].turnPersonId`, 128)
       : null;
@@ -696,6 +713,7 @@ function normalizeSegments(
       programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
       ...(segment.type === "VIDEO_PACKAGE" ? { videoSubjectPersonId, videoKind, videoObjective, videoReveal } : {}),
+      ...(segment.type === "LIVE_APPEARANCE" ? { liveKind, liveObjective } : {}),
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
       ...(segment.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
@@ -1153,6 +1171,8 @@ export async function loadAlphaShowCard(
       videoKind: segment.type === "VIDEO_PACKAGE" ? (segment.videoKind ?? null) : null,
       videoObjective: segment.type === "VIDEO_PACKAGE" ? (segment.videoObjective ?? null) : null,
       videoReveal: segment.type === "VIDEO_PACKAGE" ? (segment.videoReveal ?? null) : null,
+      liveKind: segment.type === "LIVE_APPEARANCE" ? (segment.liveKind ?? null) : null,
+      liveObjective: segment.type === "LIVE_APPEARANCE" ? (segment.liveObjective ?? null) : null,
       attackerPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
