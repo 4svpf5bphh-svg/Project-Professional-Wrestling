@@ -264,20 +264,35 @@ export function buildPlayerAttention(
 
     const resolvedDate = aggregate.runtime.lastResolvedPpwDate;
     if (resolvedDate) {
+      const managerOfferIds = new Set(aggregate.commands.receipts
+        .filter(receipt => receipt.playerId === playerId
+          && receipt.commandType === "AUTHORISE_TALENT_MANAGER_RENEWAL")
+        .map(receipt => (JSON.parse(receipt.resultJson) as { id: string }).id));
       for (const offer of aggregate.state.contractOffers) {
         if (offer.promotionId !== promotion.id || offer.status === "PENDING") continue;
         if (!sameWeek(offer.submittedDate, resolvedDate)) continue;
         const name = personName(aggregate, offer.personId);
         const accepted = offer.status === "ACCEPTED";
+        const delegated = managerOfferIds.has(offer.id);
         pushIfVisible(aggregate, playerId, items, {
           attentionId: `contract-offer-result:${offer.id}`,
           category: "IMPORTANT",
-          title: accepted ? `${name} accepted your contract offer` : `${name} rejected your contract offer`,
-          summary: accepted
-            ? `${name} accepted your ${contractFamilyLabel(offer.family)} offer for ${offer.dateEntitlement} date${offer.dateEntitlement === 1 ? "" : "s"}. The contract is now signed.`
-            : contractOfferRejectionSummary(offer.rejectionReason),
+          title: delegated
+            ? (accepted ? `Talent Manager: ${name} accepted renewal` : `Talent Manager: ${name} declined renewal`)
+            : accepted
+              ? (offer.offerKind === "DATES_ADDENDUM" ? `${name} agreed to extra dates` : `${name} accepted your contract offer`)
+              : (offer.offerKind === "DATES_ADDENDUM" ? `${name} declined extra dates` : `${name} rejected your contract offer`),
+          summary: delegated
+            ? accepted
+              ? `${name} accepted the same-terms proposal your Talent Manager submitted. The contract is signed; no previous one-time bonus was repeated.`
+              : `The Talent Manager's renewal attempt was unsuccessful. ${contractOfferRejectionSummary(offer.rejectionReason)} You can negotiate different terms manually.`
+            : accepted
+              ? `${offer.offerKind === "DATES_ADDENDUM"
+                ? `${name} agreed to additional appearances under the existing non-exclusive contract. No renewal was required.`
+                : `${name} accepted your ${contractFamilyLabel(offer.family)} offer for ${offer.family === "EXCLUSIVE" ? "unlimited appearances" : `${offer.dateEntitlement} dates`}. The contract is now signed.`}`
+              : contractOfferRejectionSummary(offer.rejectionReason),
           deadline: null,
-          deepLink: "/business",
+          deepLink: delegated ? "/staff" : "/business",
           dismissible: true,
           sourceOpportunityCategory: null,
         });
@@ -287,13 +302,13 @@ export function buildPlayerAttention(
     for (const contract of activeContracts) {
       if (contract.family === "ONE_OFF") continue;
       const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
-      if (datesRemaining === 0) {
+      if (contract.family === "LIMITED_NON_EXCLUSIVE" && datesRemaining === 0) {
         const name = personName(aggregate, contract.personId);
         items.push({
           attentionId: `contract-dates-exhausted:${contract.id}`,
           category: "ACTION_REQUIRED",
           title: `${name} has no contracted dates remaining`,
-          summary: `${name}'s calendar contract is still active, but every purchased appearance has been used. Renegotiate now to buy more dates; an accepted replacement takes effect immediately.`,
+          summary: `${name}'s calendar contract is still active, but every purchased appearance has been used. Renegotiate now to buy more dates; an accepted addendum adds dates to the existing deal.`,
           deadline: null,
           deepLink: "/talent",
           dismissible: false,
@@ -423,6 +438,60 @@ export function buildPlayerAttention(
 
   const resolvedDate = aggregate.runtime.lastResolvedPpwDate;
   if (promotion && resolvedDate) {
+    // Outages must be visible as operational history, not fabricated player
+    // absences. This information has no competitive reward or penalty.
+    for (const incident of aggregate.state.ledger.filter((entry) =>
+      entry.type === "SCHEDULER_MISSED_CYCLES_PROTECTED"
+      && sameWeek(entry.date, resolvedDate)
+    )) {
+      pushIfVisible(aggregate, playerId, items, {
+        attentionId: `scheduler-recovery:${incident.id}`,
+        category: "WORLD_NEWS",
+        title: "PPW World schedule recovered",
+        summary: `The scheduler missed ${Number(incident.payload.skippedRealDays)} real day(s). Only the current PPW week resolved; missed days do not count toward player inactivity or Stewardship deadlines.`,
+        deadline: null,
+        deepLink: null,
+        dismissible: true,
+        sourceOpportunityCategory: null,
+      });
+    }
+    // Scheduled World progression cannot be held hostage by one promotion's
+    // outstanding creative waiver. Explain staff fallback *after* the tick
+    // from a durable ledger event rather than inventing live match outcomes.
+    const creativeFallbacks = aggregate.state.ledger.filter((entry) =>
+      entry.type === "PLANNED_SHOW_CREATIVE_STAFF_FALLBACK"
+      && entry.entityIds.includes(promotion.id)
+      && sameWeek(entry.date, resolvedDate)
+    );
+    for (const fallback of creativeFallbacks) {
+      pushIfVisible(aggregate, playerId, items, {
+        attentionId: `creative-staff-fallback:${fallback.id}`,
+        category: "IMPORTANT",
+        title: "Unapproved booking handed to staff",
+        summary: "A wrestler's creative approval was still outstanding at the scheduled commitment lock. The proposed card was not imposed; Routine Continuity handled the missing show preparation.",
+        deadline: null,
+        deepLink: "/results",
+        dismissible: true,
+        sourceOpportunityCategory: null,
+      });
+    }
+    const keptCommittedCards = aggregate.state.ledger.filter((entry) =>
+      entry.type === "PLANNED_SHOW_UNAPPROVED_AMENDMENT_IGNORED_AT_LOCK"
+      && entry.entityIds.includes(promotion.id)
+      && sameWeek(entry.date, resolvedDate)
+    );
+    for (const entry of keptCommittedCards) {
+      pushIfVisible(aggregate, playerId, items, {
+        attentionId: `unapproved-amendment-ignored:${entry.id}`,
+        category: "IMPORTANT",
+        title: "Your original card ran",
+        summary: "The proposed card amendment did not receive creative approval before World Lock. PPW kept your previously committed matches and finishes; staff did not take over this show.",
+        deadline: null,
+        deepLink: "/results",
+        dismissible: true,
+        sourceOpportunityCategory: null,
+      });
+    }
     const latestEvent = aggregate.state.events
       .filter((event) => event.promotionId === promotion.id && event.status === "COMPLETED" && sameWeek(event.date, resolvedDate))
       .sort((left, right) => right.date.day - left.date.day || right.id.localeCompare(left.id))[0];

@@ -1,5 +1,5 @@
 import { LedgerWriter } from "../../sim-core/src/index.js";
-import { activityForPlayer } from "./engagement.js";
+import { activityForPlayer, activeSchedulerDaysBetween } from "./engagement.js";
 import { activePromotionControls } from "./ownership.js";
 import { executeAgreedStewardshipRelease } from "./stewardship-release.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
@@ -54,7 +54,7 @@ export function settleOverdueStewardshipExitRequests(
     if (activity?.status !== "STEWARDED") continue;
 
     const requestedCycleKey = requireCycleKey(request.requestedCycleKey);
-    const openDays = realDaysBetween(requestedCycleKey, currentCycleKey);
+    const openDays = activeSchedulerDaysBetween(engagement, requestedCycleKey, currentCycleKey);
     if (openDays < STEWARDSHIP_AUTO_RELEASE_GRACE_DAYS) continue;
     result.eligibleRequests += 1;
 

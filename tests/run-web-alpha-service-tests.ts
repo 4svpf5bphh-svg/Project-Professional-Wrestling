@@ -106,6 +106,48 @@ function futurePlannerRequest(
   };
 }
 
+await test("current-show roster excludes historically signed dates that cannot cover its PPW day", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 61029, playerId: "roster-window-player" });
+  const independent = aggregate.state.promotions.find(p =>
+    p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("no takeover indie for current-show contract boundary regression");
+  const signed = aggregate.state.contracts.filter(c =>
+    c.promotionId === independent.id && c.status === "SIGNED")
+    .filter((c, i, all) => all.findIndex(x => x.personId === c.personId) === i)
+    .slice(0, 3);
+  if (signed.length !== 3) throw new Error("fixture needs three inherited distinct wrestlers");
+
+  aggregate.state.world.currentDate = { year: 1, week: 8, day: 1 };
+  // Reproduce CI #945's observed week-25 defect at a compact fixture week:
+  // positive dates on a historically SIGNED deal do not create new rights.
+  for (const contract of signed) {
+    contract.startDate = { year: 1, week: 1, day: 1 };
+    contract.dateEntitlement = Math.max(contract.dateEntitlement, contract.datesUsed + 3);
+  }
+  signed[0]!.endDate = { year: 1, week: 7, day: 1 }; // already expired
+  signed[1]!.endDate = { year: 1, week: 8, day: 1 }; // final PPW week: D6 remains valid
+  signed[2]!.startDate = { year: 1, week: 9, day: 1 }; // future signed rights
+  signed[2]!.endDate = { year: 1, week: 21, day: 1 };
+
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "roster-window-player", {
+    promotionId: independent.id, requestId: "roster-window-claim",
+  });
+  const view = await loadAlphaPlayerSession(repository, worldId, "roster-window-player");
+  if (!view.promotion) throw new Error("claimed promotion missing");
+  const rosterIds = new Set(view.promotion.roster.map(person => person.personId));
+  ok(!rosterIds.has(signed[0]!.personId),
+    "expired SIGNED contract appeared as player-bookable despite end week already passing");
+  ok(rosterIds.has(signed[1]!.personId),
+    "contract ending on D1 incorrectly lost its final bookable PPW week on day six");
+  ok(!rosterIds.has(signed[2]!.personId),
+    "future-starting SIGNED contract appeared in current show's booking roster");
+  ok(signed[0]!.status === "SIGNED" && signed[0]!.dateEntitlement > signed[0]!.datesUsed,
+    "test accidentally expired/consumed the historical contract rather than filtering its rights");
+});
+
 await test("Alpha web service bootstraps and exposes a player-safe promotion choice", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const worldId = await ensureAlphaWorld(repository, { seed: 61001, playerId: "alpha-player" });

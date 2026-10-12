@@ -7,9 +7,11 @@ import styles from "./game-nav.module.css";
 type RootKey = "WORLD" | "TALENT" | "PLAN" | "BUSINESS" | "RESULTS";
 
 type NavDestination = {
-  href: string;
+  href?: string;
   label: string;
   description: string;
+  /** Planning-only. No clickable destination or route exists until playable. */
+  planned?: true;
 };
 
 type NavItem = {
@@ -32,6 +34,8 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/", label: "World overview", description: "Your promotion and the shared World." },
       { href: "/industry", label: "Promotions", description: "Rivals and the wider industry." },
       { href: "/championships", label: "Championships", description: "World title landscape and history." },
+      { label: "Industry headlines", description: "Stories and major events from the living World.", planned: true },
+      { label: "World rankings", description: "Promotion and wrestler rankings.", planned: true },
     ],
   },
   {
@@ -47,6 +51,7 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/talent/teams", label: "Tag teams", description: "Manage established teams on your roster." },
       { href: "/talent?view=offers", label: "Offers", description: "Review your pending contract offers." },
       { href: "/talent/directory", label: "Wrestler directory", description: "Search everyone in the shared World." },
+      { label: "Development", description: "Training and long-term wrestler growth.", planned: true },
     ],
   },
   {
@@ -60,6 +65,7 @@ const NAV_ITEMS: NavItem[] = [
       { href: "/calendar", label: "Calendar", description: "Upcoming public shows across the shared World." },
       { href: "/programmes", label: "Programmes", description: "Create and follow ongoing rivalries and stories." },
       { href: "/card", label: "Current booking", description: "Open the show card you are working on." },
+      { label: "Tournaments", description: "Plan brackets, rounds and tournament stories.", planned: true },
     ],
   },
   {
@@ -67,9 +73,13 @@ const NAV_ITEMS: NavItem[] = [
     href: "/business",
     label: "Business",
     shortLabel: "B",
-    matches: (pathname) => pathname.startsWith("/business"),
+    matches: (pathname) => pathname.startsWith("/business") || pathname.startsWith("/staff"),
     destinations: [
       { href: "/business", label: "Business overview", description: "Cash, operating position and recent performance." },
+      { href: "/staff", label: "Staff", description: "Hire your Talent Manager and authorise renewals." },
+      { label: "Media deals", description: "TV, streaming and premium-event distribution.", planned: true },
+      { label: "Sponsorships", description: "Commercial partners and brand agreements.", planned: true },
+      { label: "Facilities", description: "Training and operational investment.", planned: true },
     ],
   },
   {
@@ -80,6 +90,8 @@ const NAV_ITEMS: NavItem[] = [
     matches: (pathname) => pathname.startsWith("/results"),
     destinations: [
       { href: "/results", label: "My shows", description: "Completed cards and crowd stories." },
+      { label: "Analytics", description: "Audience, attendance and show trends.", planned: true },
+      { label: "Awards & records", description: "Honours, milestones and historical achievements.", planned: true },
     ],
   },
 ];
@@ -139,12 +151,21 @@ export default function GameNav(): React.JSX.Element {
             <strong>{selected.label}</strong>
           </div>
           <div className={styles.destinations}>
-            {selected.destinations.map((destination) => (
+            {selected.destinations.map((destination) => destination.planned ? (
+              <div key={destination.label} className={styles.plannedDestination} aria-disabled="true">
+                <div className={styles.plannedTitle}>
+                  <strong>{destination.label}</strong>
+                  <small>Planned</small>
+                </div>
+                <span>{destination.description}</span>
+              </div>
+            ) : (
               <button
                 key={destination.href}
                 className={styles.destination}
                 type="button"
                 onClick={() => {
+                  if (!destination.href) return;
                   setExpanded(false);
                   router.push(destination.href);
                 }}

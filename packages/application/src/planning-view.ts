@@ -9,7 +9,9 @@ import type {
   TicketStrategy,
   WrestlingEventType,
 } from "../../domain/src/types.js";
-import { addPpwWeeks, comparePpwDates } from "../../sim-core/src/clock.js";
+import { addPpwWeeks } from "../../sim-core/src/clock.js";
+import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
+import { assessPersonShowDateAvailability } from "./planning-reservations.js";
 import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { activePromotionControlForPlayer, activeWorldMembership } from "./ownership.js";
 import {
@@ -67,7 +69,13 @@ export interface PlayerPlannerTalentOptionView {
   popularity: number;
   momentum: number;
   morale: number;
+  /** Purchased but not yet used; includes dates committed to future events. */
   datesRemaining: number;
+  /** Purchased and not already committed or reserved in any promotion. */
+  unreservedDatesRemaining: number;
+  /** Exact PPW days on which this wrestler can accept an additional show. */
+  bookableDays: number[];
+  unlimitedAppearances: boolean;
 }
 
 export type PlayerPlannerMarketPresence = "STRONG" | "ESTABLISHED" | "DEVELOPING" | "LIGHT";
@@ -210,16 +218,11 @@ function marketPresenceBand(score: number): PlayerPlannerMarketPresence {
 
 function contractTouchesWeek(
   aggregate: ApplicationWorldAggregate,
-  startDate: PpwDate,
-  endDate: PpwDate,
+  contract: ApplicationWorldAggregate["state"]["contracts"][number],
   targetDate: PpwDate,
 ): boolean {
   for (let day = 1; day <= 7; day += 1) {
-    const date = { year: targetDate.year, week: targetDate.week, day };
-    if (
-      comparePpwDates(date, startDate, aggregate.state.ruleset.weeksPerYear) >= 0
-      && comparePpwDates(date, endDate, aggregate.state.ruleset.weeksPerYear) <= 0
-    ) return true;
+    if (contractCoversBookedDate(aggregate.state, contract, { ...targetDate, day })) return true;
   }
   return false;
 }
@@ -231,17 +234,35 @@ function eligibleParticipantsForWeek(
 ): PlayerPlannerTalentOptionView[] {
   const peopleById = new Map(aggregate.state.people.map((person) => [person.id, person]));
   const remainingByPerson = new Map<Id, number>();
+  const freeByPerson = new Map<Id, number>();
+  const unlimitedPeople = new Set<Id>();
 
   for (const contract of aggregate.state.contracts) {
     if (contract.promotionId !== promotionId || contract.status !== "SIGNED") continue;
-    const remaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
+    const remaining = contract.family === "EXCLUSIVE"
+      ? Number.MAX_SAFE_INTEGER
+      : Math.max(0, contract.dateEntitlement - contract.datesUsed);
     if (remaining <= 0) continue;
-    if (!contractTouchesWeek(aggregate, contract.startDate, contract.endDate, targetDate)) continue;
-    remainingByPerson.set(contract.personId, (remainingByPerson.get(contract.personId) ?? 0) + remaining);
+    if (!contractTouchesWeek(aggregate, contract, targetDate)) continue;
+    if (contract.family === "EXCLUSIVE") {
+      unlimitedPeople.add(contract.personId);
+    } else {
+      remainingByPerson.set(contract.personId, (remainingByPerson.get(contract.personId) ?? 0) + remaining);
+      const alreadyCommitted = aggregate.state.scheduledAppearances.filter(
+        (appearance) => appearance.contractId === contract.id && appearance.status === "COMMITTED",
+      ).length;
+      const alreadyReserved = aggregate.planning.showReservations.reduce(
+        (sum, reservation) => sum + reservation.participants.filter(p => p.contractId === contract.id).length, 0,
+      );
+      freeByPerson.set(contract.personId, (freeByPerson.get(contract.personId) ?? 0)
+        + Math.max(0, remaining - alreadyCommitted - alreadyReserved));
+    }
   }
 
   const result: PlayerPlannerTalentOptionView[] = [];
-  for (const [personId, datesRemaining] of remainingByPerson.entries()) {
+  for (const personId of new Set([...remainingByPerson.keys(), ...unlimitedPeople])) {
+    const datesRemaining = remainingByPerson.get(personId) ?? 0;
+    const unlimitedAppearances = unlimitedPeople.has(personId);
     const person = peopleById.get(personId);
     if (!person || person.status !== "ACTIVE") continue;
     result.push({
@@ -252,6 +273,12 @@ function eligibleParticipantsForWeek(
       momentum: person.momentum,
       morale: person.morale,
       datesRemaining,
+      unreservedDatesRemaining: freeByPerson.get(personId) ?? 0,
+      bookableDays: Array.from({ length: 7 }, (_, index) => index + 1).filter(day =>
+        assessPersonShowDateAvailability(
+          aggregate.state, aggregate.planning, promotionId, personId, { ...targetDate, day },
+        ).contractId !== null),
+      unlimitedAppearances,
     });
   }
   return result.sort((left, right) => right.popularity - left.popularity || left.name.localeCompare(right.name));

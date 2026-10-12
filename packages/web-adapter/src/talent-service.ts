@@ -1,6 +1,7 @@
 import type {
   ContractFamily,
   ContractOffer,
+  CreativeControlLevel,
   RoleExpectation,
 } from "../../domain/src/types.js";
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
@@ -8,17 +9,22 @@ import {
   addPpwWeeks,
   contractIsActive,
   ppwDateToWeekIndex,
+  promotionShowSeriesDueForDate,
   weeksBetween,
+  resolvedCreativeControl,
+  validCreativeControl,
 } from "../../sim-core/src/index.js";
 import {
   activePromotionControlForPlayer,
   activeWorldMembership,
+  DETAILED_PLANNING_HORIZON_WEEKS,
   buildPlayerTalentDirectoryView,
   buildPlayerTalentManagementView,
   createWorldEngagementState,
   setTalentWatched,
   setWrestlerAlignmentCommand,
   submitContractOfferCommand,
+  submitContractDatesAddendumCommand,
   type ApplicationWorldAggregate,
   type ApplicationWorldRepository,
   type PlayerTalentDirectoryView,
@@ -41,11 +47,27 @@ export interface AlphaTalentOfferRequest {
   sourceContractId?: string | null;
   family: ContractFamily;
   roleExpectation: RoleExpectation;
+  /** Optional for older clients; default is no creative control. */
+  creativeControl?: CreativeControlLevel;
   termWeeks: number;
   dateEntitlement: number;
   weeklyGuarantee: number;
   appearanceFee: number;
   signingBonus: number;
+}
+
+export interface AlphaDatesAddendumRequest {
+  requestId: string;
+  personId: string;
+  contractId: string;
+  additionalDates: number;
+  additionalPayment: number;
+}
+
+export interface AlphaDatesAddendumResult {
+  offerId: string;
+  offerKind: "DATES_ADDENDUM";
+  view: PlayerTalentManagementView;
 }
 
 export interface AlphaTalentOfferResult {
@@ -97,6 +119,9 @@ function nonNegativeInteger(value: number, label: string, max = 1_000_000_000): 
 function validateRequestShape(request: AlphaTalentOfferRequest): void {
   if (!CONTRACT_FAMILIES.has(request.family)) throw new Error("unsupported contract family");
   if (!ROLES.has(request.roleExpectation)) throw new Error("unsupported role expectation");
+  if (request.creativeControl !== undefined && !validCreativeControl(request.creativeControl)) {
+    throw new Error("unsupported creative control clause");
+  }
   nonNegativeInteger(request.dateEntitlement, "date entitlement", 104);
   if (request.dateEntitlement < 1) throw new Error("date entitlement must contain at least one date");
   nonNegativeInteger(request.weeklyGuarantee, "weekly guarantee");
@@ -127,6 +152,7 @@ function replayPlanFromOffer(offer: ContractOffer) {
     family: offer.family,
     exclusivity: offer.exclusivity,
     roleExpectation: offer.roleExpectation,
+    creativeControl: resolvedCreativeControl(offer.creativeControl),
     startDate: { ...offer.startDate },
     endDate: { ...offer.endDate },
     dateEntitlement: offer.dateEntitlement,
@@ -146,14 +172,18 @@ function requestMatchesOffer(
     && (offer.sourceContractId ?? null) === (request.sourceContractId ?? null)
     && offer.family === request.family
     && offer.roleExpectation === request.roleExpectation
+    && resolvedCreativeControl(offer.creativeControl) === resolvedCreativeControl(request.creativeControl)
     && termWeeks === request.termWeeks
-    && offer.dateEntitlement === request.dateEntitlement
+    // An exclusive's dateEntitlement is a legacy transport field, not a
+    // purchased-date cap. Fresh offers canonicalise it to the contract term;
+    // retries must compare the same effective terms even for older callers.
+    && offer.dateEntitlement === (request.family === "EXCLUSIVE" ? request.termWeeks : request.dateEntitlement)
     && offer.weeklyGuarantee === request.weeklyGuarantee
     && offer.appearanceFee === request.appearanceFee
     && offer.signingBonus === request.signingBonus;
 }
 
-function buildFreshPlan(
+export function buildFreshPlan(
   aggregate: ApplicationWorldAggregate,
   promotionId: string,
   request: AlphaTalentOfferRequest,
@@ -175,7 +205,7 @@ function buildFreshPlan(
     }
     const currentIndex = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
     const endIndex = ppwDateToWeekIndex(source.endDate, state.ruleset.weeksPerYear);
-    const datesExhausted = source.family !== "ONE_OFF" && source.datesUsed >= source.dateEntitlement;
+    const datesExhausted = source.family === "LIMITED_NON_EXCLUSIVE" && source.datesUsed >= source.dateEntitlement;
     if (!datesExhausted && endIndex - currentIndex > state.ruleset.renewalWindowWeeks) {
       throw new Error("renewal window is not open for this contract yet");
     }
@@ -191,10 +221,49 @@ function buildFreshPlan(
     if (alreadyOurs) throw new Error("wrestler is already on your active roster; use the renewal action");
   }
 
+  // New multiweek player agreements are accepted during World Resolution,
+  // after the submission week's player show is already locked. Starting and
+  // charging them in that week costs a week of guaranteed salary without a
+  // player-bookable week of service. Leave future renewals after the signed
+  // source term untouched, and retain the one-off's show-aware scheduling.
+  if (request.family !== "ONE_OFF"
+    && ppwDateToWeekIndex(startDate, state.ruleset.weeksPerYear)
+      <= ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear)) {
+    startDate = { ...addPpwWeeks(state.world.currentDate, 1, state.ruleset.weeksPerYear), day: 1 };
+  }
+
+  // An accepted human one-off becomes bookable only after World Resolution,
+  // not in the offer week. Align its single week with a real scheduled show,
+  // otherwise a biweekly/irregular promotion can buy an unusable date.
+  // Do not reserve speculative one-offs beyond the six-week player planner.
+  if (request.family === "ONE_OFF") {
+    const currentWeek = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
+    const earliestWeek = Math.max(currentWeek + 1, ppwDateToWeekIndex(startDate, state.ruleset.weeksPerYear));
+    let showDate: typeof startDate | null = null;
+    for (let offset = earliestWeek - currentWeek; offset <= DETAILED_PLANNING_HORIZON_WEEKS; offset += 1) {
+      const candidate = addPpwWeeks(state.world.currentDate, offset, state.ruleset.weeksPerYear);
+      if (promotionShowSeriesDueForDate(state, promotionId, candidate).length > 0) {
+        showDate = { ...candidate, day: 1 };
+        break;
+      }
+    }
+    if (!showDate) {
+      throw new Error(
+        `No scheduled promotion show within the next ${DETAILED_PLANNING_HORIZON_WEEKS} PPW weeks `
+        + "after this offer can take effect. Arrange a show or negotiate closer to the next event.",
+      );
+    }
+    // Exact-day reservation checks require the entire show week. This is
+    // still ONE purchased appearance, not seven separate dates.
+    startDate = showDate;
+  }
+
   const exclusivity = request.family === "ONE_OFF" ? "OPEN"
     : request.family === "EXCLUSIVE" ? "EXCLUSIVE"
       : "NON_EXCLUSIVE";
-  const endDate = addPpwWeeks(startDate, request.termWeeks - 1, state.ruleset.weeksPerYear);
+  const endDate = request.family === "ONE_OFF"
+    ? { ...startDate, day: 7 }
+    : addPpwWeeks(startDate, request.termWeeks - 1, state.ruleset.weeksPerYear);
 
   return {
     promotionId,
@@ -203,9 +272,10 @@ function buildFreshPlan(
     family: request.family,
     exclusivity,
     roleExpectation: request.roleExpectation,
+    creativeControl: resolvedCreativeControl(request.creativeControl),
     startDate,
     endDate,
-    dateEntitlement: request.dateEntitlement,
+    dateEntitlement: request.family === "EXCLUSIVE" ? request.termWeeks : request.dateEntitlement,
     weeklyGuarantee: request.weeklyGuarantee,
     appearanceFee: request.appearanceFee,
     signingBonus: request.signingBonus,
@@ -276,6 +346,9 @@ export async function submitAlphaTalentOffer(
       },
     );
 
+    // This endpoint only creates full recruitment / renewal offers.
+    // Dates addenda use their dedicated same-contract endpoint.
+    if (offer.offerKind === "DATES_ADDENDUM") throw new Error("unexpected additional-dates offer type");
     return {
       offerId: offer.id,
       offerKind: offer.offerKind,
@@ -284,6 +357,53 @@ export async function submitAlphaTalentOffer(
   });
 
   return transaction.result;
+}
+
+/** Submits a consensual addendum through the same authoritative World command queue. */
+export async function submitAlphaDatesAddendum(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  rawRequest: AlphaDatesAddendumRequest,
+): Promise<AlphaDatesAddendumResult> {
+  const request: AlphaDatesAddendumRequest = {
+    requestId: boundedText(rawRequest.requestId, "requestId"),
+    personId: boundedText(rawRequest.personId, "personId"),
+    contractId: boundedText(rawRequest.contractId, "contractId"),
+    additionalDates: nonNegativeInteger(rawRequest.additionalDates, "additional dates", 104),
+    additionalPayment: nonNegativeInteger(rawRequest.additionalPayment, "additional payment"),
+  };
+  if (request.additionalDates < 1) throw new Error("additional dates must contain at least one appearance");
+
+  const result = await repository.transact(worldId, null, (aggregate) => {
+    const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
+    if (!control) throw new Error("player must control a promotion before negotiating dates");
+    const offer = submitContractDatesAddendumCommand(
+      aggregate.state,
+      aggregate.ownership,
+      aggregate.commands,
+      aggregate.runtime,
+      {
+        requestId: request.requestId,
+        worldId,
+        playerId,
+        commandType: "SUBMIT_CONTRACT_DATES_ADDENDUM",
+        payload: {
+          promotionId: control.promotionId,
+          personId: request.personId,
+          contractId: request.contractId,
+          additionalDates: request.additionalDates,
+          additionalPayment: request.additionalPayment,
+        },
+      },
+    );
+    return {
+      offerId: offer.id,
+      offerKind: "DATES_ADDENDUM" as const,
+      view: buildPlayerTalentManagementView(aggregate, playerId),
+    };
+  });
+  return result.result;
 }
 
 export async function setAlphaTalentWatch(

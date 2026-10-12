@@ -192,7 +192,7 @@ function WrestlerSlotButton({
       {person ? (
         <>
           <span><strong>{person.name}</strong><small>{person.division === "WOMEN" ? "WOMAN" : person.division === "MEN" ? "MAN" : "DIVISION ?"} · {person.alignment}</small></span>
-          <span><b>POP {Math.round(person.popularity)}</b><small>{person.datesRemaining} dates</small></span>
+          <span><b>POP {Math.round(person.popularity)}</b><small>{person.unlimitedAppearances ? "Unlimited dates" : `${person.unreservedDatesRemaining} free / ${person.datesRemaining} purchased`}</small></span>
         </>
       ) : (
         <>
@@ -243,7 +243,9 @@ function WrestlerPicker({
       if (sort === "MOMENTUM") return right.person.momentum - left.person.momentum || left.person.name.localeCompare(right.person.name);
       if (sort === "IN_RING") return right.person.skills.inRingQuality - left.person.skills.inRingQuality || left.person.name.localeCompare(right.person.name);
       if (sort === "PRESENTATION") return right.person.skills.presentation - left.person.skills.presentation || left.person.name.localeCompare(right.person.name);
-      if (sort === "DATES") return right.person.datesRemaining - left.person.datesRemaining || left.person.name.localeCompare(right.person.name);
+      if (sort === "DATES") return (right.person.unlimitedAppearances ? Number.MAX_SAFE_INTEGER : right.person.unreservedDatesRemaining)
+        - (left.person.unlimitedAppearances ? Number.MAX_SAFE_INTEGER : left.person.unreservedDatesRemaining)
+        || left.person.name.localeCompare(right.person.name);
       if (sort === "NAME") return left.person.name.localeCompare(right.person.name);
       return right.person.popularity - left.person.popularity
         || right.person.momentum - left.person.momentum
@@ -313,7 +315,7 @@ function WrestlerPicker({
                   <span>RING <b>{Math.round(person.skills.inRingQuality)}</b></span>
                   <span>CRAFT <b>{Math.round(person.skills.matchCraft)}</b></span>
                   <span>PRES <b>{Math.round(person.skills.presentation)}</b></span>
-                  <span>DATES <b>{person.datesRemaining}</b></span>
+                  <span>DATES <b>{person.unlimitedAppearances ? "Unlimited" : `${person.unreservedDatesRemaining} free / ${person.datesRemaining} purchased`}</b></span>
                 </div>
               </button>
             );
@@ -334,6 +336,9 @@ export default function CardClient(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [requestingConsent, setRequestingConsent] = useState<string | null>(null);
+  const [withdrawingAmendment, setWithdrawingAmendment] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedSlotKey, setExpandedSlotKey] = useState<string | null>(null);
   const [wrestlerPicker, setWrestlerPicker] = useState<WrestlerPickerTarget | null>(null);
@@ -358,6 +363,7 @@ export default function CardClient(): React.JSX.Element {
       setExpandedSlotKey(null);
       setWrestlerPicker(null);
       setSaved(false);
+      setDirty(false);
       requestId.current = null;
     } catch (reason) {
       setView(null);
@@ -494,6 +500,7 @@ export default function CardClient(): React.JSX.Element {
   const canSave = Boolean(view && saveBlockers.length === 0 && !saving);
 
   function markDirty(): void {
+    setDirty(true);
     setSaved(false);
     requestId.current = null;
   }
@@ -503,6 +510,7 @@ export default function CardClient(): React.JSX.Element {
     const size = type === "TAG" ? 2 : 1;
     setMatches((current) => [...current, {
       draftMatchId: id,
+      programmeId: null,
       type,
       sideAIds: Array.from({ length: size }, () => ""),
       sideBIds: Array.from({ length: size }, () => ""),
@@ -1155,11 +1163,88 @@ export default function CardClient(): React.JSX.Element {
       setRunningOrder(cloneOrder(payload.runningOrder));
       setTitleAssignments(cloneAssignments(payload.championshipAssignments));
       setSaved(true);
+      setDirty(false);
       requestId.current = null;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to save show booking");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function withdrawPendingAmendment(): Promise<void> {
+    if (!view || !view.canEdit || !view.cardPendingConsent || withdrawingAmendment || saving || requestingConsent) return;
+    setWithdrawingAmendment(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/show-card/creative-withdraw", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: crypto.randomUUID(),
+          expectedRevision: view.world.revision,
+          expectedPlanVersion: view.workspaceVersion,
+          draftId: view.draftId,
+        }),
+      });
+      const payload = await response.json() as AlphaCurrentWeekCardView | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to restore committed card");
+      }
+      // This discards only uncommitted local/editor changes. The actual
+      // scheduled card and the wrestler's contract remain untouched.
+      setView(payload);
+      setMatches(cloneMatches(payload.matches));
+      setSegments(cloneSegments(payload.segments));
+      setRunningOrder(cloneOrder(payload.runningOrder));
+      setTitleAssignments(cloneAssignments(payload.championshipAssignments));
+      setSaved(false);
+      setDirty(false);
+      requestId.current = null;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to withdraw booking changes");
+    } finally {
+      setWithdrawingAmendment(false);
+    }
+  }
+
+  async function askCreativeApproval(draftMatchId: string, personId: string): Promise<void> {
+    if (!view || dirty || !view.canEdit || requestingConsent) return;
+    const key = `${draftMatchId}:${personId}`;
+    setRequestingConsent(key);
+    setError(null);
+    try {
+      const response = await fetch("/api/show-card/creative-consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: crypto.randomUUID(),
+          expectedRevision: view.world.revision,
+          expectedPlanVersion: view.workspaceVersion,
+          draftId: view.draftId,
+          draftMatchId, personId,
+        }),
+      });
+      const payload = await response.json() as AlphaCurrentWeekCardView | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) && payload.error ? payload.error : "Unable to request approval");
+      }
+      setView(payload);
+      setMatches(cloneMatches(payload.matches));
+      setSegments(cloneSegments(payload.segments));
+      setRunningOrder(cloneOrder(payload.runningOrder));
+      setTitleAssignments(cloneAssignments(payload.championshipAssignments));
+      setSaved(false);
+      setDirty(false);
+      const declined = payload.creativeConcerns.some((entry) =>
+        entry.personId === personId && entry.draftMatchId === draftMatchId && entry.consent === "DECLINED");
+      if (declined) {
+        setError("Wrestler declined this booking. Change the finish, participants or match, or postpone it. The planned outcome has not been altered.");
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to request approval");
+    } finally {
+      setRequestingConsent(null);
     }
   }
 
@@ -1262,6 +1347,33 @@ export default function CardClient(): React.JSX.Element {
                   <div className={styles.slotTypeRow}>
                     <button className={match.type === "SINGLES" ? styles.typeActive : styles.secondaryButton} type="button" onClick={() => setMatchType(match.draftMatchId, "SINGLES")} disabled={!view.canEdit}>Singles</button>
                     <button className={match.type === "TAG" ? styles.typeActive : styles.secondaryButton} type="button" onClick={() => setMatchType(match.draftMatchId, "TAG")} disabled={!view.canEdit}>Tag Team</button>
+                  </div>
+
+                  <div className={styles.control}>
+                    <label htmlFor={`programme-match-${match.draftMatchId}`}>Programme · optional</label>
+                    <select
+                      id={`programme-match-${match.draftMatchId}`}
+                      value={match.programmeId ?? ""}
+                      disabled={!view.canEdit}
+                      onChange={(event) => updateMatch(match.draftMatchId, {
+                        programmeId: event.target.value || null,
+                      })}
+                    >
+                      <option value="">No Programme association</option>
+                      {view.programmes.map((programme) => {
+                        const booked = [...match.sideAIds, ...match.sideBIds].filter(Boolean);
+                        const eligible = booked.length > 0
+                          && booked.every((personId) => programme.participantIds.includes(personId));
+                        return (
+                          <option
+                            key={programme.programmeId}
+                            value={programme.programmeId}
+                            disabled={!eligible}
+                          >{programme.label}{eligible ? "" : " · different participants"}</option>
+                        );
+                      })}
+                    </select>
+                    <small>Link this specific match to its storyline. An existing standing agreement applies only when this booking fits its exact terms. No storyline is inferred automatically.</small>
                   </div>
 
                   <div className={styles.sides}>
@@ -1896,6 +2008,54 @@ export default function CardClient(): React.JSX.Element {
           </div>
         </div>
 
+        {view.creativeConcerns?.length ? (
+          <section className={styles.saveBlockers} aria-live="polite" aria-label="Wrestler creative approval">
+            <div className={styles.saveBlockerHeading}>
+              <strong>Creative permissions</strong>
+              <span>{view.creativeConcerns.filter((item) => item.requiresConsent && item.consent !== "APPROVED").length} outstanding</span>
+            </div>
+            <p>Wrestler contract rights are checked against the saved script. A booking change requires a fresh agreement; no result is rewritten automatically.</p>
+            {dirty ? <p>Save your card edits before requesting approval for the revised script.</p> : null}
+            {view.cardPendingConsent ? (
+              <>
+                <p>This proposed card is not live. Your last committed show is still intact until all approvals are granted.</p>
+                <button
+                  type="button"
+                  className={styles.secondaryButton}
+                  disabled={!view.canEdit || withdrawingAmendment || saving || requestingConsent !== null}
+                  onClick={() => void withdrawPendingAmendment()}
+                >
+                  {withdrawingAmendment ? "Restoring…" : "Withdraw changes · restore committed card"}
+                </button>
+                {dirty ? <p>Unsaved edits on this screen will also be discarded.</p> : null}
+              </>
+            ) : null}
+            <ul>
+              {view.creativeConcerns.map((concern) => (
+                <li key={`${concern.draftMatchId}:${concern.personId}:${concern.reason}`}>
+                  <strong>{concern.wrestlerName}</strong> · {pretty(concern.reason)} · {
+                    concern.approvalSource === "STANDING_PROGRAMME" ? "Covered by Programme agreement"
+                      : !concern.requiresConsent ? "Consultation only — no veto"
+                      : concern.consent === "APPROVED" ? "Approved"
+                        : concern.consent === "DECLINED" ? "Declined — revise the booking"
+                          : "Permission required"
+                  }
+                  {concern.requiresConsent && concern.consent === "NOT_REQUESTED" ? (
+                    <button
+                      type="button"
+                      className={styles.secondaryButton}
+                      disabled={!view.canEdit || dirty || requestingConsent !== null || withdrawingAmendment}
+                      onClick={() => void askCreativeApproval(concern.draftMatchId, concern.personId)}
+                    >
+                      {requestingConsent === `${concern.draftMatchId}:${concern.personId}` ? "Asking…" : "Ask for approval"}
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
         {saveBlockers.length > 0 ? (
           <section className={styles.saveBlockers} aria-live="polite" aria-label="Show booking save blockers">
             <div className={styles.saveBlockerHeading}>
@@ -1925,7 +2085,7 @@ export default function CardClient(): React.JSX.Element {
           {saveBlockers.length > 0 ? (
             <span id="card-save-blockers" className={styles.saveBarHint}>Resolve the issues above to enable saving.</span>
           ) : null}
-          {saved ? <div className={styles.saved}>Booking saved · running order and talent reservation refreshed</div> : null}
+          {saved ? <div className={styles.saved}>{view.cardPendingConsent ? "Booking proposal saved · creative approval needed before this card replaces the committed show" : "Booking saved · running order and talent reservation refreshed"}</div> : null}
         </div>
       </section>
       </main>

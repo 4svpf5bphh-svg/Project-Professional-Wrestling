@@ -1,9 +1,15 @@
 import type { ContractOffer, Id, PpwDate, Promotion, Team, WorldState } from "../../domain/src/types.js";
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
+import type { WorldPlanningState } from "./planning.js";
+import { requestCreativeBookingConsent, type CreativeConsentRecord } from "./creative-consent.js";
+import { requestStandingProgrammeCreativeAgreement,
+  type StandingProgrammeCreativeAgreement, type StandingProgrammeCreativeRequest } from "./programme-creative-standing.js";
 import type { Programme, ProgrammeParticipantRef } from "../../domain/src/programmes.js";
 import {
   submitHumanContractOffer,
+  submitHumanDatesAddendum,
   type HumanContractOfferPlan,
+  type HumanDatesAddendumPlan,
 } from "../../sim-core/src/human-contracts.js";
 import type { HumanPromotionClaimOptions } from "../../sim-core/src/human-control.js";
 import { createProgramme } from "../../sim-core/src/programmes.js";
@@ -30,6 +36,13 @@ import {
 export type ApplicationCommandType =
   | "CLAIM_INDEPENDENT_PROMOTION"
   | "SUBMIT_CONTRACT_OFFER"
+  | "SUBMIT_CONTRACT_DATES_ADDENDUM"
+  | "HIRE_STAFF"
+  | "RELEASE_STAFF"
+  | "AUTHORISE_TALENT_MANAGER_RENEWAL"
+  | "REQUEST_CREATIVE_BOOKING_CONSENT"
+  | "REQUEST_STANDING_PROGRAMME_CREATIVE_AGREEMENT"
+  | "WITHDRAW_CREATIVE_CARD_AMENDMENT"
   | "PURSUE_TALENT_OPPORTUNITY"
   | "UPSERT_DETAILED_SHOW_DRAFT"
   | "REMOVE_DETAILED_SHOW_DRAFT"
@@ -75,6 +88,16 @@ export interface ClaimIndependentPromotionPayload {
   promotionId: Id;
   options?: HumanPromotionClaimOptions;
 }
+
+export interface RequestCreativeBookingConsentPayload {
+  promotionId: Id;
+  draftId: string;
+  draftMatchId: string;
+  personId: Id;
+  expectedPlanVersion: number;
+}
+
+export type RequestStandingProgrammeCreativeAgreementPayload = StandingProgrammeCreativeRequest;
 
 export interface StartProgrammePayload {
   promotionId: Id;
@@ -240,6 +263,84 @@ export function submitContractOfferCommand(
       throw new Error(`${envelope.playerId} does not control ${envelope.payload.promotionId}`);
     }
     return submitHumanContractOffer(state, envelope.payload);
+  });
+}
+
+export function submitContractDatesAddendumCommand(
+  state: WorldState,
+  ownership: WorldOwnershipState,
+  commandState: WorldCommandState,
+  runtime: WorldRuntimeState,
+  envelope: ApplicationCommandEnvelope<HumanDatesAddendumPlan>,
+): ContractOffer {
+  if (envelope.commandType !== "SUBMIT_CONTRACT_DATES_ADDENDUM") {
+    throw new Error("expected SUBMIT_CONTRACT_DATES_ADDENDUM command");
+  }
+  if (envelope.worldId !== state.world.id || ownership.worldId !== state.world.id) {
+    throw new Error("date-addendum command ownership/World mismatch");
+  }
+  return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
+    if (!activeWorldMembership(ownership, envelope.playerId)
+      || !playerControlsPromotion(ownership, envelope.playerId, envelope.payload.promotionId)) {
+      throw new Error("player cannot amend another promotion's signed contract");
+    }
+    return submitHumanDatesAddendum(state, envelope.payload);
+  });
+}
+
+/**
+ * Explicit pre-lock negotiation command. It never changes any intended winner,
+ * finish, booking or match outcome; only the approval evidence is persisted.
+ */
+export function requestCreativeBookingConsentCommand(
+  state: WorldState,
+  ownership: WorldOwnershipState,
+  planning: WorldPlanningState,
+  commandState: WorldCommandState,
+  runtime: WorldRuntimeState,
+  envelope: ApplicationCommandEnvelope<RequestCreativeBookingConsentPayload>,
+): CreativeConsentRecord {
+  if (envelope.commandType !== "REQUEST_CREATIVE_BOOKING_CONSENT") {
+    throw new Error("expected REQUEST_CREATIVE_BOOKING_CONSENT command");
+  }
+  if (envelope.worldId !== state.world.id || ownership.worldId !== state.world.id
+    || planning.worldId !== state.world.id) {
+    throw new Error("creative consent command World boundary mismatch");
+  }
+  return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
+    if (!activeWorldMembership(ownership, envelope.playerId)
+      || !playerControlsPromotion(ownership, envelope.playerId, envelope.payload.promotionId)) {
+      throw new Error("player cannot request creative consent for another promotion");
+    }
+    return requestCreativeBookingConsent(state, planning, envelope.payload);
+  });
+}
+
+/**
+ * Server-authoritative, player-owned and idempotent negotiation for a narrow
+ * future Programme arc. This does not auto-book or change any scripted match.
+ */
+export function requestStandingProgrammeCreativeAgreementCommand(
+  state: WorldState,
+  ownership: WorldOwnershipState,
+  planning: WorldPlanningState,
+  commandState: WorldCommandState,
+  runtime: WorldRuntimeState,
+  envelope: ApplicationCommandEnvelope<RequestStandingProgrammeCreativeAgreementPayload>,
+): StandingProgrammeCreativeAgreement {
+  if (envelope.commandType !== "REQUEST_STANDING_PROGRAMME_CREATIVE_AGREEMENT") {
+    throw new Error("expected REQUEST_STANDING_PROGRAMME_CREATIVE_AGREEMENT command");
+  }
+  if (envelope.worldId !== state.world.id || ownership.worldId !== state.world.id
+    || planning.worldId !== state.world.id) {
+    throw new Error("standing Programme consent command World mismatch");
+  }
+  return executeIdempotentCommand(commandState, runtime, envelope, state.world.currentDate, () => {
+    if (!activeWorldMembership(ownership, envelope.playerId)
+      || !playerControlsPromotion(ownership, envelope.playerId, envelope.payload.promotionId)) {
+      throw new Error("player cannot negotiate a different promotion's Programme");
+    }
+    return requestStandingProgrammeCreativeAgreement(state, planning, envelope.payload);
   });
 }
 

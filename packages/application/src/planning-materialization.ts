@@ -7,8 +7,9 @@ import type {
   WorldState,
   WrestlingEvent,
 } from "../../domain/src/types.js";
-import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
-import { serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
+import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { contractCoversBookedDate, serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
+import { creativeBlockersForDraft } from "./creative-consent.js";
 import { prepareHumanShow } from "../../sim-core/src/events.js";
 import {
   prepareHumanMatchCard,
@@ -41,7 +42,8 @@ export type ReservationRiskReason =
   | "SERVICE_CAPACITY_EXCEEDED"
   | "CONTRACT_UNAVAILABLE"
   | "CONTRACT_DATE_EXHAUSTED"
-  | "MATCH_STYLE_REFUSAL";
+  | "MATCH_STYLE_REFUSAL"
+  | "CREATIVE_APPROVAL_REQUIRED";
 
 export type ReservationAssessmentStatus = "NOT_DUE" | "READY" | "AT_RISK" | "EXPIRED";
 
@@ -123,9 +125,7 @@ function eventSlot(state: WorldState, event: WrestlingEvent): PromotionShowSlot 
 }
 
 function contractCoversDate(state: WorldState, contract: Contract, date: PpwDate): boolean {
-  if (contract.status !== "SIGNED") return false;
-  return comparePpwDates(date, contract.startDate, state.ruleset.weeksPerYear) >= 0
-    && comparePpwDates(date, contract.endDate, state.ruleset.weeksPerYear) <= 0;
+  return contractCoversBookedDate(state, contract, date);
 }
 
 function scheduledContractDates(state: WorldState, contractId: Id): number {
@@ -249,11 +249,12 @@ export function assessDetailedShowReservation(
     const committedDates = contract.datesUsed
       + scheduledContractDates(state, contract.id)
       + reservedContractDates(planning, contract.id, reservation.reservationId);
-    if (committedDates >= contract.dateEntitlement) reasons.push("CONTRACT_DATE_EXHAUSTED");
+    if (contract.family !== "EXCLUSIVE" && committedDates >= contract.dateEntitlement) reasons.push("CONTRACT_DATE_EXHAUSTED");
   }
 
   const draft = sourceDraft(planning, reservation);
   if (draft) {
+    if (creativeBlockersForDraft(state, planning, draft).length > 0) reasons.push("CREATIVE_APPROVAL_REQUIRED");
     for (const match of draft.matches) {
       if (match.style === undefined || match.plannedLengthMinutes === null) continue;
       const ids = [...match.sideAIds, ...match.sideBIds];
@@ -549,6 +550,22 @@ export function closeCurrentWeekReservationsAtCommitmentLock(
       "PLANNED_SHOW_RESERVATION_RELEASED_AT_LOCK",
       assessment.reasons,
     );
+    if (assessment.reasons.includes("CREATIVE_APPROVAL_REQUIRED")) {
+      // Existing Routine Continuity can now staff this unprepared show. Keep
+      // the rejected scripted card out of match materialization and leave an
+      // explicit historical notice instead of silently dropping it.
+      new LedgerWriter(state.world.id, state.ledger).append({
+        date: state.world.currentDate,
+        type: "PLANNED_SHOW_CREATIVE_STAFF_FALLBACK",
+        significance: "NOTABLE",
+        entityIds: [reservation.promotionId],
+        payload: {
+          sourceDraftId: reservation.sourceDraftId,
+          reservationId: reservation.reservationId,
+          reason: "contractual creative approval unresolved at commitment lock",
+        },
+      });
+    }
     releasedAtRisk.push(assessment);
   }
   return { ...pass, releasedAtRisk };
@@ -563,6 +580,99 @@ export function closeCurrentWeekReservationsAtLock(
   planning: WorldPlanningState,
 ): ReservationLockClosure {
   return closeCurrentWeekReservationsAtCommitmentLock(state, planning);
+}
+
+/**
+ * An already-materialized show has its own fully committed match card. A
+ * proposed amendment that lacks approval is not a missing show; at lock we
+ * restore its last committed draft/approvals and run that original card.
+ * This runs before final resolution too, covering changes saved between the
+ * 06:00 UTC commitment lock and 08:00 UTC resolution.
+ *
+ * Returns the number of actually withdrawn proposals so the caller can
+ * advance the World revision in the same authoritative transaction.
+ */
+export function discardUnapprovedMaterializedCardAmendmentsAtLock(
+  state: WorldState,
+  planning: WorldPlanningState,
+): number {
+  if (planning.worldId !== state.world.id) throw new Error("card amendment crosses World boundary");
+  const active = planning.pendingCardAmendments ?? [];
+  let discarded = 0;
+  for (const pending of [...active]) {
+    const workspace = planning.workspaces.find((entry) => entry.promotionId === pending.promotionId);
+    const index = workspace?.detailedShowDrafts.findIndex((entry) => entry.draftId === pending.draftId) ?? -1;
+    if (!workspace || index < 0) continue;
+    const draft = workspace.detailedShowDrafts[index]!;
+    if (!samePpwWeek(draft.targetDate, state.world.currentDate)) continue;
+    const event = state.events.find((entry) =>
+      entry.id === pending.eventId && entry.promotionId === pending.promotionId && entry.status === "SCHEDULED");
+    if (!event) continue;
+    // Any outstanding pending snapshot means the amended card was never
+    // applied, even if the contract has changed since it was saved.
+    // Always prefer the last committed card at World Lock.
+    workspace.detailedShowDrafts[index] = structuredClone(pending.committedDraft);
+    planning.creativeConsents = [
+      ...(planning.creativeConsents ?? []).filter((entry) =>
+        entry.promotionId !== pending.promotionId || entry.draftId !== pending.draftId),
+      ...structuredClone(pending.committedConsents),
+    ];
+    planning.pendingCardAmendments = (planning.pendingCardAmendments ?? [])
+      .filter((entry) => entry !== pending);
+    workspace.version += 1;
+    new LedgerWriter(state.world.id, state.ledger).append({
+      date: state.world.currentDate,
+      type: "PLANNED_SHOW_UNAPPROVED_AMENDMENT_IGNORED_AT_LOCK",
+      significance: "NOTABLE",
+      entityIds: [pending.promotionId, pending.eventId],
+      payload: {
+        sourceDraftId: pending.draftId,
+        reason: "unapproved creative amendment discarded; existing committed card retained",
+      },
+    });
+    discarded += 1;
+  }
+  return discarded;
+}
+
+/** Pending protected bookings belonging to a controller's actual due show.
+ * A loose incomplete draft does not hold an entire multiplayer World hostage. */
+export interface DueCreativeApprovalSummary {
+  promotionId: Id;
+  draftId: string;
+  wrestlerNames: string[];
+}
+
+export function unresolvedDueCreativeApprovals(
+  state: WorldState,
+  planning: WorldPlanningState,
+  promotionId: Id,
+): DueCreativeApprovalSummary[] {
+  if (planning.worldId !== state.world.id) throw new Error("creative approval audit crosses World boundary");
+  const workspace = planning.workspaces.find((entry) => entry.promotionId === promotionId);
+  if (!workspace) return [];
+  const due = workspace.detailedShowDrafts.filter((draft) => samePpwWeek(draft.targetDate, state.world.currentDate));
+  const output: DueCreativeApprovalSummary[] = [];
+  for (const draft of due) {
+    const reserved = planning.showReservations.some((entry) =>
+      entry.promotionId === promotionId && entry.sourceDraftId === draft.draftId);
+    const alreadyMaterialized = state.ledger.some((entry) =>
+      entry.type === "PLANNED_SHOW_MATERIALIZED" && entry.entityIds.includes(promotionId)
+      && entry.payload.sourceDraftId === draft.draftId);
+    if (!reserved && !alreadyMaterialized) continue;
+    // A saved but unapproved amendment never replaces the complete live card,
+    // so it must not prevent the controlling promoter from advancing their
+    // already-committed show. The lock reconciler will discard the proposal.
+    if (alreadyMaterialized && !reserved && (planning.pendingCardAmendments ?? []).some((entry) =>
+      entry.promotionId === promotionId && entry.draftId === draft.draftId)) continue;
+    const blockers = creativeBlockersForDraft(state, planning, draft);
+    if (!blockers.length) continue;
+    const wrestlerNames = [...new Set(blockers.map((entry) =>
+      state.people.find((person) => person.id === entry.personId)?.name ?? entry.personId
+    ))].sort();
+    output.push({ promotionId, draftId: draft.draftId, wrestlerNames });
+  }
+  return output.sort((a, b) => a.draftId.localeCompare(b.draftId));
 }
 
 export function reservationAssessmentForDraft(

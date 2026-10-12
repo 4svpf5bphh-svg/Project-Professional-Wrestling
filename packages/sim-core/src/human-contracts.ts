@@ -1,6 +1,7 @@
 import type { ContractOffer, ContractTerms, Id, WorldState } from "../../domain/src/types.js";
 import { comparePpwDates } from "./clock.js";
-import { canAcceptContractTerms, contractOverlaps } from "./contracts.js";
+import { canAcceptContractTerms, canAddLimitedContractDates, contractIsActive, contractOverlaps } from "./contracts.js";
+import { resolvedCreativeControl, validCreativeControl } from "./creative-control.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 
@@ -55,6 +56,9 @@ export function submitHumanContractOffer(state: WorldState, plan: HumanContractO
   requireNonNegativeInteger(plan.appearanceFee, "appearance fee");
   requireNonNegativeInteger(plan.signingBonus, "signing bonus");
   validateContractFamily(plan);
+  if (!validCreativeControl(resolvedCreativeControl(plan.creativeControl))) {
+    throw new Error("unsupported creative control clause");
+  }
 
   if (state.contractOffers.some((offer) => (
     offer.status === "PENDING"
@@ -78,7 +82,7 @@ export function submitHumanContractOffer(state: WorldState, plan: HumanContractO
   }
   const replacingExhausted = Boolean(
     source
-    && source.family !== "ONE_OFF"
+    && source.family === "LIMITED_NON_EXCLUSIVE"
     && source.datesUsed >= source.dateEntitlement
     && contractOverlaps(source, plan, state.ruleset.weeksPerYear)
   );
@@ -104,6 +108,7 @@ export function submitHumanContractOffer(state: WorldState, plan: HumanContractO
     family: plan.family,
     exclusivity: plan.exclusivity,
     roleExpectation: plan.roleExpectation,
+    creativeControl: resolvedCreativeControl(plan.creativeControl),
     startDate: { ...plan.startDate },
     endDate: { ...plan.endDate },
     dateEntitlement: plan.dateEntitlement,
@@ -123,6 +128,7 @@ export function submitHumanContractOffer(state: WorldState, plan: HumanContractO
       family: offer.family,
       exclusivity: offer.exclusivity,
       roleExpectation: offer.roleExpectation,
+      creativeControl: resolvedCreativeControl(offer.creativeControl),
       dateEntitlement: offer.dateEntitlement,
       weeklyGuarantee: offer.weeklyGuarantee,
       appearanceFee: offer.appearanceFee,
@@ -130,5 +136,73 @@ export function submitHumanContractOffer(state: WorldState, plan: HumanContractO
     },
   });
 
+  return offer;
+}
+
+export interface HumanDatesAddendumPlan {
+  promotionId: Id;
+  personId: Id;
+  contractId: Id;
+  additionalDates: number;
+  /** Negotiated one-time extra payment; no change to existing weekly pay. */
+  additionalPayment: number;
+}
+
+/** Propose extra appearances, without issuing a replacement contract. */
+export function submitHumanDatesAddendum(
+  state: WorldState,
+  plan: HumanDatesAddendumPlan,
+): ContractOffer {
+  const promotion = state.promotions.find(entry => entry.id === plan.promotionId);
+  if (!promotion || promotion.controllerType !== "HUMAN"
+    || promotion.lifecycle === "DORMANT" || promotion.lifecycle === "CLOSED") {
+    throw new Error("date-addendum offer requires an active human-controlled promotion");
+  }
+  const person = state.people.find(entry => entry.id === plan.personId);
+  const source = state.contracts.find(entry => entry.id === plan.contractId);
+  if (!person || person.status === "RETIRED"
+    || !source || source.promotionId !== plan.promotionId || source.personId !== plan.personId
+    || !contractIsActive(state, source)) {
+    throw new Error("no active contract for wrestler and promotion");
+  }
+  requireNonNegativeInteger(plan.additionalPayment, "additional payment");
+  const capacity = canAddLimitedContractDates(state, person, source, plan.additionalDates);
+  if (!capacity.ok) throw new Error(capacity.reason ?? "additional dates not possible");
+  if (state.contractOffers.some(offer =>
+    offer.status === "PENDING" && offer.promotionId === plan.promotionId && offer.personId === plan.personId)) {
+    throw new Error("a contract offer for this wrestler is already pending");
+  }
+  const offer: ContractOffer = {
+    id: nextEntityId(state, "contractOffer"),
+    worldId: state.world.id,
+    personId: person.id,
+    promotionId: promotion.id,
+    submittedDate: { ...state.world.currentDate },
+    status: "PENDING",
+    offerKind: "DATES_ADDENDUM",
+    resolvedUtility: null,
+    rejectionReason: null,
+    sourceContractId: source.id,
+    family: source.family,
+    exclusivity: source.exclusivity,
+    roleExpectation: source.roleExpectation,
+    creativeControl: resolvedCreativeControl(source.creativeControl),
+    // The offer stores the proposed *new total*, not extra dates or used dates.
+    startDate: { ...source.startDate },
+    endDate: { ...source.endDate },
+    dateEntitlement: source.dateEntitlement + plan.additionalDates,
+    weeklyGuarantee: source.weeklyGuarantee,
+    appearanceFee: source.appearanceFee,
+    // In an addendum only, this is a one-time incremental payment.
+    signingBonus: plan.additionalPayment,
+  };
+  state.contractOffers.push(offer);
+  new LedgerWriter(state.world.id, state.ledger).append({
+    date: state.world.currentDate,
+    type: "CONTRACT_EXTRA_DATES_PROPOSED",
+    significance: "ROUTINE",
+    entityIds: [offer.id, source.id, person.id, promotion.id],
+    payload: { additionalDates: plan.additionalDates, additionalPayment: plan.additionalPayment },
+  });
   return offer;
 }

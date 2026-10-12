@@ -74,6 +74,42 @@ jobs:
         run: npm run test:web-http
       - name: Run PostgreSQL repository integration tests
         run: npm run test:postgres-repository
+      - name: Audit creative control across paired multi-seed Worlds
+        run: npm run audit:creative
+      - name: Preserve creative control audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: creative-control-multiseed-audit
+          path: artifacts/creative-multiseed-audit.json
+          if-no-files-found: ignore
+      - name: Audit indie affordability and shared-world talent liquidity
+        run: npm run audit:indie-market
+      - name: Preserve indie affordability audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: indie-affordability-market-audit
+          path: artifacts/indie-affordability-market-audit.json
+          if-no-files-found: ignore
+      - name: Audit 26-week player-authored indie operations under World Lock
+        run: npm run audit:human-indie
+      - name: Preserve human-owned indie baseline report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-indie-26week-audit
+          path: artifacts/human-indie-26week-audit.json
+          if-no-files-found: ignore
+      - name: Audit engaged indie contracts and authored cards for 26 weeks
+        run: npm run audit:human-indie-engaged
+      - name: Preserve engaged human indie economy report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: human-indie-engaged-26week-audit
+          path: artifacts/human-indie-engaged-26week-audit.json
+          if-no-files-found: ignore
       - name: Run 10-year standard-seed smoke simulation
         run: npm run sim -- --seed 20261002 --weeks 520
       # Feature branches can opt into the century stress gate by including [long] in the push commit message.

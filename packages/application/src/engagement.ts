@@ -37,13 +37,27 @@ export interface BackstageBookingPromise {
   consequence?: BackstagePromiseConsequence | null;
 }
 
+/** Historical, source-backed response to a player-proposed Programme agreement.
+ * The actual consent always lives in World planning, not the dialogue. */
+export interface BackstageProgrammeCreativeRecord {
+  programmeId: Id;
+  programmeLabel: string;
+  matchType: "SINGLES" | "TAG";
+  permittedOutcome: "WIN_ONLY" | "WIN_OR_PROTECTED_LOSS";
+  expiryDate: PpwDate;
+  approved: boolean;
+  score: number;
+}
+
 export interface BackstageConversation {
   conversationId: string;
   worldId: Id;
   promotionId: Id;
   wrestlerId: Id;
   sourceContractId: Id;
-  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH" | "WORKING_PARTNERSHIP_CONCERN";
+  kind: "ROLE_USAGE_CONCERN" | "TAG_TEAM_PITCH" | "RIVALRY_PITCH" | "TEAM_MOMENT" | "GIMMICK_CHANGE_PITCH" | "WORKING_PARTNERSHIP_CONCERN" | "PROGRAMME_CREATIVE_AGREEMENT";
+  /** Optional immutable evidence from a recorded negotiated Programme decision. */
+  programmeCreative?: BackstageProgrammeCreativeRecord;
   createdDate: PpwDate;
   status: BackstageConversationStatus;
   response: BackstageResponse | null;
@@ -145,9 +159,21 @@ export interface StewardshipExitRequest {
   status: StewardshipExitRequestStatus;
 }
 
+/**
+ * Missed real scheduler dates are not PPW weeks. Pauses use UTC dates and
+ * count only missed days, never the successful recovery cycle itself.
+ * A persisted interval avoids synthetic player activity or catch-up ticks.
+ */
+export interface SchedulerPauseSpan {
+  firstMissedCycleKey: string;
+  lastMissedCycleKey: string;
+}
+
 export interface WorldEngagementState {
   worldId: Id;
   playerActivity: PlayerActivityRecord[];
+  /** Optional for old Worlds; recorded once per skipped scheduler interval. */
+  schedulerPauseSpans?: SchedulerPauseSpan[];
   attentionDismissals: AttentionDismissalRecord[];
   talentWatchlist: TalentWatchRecord[];
   opportunities: OpportunityRecord[];
@@ -195,6 +221,79 @@ function daysBetween(left: string, right: string): number {
   return Math.max(0, Math.floor((rightMs - leftMs) / 86_400_000));
 }
 
+const REAL_DAY_MS = 86_400_000;
+
+function cycleDayNumber(value: string): number {
+  const key = cycleKey(value);
+  if (!key) throw new Error("scheduler pause requires a valid UTC day");
+  return Date.parse(`${key}T00:00:00.000Z`) / REAL_DAY_MS;
+}
+
+/** Return only real calendar days whose scheduled PPW cycle was missed. */
+export function pausedSchedulerDaysBetween(
+  engagement: WorldEngagementState | undefined,
+  rawStartCycleKey: string,
+  rawEndCycleKey: string,
+): number {
+  const start = cycleDayNumber(rawStartCycleKey);
+  const end = cycleDayNumber(rawEndCycleKey);
+  if (end <= start) return 0;
+  let skipped = 0;
+  for (const span of engagement?.schedulerPauseSpans ?? []) {
+    const first = cycleDayNumber(span.firstMissedCycleKey);
+    const last = cycleDayNumber(span.lastMissedCycleKey);
+    if (last < first) throw new Error("invalid persisted scheduler pause interval");
+    skipped += Math.max(0, Math.min(last, end) - Math.max(first, start + 1) + 1);
+  }
+  return Math.min(end - start, skipped);
+}
+
+export function activeSchedulerDaysBetween(
+  engagement: WorldEngagementState | undefined,
+  rawStartCycleKey: string,
+  rawEndCycleKey: string,
+): number {
+  return Math.max(0, daysBetween(rawStartCycleKey, rawEndCycleKey)
+    - pausedSchedulerDaysBetween(engagement, rawStartCycleKey, rawEndCycleKey));
+}
+
+/**
+ * Called by the scheduled resolver before inactivity evaluation, in the same
+ * World transaction. No gap is inferred for an initial World without a
+ * previously resolved real cycle.
+ */
+export function recordMissedSchedulerCycles(
+  engagement: WorldEngagementState,
+  previousResolvedCycleKey: string | null,
+  currentCycleKey: string,
+): number {
+  const current = cycleDayNumber(currentCycleKey);
+  if (previousResolvedCycleKey === null) return 0;
+  const previous = cycleDayNumber(previousResolvedCycleKey);
+  if (current <= previous + 1) return 0;
+  const first = previous + 1;
+  const last = current - 1;
+  const key = (day: number) => new Date(day * REAL_DAY_MS).toISOString().slice(0, 10);
+  engagement.schedulerPauseSpans ??= [];
+  // The same interrupted World cycle may be retried following a transaction
+  // conflict or a durable lock recovery. Never double-credit paused days.
+  const existing = engagement.schedulerPauseSpans.some((span) =>
+    cycleDayNumber(span.firstMissedCycleKey) <= first
+    && cycleDayNumber(span.lastMissedCycleKey) >= last);
+  if (existing) return 0;
+  for (const span of engagement.schedulerPauseSpans) {
+    if (cycleDayNumber(span.firstMissedCycleKey) <= last
+      && cycleDayNumber(span.lastMissedCycleKey) >= first) {
+      throw new Error("overlapping scheduler pause intervals require reconciliation");
+    }
+  }
+  engagement.schedulerPauseSpans.push({
+    firstMissedCycleKey: key(first),
+    lastMissedCycleKey: key(last),
+  });
+  return last - first + 1;
+}
+
 function validatedThresholds(input: InactivityThresholds): InactivityThresholds {
   if (!Number.isSafeInteger(input.warningAfterDays) || input.warningAfterDays < 1) {
     throw new Error("warningAfterDays must be a positive integer");
@@ -209,6 +308,7 @@ export function createWorldEngagementState(worldId: Id): WorldEngagementState {
   return {
     worldId,
     playerActivity: [],
+    schedulerPauseSpans: [],
     attentionDismissals: [],
     talentWatchlist: [],
     opportunities: [],
@@ -226,6 +326,7 @@ export function normalizeWorldEngagementState(
   if (input.worldId !== worldId) throw new Error("engagement state crosses World boundary");
   return {
     worldId,
+    schedulerPauseSpans: (input.schedulerPauseSpans ?? []).map((span) => ({ ...span })),
     playerActivity: (input.playerActivity ?? []).map((record) => ({
       ...record,
       lastActivePpwDate: cloneDate(record.lastActivePpwDate),
@@ -260,6 +361,10 @@ export function normalizeWorldEngagementState(
     })),
     backstageConversations: (input.backstageConversations ?? []).map((record) => ({
       ...record,
+      programmeCreative: record.programmeCreative ? {
+        ...record.programmeCreative,
+        expiryDate: cloneDate(record.programmeCreative.expiryDate),
+      } : undefined,
       createdDate: cloneDate(record.createdDate),
       responseDate: record.responseDate ? cloneDate(record.responseDate) : null,
       creativeBaseline: record.creativeBaseline ? {
@@ -345,7 +450,7 @@ export function evaluatePlayerInactivity(
   const record = engagement.playerActivity.find((candidate) => candidate.playerId === normalizedPlayerId);
   if (!record || record.lastActiveCycleKey === null) return "ACTIVE";
 
-  const inactiveDays = daysBetween(record.lastActiveCycleKey, currentCycleKey);
+  const inactiveDays = activeSchedulerDaysBetween(engagement, record.lastActiveCycleKey, currentCycleKey);
   const nextStatus: PlayerActivityStatus = inactiveDays >= checkedThresholds.stewardshipAfterDays
     ? "STEWARDED"
     : inactiveDays >= checkedThresholds.warningAfterDays
@@ -499,7 +604,8 @@ export function openBackstageConversation(
   if (engagement.backstageConversations.some((entry) => entry.conversationId === conversationId)) {
     throw new Error("Backstage conversation already exists");
   }
-  const informational = conversation.kind === "TEAM_MOMENT";
+  const informational = conversation.kind === "TEAM_MOMENT"
+    || conversation.kind === "PROGRAMME_CREATIVE_AGREEMENT";
   if (conversation.status !== (informational ? "NOTED" : "OPEN")
     || conversation.response !== null || conversation.responseDate !== null) {
     throw new Error("new Backstage item has an invalid initial lifecycle");
@@ -528,6 +634,17 @@ export function openBackstageConversation(
       || typeof conversation.professionalTrustAtPitch !== "number"
       || conversation.professionalTrustAtPitch < 60 || conversation.professionalTrustAtPitch > 100) {
       throw new Error("Backstage rivalry pitch requires verified match and trust evidence");
+    }
+  } else if (conversation.kind === "PROGRAMME_CREATIVE_AGREEMENT") {
+    const terms = conversation.programmeCreative;
+    if (conversation.promisedRole !== null || !terms
+      || !terms.programmeId || !terms.programmeLabel
+      || !["SINGLES", "TAG"].includes(terms.matchType)
+      || !["WIN_ONLY", "WIN_OR_PROTECTED_LOSS"].includes(terms.permittedOutcome)
+      || typeof terms.approved !== "boolean"
+      || !Number.isFinite(terms.score) || terms.score < 0 || terms.score > 100
+      || !terms.expiryDate || !Number.isInteger(terms.expiryDate.week)) {
+      throw new Error("Backstage Programme history requires an actual negotiated decision");
     }
   } else if (conversation.kind === "TEAM_MOMENT") {
     if (conversation.promisedRole !== null || !conversation.partnerPersonId

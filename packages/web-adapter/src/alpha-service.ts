@@ -24,6 +24,8 @@ import {
   incrementWorldRevision,
   lockPersistedWorldForResolution,
   materializePersistedCurrentWeekReservations,
+  unresolvedDueCreativeApprovals,
+  currentWeekShowCommitmentsLocked,
   reserveDetailedShowDraftCommand,
   resolvePersistedWorldWeek,
   upsertDetailedShowDraftCommand,
@@ -463,6 +465,19 @@ export async function advanceAlphaWorldWeek(
     );
   }
 
+  // A player pressing Advance Week must see *their own* unresolved
+  // wrestler permissions before any manual materialization mutates this World.
+  // This does not impose a global blocking veto on other controllers or the
+  // scheduled multiplayer tick.
+  if (!currentWeekShowCommitmentsLocked(before.runtime, before.state)) {
+    const unresolved = unresolvedDueCreativeApprovals(
+      before.state, before.planning, control.promotionId,
+    );
+    if (unresolved.length > 0) {
+      const names = [...new Set(unresolved.flatMap((entry) => entry.wrestlerNames))].slice(0, 4).join(", ");
+      throw new Error(`Creative approval required before advancing: ${names}. Open your Show Card to request approval or revise the finish. Scheduled World progression remains unaffected.`);
+    }
+  }
   const materialized = await materializePersistedCurrentWeekReservations(
     repository,
     worldId,
@@ -472,6 +487,8 @@ export async function advanceAlphaWorldWeek(
     repository,
     worldId,
     materialized.revision,
+    null,
+    control.promotionId,
   );
   await resolvePersistedWorldWeek(repository, worldId, lockedRevision);
   return loadAlphaPlayerSession(repository, worldId, playerId);

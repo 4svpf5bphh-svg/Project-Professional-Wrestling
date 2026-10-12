@@ -14,7 +14,7 @@ import {
   recordFinancialTransaction,
   weeksBetween,
 } from "../../sim-core/src/index.js";
-import { activityForPlayer } from "./engagement.js";
+import { activityForPlayer, activeSchedulerDaysBetween } from "./engagement.js";
 import { activePromotionControls } from "./ownership.js";
 import { executeAgreedStewardshipRelease } from "./stewardship-release.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
@@ -171,7 +171,7 @@ function sourceContext(
     throw new Error("cannot execute rival buyout while the source contract has committed materialized appearances");
   }
 
-  const noticeDaysElapsed = daysBetween(requireCycleKey(request.requestedCycleKey), currentCycleKey);
+  const noticeDaysElapsed = activeSchedulerDaysBetween(aggregate.engagement, requireCycleKey(request.requestedCycleKey), currentCycleKey);
   if (noticeDaysElapsed < STEWARDSHIP_BUYOUT_NOTICE_DAYS) {
     throw new Error(`rival buyout notice period has ${STEWARDSHIP_BUYOUT_NOTICE_DAYS - noticeDaysElapsed} day(s) remaining`);
   }

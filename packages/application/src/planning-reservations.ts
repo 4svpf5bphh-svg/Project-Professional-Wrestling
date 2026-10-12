@@ -6,7 +6,7 @@ import type {
   Promotion,
   WorldState,
 } from "../../domain/src/types.js";
-import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import {
   promotionShowSeriesById,
   promotionShowSeriesDueForDate,
@@ -14,7 +14,7 @@ import {
   type PromotionShowSlot,
 } from "../../sim-core/src/show-calendar.js";
 import { maxShowParticipantsForEventType } from "./show-capacity.js";
-import { serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
+import { contractCoversBookedDate, serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
 import {
   validateDetailedShowDraft,
   type DetailedShowReservation,
@@ -36,9 +36,7 @@ function reservationIdFor(promotionId: Id, draftId: string): string {
 }
 
 function contractCoversDate(state: WorldState, contract: Contract, date: PpwDate): boolean {
-  if (contract.status !== "SIGNED") return false;
-  return comparePpwDates(date, contract.startDate, state.ruleset.weeksPerYear) >= 0
-    && comparePpwDates(date, contract.endDate, state.ruleset.weeksPerYear) <= 0;
+  return contractCoversBookedDate(state, contract, date);
 }
 
 function scheduledContractDates(state: WorldState, contractId: Id): number {
@@ -77,11 +75,63 @@ function chooseFutureContract(
     .map((contract) => {
       const alreadyCommitted = contract.datesUsed + scheduledContractDates(state, contract.id)
         + reservedContractDates(planning, contract.id, excludingReservationId);
-      return { contract, remaining: contract.dateEntitlement - alreadyCommitted };
+      return { contract, remaining: contract.family === "EXCLUSIVE" ? Number.MAX_SAFE_INTEGER : contract.dateEntitlement - alreadyCommitted };
     })
     .filter((entry) => entry.remaining > 0)
     .sort((a, b) => a.remaining - b.remaining || a.contract.id.localeCompare(b.contract.id));
   return candidates[0]?.contract ?? null;
+}
+
+/**
+ * Read-only preview of one wrestler's ability to accept a new show booking.
+ * Reuse this in roster/planner projections AND in authoritative reservation
+ * validation so "dates purchased" cannot be mistaken for available days.
+ * It excludes the caller's own reservation when refreshing that exact show.
+ */
+export function assessPersonShowDateAvailability(
+  state: WorldState,
+  planning: WorldPlanningState,
+  promotionId: Id,
+  personId: Id,
+  date: PpwDate,
+  excludingReservationId = "",
+): { contractId: Id | null; reason: string | null } {
+  const person = state.people.find((candidate) => candidate.id === personId);
+  if (!person) return { contractId: null, reason: `unknown wrestler ${personId}` };
+  if (person.status !== "ACTIVE") {
+    return { contractId: null, reason: `${person.name} is not currently available to reserve` };
+  }
+  const alreadySameDay = state.scheduledAppearances.some((appearance) => (
+    appearance.personId === personId
+    && appearance.status !== "CANCELLED"
+    && samePpwDate(appearance.date, date)
+  )) || planning.showReservations.some((reservation) => (
+    reservation.reservationId !== excludingReservationId
+    && samePpwDate(reservation.targetDate, date)
+    && reservation.participants.some((participant) => participant.personId === personId)
+  ));
+  if (alreadySameDay) return { contractId: null, reason: `${person.name} is already committed on that PPW day` };
+
+  const capacity = Math.max(1, Math.floor(serviceCapacityDatesPerWeek(person)));
+  const scheduledThisWeek = state.scheduledAppearances.filter((appearance) => (
+    appearance.personId === personId
+    && appearance.status !== "CANCELLED"
+    && samePpwWeek(appearance.date, date)
+  )).length;
+  const reservedThisWeek = planning.showReservations.filter((reservation) => (
+    reservation.reservationId !== excludingReservationId && samePpwWeek(reservation.targetDate, date)
+  )).reduce(
+    (count, reservation) => count + (reservation.participants.some((participant) => participant.personId === personId) ? 1 : 0),
+    0,
+  );
+  if (scheduledThisWeek + reservedThisWeek >= capacity) {
+    return { contractId: null, reason: `${person.name} has no Service Capacity remaining in that PPW week` };
+  }
+  const contract = chooseFutureContract(state, planning, promotionId, person, date, excludingReservationId);
+  if (!contract) {
+    return { contractId: null, reason: `${person.name} has no unreserved contract date covering the planned show` };
+  }
+  return { contractId: contract.id, reason: null };
 }
 
 function requireWorkspace(
@@ -172,40 +222,15 @@ function validateScarceResources(
 
   const selected: ReservedShowParticipant[] = [];
   for (const personId of participantIds) {
-    const person = state.people.find((candidate) => candidate.id === personId);
-    if (!person) throw new Error(`unknown wrestler ${personId}`);
-    if (person.status !== "ACTIVE") throw new Error(`${person.name} is not currently available to reserve`);
-
-    const alreadySameDay = state.scheduledAppearances.some((appearance) => (
-      appearance.personId === personId
-      && appearance.status !== "CANCELLED"
-      && samePpwDate(appearance.date, date)
-    )) || planning.showReservations.some((reservation) => (
-      reservation.reservationId !== reservationId
-      && samePpwDate(reservation.targetDate, date)
-      && reservation.participants.some((participant) => participant.personId === personId)
-    ));
-    if (alreadySameDay) throw new Error(`${person.name} is already committed on that PPW day`);
-
-    const capacity = Math.max(1, Math.floor(serviceCapacityDatesPerWeek(person)));
-    const scheduledThisWeek = state.scheduledAppearances.filter((appearance) => (
-      appearance.personId === personId
-      && appearance.status !== "CANCELLED"
-      && samePpwWeek(appearance.date, date)
-    )).length;
-    const reservedThisWeek = planning.showReservations.filter((reservation) => (
-      reservation.reservationId !== reservationId && samePpwWeek(reservation.targetDate, date)
-    )).reduce(
-      (count, reservation) => count + (reservation.participants.some((participant) => participant.personId === personId) ? 1 : 0),
-      0,
+    const result = assessPersonShowDateAvailability(
+      state, planning, promotion.id, personId, date, reservationId,
     );
-    if (scheduledThisWeek + reservedThisWeek >= capacity) {
-      throw new Error(`${person.name} has no Service Capacity remaining in that PPW week`);
-    }
-
-    const contract = chooseFutureContract(state, planning, promotion.id, person, date, reservationId);
-    if (!contract) throw new Error(`${person.name} has no unreserved contract date covering the planned show`);
-    selected.push({ personId, contractId: contract.id, serviceCapacityAtReservation: capacity });
+    if (!result.contractId) throw new Error(result.reason ?? `cannot book ${personId}`);
+    const person = state.people.find((candidate) => candidate.id === personId)!;
+    selected.push({
+      personId, contractId: result.contractId,
+      serviceCapacityAtReservation: Math.max(1, Math.floor(serviceCapacityDatesPerWeek(person))),
+    });
   }
   return selected;
 }

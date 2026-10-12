@@ -12,10 +12,12 @@ import type {
   WorldState,
 } from "../../domain/src/types.js";
 import { addPpwWeeks, comparePpwDates, ppwDateToWeekIndex, weeksBetween } from "./clock.js";
+export { contractCoversBookedDate } from "./contract-calendar.js";
 import { recordFinancialTransaction } from "./transactions.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { contractsEndingInWeek, contractsForPerson, contractsForPromotion } from "./indexes.js";
+import { credibleCreativeControlOfferBonus, resolvedCreativeControl, suggestedAiCreativeControl } from "./creative-control.js";
 import { DeterministicRng, deterministicSeedFromText } from "./rng.js";
 
 const ROLE_VALUE: Record<RoleExpectation, number> = {
@@ -52,6 +54,13 @@ export function defaultPromotionContractPolicy(tier: PromotionTier): PromotionCo
 
 export function promotionContractPolicy(promotion: Promotion): PromotionContractPolicy {
   return promotion.contractPolicy ?? defaultPromotionContractPolicy(promotion.tier);
+}
+
+/** Exclusive employment grants appearances throughout the term, subject to capacity,
+ * fitness and show scheduling. dateEntitlement on exclusive records is retained
+ * for historic snapshot compatibility, not enforced as a booking cap. */
+export function contractHasAppearanceRights(contract: Pick<Contract, "family" | "dateEntitlement" | "datesUsed">): boolean {
+  return contract.family === "EXCLUSIVE" || contract.datesUsed < contract.dateEntitlement;
 }
 
 export function contractIsActive(state: WorldState, contract: Contract): boolean {
@@ -156,6 +165,17 @@ export function marketWeeklyValue(person: Person): number {
   return Math.round((500 + person.recognition * 50 + person.popularity * 30 + averageSkill * 25) * stageMultiplier);
 }
 
+/**
+ * A full-term exclusive removes a scarce wrestler from every competing
+ * promotion's contract market. It must fund real ongoing employment,
+ * even when the promotion never books an appearance. This is deliberately
+ * BELOW the normal AI exclusive wage (around full market value), leaving
+ * room for legitimate small-promotion negotiation without free warehousing.
+ */
+export function minimumExclusiveWeeklyGuarantee(person: Person): number {
+  return Math.max(1, Math.ceil(marketWeeklyValue(person) * 0.5));
+}
+
 export function serviceCapacityDatesPerWeek(person: Person): number {
   const stageBase = person.careerStage === "PRIME" ? 1.9
     : person.careerStage === "PROSPECT" ? 1.55
@@ -168,7 +188,32 @@ export function serviceCapacityDatesPerWeek(person: Person): number {
 
 function contractDensity(terms: ContractTerms, weeksPerYear: number): number {
   const termWeeks = Math.max(1, weeksBetween(terms.startDate, terms.endDate, weeksPerYear) + 1);
-  return terms.dateEntitlement / termWeeks;
+  // Exclusive workers cannot take overlapping agreements; this is a
+  // representative booking load, never a purchased appearance cap.
+  return terms.family === "EXCLUSIVE" ? 1 : terms.dateEntitlement / termWeeks;
+}
+
+/**
+ * Admission estimates FUTURE workload, not the original purchase.
+ *
+ * Paid dates already used on an otherwise still-signed non-exclusive
+ * agreement cannot block new employment with another promotion. The
+ * remaining commitment is spread across the remaining eligible weeks:
+ * using dates early therefore frees capacity, whereas holding unused
+ * dates until near expiry increases the remaining weekly obligation.
+ *
+ * Exclusives still reserve the entire term regardless of appearances
+ * used; real show-day/weekly scheduling remains independently guarded.
+ */
+function remainingSignedServiceDensity(state: WorldState, contract: Contract): number {
+  if (contract.family === "EXCLUSIVE") return 1;
+  const remaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
+  if (remaining === 0) return 0;
+  const from = comparePpwDates(contract.startDate, state.world.currentDate, state.ruleset.weeksPerYear) > 0
+    ? contract.startDate
+    : state.world.currentDate;
+  const remainingWeeks = Math.max(1, weeksBetween(from, contract.endDate, state.ruleset.weeksPerYear) + 1);
+  return remaining / remainingWeeks;
 }
 
 export function canAcceptContractTerms(
@@ -177,6 +222,14 @@ export function canAcceptContractTerms(
   terms: ContractTerms,
   options: { ignoreContractId?: Id | null } = {},
 ): { ok: boolean; reason: string | null } {
+  if (terms.family === "EXCLUSIVE") {
+    if (terms.appearanceFee !== 0) {
+      return { ok: false, reason: "exclusive agreements include unlimited appearances; use a guaranteed weekly salary, not an appearance fee" };
+    }
+    if (terms.weeklyGuarantee < minimumExclusiveWeeklyGuarantee(person)) {
+      return { ok: false, reason: `exclusive agreement requires a weekly guarantee of at least ${minimumExclusiveWeeklyGuarantee(person)}` };
+    }
+  }
   const signed = contractsForPerson(state, person.id).filter((contract) => (
     contract.status === "SIGNED"
     && contract.id !== (options.ignoreContractId ?? null)
@@ -188,10 +241,46 @@ export function canAcceptContractTerms(
   if (terms.exclusivity !== "EXCLUSIVE" && signed.some((contract) => contract.exclusivity === "EXCLUSIVE")) {
     return { ok: false, reason: "existing exclusive contract blocks outside work" };
   }
-  const currentDensity = signed.reduce((sum, contract) => sum + contractDensity(contract, state.ruleset.weeksPerYear), 0);
+  const currentDensity = signed.reduce((sum, contract) => sum + remainingSignedServiceDensity(state, contract), 0);
   const proposedDensity = contractDensity(terms, state.ruleset.weeksPerYear);
   if (currentDensity + proposedDensity > serviceCapacityDatesPerWeek(person) + 0.001) {
     return { ok: false, reason: "service capacity exceeded" };
+  }
+  return { ok: true, reason: null };
+}
+
+/**
+ * An addendum purchases more appearances on an existing limited/non-exclusive
+ * agreement. It never changes the original end date, salary or exclusivity.
+ * This is intentionally a stricter *remaining-term* capacity check, not a
+ * second overlapping contract with a new service-capacity allocation.
+ */
+export function canAddLimitedContractDates(
+  state: WorldState,
+  person: Person,
+  source: Contract,
+  extraDates: number,
+): { ok: boolean; reason: string | null } {
+  if (source.personId !== person.id || !contractIsActive(state, source)
+    || source.family !== "LIMITED_NON_EXCLUSIVE" || source.exclusivity !== "NON_EXCLUSIVE") {
+    return { ok: false, reason: "only an active limited non-exclusive contract can add dates" };
+  }
+  if (!Number.isSafeInteger(extraDates) || extraDates <= 0 || extraDates > 104
+    || !Number.isSafeInteger(source.dateEntitlement + extraDates)) {
+    return { ok: false, reason: "additional dates must be between 1 and 104" };
+  }
+  const weeksRemaining = Math.max(1, weeksBetween(state.world.currentDate, source.endDate, state.ruleset.weeksPerYear) + 1);
+  const unused = Math.max(0, source.dateEntitlement - source.datesUsed);
+  const others = contractsForPerson(state, person.id).filter(contract =>
+    contract.id !== source.id && contract.status === "SIGNED"
+      && contractOverlaps(contract, { startDate: state.world.currentDate, endDate: source.endDate }, state.ruleset.weeksPerYear));
+  if (others.some(contract => contract.exclusivity === "EXCLUSIVE")) {
+    return { ok: false, reason: "overlapping exclusive contract blocks additional dates" };
+  }
+  const committedDensity = others.reduce((sum, contract) => sum + remainingSignedServiceDensity(state, contract), 0);
+  const availableDensity = Math.max(1, serviceCapacityDatesPerWeek(person));
+  if (committedDensity + (unused + extraDates) / weeksRemaining > availableDensity + 0.001) {
+    return { ok: false, reason: "additional dates exceed remaining-term service capacity" };
   }
   return { ok: true, reason: null };
 }
@@ -238,7 +327,8 @@ export function buildContractTerms(
       roleExpectation,
       startDate: { ...startDate },
       endDate: addPpwWeeks(startDate, termWeeks - 1, state.ruleset.weeksPerYear),
-      dateEntitlement: Math.max(12, Math.round(termWeeks * rng.float(0.5, 0.7))),
+      // Compatibility-only field: exclusive booking is not limited by this value.
+      dateEntitlement: termWeeks,
       weeklyGuarantee: Math.round(market * rng.float(1.0, 1.25) * generosity),
       appearanceFee: 0,
       signingBonus: Math.round(market * rng.float(3, 8) * generosity),
@@ -287,6 +377,7 @@ export function createSignedContract(state: WorldState, person: Person, promotio
     family: terms.family,
     exclusivity: terms.exclusivity,
     roleExpectation: terms.roleExpectation,
+    ...(resolvedCreativeControl(terms.creativeControl) === "NONE" ? {} : { creativeControl: terms.creativeControl }),
     startDate: { ...terms.startDate },
     endDate: { ...terms.endDate },
     dateEntitlement: terms.dateEntitlement,
@@ -309,6 +400,7 @@ export function createSignedContract(state: WorldState, person: Person, promotio
       payload: {
         family: terms.family,
         exclusivity: terms.exclusivity,
+        ...(resolvedCreativeControl(terms.creativeControl) === "NONE" ? {} : { creativeControl: resolvedCreativeControl(terms.creativeControl) }),
         dates: terms.dateEntitlement,
         weeklyGuarantee: terms.weeklyGuarantee,
       },
@@ -374,6 +466,10 @@ function offerSeed(state: WorldState, promotion: Promotion, person: Person, salt
 function createOffer(state: WorldState, promotion: Promotion, person: Person, offerKind: "RECRUITMENT" | "RENEWAL", startDate: typeof state.world.currentDate): ContractOffer {
   const rng = new DeterministicRng(offerSeed(state, promotion, person, offerKind));
   const terms = buildContractTerms(state, promotion, person, rng, startDate);
+  // AI wrestlers negotiate protections through the same acceptance engine as
+  // human offers. Rights carry real future booking constraints, not a free
+  // morale or competitive rating modifier. Distressed companies stay cautious.
+  const creativeControl = suggestedAiCreativeControl(person, promotion, terms);
   const offer: ContractOffer = {
     id: nextEntityId(state, "contractOffer"),
     worldId: state.world.id,
@@ -385,6 +481,7 @@ function createOffer(state: WorldState, promotion: Promotion, person: Person, of
     resolvedUtility: null,
     rejectionReason: null,
     ...terms,
+    ...(creativeControl === "NONE" ? {} : { creativeControl }),
   };
   state.contractOffers.push(offer);
   return offer;
@@ -487,6 +584,22 @@ export function generateAiContractOffers(state: WorldState): void {
   }
 }
 
+/** A date addendum does not replace, renew or otherwise rewrite its parent deal. */
+function datesAddendumSource(state: WorldState, offer: ContractOffer): Contract | null {
+  if (offer.offerKind !== "DATES_ADDENDUM" || !offer.sourceContractId) return null;
+  const source = state.contracts.find(c => c.id === offer.sourceContractId);
+  if (!source || !contractIsActive(state, source)
+    || source.personId !== offer.personId || source.promotionId !== offer.promotionId
+    || source.family !== "LIMITED_NON_EXCLUSIVE"
+    || offer.family !== source.family || offer.exclusivity !== source.exclusivity
+    || offer.roleExpectation !== source.roleExpectation
+    || resolvedCreativeControl(offer.creativeControl) !== resolvedCreativeControl(source.creativeControl)
+    || offer.weeklyGuarantee !== source.weeklyGuarantee || offer.appearanceFee !== source.appearanceFee
+    || comparePpwDates(offer.endDate, source.endDate, state.ruleset.weeksPerYear) !== 0
+    || offer.dateEntitlement <= source.dateEntitlement) return null;
+  return source;
+}
+
 function exhaustedReplacementSource(state: WorldState, offer: ContractOffer): Contract | null {
   const sourceContractId = offer.sourceContractId ?? null;
   if (!sourceContractId) return null;
@@ -496,7 +609,7 @@ function exhaustedReplacementSource(state: WorldState, offer: ContractOffer): Co
     source.status !== "SIGNED"
     || source.personId !== offer.personId
     || source.promotionId !== offer.promotionId
-    || source.family === "ONE_OFF"
+    || source.family !== "LIMITED_NON_EXCLUSIVE"
     || source.datesUsed < source.dateEntitlement
   ) return null;
   return source;
@@ -504,6 +617,26 @@ function exhaustedReplacementSource(state: WorldState, offer: ContractOffer): Co
 
 function acceptContractOffer(state: WorldState, person: Person, offer: ContractOffer): void {
   const promotion = state.promotions.find((candidate) => candidate.id === offer.promotionId)!;
+  if (offer.offerKind === "DATES_ADDENDUM") {
+    const source = datesAddendumSource(state, offer);
+    if (!source) throw new Error("date addendum no longer matches an active contract");
+    const additionalDates = offer.dateEntitlement - source.dateEntitlement;
+    source.dateEntitlement = offer.dateEntitlement;
+    // The extra consideration is a new ledger transaction, NOT a new contract
+    // or a rewrite of the original signing bonus or recurring guarantee.
+    if (offer.signingBonus > 0) {
+      recordFinancialTransaction(state, promotion, "CONTRACT_SIGNING_BONUS", -offer.signingBonus, offer.id);
+    }
+    new LedgerWriter(state.world.id, state.ledger).append({
+      date: state.world.currentDate,
+      type: "CONTRACT_EXTRA_DATES_ACCEPTED",
+      significance: "ROUTINE",
+      entityIds: [offer.id, source.id, person.id, promotion.id],
+      payload: { additionalDates, newTotalDates: source.dateEntitlement, additionalPayment: offer.signingBonus },
+    });
+    offer.status = "ACCEPTED";
+    return;
+  }
   const source = exhaustedReplacementSource(state, offer);
   if (source) {
     source.status = "TERMINATED";
@@ -525,7 +658,11 @@ function acceptContractOffer(state: WorldState, person: Person, offer: ContractO
 
 function weeklyEquivalent(offer: ContractOffer, state: WorldState): number {
   const termWeeks = Math.max(1, weeksBetween(offer.startDate, offer.endDate, state.ruleset.weeksPerYear) + 1);
-  return offer.weeklyGuarantee + offer.signingBonus / termWeeks + offer.appearanceFee * offer.dateEntitlement / termWeeks;
+  // Exclusives do not purchase individual dates. The legacy numeric
+  // entitlement must never create phantom appearance-fee value, especially
+  // when evaluating migrated pending offers with non-standard terms.
+  return offer.weeklyGuarantee + offer.signingBonus / termWeeks
+    + (offer.family === "EXCLUSIVE" ? 0 : offer.appearanceFee * offer.dateEntitlement / termWeeks);
 }
 
 function relationshipLoyaltyScore(state: WorldState, person: Person, promotion: Promotion): number {
@@ -594,12 +731,24 @@ export function evaluateContractOffer(state: WorldState, offer: ContractOffer): 
   if (!person || !promotion) return 0;
 
   const market = Math.max(1, marketWeeklyValue(person));
-  const moneyScore = Math.max(0, Math.min(100, 50 + ((weeklyEquivalent(offer, state) - market * 0.7) / market) * 65));
+  const addendum = offer.offerKind === "DATES_ADDENDUM" ? datesAddendumSource(state, offer) : null;
+  if (offer.offerKind === "DATES_ADDENDUM" && !addendum) return 0;
+  const extraDates = addendum ? offer.dateEntitlement - addendum.dateEntitlement : 0;
+  const offeredPerDate = addendum ? addendum.appearanceFee + offer.signingBonus / extraDates : 0;
+  const moneyScore = Math.max(0, Math.min(100,
+    addendum
+      ? 50 + ((offeredPerDate - market * 0.8) / market) * 65
+      : 50 + ((weeklyEquivalent(offer, state) - market * 0.7) / market) * 65,
+  ));
   const roleScore = ROLE_VALUE[offer.roleExpectation];
   const prestigeScore = TIER_PRESTIGE[promotion.tier];
   const termWeeks = Math.max(1, weeksBetween(offer.startDate, offer.endDate, state.ruleset.weeksPerYear) + 1);
-  const density = offer.dateEntitlement / termWeeks;
-  const scheduleScore = Math.max(10, Math.min(100, 92 - density * 35 - (offer.exclusivity === "EXCLUSIVE" ? 18 : 0)));
+  const density = addendum
+    ? extraDates / Math.max(1, weeksBetween(state.world.currentDate, addendum.endDate, state.ruleset.weeksPerYear) + 1)
+    : contractDensity(offer, state.ruleset.weeksPerYear);
+  const scheduleScore = Math.max(10, Math.min(100,
+    92 - density * (addendum ? 55 : 35) - (offer.exclusivity === "EXCLUSIVE" ? 18 : 0),
+  ));
   const loyaltyScore = relationshipLoyaltyScore(state, person, promotion);
   const exposureScore = promotion.mediaReach;
   const priorities = person.priorities;
@@ -613,7 +762,10 @@ export function evaluateContractOffer(state: WorldState, offer: ContractOffer): 
     + exposureScore * priorities.exposure
   ) / weightTotal;
   const uncertaintyRng = new DeterministicRng(deterministicSeedFromText(`${state.world.seed}:${offer.id}:utility`));
-  return Math.round((raw + uncertaintyRng.float(-3, 3)) * 10) / 10;
+  const benefit = addendum ? 0 : credibleCreativeControlOfferBonus(
+    person, offer.creativeControl, moneyScore, offer.family, termWeeks,
+  );
+  return Math.round((raw + benefit + uncertaintyRng.float(-3, 3)) * 10) / 10;
 }
 
 export function resolveContractOffers(state: WorldState): void {
@@ -664,6 +816,22 @@ export function resolveContractOffers(state: WorldState): void {
       if ((offer.resolvedUtility ?? 0) < state.ruleset.offerAcceptanceThreshold) {
         offer.status = "REJECTED";
         offer.rejectionReason = "offer utility below acceptance threshold";
+        continue;
+      }
+      if (offer.offerKind === "DATES_ADDENDUM") {
+        const source = datesAddendumSource(state, offer);
+        if (!source) {
+          offer.status = "REJECTED";
+          offer.rejectionReason = "date addendum no longer matches a live agreement";
+          continue;
+        }
+        const capacity = canAddLimitedContractDates(state, person, source, offer.dateEntitlement - source.dateEntitlement);
+        if (!capacity.ok) {
+          offer.status = "REJECTED";
+          offer.rejectionReason = capacity.reason;
+          continue;
+        }
+        acceptContractOffer(state, person, offer);
         continue;
       }
       const source = exhaustedReplacementSource(state, offer);

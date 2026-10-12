@@ -7,6 +7,7 @@ import {
   createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  playerShowPlanningStatus,
   releaseDetailedShowReservationCommand,
   reservationForDraft,
   reserveDetailedShowDraftCommand,
@@ -166,6 +167,38 @@ function reserve(
   });
 }
 
+test("unrelated show edits do not stale a reservation, while its own logistics edits require refresh", () => {
+  const f = fixture(16015);
+  const date = commonRequiredDate(f, 6);
+  const first = draftFor(f, f.promotionA.id, date, "stable-flagship");
+  saveDraft(f, "player-a", f.promotionA.id, "stable-save-first", 0, first);
+  reserve(f, "player-a", f.promotionA.id, "stable-reserve-first", 1, first.draftId);
+  const initially = playerShowPlanningStatus(
+    f.state, f.planning, f.runtime, f.promotionA.id, first.draftId);
+  ok(initially.reservationId !== null && !initially.workspaceChangedSinceReservation,
+    "initially reserved flagship reports a modified reservation");
+
+  const otherDate = addPpwWeeks(date, 1, f.state.ruleset.weeksPerYear);
+  const unrelated = draftFor(f, f.promotionA.id, otherDate, "future-unrelated");
+  saveDraft(f, "player-a", f.promotionA.id, "stable-save-unrelated", 1, unrelated);
+  const afterOther = playerShowPlanningStatus(
+    f.state, f.planning, f.runtime, f.promotionA.id, first.draftId);
+  ok(afterOther.reservationId === initially.reservationId
+    && !afterOther.workspaceChangedSinceReservation
+    && afterOther.readiness !== "RESERVATION_DUE",
+    "editing another show made this signed wrestler/venue reservation stale");
+
+  const venue = venuePair(f).second;
+  saveDraft(f, "player-a", f.promotionA.id, "stable-save-first-change", 2, {
+    ...first, marketId: venue.marketId, venueId: venue.id,
+  });
+  const afterOwnChange = playerShowPlanningStatus(
+    f.state, f.planning, f.runtime, f.promotionA.id, first.draftId);
+  ok(afterOwnChange.workspaceChangedSinceReservation
+    && afterOwnChange.readiness === "RESERVATION_DUE",
+    "editing this reserved show's venue did not require authoritative re-reservation");
+});
+
 test("reserving a detailed show commits scarce resources without creating simulation entities", () => {
   const f = fixture(16001);
   const date = commonRequiredDate(f);
@@ -218,6 +251,78 @@ test("first committed reservation wins a venue/day conflict across human promoti
   }
   ok(rejected, "second promotion stole an already reserved venue/day");
   ok(f.planning.showReservations.length === 1, "failed competing reservation mutated shared reservation state");
+});
+
+test("final-week D1 legacy contract can reserve a day-six show without gaining another week", () => {
+  const f = fixture(16008);
+  const date = commonRequiredDate(f, 6);
+  const draft = draftFor(f, f.promotionA.id, date, "final-week-show");
+  const chosen = f.state.contracts.find(contract =>
+    contract.promotionId === f.promotionA.id
+    && contract.personId === draft.participantIds[0]
+    && contract.status === "SIGNED");
+  if (!chosen) throw new Error("final-week reservation fixture has no source contract");
+  // This is an existing non-exclusive/exclusive weekly term, not a newly
+  // generated day-seven endDate: legacy data must book correctly as-is.
+  chosen.endDate = { ...date, day: 1 };
+  const beforeRevision = f.runtime.revision;
+  saveDraft(f, "player-a", f.promotionA.id, "final-week-save", 0, draft);
+  const reserved = reserve(f, "player-a", f.promotionA.id, "final-week-reserve", 1, draft.draftId);
+  ok(reserved.participants.some(entry => entry.personId === chosen.personId && entry.contractId === chosen.id),
+    "valid final-week wrestler was not bound to the show reservation");
+  ok(f.runtime.revision === beforeRevision + 2,
+    "final-week reservation mutated World revision unexpectedly");
+  ok(chosen.endDate.day === 1 && chosen.endDate.week === date.week,
+    "reservation mutated an existing contract's signed expiry date");
+});
+
+test("two non-exclusive promotions can reserve the same wrestler on different days when weekly capacity permits", () => {
+  const f = fixture(16009);
+  const dateA = commonRequiredDate(f, 5);
+  const dateB = { ...dateA, day: 6 };
+  const pair = venuePair(f);
+  const draftA = draftFor(f, f.promotionA.id, dateA, "shared-day-five", pair.first.id);
+  const sharedPersonId = draftA.participantIds[0]!;
+  const person = f.state.people.find(p => p.id === sharedPersonId)!;
+  // Two engagements in seven days is a real possibility for a rested
+  // PRIME wrestler; do not lower capacity for every non-exclusive worker.
+  person.careerStage = "PRIME";
+  person.skills.stamina = 100;
+  person.fatigue = 0;
+  const source = f.state.contracts.find(c =>
+    c.personId === sharedPersonId && c.promotionId === f.promotionA.id
+    && c.status === "SIGNED");
+  if (!source) throw new Error("shared non-exclusive fixture has no original agreement");
+  source.family = "LIMITED_NON_EXCLUSIVE";
+  source.exclusivity = "NON_EXCLUSIVE";
+  source.dateEntitlement = Math.max(source.dateEntitlement, source.datesUsed + 2);
+  createSignedContract(f.state, person, f.promotionB, {
+    family: "LIMITED_NON_EXCLUSIVE", exclusivity: "NON_EXCLUSIVE",
+    roleExpectation: "REGULAR", startDate: { ...f.state.world.currentDate },
+    endDate: addPpwWeeks(f.state.world.currentDate, 12, f.state.ruleset.weeksPerYear),
+    dateEntitlement: 2, weeklyGuarantee: 0, appearanceFee: 1000,
+    signingBonus: 0,
+  }, null, false);
+  const draftB = draftFor(f, f.promotionB.id, dateB, "shared-day-six", pair.second.id);
+  draftB.participantIds = [sharedPersonId, ...draftB.participantIds.filter(id => id !== sharedPersonId)]
+    .slice(0, draftA.participantIds.length);
+  if (draftB.participantIds.length !== draftA.participantIds.length) {
+    throw new Error("shared-day fixture lacks enough unique rival participants");
+  }
+  saveDraft(f, "player-a", f.promotionA.id, "save-shared-a", 0, draftA);
+  saveDraft(f, "player-b", f.promotionB.id, "save-shared-b", 0, draftB);
+  const first = reserve(f, "player-a", f.promotionA.id, "reserve-shared-a", 1, draftA.draftId);
+  const second = reserve(f, "player-b", f.promotionB.id, "reserve-shared-b", 1, draftB.draftId);
+  const workerA = first.participants.find(p => p.personId === sharedPersonId);
+  const workerB = second.participants.find(p => p.personId === sharedPersonId);
+  if (!workerA || !workerB) throw new Error("either promotion omitted the shared contracted wrestler");
+  ok(workerA.contractId === source.id && workerB.contractId !== workerA.contractId,
+    "concurrent non-exclusive commitments did not bind separate signed agreements");
+  ok(f.planning.showReservations.length === 2
+    && f.planning.showReservations[0]!.targetDate.day !== f.planning.showReservations[1]!.targetDate.day,
+    "two compatible rival show days were not retained in authoritative World planning");
+  ok(workerA.serviceCapacityAtReservation >= 2 && workerB.serviceCapacityAtReservation >= 2,
+    "second weekly commitment was accepted without two-date service capacity");
 });
 
 test("the same wrestler cannot be reserved by two promotions on the same PPW day", () => {

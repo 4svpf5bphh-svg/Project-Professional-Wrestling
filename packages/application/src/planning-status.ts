@@ -77,6 +77,32 @@ function samePpwWeek(a: PpwDate, b: PpwDate): boolean {
   return a.year === b.year && a.week === b.week;
 }
 
+/**
+ * A reservation belongs to a SHOW draft, not to every draft sharing the
+ * promotion's workspace. Editing a separate premium card increments the
+ * shared workspace.version but cannot invalidate an unchanged flagship
+ * reservation. Conversely, changing this show's logistics, slot or wrestler
+ * set must still demand a fresh server-authoritative reservation.
+ */
+function reservationBookingDetailsChanged(
+  draft: DetailedShowDraft,
+  reservation: DetailedShowReservation,
+): boolean {
+  if (
+    draft.targetDate.year !== reservation.targetDate.year
+    || draft.targetDate.week !== reservation.targetDate.week
+    || draft.targetDate.day !== reservation.targetDate.day
+    || draft.marketId !== reservation.marketId
+    || draft.venueId !== reservation.venueId
+    || draft.ticketStrategy !== reservation.ticketStrategy
+    || (draft.showSeriesId != null && draft.showSeriesId !== reservation.showSeriesId)
+  ) return true;
+  const reservedIds = new Set(reservation.participants.map(p => p.personId));
+  return reservedIds.size !== reservation.participants.length
+    || draft.participantIds.length !== reservedIds.size
+    || draft.participantIds.some(personId => !reservedIds.has(personId));
+}
+
 function requireWorkspaceAndDraft(
   planning: WorldPlanningState,
   promotionId: Id,
@@ -212,6 +238,8 @@ export function playerShowPlanningStatus(
   const { workspace, draft } = requireWorkspaceAndDraft(planning, promotionId, draftId);
   const relation = targetRelation(state, draft.targetDate);
   const reservation = reservationForDraft(planning, promotionId, draftId);
+  const reservationChanged = reservation !== null
+    && reservationBookingDetailsChanged(draft, reservation);
   const assessment = reservation
     ? reservationAssessmentForDraft(state, planning, promotionId, draftId)
     : null;
@@ -225,7 +253,7 @@ export function playerShowPlanningStatus(
     if (relation === "FUTURE") readiness = "FUTURE";
     else if (relation === "PAST") readiness = "PAST";
     else if (assessment?.status === "AT_RISK") readiness = "SHOW_REQUIRED";
-    else if (workspace.version !== reservation.reservedPlanVersion) readiness = "RESERVATION_DUE";
+    else if (reservationChanged) readiness = "RESERVATION_DUE";
     else readiness = reservedCardIsComplete(draft, reservation) ? "READY_TO_LOCK" : "CARD_REQUIRED";
   } else if (eventId) {
     const weekReadiness = relation === "CURRENT" ? currentWeekReadiness(state, promotionId) : null;
@@ -264,7 +292,9 @@ export function playerShowPlanningStatus(
     riskReasons: assessment?.reasons ?? [],
     workspaceVersion: workspace.version,
     reservedPlanVersion,
-    workspaceChangedSinceReservation: reservedPlanVersion !== null && workspace.version !== reservedPlanVersion,
+    // Historical field name retained for compatibility; this reflects this
+    // SHOW's own reservable details, not edits to unrelated show drafts.
+    workspaceChangedSinceReservation: reservationChanged,
     worldPhase: runtime.phase,
     availableActions: planningActions(
       runtime.phase,

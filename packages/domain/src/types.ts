@@ -1,3 +1,4 @@
+import type { WorldStaffMember, StaffEmployment } from "./staff.js";
 import type { Programme, ProgrammeActivity } from "./programmes.js";
 
 export type Id = string;
@@ -21,6 +22,7 @@ export type FinancialTransactionCategory =
   | "SPONSOR_INCOME"
   | "FIXED_OVERHEAD"
   | "CONTRACT_GUARANTEE"
+  | "STAFF_SALARY"
   | "CONTRACT_SIGNING_BONUS"
   | "CONTRACT_BUYOUT"
   | "GATE_REVENUE"
@@ -31,6 +33,7 @@ export type FinancialTransactionCategory =
   | "RESTRUCTURING_SETTLEMENT";
 
 export type ContractFamily = "ONE_OFF" | "LIMITED_NON_EXCLUSIVE" | "EXCLUSIVE";
+export type CreativeControlLevel = "NONE" | "CONSULTATION" | "PROTECTED_FINISHES" | "FULL_APPROVAL";
 export type ExclusivityType = "OPEN" | "NON_EXCLUSIVE" | "EXCLUSIVE";
 export type ContractStatus = "SIGNED" | "EXPIRED" | "TERMINATED";
 export type ContractOfferStatus = "PENDING" | "ACCEPTED" | "REJECTED" | "WITHDRAWN";
@@ -309,6 +312,8 @@ export interface ContractTerms {
   family: ContractFamily;
   exclusivity: ExclusivityType;
   roleExpectation: RoleExpectation;
+  /** Optional for compatibility with established Worlds; absent means NONE. */
+  creativeControl?: CreativeControlLevel;
   startDate: PpwDate;
   endDate: PpwDate;
   dateEntitlement: number;
@@ -335,7 +340,8 @@ export interface ContractOffer extends ContractTerms {
   promotionId: Id;
   submittedDate: PpwDate;
   status: ContractOfferStatus;
-  offerKind: "RECRUITMENT" | "RENEWAL";
+  /** An additional-dates addendum amends the existing non-exclusive deal on acceptance. */
+  offerKind: "RECRUITMENT" | "RENEWAL" | "DATES_ADDENDUM";
   resolvedUtility: number | null;
   rejectionReason: string | null;
   sourceContractId?: Id | null;
@@ -571,6 +577,9 @@ export interface WorldState {
   promotionStandings?: PromotionStanding[];
   promotionSurvivalStates?: PromotionSurvivalState[];
   people: Person[];
+  /** World-unique staff, separate from the wrestler population. */
+  staffMembers?: WorldStaffMember[];
+  staffEmployments?: StaffEmployment[];
   contracts: Contract[];
   contractOffers: ContractOffer[];
   events: WrestlingEvent[];

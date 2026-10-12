@@ -7,6 +7,7 @@ import { ppwDateToWeekIndex } from "./clock.js";
 import { activeContractsForPromotion } from "./contracts.js";
 import { LedgerWriter } from "./ledger.js";
 import { recordFinancialTransaction } from "./transactions.js";
+import { validateWorldStaff } from "./staff.js";
 
 export function calculateRunwayWeeks(cash: number, weeklyNet: number): number | null {
   if (weeklyNet >= 0) return null;
@@ -45,6 +46,8 @@ function recordWeekly(state: WorldState, promotion: Promotion, category: Paramet
 export function settleWorldFinances(state: WorldState): void {
   const ledgerWriter = new LedgerWriter(state.world.id, state.ledger);
   const weeklyNetByPromotion = currentWeekNetByPromotion(state);
+  const staffErrors = validateWorldStaff(state);
+  if (staffErrors.length > 0) throw new Error(`refusing to settle invalid staff World: ${staffErrors[0]}`);
 
   for (const promotion of state.promotions) {
     if (promotion.lifecycle === "CLOSED" || promotion.lifecycle === "DORMANT") continue;
@@ -53,6 +56,11 @@ export function settleWorldFinances(state: WorldState): void {
     recordWeekly(state, promotion, "MEDIA_INCOME", promotion.weeklyMediaIncome, "baseline media agreement", weeklyNetByPromotion);
     recordWeekly(state, promotion, "SPONSOR_INCOME", promotion.weeklySponsorIncome, "baseline sponsor portfolio", weeklyNetByPromotion);
     recordWeekly(state, promotion, "FIXED_OVERHEAD", -promotion.weeklyFixedOverhead, "promotion operating overhead", weeklyNetByPromotion);
+    for (const employment of state.staffEmployments ?? []) {
+      if (employment.promotionId === promotion.id && employment.status === "ACTIVE" && employment.weeklySalary > 0) {
+        recordWeekly(state, promotion, "STAFF_SALARY", -employment.weeklySalary, employment.id, weeklyNetByPromotion);
+      }
+    }
     for (const contract of activeContractsForPromotion(state, promotion.id)) {
       if (contract.weeklyGuarantee > 0) {
         recordWeekly(state, promotion, "CONTRACT_GUARANTEE", -contract.weeklyGuarantee, contract.id, weeklyNetByPromotion);

@@ -1,4 +1,5 @@
 import type { ApplicationWorldRepository } from "../../application/src/index.js";
+import { utcScheduledCycleKey } from "../../application/src/schedule-clock.js";
 import {
   createPostgresServerWorldAccess,
   type PostgresServerWorldAccess,
@@ -25,10 +26,6 @@ function integerEnvironment(name: string, fallback: number): number {
   const parsed = Number(raw);
   if (!Number.isSafeInteger(parsed)) throw new Error(`${name} must be an integer`);
   return parsed;
-}
-
-function currentUtcCycleKey(): string {
-  return new Date().toISOString().slice(0, 10);
 }
 
 function serverWorldAccess(connectionString: string): {
@@ -133,7 +130,7 @@ export async function withAlphaServerContext<TResult>(
 
     if (trackPlayerActivity) {
       const activityStartedAt = performance.now();
-      await access.recordPlayerActivity(worldId, playerId, currentUtcCycleKey());
+      await access.recordPlayerActivity(worldId, playerId, utcScheduledCycleKey());
       activityMs = performance.now() - activityStartedAt;
     }
 

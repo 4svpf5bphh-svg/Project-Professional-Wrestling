@@ -1,5 +1,6 @@
 import type { Contract, WorldState } from "../../domain/src/types.js";
 import { contractOverlaps } from "./contracts.js";
+import { validateWorldStaff } from "./staff.js";
 import { validatePromotionShowSeriesState } from "./show-calendar.js";
 
 function samePpwWeek(a: { year: number; week: number }, b: { year: number; week: number }): boolean {
@@ -19,6 +20,7 @@ export function validateWorldInvariants(state: WorldState): string[] {
   const venueById = new Map(state.venues.map((venue) => [venue.id, venue]));
 
   errors.push(...validatePromotionShowSeriesState(state));
+  errors.push(...validateWorldStaff(state));
   const showSeriesById = new Map((state.showSeries ?? []).map((series) => [series.id, series]));
 
   for (const venue of state.venues) {
@@ -72,8 +74,11 @@ export function validateWorldInvariants(state: WorldState): string[] {
     if (contract.worldId !== state.world.id) errors.push(`contract ${contract.id} crosses world boundary`);
     if (!personIds.has(contract.personId)) errors.push(`contract ${contract.id} references missing person`);
     if (!promotionIds.has(contract.promotionId)) errors.push(`contract ${contract.id} references missing promotion`);
-    if (contract.dateEntitlement < 1) errors.push(`contract ${contract.id} has invalid date entitlement`);
-    if (contract.datesUsed < 0 || contract.datesUsed > contract.dateEntitlement) errors.push(`contract ${contract.id} has invalid used dates`);
+    if (!Number.isSafeInteger(contract.dateEntitlement) || contract.dateEntitlement < 1)
+      errors.push(`contract ${contract.id} has invalid date entitlement`);
+    if (!Number.isSafeInteger(contract.datesUsed) || contract.datesUsed < 0
+      || (contract.family !== "EXCLUSIVE" && contract.datesUsed > contract.dateEntitlement))
+      errors.push(`contract ${contract.id} has invalid used dates`);
     if (contract.weeklyGuarantee < 0 || contract.appearanceFee < 0 || contract.signingBonus < 0) errors.push(`contract ${contract.id} has negative compensation`);
     const contractPerson = state.people.find((person) => person.id === contract.personId);
     if (contract.status === "SIGNED" && contractPerson?.status === "RETIRED") errors.push(`retired person ${contract.personId} still has signed contract ${contract.id}`);

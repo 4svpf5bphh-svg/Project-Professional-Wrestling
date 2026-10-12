@@ -11,7 +11,9 @@ import { assessWorkingConcernFollowThrough } from "./backstage-working-follow-th
 import { generateWorkingPartnershipConcerns } from "./backstage-working-concerns.js";
 import {
   closeCurrentWeekReservationsAtCommitmentLock,
+  discardUnapprovedMaterializedCardAmendmentsAtLock,
   materializeCurrentWeekReservations,
+  unresolvedDueCreativeApprovals,
   type ReservationMaterializationPass,
 } from "./planning-materialization.js";
 import {
@@ -60,12 +62,16 @@ export async function lockPersistedCurrentWeekShowCommitments(
       return;
     }
 
+    const restoredAmendments = discardUnapprovedMaterializedCardAmendmentsAtLock(
+      aggregate.state, aggregate.planning,
+    );
     const closure = closeCurrentWeekReservationsAtCommitmentLock(
       aggregate.state,
       aggregate.planning,
     );
     if (
-      passMutatedWorld(closure)
+      restoredAmendments > 0
+      || passMutatedWorld(closure)
       || closure.releasedAtRisk.length > 0
     ) {
       incrementWorldRevision(aggregate.runtime);
@@ -80,20 +86,36 @@ export async function lockPersistedWorldForResolution(
   worldId: Id,
   expectedRevision: number,
   realCycleKey: string | null = null,
+  /** Manual Alpha advance only. Scheduled shared-World ticks do not pass this. */
+  manualPromotionId: Id | null = null,
 ): Promise<number> {
   const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
+    if (manualPromotionId && !currentWeekShowCommitmentsLocked(aggregate.runtime, aggregate.state)) {
+      const unresolved = unresolvedDueCreativeApprovals(
+        aggregate.state, aggregate.planning, manualPromotionId,
+      );
+      if (unresolved.length > 0) {
+        const names = [...new Set(unresolved.flatMap((entry) => entry.wrestlerNames))].slice(0, 4).join(", ");
+        throw new Error(`Creative approval required before advancing: ${names}. Open your Show Card to request approval or revise the finish. The shared World will still advance on its scheduled tick.`);
+      }
+    }
+    // The commitment lock freezes venue/talent commitments, not the last
+    // editable card. Reconcile again at final resolution for amendments
+    // submitted during the lock-to-resolution window.
+    const restoredAmendments = discardUnapprovedMaterializedCardAmendmentsAtLock(
+      aggregate.state, aggregate.planning,
+    );
     if (!currentWeekShowCommitmentsLocked(aggregate.runtime, aggregate.state)) {
       const closure = closeCurrentWeekReservationsAtCommitmentLock(
         aggregate.state,
         aggregate.planning,
       );
-      if (
-        passMutatedWorld(closure)
-        || closure.releasedAtRisk.length > 0
-      ) {
+      if (passMutatedWorld(closure) || closure.releasedAtRisk.length > 0 || restoredAmendments > 0) {
         incrementWorldRevision(aggregate.runtime);
       }
       lockCurrentWeekShowCommitments(aggregate.runtime, aggregate.state, realCycleKey);
+    } else if (restoredAmendments > 0) {
+      incrementWorldRevision(aggregate.runtime);
     }
     lockWorldForResolution(aggregate.runtime, aggregate.state, realCycleKey);
   });

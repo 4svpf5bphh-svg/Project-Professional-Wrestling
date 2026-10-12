@@ -47,7 +47,7 @@ export function generateRivalryPitches(aggregate: ApplicationWorldAggregate): nu
   let added = 0;
   for (const controller of controllers) {
     const promotionId = controller.promotionId;
-    const previous = engagement.backstageConversations.filter((entry) => entry.promotionId === promotionId);
+    const previous = engagement.backstageConversations.filter((entry) => entry.promotionId === promotionId && entry.kind !== "PROGRAMME_CREATIVE_AGREEMENT");
     const inWeek = previous.filter((entry) => entry.createdDate.year === state.world.currentDate.year
       && entry.createdDate.week === state.world.currentDate.week).length;
     const open = previous.filter((entry) => entry.status === "OPEN").length;

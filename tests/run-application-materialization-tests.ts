@@ -276,6 +276,30 @@ test("incomplete advance card still materializes the show and leaves card respon
   ok(humanWeekReadiness(f.state, f.promotionId).status === "CARD_REQUIRED", "materialized show did not expose card readiness requirement");
 });
 
+test("day-five show materializes using an unchanged final-week day-one contract", () => {
+  const f = fixture(16113);
+  const draft = baseDraft(f);
+  const chosen = f.state.contracts.find(contract =>
+    contract.promotionId === f.promotionId && contract.personId === draft.participantIds[0]
+    && contract.status === "SIGNED");
+  if (!chosen) throw new Error("no available signed contract for materialization boundary");
+  chosen.endDate = { ...f.state.world.currentDate, day: 1 };
+  const reservation = saveAndReserve(f, draft);
+  ok(reservation.participants.some(entry => entry.contractId === chosen.id),
+    "reservation did not allocate legacy final-week contract to the wrestler");
+  const assessment = assessDetailedShowReservation(f.state, f.planning, reservation);
+  ok(assessment.status === "READY",
+    "valid final-week contract was marked at risk at materialization: " + assessment.reasons.join(", "));
+  const materialized = materializeCurrentWeekReservations(f.state, f.planning);
+  ok(materialized.materialized.length === 1 && materialized.atRisk.length === 0,
+    "day-five show failed materialization for an in-term final-week contract");
+  ok(f.state.scheduledAppearances.some(appearance =>
+    appearance.contractId === chosen.id && appearance.personId === chosen.personId),
+    "final-week contracted appearance was not committed to the actual event");
+  ok(chosen.endDate.day === 1 && chosen.endDate.week === f.state.world.currentDate.week,
+    "materialization secretly extended a legacy signed contract");
+});
+
 test("broken wrestler availability classifies a due reservation as at risk without partial materialization", () => {
   const f = fixture(16104);
   const reservation = saveAndReserve(f, baseDraft(f));

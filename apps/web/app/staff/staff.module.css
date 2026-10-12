@@ -1,0 +1,25 @@
+.shell { min-height: 100vh; padding: 18px 14px calc(90px + env(safe-area-inset-bottom)); background: radial-gradient(circle at top, rgba(32,94,82,.26),transparent 42%),#071014; color: #edf7f5; }
+.content { max-width: 900px; margin: 0 auto; }
+.back { color: #78ebd4; display: inline-block; margin-bottom: 22px; font-weight: 800; text-decoration: none; }
+.heading { margin-bottom: 25px; }
+.heading h1 { margin: 4px 0 6px; font-size: clamp(26px,5vw,38px); }
+.heading p, .panel p, .muted { color: #9eb4b2; line-height: 1.6; }
+.eyebrow { font-size: 11px; color: #74ddc7; text-transform: uppercase; font-weight: 900; letter-spacing: .12em; }
+.panel { border: 1px solid #24413f; border-radius: 18px; background: rgba(13,27,31,.92); padding: 20px; margin-bottom: 17px; }
+.panel h2 { margin: 8px 0; font-size: 20px; }
+.stats { display: flex; gap: 18px; flex-wrap: wrap; margin: 15px 0; }
+.stats div { display: flex; flex-direction: column; background: #14282b; border-radius: 10px; padding: 12px; min-width: 145px; }
+.stats small, .candidate small, .renewal small { color: #9dbbb6; }
+ .panel button { border: 1px solid rgba(91,236,201,.55); border-radius: 999px; padding: 10px 16px; background: #1b5149; color: #e7fff8; font-weight: 800; cursor: pointer; font: inherit; }
+.panel button:disabled { opacity: .5; cursor: not-allowed; }
+.secondary { background: transparent; color: #80e4d1; }
+.candidates { display: grid; gap: 11px; margin-top: 17px; }
+.candidate { background: #112529; border-radius: 12px; border: 1px solid #24413f; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 13px 15px; }
+.candidate div, .renewal { display: flex; flex-direction: column; gap: 6px; }
+.renewal { padding: 16px; border-radius: 12px; border: 1px solid #24413f; background: #112529; align-items: flex-start; }
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.actions p { flex-basis: 100%; }
+.error, .notice { border-radius: 10px; padding: 13px 15px; margin-bottom: 15px; }
+.error { color: #ffd2d2; background: #56282a; }
+.notice { color: #b8f8d7; background: #174235; }
+@media (max-width: 500px) { .panel { padding: 15px; } .candidate button { width: 100%; } .renewal button { width: 100%; } }

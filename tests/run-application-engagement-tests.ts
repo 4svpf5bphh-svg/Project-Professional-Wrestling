@@ -7,6 +7,8 @@ import {
   claimIndependentPromotionForPlayer,
   createWorldCommandState,
   createWorldEngagementState,
+  recordMissedSchedulerCycles,
+  activeSchedulerDaysBetween,
   createWorldOwnershipState,
   createWorldPlanningState,
   createWorldRuntimeState,
@@ -118,10 +120,14 @@ await test("scheduled World resolution evaluates real inactivity before lock", a
   ok(record?.status === "WARNING", "scheduler did not move seven-day inactive player to WARNING");
   ok(record?.statusSinceCycleKey === "2026-10-08", "scheduler did not record WARNING transition cycle");
 
-  await resolveScheduledWorldCycle(repository, worldId, "2026-10-15");
+  // All days between the warning and stewardship boundary were successfully
+  // resolved; a missing real-day cycle is now excluded by the outage clock.
+  for (let day = 9; day <= 15; day += 1) {
+    await resolveScheduledWorldCycle(repository, worldId, `2026-10-${String(day).padStart(2, "0")}`);
+  }
   after = await repository.load(worldId);
   record = after.engagement ? activityForPlayer(after.engagement, "player-a") : null;
-  ok(record?.status === "STEWARDED", "scheduler did not move fourteen-day inactive player to STEWARDED");
+  ok(record?.status === "STEWARDED", "scheduler did not move fourteen active-cycle days to STEWARDED");
   ok(record?.statusSinceCycleKey === "2026-10-15", "scheduler did not record STEWARDED transition cycle");
   ok(after.runtime.phase === "OPEN", "stewardship evaluation interfered with World resolution");
 });
@@ -312,6 +318,45 @@ await test("Attention dismissal is player-scoped and idempotent", () => {
   ok(!attentionIsDismissed(engagement, "player-b", "news-1"), "Attention dismissal leaked to another player");
   ok(engagement.attentionDismissals.length === 1, "idempotent dismissal created duplicate records");
   ok(engagement.attentionDismissals[0]?.dismissedAtRevision === 6, "dismissal retry did not refresh its revision");
+});
+
+await test("outage pauses Stewardship eligibility and buyout clocks without wiping historical requests", async () => {
+  const aggregate = stewardedWorldFixture(18130, "2026-09-01");
+  const control = aggregate.ownership.promotionControls[0];
+  if (!control || !aggregate.engagement) throw new Error("missing stewarded controller");
+  const contract = activeContractsForPromotion(aggregate.state, control.promotionId)
+    .find((candidate) => candidate.family !== "ONE_OFF");
+  if (!contract) throw new Error("missing continuing contract");
+  const activity = activityForPlayer(aggregate.engagement, control.playerId);
+  if (!activity) throw new Error("missing player activity");
+  activity.status = "STEWARDED";
+  activity.statusSinceCycleKey = "2026-10-01";
+  ensurePromotionTalentTrust(aggregate.state);
+  promotionTalentTrustFor(aggregate.state, control.promotionId, contract.personId).trust =
+    STEWARDSHIP_EXIT_TRUST_THRESHOLD;
+
+  // These are dates on which the PPW World did NOT advance; the player's
+  // contract must not become exit-eligible simply because UTC time passed.
+  const missed = recordMissedSchedulerCycles(aggregate.engagement, "2026-10-01", "2026-10-12");
+  ok(missed === 10 && aggregate.engagement.schedulerPauseSpans?.length === 1,
+    "ten missing real cycles were not credited");
+  ok(recordMissedSchedulerCycles(aggregate.engagement, "2026-10-01", "2026-10-12") === 0,
+    "same outage applied multiple pause credits");
+  let eligible = stewardshipExitEligibilityForContract(aggregate, contract.id, "2026-10-15");
+  ok(!eligible.eligible && eligible.reason === "GRACE_PERIOD" && eligible.stewardedDays === 4,
+    "stewardship exit eligibility counted missed scheduler days");
+  eligible = stewardshipExitEligibilityForContract(aggregate, contract.id, "2026-10-25");
+  ok(eligible.eligible && eligible.stewardedDays === 14,
+    "properly resumed time no longer satisfies normal Stewardship release grace");
+  ok(activeSchedulerDaysBetween(aggregate.engagement, "2026-10-01", "2026-10-15") === 4,
+    "effective clock did not subtract the downtime window");
+
+  // Missing spans may fall across the UK autumn clock change; UTC dates are
+  // still whole days and never become 23/25-hour bonus penalty days.
+  ok(recordMissedSchedulerCycles(aggregate.engagement, "2026-10-25", "2026-10-29") === 3,
+    "BST/GMT outage span did not use three UTC calendar days");
+  ok(activeSchedulerDaysBetween(aggregate.engagement, "2026-10-25", "2026-10-29") === 1,
+    "BST/GMT shift distorted the effective day count");
 });
 
 console.log(`\nApplication engagement tests: ${passed} passed, ${failed} failed`);

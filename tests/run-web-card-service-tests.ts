@@ -1,11 +1,20 @@
 declare const process: { exitCode?: number };
 
-import { materializePersistedCurrentWeekReservations } from "../packages/application/src/index.js";
+import {
+  buildPlayerAttention,
+  lockScheduledShowCommitments,
+  resolveScheduledWorldCycle,
+  lockPersistedWorldForResolution,
+  materializePersistedCurrentWeekReservations,
+  resolvePersistedWorldWeek,
+  requestStandingProgrammeCreativeAgreementCommand,
+} from "../packages/application/src/index.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import {
   advanceAlphaWorldWeek,
   claimAlphaPromotion,
   createAlphaWorldAggregate,
+  loadAlphaPlayerSession,
   saveAlphaCurrentWeekShowPlan,
 } from "../packages/web-adapter/src/alpha-service.js";
 import {
@@ -13,6 +22,8 @@ import {
   loadAlphaShowCard,
   saveAlphaCurrentWeekCard,
   saveAlphaShowCard,
+  requestAlphaShowCreativeConsent,
+  withdrawAlphaShowCreativeAmendment,
   type AlphaCardMatchView,
   type AlphaCardSegmentView,
 } from "../packages/web-adapter/src/card-service.js";
@@ -992,6 +1003,8 @@ await test("a logistics-only show draft opens in the builder and the first valid
   const builder = await loadAlphaShowCard(repository, worldId, playerId, show.draftId);
   ok(builder.reservationId === null, "unbooked show builder unexpectedly had a reservation");
   ok(builder.availableParticipants.length >= builder.minParticipants, "builder did not expose enough contracted talent");
+  ok(builder.availableParticipants.every(person => person.unlimitedAppearances || person.unreservedDatesRemaining > 0),
+    "unreserved card picker displayed a wrestler with no free show date");
 
   const persistedForBuilder = await repository.load(worldId);
   const firstPickerPerson = builder.availableParticipants[0];
@@ -1277,6 +1290,136 @@ await test("Alpha browser card booking rejects a championship on the wrong match
   );
 });
 
+await test("regular and premium shows in one PPW week each keep a separate card and resolve under one World Lock", async () => {
+  const playerId = "dual-week-player";
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 94271, playerId });
+  const independent = aggregate.state.promotions
+    .filter(p => p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE")
+    .sort((a, b) => a.id.localeCompare(b.id))[0];
+  if (!independent) throw new Error("dual-show World has no takeover indie");
+  aggregate.state.world.currentDate = { year: 1, week: 25, day: 1 };
+  const dueSeries = (aggregate.state.showSeries ?? []).filter(series =>
+    series.promotionId === independent.id && ["FLAGSHIP", "PREMIUM"].includes(series.role));
+  if (dueSeries.length < 2) throw new Error("dual-show fixture lacks flagship and premium series");
+  const roster = aggregate.state.contracts
+    .filter(c => c.promotionId === independent.id && c.status === "SIGNED")
+    .filter((c, i, all) => all.findIndex(x => x.personId === c.personId) === i);
+  // A fixture with legitimately acquired independent non-exclusive booking
+  // rights: two disjoint four-person cards, NOT artificial simulation power.
+  // Changing terms here is local to this test World, not a production balance.
+  const divisionById = new Map(aggregate.state.people.map(p => [p.id, p.division ?? "MEN"] as const));
+  const pairs: Array<[string, string]> = [];
+  for (const division of ["MEN", "WOMEN"] as const) {
+    const eligible = roster.filter(c => divisionById.get(c.personId) === division);
+    for (let i = 0; i + 1 < eligible.length; i += 2) {
+      pairs.push([eligible[i]!.personId, eligible[i + 1]!.personId]);
+    }
+  }
+  if (pairs.length < 6) throw new Error("dual-show fixture cannot field two valid six-wrestler cards");
+  const flagshipIds = pairs.slice(0, 3).flat();
+  const premiumIds = pairs.slice(3, 6).flat();
+  for (const personId of [...flagshipIds, ...premiumIds]) {
+    const contract = roster.find(c => c.personId === personId)!;
+    contract.startDate = { year: 1, week: 24, day: 1 };
+    contract.endDate = { year: 1, week: 26, day: 1 };
+    contract.dateEntitlement = Math.max(contract.dateEntitlement, contract.datesUsed + 2);
+  }
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, playerId, {
+    promotionId: independent.id, requestId: "dual-show-claim",
+  });
+
+  const home = await loadAlphaPlayerSession(repository, worldId, playerId);
+  ok(home.promotion?.showPlanning.dueShows.length === 2,
+    "promotion home did not disclose regular and premium due in the same week");
+  const before = await loadAlphaPlayerPlanner(repository, worldId, playerId);
+  const own = before.promotion;
+  const week = own?.weeks[0];
+  if (!own || !week || week.showSeriesOptions.length !== 2) {
+    throw new Error("real PPW week 25 does not expose both show identities in planner");
+  }
+  const regularSeries = week.showSeriesOptions.find(series => series.role === "FLAGSHIP");
+  const specialSeries = week.showSeriesOptions.find(series => series.role === "PREMIUM");
+  if (!regularSeries || !specialSeries) throw new Error("missing regular or premium identity");
+  const market = own.markets.find(m => m.marketId === independent.homeMarketId) ?? own.markets[0];
+  const venue = market?.venues[0];
+  if (!market || !venue) throw new Error("dual-show venue is missing");
+  const regular = await saveAlphaPlannerShowPlan(repository, worldId, playerId, {
+    requestId: "dual-show-regular-logistics", expectedRevision: before.world.revision,
+    expectedPlanVersion: own.workspaceVersion, year: 1, week: 25, day: 6,
+    showSeriesId: regularSeries.showSeriesId,
+    marketId: market.marketId, venueId: venue.venueId, ticketStrategy: "STANDARD",
+  });
+  const regularDraft = regular.promotion?.weeks[0]?.shows.find(s => s.showSeriesId === regularSeries.showSeriesId);
+  if (!regularDraft) throw new Error("flagship draft disappeared after planning");
+  const regularCard = await loadAlphaShowCard(repository, worldId, playerId, regularDraft.draftId);
+  const readyRegular = await saveAlphaShowCard(repository, worldId, playerId, {
+    requestId: "dual-show-regular-card", expectedRevision: regularCard.world.revision,
+    expectedPlanVersion: regularCard.workspaceVersion, draftId: regularDraft.draftId,
+    matches: singlesCard(flagshipIds), championshipAssignments: [],
+  });
+  ok(readyRegular.reservationId !== null, "flagship could not reserve its six real purchased dates");
+  const reopenedRegular = await loadAlphaShowCard(repository, worldId, playerId, regularDraft.draftId);
+  ok(flagshipIds.every(personId => reopenedRegular.availableParticipants.some(person => person.personId === personId)),
+    "reopening the flagship excluded wrestlers reserved on its own card");
+
+  const nextPlanner = await loadAlphaPlayerPlanner(repository, worldId, playerId);
+  const nextPromotion = nextPlanner.promotion!;
+  const plannedPremium = await saveAlphaPlannerShowPlan(repository, worldId, playerId, {
+    requestId: "dual-show-premium-logistics", expectedRevision: nextPlanner.world.revision,
+    expectedPlanVersion: nextPromotion.workspaceVersion, year: 1, week: 25, day: 7,
+    showSeriesId: specialSeries.showSeriesId,
+    marketId: market.marketId, venueId: venue.venueId, ticketStrategy: "STANDARD",
+  });
+  const premiumDraft = plannedPremium.promotion?.weeks[0]?.shows
+    .find(s => s.showSeriesId === specialSeries.showSeriesId);
+  if (!premiumDraft || premiumDraft.draftId === regularDraft.draftId) {
+    throw new Error("premium draft was not individually addressable");
+  }
+  const premiumCard = await loadAlphaShowCard(repository, worldId, playerId, premiumDraft.draftId);
+  ok(premiumCard.availableParticipants.every(person => person.unlimitedAppearances || person.unreservedDatesRemaining > 0),
+    "premium card picker offers a wrestler with no unreserved appearance dates");
+  // A Day-6 flagship worker may legally work the Day-7 premium show if
+  // their purchased dates and weekly Service Capacity still allow it.
+  const readyPremium = await saveAlphaShowCard(repository, worldId, playerId, {
+    requestId: "dual-show-premium-card", expectedRevision: premiumCard.world.revision,
+    expectedPlanVersion: premiumCard.workspaceVersion, draftId: premiumDraft.draftId,
+    matches: singlesCard(premiumIds), championshipAssignments: [],
+  });
+  ok(readyPremium.reservationId !== null, "premium could not reserve its six separate purchased dates");
+
+  const stored = await repository.load(worldId);
+  const reservations = stored.planning.showReservations.filter(r => r.promotionId === independent.id);
+  ok(reservations.length === 2 && reservations[0]!.sourceDraftId !== reservations[1]!.sourceDraftId,
+    "one show overwrote the other shared-World reservation");
+  ok(new Set(reservations.flatMap(r => r.participants.map(p => p.personId))).size === 12,
+    "the two shows consumed overlapping purchased dates despite a distinct-roster policy");
+  const finalPlanner = await loadAlphaPlayerPlanner(repository, worldId, playerId);
+  const shows = finalPlanner.promotion?.weeks[0]?.shows ?? [];
+  ok(shows.length === 2 && shows.every(show => show.readiness === "READY_TO_LOCK"),
+    "player does not see both shows fully ready before World Lock");
+  const resolved = await advanceAlphaWorldWeek(repository, worldId, playerId, {
+    expectedRevision: finalPlanner.world.revision,
+  });
+  ok(resolved.world.week === 26, "dual-show World Lock did not advance exactly one PPW week");
+  const after = await repository.load(worldId);
+  const completed = after.state.events.filter(event =>
+    event.promotionId === independent.id && event.date.year === 1 && event.date.week === 25
+    && event.status === "COMPLETED");
+  ok(completed.length === 2, `World Lock did not resolve exactly two authored events: ${completed.length}`);
+  ok(new Set(completed.map(e => e.showSeriesId)).size === 2,
+    "regular and premium outcomes lost their separate show identity");
+  ok(completed.some(e => e.date.day === 6) && completed.some(e => e.date.day === 7),
+    "different seven-day show calendar choices were overwritten at resolution");
+  const staffHelp = after.state.ledger.filter(entry =>
+    entry.type === "HUMAN_ROUTINE_CONTINUITY_TAKEOVER"
+    && entry.entityIds.includes(independent.id)
+    && entry.date.year === 1 && entry.date.week === 25);
+  ok(staffHelp.length === 0, "staff unnecessarily took over a fully player-authored two-show week");
+});
+
 await test("Alpha six-week card booking targets the selected future draft without changing the current card", async () => {
   const fixture = await reservedShowFixture(61014);
   const currentBefore = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
@@ -1358,5 +1501,565 @@ await test("Alpha six-week card booking targets the selected future draft withou
   ok(strangerRejected, "non-controller could read a future match card by draft ID");
 });
 
+
+await test("unapproved protected losses hold a future reservation until an explicit wrestler decision", async () => {
+  const fixture = await reservedShowFixture(61261);
+  const loserId = fixture.participantIds[1]!;
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const controlled = aggregate.state.promotions.find((entry) => entry.controllerType === "HUMAN");
+    const contract = aggregate.state.contracts.find((entry) =>
+      entry.personId === loserId && entry.promotionId === controlled?.id && entry.status === "SIGNED"
+    );
+    if (!contract) throw new Error("fixture missing loser contract");
+    contract.creativeControl = "PROTECTED_FINISHES";
+    const person = aggregate.state.people.find((entry) => entry.id === loserId)!;
+    person.morale = 100;
+    person.fatigue = 0;
+    person.priorities.loyalty = 100;
+    person.priorities.role = 0;
+  });
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "protected-future-save",
+    expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion,
+    matches: singlesCard(fixture.participantIds),
+    championshipAssignments: [],
+  });
+  ok(saved.creativeConcerns.some((c) => c.personId === loserId && c.requiresConsent && c.consent === "NOT_REQUESTED"),
+    "saved protected loss did not report the contract objection");
+  const beforeMaterialization = await fixture.repository.load(fixture.worldId);
+  const countBefore = beforeMaterialization.state.events.length;
+  const riskPass = await materializePersistedCurrentWeekReservations(
+    fixture.repository, fixture.worldId, saved.world.revision,
+  );
+  ok(riskPass.pass.atRisk.some((r) => r.reasons.includes("CREATIVE_APPROVAL_REQUIRED")),
+    "future reservation ignored unresolved creative rights");
+  const waiting = await fixture.repository.load(fixture.worldId);
+  ok(waiting.state.events.length === countBefore && waiting.planning.showReservations.length === 1,
+    "unapproved future card was materialized or had its reservation silently discarded");
+
+  const consentView = await requestAlphaShowCreativeConsent(
+    fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: "protected-future-consent",
+      expectedRevision: waiting.runtime.revision,
+      expectedPlanVersion: saved.workspaceVersion,
+      draftId: saved.draftId,
+      draftMatchId: saved.matches[0]!.draftMatchId,
+      personId: loserId,
+    },
+  );
+  ok(consentView.creativeConcerns.some((c) => c.personId === loserId && c.consent === "APPROVED"),
+    "granted wrestler consent did not appear on saved card");
+  const approvedPass = await materializePersistedCurrentWeekReservations(
+    fixture.repository, fixture.worldId, consentView.world.revision,
+  );
+  ok(approvedPass.pass.materialized.length === 1 && approvedPass.pass.materialized[0]!.cardMaterialized,
+    "fully approved future card did not materialize normally");
+});
+
+await test("materialized card edits stay held until consent then apply the promoter's exact intended finish", async () => {
+  const fixture = await reservedShowFixture(61262);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await materializePersistedCurrentWeekReservations(fixture.repository, fixture.worldId, before.world.revision);
+  const materialized = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const original = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "creative-current-original",
+    expectedRevision: materialized.world.revision,
+    expectedPlanVersion: materialized.workspaceVersion,
+    matches: singlesCard(fixture.participantIds),
+    championshipAssignments: [],
+  });
+  const loserId = fixture.participantIds[1]!;
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const contract = aggregate.state.contracts.find((entry) =>
+      entry.personId === loserId && entry.promotionId === original.promotion.promotionId && entry.status === "SIGNED"
+    );
+    if (!contract) throw new Error("missing contracted losing wrestler");
+    contract.creativeControl = "PROTECTED_FINISHES";
+    const person = aggregate.state.people.find((entry) => entry.id === loserId)!;
+    person.morale = 100; person.fatigue = 0;
+    person.priorities.loyalty = 100; person.priorities.role = 0;
+  });
+  const prior = await fixture.repository.load(fixture.worldId);
+  const event = prior.state.events.find((entry) => entry.promotionId === original.promotion.promotionId
+    && entry.status === "SCHEDULED" && entry.date.week === prior.state.world.currentDate.week)!;
+  const originalIds = prior.state.matches.filter((entry) => entry.eventId === event.id && entry.status === "SCHEDULED").map((entry) => entry.id);
+  const requested = original.matches.map((match, index) =>
+    index === 0 ? { ...match, plannedLengthMinutes: match.plannedLengthMinutes + 1, plannedFinish: "CLEAN_PIN" as const } : match);
+  const proposed = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "creative-current-proposed",
+    expectedRevision: original.world.revision,
+    expectedPlanVersion: original.workspaceVersion,
+    matches: requested,
+    championshipAssignments: [],
+  });
+  ok(proposed.cardPendingConsent, "materialized card replacement did not expose pending creative approval");
+  const parked = await fixture.repository.load(fixture.worldId);
+  const parkedIds = parked.state.matches.filter((entry) => entry.eventId === event.id && entry.status === "SCHEDULED").map((entry) => entry.id);
+  ok(parkedIds.join("|") === originalIds.join("|"), "unapproved proposal replaced a committed match");
+
+  const approved = await requestAlphaShowCreativeConsent(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "creative-current-approve",
+    expectedRevision: proposed.world.revision,
+    expectedPlanVersion: proposed.workspaceVersion,
+    draftId: proposed.draftId,
+    draftMatchId: proposed.matches[0]!.draftMatchId,
+    personId: loserId,
+  });
+  ok(!approved.cardPendingConsent, "approved booking still claims a contractual veto");
+  const applied = await fixture.repository.load(fixture.worldId);
+  const actual = applied.state.matches.filter((entry) => entry.eventId === event.id && entry.status === "SCHEDULED")
+    .sort((a, b) => a.order - b.order);
+  ok(actual[0]?.plannedLengthMinutes === requested[0]!.plannedLengthMinutes
+    && actual[0]?.intendedWinnerSide === requested[0]!.intendedWinnerSide,
+    "approved revision did not apply the promoter-authored match");
+  ok(!originalIds.includes(actual[0]!.id), "original card was not replaced after consent");
+  const retried = await requestAlphaShowCreativeConsent(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "creative-current-approve",
+    expectedRevision: proposed.world.revision,
+    expectedPlanVersion: proposed.workspaceVersion,
+    draftId: proposed.draftId,
+    draftMatchId: proposed.matches[0]!.draftMatchId,
+    personId: loserId,
+  });
+  ok(retried.world.revision === approved.world.revision, "repeated approval advanced World revision");
+});
+
+
+await test("manual advance explains an unapproved show, but the scheduled lock records staff fallback", async () => {
+  const fixture = await reservedShowFixture(61263);
+  const loserId = fixture.participantIds[1]!;
+  const first = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const contract = aggregate.state.contracts.find((entry) => entry.status === "SIGNED"
+      && entry.personId === loserId && entry.promotionId === first.promotion.promotionId);
+    if (!contract) throw new Error("missing controlled wrestler contract");
+    contract.creativeControl = "PROTECTED_FINISHES";
+  });
+  const card = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "creative-lock-fallback-card",
+    expectedRevision: first.world.revision,
+    expectedPlanVersion: first.workspaceVersion,
+    matches: singlesCard(fixture.participantIds),
+    championshipAssignments: [],
+  });
+  ok(card.creativeConcerns.some((entry) => entry.personId === loserId && entry.consent === "NOT_REQUESTED"
+    && entry.requiresConsent), "saved card did not identify unapproved wrestler");
+  const revisionBeforeAdvance = card.world.revision;
+  let blocked = false;
+  try {
+    await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+      expectedRevision: revisionBeforeAdvance,
+    });
+  } catch (error) {
+    blocked = error instanceof Error && error.message.includes("Creative approval required");
+  }
+  ok(blocked, "manual week advancement did not explain the unresolved creative permission");
+  const afterAttempt = await fixture.repository.load(fixture.worldId);
+  ok(afterAttempt.runtime.revision === revisionBeforeAdvance
+    && afterAttempt.planning.showReservations.length === 1
+    && !afterAttempt.state.ledger.some((entry) => entry.type === "PLANNED_SHOW_CREATIVE_STAFF_FALLBACK"),
+    "blocked manual advancement mutated World or prematurely released the show");
+
+  const lockedRevision = await lockPersistedWorldForResolution(
+    fixture.repository, fixture.worldId, revisionBeforeAdvance,
+  );
+  const afterLock = await fixture.repository.load(fixture.worldId);
+  ok(afterLock.runtime.phase === "LOCKING", "scheduled lock did not progress after manual veto");
+  ok(afterLock.state.ledger.some((entry) => entry.type === "PLANNED_SHOW_CREATIVE_STAFF_FALLBACK"
+    && entry.entityIds.includes(first.promotion.promotionId)), "scheduled lock did not record staff takeover reason");
+  ok(afterLock.planning.showReservations.length === 0, "released unapproved reservation still claims scarce wrestlers");
+  await resolvePersistedWorldWeek(fixture.repository, fixture.worldId, lockedRevision);
+  const resolved = await fixture.repository.load(fixture.worldId);
+  ok(resolved.runtime.phase === "OPEN", "scheduled World was held hostage by another promoter's permission");
+  const notices = buildPlayerAttention(resolved, "alpha-player");
+  ok(notices.some((entry) => entry.title === "Unapproved booking handed to staff"),
+    "player was not shown the scripted booking fallback in Attention");
+});
+
+
+await test("withdrawing a refused live-card amendment restores the last committed booking without touching its actual matches", async () => {
+  const fixture = await reservedShowFixture(61271);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await materializePersistedCurrentWeekReservations(fixture.repository, fixture.worldId, before.world.revision);
+  const materialized = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const loserId = fixture.participantIds[1]!;
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const deal = aggregate.state.contracts.find((contract) =>
+      contract.promotionId === materialized.promotion.promotionId && contract.personId === loserId
+      && contract.status === "SIGNED");
+    if (!deal) throw new Error("missing protected wrestler's agreement");
+    deal.creativeControl = "PROTECTED_FINISHES";
+  });
+  const originalCard = singlesCard(fixture.participantIds).map((match, index) =>
+    index === 0 ? { ...match, plannedFinish: "PROTECTED_FINISH" as const } : match);
+  const original = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "withdraw-original",
+    expectedRevision: materialized.world.revision,
+    expectedPlanVersion: materialized.workspaceVersion,
+    matches: originalCard,
+    championshipAssignments: [],
+  });
+  ok(!original.cardPendingConsent, "contract-safe original show was unexpectedly pending approval");
+  const initialWorld = await fixture.repository.load(fixture.worldId);
+  const event = initialWorld.state.events.find((item) =>
+    item.promotionId === original.promotion.promotionId && item.status === "SCHEDULED"
+    && item.date.week === initialWorld.state.world.currentDate.week)!;
+  const liveMatches = initialWorld.state.matches.filter((match) =>
+    match.eventId === event.id && match.status === "SCHEDULED");
+  const initialIds = liveMatches.map((match) => match.id);
+
+  const proposed = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "withdraw-propose-clean-loss",
+    expectedRevision: original.world.revision,
+    expectedPlanVersion: original.workspaceVersion,
+    matches: original.matches.map((match, index) => index === 0
+      ? { ...match, plannedFinish: "CLEAN_PIN" as const, plannedLengthMinutes: match.plannedLengthMinutes + 5 }
+      : match),
+    championshipAssignments: [],
+  });
+  ok(proposed.cardPendingConsent, "new protected loss was applied instead of held");
+  const stored = await fixture.repository.load(fixture.worldId);
+  ok(stored.planning.pendingCardAmendments?.length === 1, "missing rollback checkpoint");
+  ok(stored.planning.pendingCardAmendments?.[0]?.committedDraft.matches[0]?.plannedFinish === "PROTECTED_FINISH",
+    "checkpoint did not keep previously committed finish");
+  const sameIds = stored.state.matches.filter((match) => match.eventId === event.id
+    && match.status === "SCHEDULED").map((match) => match.id);
+  ok(sameIds.join(":") === initialIds.join(":"), "pending change damaged the committed match IDs");
+
+  // Editing another pending proposal must never overwrite the first checkpoint.
+  const amended = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "withdraw-propose-again",
+    expectedRevision: proposed.world.revision,
+    expectedPlanVersion: proposed.workspaceVersion,
+    matches: proposed.matches.map((match, index) => index === 0
+      ? { ...match, plannedLengthMinutes: match.plannedLengthMinutes + 1 } : match),
+    championshipAssignments: [],
+  });
+  const afterSecondSave = await fixture.repository.load(fixture.worldId);
+  ok(afterSecondSave.planning.pendingCardAmendments?.length === 1
+    && afterSecondSave.planning.pendingCardAmendments[0]?.committedDraft.matches[0]?.plannedFinish === "PROTECTED_FINISH",
+    "second proposed change overwrote the committed baseline");
+
+  const restoreRequest = {
+    requestId: "withdraw-test-request",
+    expectedRevision: amended.world.revision,
+    expectedPlanVersion: amended.workspaceVersion,
+    draftId: amended.draftId,
+  };
+  let wrongControllerDenied = false;
+  try {
+    await withdrawAlphaShowCreativeAmendment(fixture.repository, fixture.worldId, "another-player", restoreRequest);
+  } catch { wrongControllerDenied = true; }
+  ok(wrongControllerDenied, "another player withdrew a promoter's pending card");
+
+  const restored = await withdrawAlphaShowCreativeAmendment(
+    fixture.repository, fixture.worldId, "alpha-player", restoreRequest);
+  ok(!restored.cardPendingConsent, "restoration did not clear pending creative amendment");
+  ok(restored.matches[0]?.plannedFinish === "PROTECTED_FINISH"
+    && restored.matches[0]?.plannedLengthMinutes === original.matches[0]?.plannedLengthMinutes,
+    "withdrawal did not restore prior authored finish and duration");
+  ok(restored.creativeConcerns.filter((entry) => entry.requiresConsent).length === 0,
+    "restored protected finish still raised a contractual veto");
+  const resultWorld = await fixture.repository.load(fixture.worldId);
+  ok(resultWorld.planning.pendingCardAmendments?.length === 0, "withdrawal retained stale rollback checkpoint");
+  ok(resultWorld.state.matches.filter((match) => match.eventId === event.id
+    && match.status === "SCHEDULED").map((match) => match.id).join(":") === initialIds.join(":"),
+    "withdrawal replaced actual scheduled matches");
+  const retry = await withdrawAlphaShowCreativeAmendment(
+    fixture.repository, fixture.worldId, "alpha-player", restoreRequest);
+  ok(retry.world.revision === restored.world.revision, "replay of withdrawal mutated World revision");
+
+  let staleRejected = false;
+  try {
+    await withdrawAlphaShowCreativeAmendment(fixture.repository, fixture.worldId, "alpha-player", {
+      ...restoreRequest, requestId: "withdraw-new-stale-request",
+    });
+  } catch { staleRejected = true; }
+  ok(staleRejected, "new withdrawal against already restored card was accepted");
+});
+
+await test("withdrawal restores prior wrestler approval when a declined new finish replaces its consent record", async () => {
+  const fixture = await reservedShowFixture(61272);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await materializePersistedCurrentWeekReservations(fixture.repository, fixture.worldId, before.world.revision);
+  const ready = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const loserId = fixture.participantIds[1]!;
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const deal = aggregate.state.contracts.find((contract) =>
+      contract.promotionId === ready.promotion.promotionId && contract.personId === loserId
+      && contract.status === "SIGNED");
+    if (!deal) throw new Error("missing original protected contract");
+    deal.creativeControl = "PROTECTED_FINISHES";
+    const person = aggregate.state.people.find((entry) => entry.id === loserId)!;
+    person.morale = 100; person.fatigue = 0; person.priorities.loyalty = 100; person.priorities.role = 0;
+  });
+  const first = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "previously-approved-card",
+    expectedRevision: ready.world.revision,
+    expectedPlanVersion: ready.workspaceVersion,
+    matches: singlesCard(fixture.participantIds).map((match, index) =>
+      index === 0 ? { ...match, plannedFinish: "CLEAN_PIN" as const } : match),
+    championshipAssignments: [],
+  });
+  ok(first.cardPendingConsent, "original clean loss should require approval");
+  const accepted = await requestAlphaShowCreativeConsent(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "accept-original-loss",
+    expectedRevision: first.world.revision,
+    expectedPlanVersion: first.workspaceVersion,
+    draftId: first.draftId,
+    draftMatchId: first.matches[0]!.draftMatchId,
+    personId: loserId,
+  });
+  ok(!accepted.cardPendingConsent
+    && accepted.creativeConcerns.some((entry) => entry.personId === loserId && entry.consent === "APPROVED"),
+    "first approved card did not become committed");
+
+  const changed = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "amend-approved-loss",
+    expectedRevision: accepted.world.revision,
+    expectedPlanVersion: accepted.workspaceVersion,
+    matches: accepted.matches.map((match, index) => index === 0
+      ? { ...match, plannedLengthMinutes: match.plannedLengthMinutes + 2 } : match),
+    championshipAssignments: [],
+  });
+  ok(changed.cardPendingConsent, "amended previously approved loss should require fresh consent");
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const person = aggregate.state.people.find((entry) => entry.id === loserId)!;
+    person.morale = 0; person.fatigue = 100; person.priorities.loyalty = 0; person.priorities.role = 100;
+  });
+  const declined = await requestAlphaShowCreativeConsent(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "decline-new-version",
+    expectedRevision: changed.world.revision,
+    expectedPlanVersion: changed.workspaceVersion,
+    draftId: changed.draftId,
+    draftMatchId: changed.matches[0]!.draftMatchId,
+    personId: loserId,
+  });
+  ok(declined.cardPendingConsent
+    && declined.creativeConcerns.some((entry) => entry.personId === loserId && entry.consent === "DECLINED"),
+    "changed booking was not refused");
+  const restored = await withdrawAlphaShowCreativeAmendment(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "restore-agreed-old-loss",
+    expectedRevision: declined.world.revision,
+    expectedPlanVersion: declined.workspaceVersion,
+    draftId: declined.draftId,
+  });
+  ok(!restored.cardPendingConsent, "old committed approval did not restore accepted status");
+  ok(restored.creativeConcerns.some((entry) => entry.personId === loserId && entry.consent === "APPROVED"),
+    "withdrawal discarded an approval the wrestler had already granted for the live card");
+  ok(restored.matches[0]?.plannedLengthMinutes === accepted.matches[0]?.plannedLengthMinutes,
+    "withdrawal left the declined match duration on the live draft");
+});
+
+
+await test("the 06:00 daily commitment lock discards only an unapproved amendment and retains its original show", async () => {
+  const fixture = await reservedShowFixture(61291);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await materializePersistedCurrentWeekReservations(fixture.repository, fixture.worldId, before.world.revision);
+  const materialized = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const loserId = fixture.participantIds[1]!;
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const contract = aggregate.state.contracts.find((entry) => entry.personId === loserId
+      && entry.promotionId === materialized.promotion.promotionId && entry.status === "SIGNED");
+    if (!contract) throw new Error("missing protected wrestler contract");
+    contract.creativeControl = "PROTECTED_FINISHES";
+  });
+  const committed = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "daily-commit-original",
+    expectedRevision: materialized.world.revision,
+    expectedPlanVersion: materialized.workspaceVersion,
+    matches: singlesCard(fixture.participantIds).map((match, index) =>
+      index === 0 ? { ...match, plannedFinish: "PROTECTED_FINISH" as const } : match),
+    championshipAssignments: [],
+  });
+  ok(!committed.cardPendingConsent, "original safe booking unexpectedly needs permission");
+  const beforeProposal = await fixture.repository.load(fixture.worldId);
+  const eventId = beforeProposal.state.events.find((event) =>
+    event.promotionId === committed.promotion.promotionId
+    && event.status === "SCHEDULED"
+    && event.date.week === beforeProposal.state.world.currentDate.week)!.id;
+  const originalMatchIds = beforeProposal.state.matches.filter((match) =>
+    match.eventId === eventId && match.status === "SCHEDULED").map((match) => match.id);
+
+  const pending = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "daily-commit-proposal",
+    expectedRevision: committed.world.revision,
+    expectedPlanVersion: committed.workspaceVersion,
+    matches: committed.matches.map((match, index) => index === 0
+      ? { ...match, plannedFinish: "CLEAN_PIN" as const } : match),
+    championshipAssignments: [],
+  });
+  ok(pending.cardPendingConsent, "pending contractual amendment was silently applied");
+  const lock = await lockScheduledShowCommitments(fixture.repository, fixture.worldId, "2026-10-11");
+  ok(lock.status === "COMMITTED", "daily commitment lock did not run");
+  const afterCommit = await fixture.repository.load(fixture.worldId);
+  ok(afterCommit.planning.pendingCardAmendments?.length === 0, "unapproved amendment survived commitment lock");
+  ok(afterCommit.runtime.phase === "OPEN", "commitment phase incorrectly locked all World commands");
+  const liveCard = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(!liveCard.cardPendingConsent && liveCard.matches[0]?.plannedFinish === "PROTECTED_FINISH",
+    "World Lock changed the already-committed script instead of restoring it");
+  ok(afterCommit.state.matches.filter((match) => match.eventId === eventId
+    && match.status === "SCHEDULED").map((match) => match.id).join(":") === originalMatchIds.join(":"),
+    "commitment lock replaced original match records");
+  ok(afterCommit.state.ledger.filter((entry) =>
+    entry.type === "PLANNED_SHOW_UNAPPROVED_AMENDMENT_IGNORED_AT_LOCK"
+    && entry.entityIds.includes(eventId)).length === 1,
+    "ignored card amendment has no unique factual history record");
+  ok(!afterCommit.state.ledger.some((entry) =>
+    entry.type === "PLANNED_SHOW_CREATIVE_STAFF_FALLBACK"
+    && entry.entityIds.includes(committed.promotion.promotionId)),
+    "complete materialized show incorrectly triggered a staff fallback");
+
+  const resolved = await resolveScheduledWorldCycle(fixture.repository, fixture.worldId, "2026-10-11");
+  ok(resolved.status === "RESOLVED", "scheduled World could not resolve the original card");
+  const world = await fixture.repository.load(fixture.worldId);
+  ok(world.state.events.find((entry) => entry.id === eventId)?.status === "COMPLETED",
+    "the intact player-authored event failed to run");
+  const notices = buildPlayerAttention(world, "alpha-player");
+  ok(notices.some((notice) => notice.title === "Your original card ran"),
+    "promoter did not receive the correct no-staff-takeover notice");
+});
+
+await test("a proposal saved after the 06:00 logistics lock is reconciled by the 08:00 World Lock", async () => {
+  const fixture = await reservedShowFixture(61292);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await materializePersistedCurrentWeekReservations(fixture.repository, fixture.worldId, before.world.revision);
+  const ready = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const loserId = fixture.participantIds[1]!;
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const contract = aggregate.state.contracts.find((entry) => entry.personId === loserId
+      && entry.promotionId === ready.promotion.promotionId && entry.status === "SIGNED");
+    if (!contract) throw new Error("missing match-rights contract");
+    contract.creativeControl = "PROTECTED_FINISHES";
+  });
+  const original = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "post-commit-original",
+    expectedRevision: ready.world.revision,
+    expectedPlanVersion: ready.workspaceVersion,
+    matches: singlesCard(fixture.participantIds).map((match, index) =>
+      index === 0 ? { ...match, plannedFinish: "PROTECTED_FINISH" as const } : match),
+    championshipAssignments: [],
+  });
+  await lockScheduledShowCommitments(fixture.repository, fixture.worldId, "2026-10-12");
+  const afterCommit = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(afterCommit.canEdit, "current rules should still allow match-only edits after logistics lock");
+  const proposal = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "post-commit-pending-proposal",
+    expectedRevision: afterCommit.world.revision,
+    expectedPlanVersion: afterCommit.workspaceVersion,
+    matches: original.matches.map((match, index) => index === 0
+      ? { ...match, plannedFinish: "SUBMISSION" as const } : match),
+    championshipAssignments: [],
+  });
+  ok(proposal.cardPendingConsent, "after-commit draft was not held for wrestler permission");
+
+  // A human advance should not treat a complete committed card as unready.
+  const result = await advanceAlphaWorldWeek(fixture.repository, fixture.worldId, "alpha-player", {
+    expectedRevision: proposal.world.revision,
+  });
+  ok(result.world.week === 2, "unapproved *amendment* blocked manual advance of complete card");
+  const world = await fixture.repository.load(fixture.worldId);
+  ok(world.planning.pendingCardAmendments?.length === 0, "final lock did not clear late amendment");
+  ok(world.state.ledger.some((entry) => entry.type === "PLANNED_SHOW_UNAPPROVED_AMENDMENT_IGNORED_AT_LOCK"),
+    "final lock did not record the ignored late amendment");
+  ok(world.runtime.phase === "OPEN" && world.state.world.currentDate.day === 1,
+    "after-lock manual resolution left an inconsistent simulated date");
+});
+
+await test("Show Card persists an explicit Programme association and honours only its agreed match scope", async () => {
+  const fixture = await reservedShowFixture(61301);
+  const [leadId, rivalId] = fixture.participantIds;
+  if (!leadId || !rivalId) throw new Error("fixture missing two storyline wrestlers");
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  await startAlphaManagedProgramme(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "programme-card-link-61301",
+    expectedRevision: before.world.revision,
+    sideA: [{ kind: "PERSON", entityId: leadId }],
+    sideB: [{ kind: "PERSON", entityId: rivalId }],
+    championshipId: null,
+  });
+  await fixture.repository.transact(fixture.worldId, null, (aggregate) => {
+    const deal = aggregate.state.contracts.find((candidate) =>
+      candidate.promotionId === before.promotion.promotionId && candidate.personId === leadId
+      && candidate.status === "SIGNED");
+    if (!deal) throw new Error("missing storyline lead contract");
+    deal.creativeControl = "FULL_APPROVAL";
+    const wrestler = aggregate.state.people.find((p) => p.id === leadId)!;
+    wrestler.morale = 100; wrestler.fatigue = 0; wrestler.priorities.loyalty = 100; wrestler.priorities.role = 0;
+    const programme = aggregate.state.programmes?.find((p) => p.promotionId === before.promotion.promotionId
+      && p.status === "ACTIVE" && p.sideA.some((ref) => ref.entityId === leadId));
+    if (!programme) throw new Error("new Programme not found");
+    const result = requestStandingProgrammeCreativeAgreementCommand(
+      aggregate.state, aggregate.ownership, aggregate.planning, aggregate.commands, aggregate.runtime,
+      {
+        requestId: "programme-standing-61301",
+        worldId: fixture.worldId,
+        playerId: "alpha-player",
+        commandType: "REQUEST_STANDING_PROGRAMME_CREATIVE_AGREEMENT",
+        payload: {
+          promotionId: before.promotion.promotionId,
+          programmeId: programme.id,
+          personId: leadId,
+          matchType: "SINGLES",
+          permittedOutcome: "WIN_OR_PROTECTED_LOSS",
+          termWeeks: 3,
+        },
+      },
+    );
+    if (!result.approved) throw new Error("standing Programme was unexpectedly declined");
+  });
+  const ready = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const programmeId = ready.programmes.find((p) => p.participantIds.includes(leadId)
+    && p.participantIds.includes(rivalId))?.programmeId;
+  if (!programmeId) throw new Error("Show Card did not list the active Programme");
+  const matches = singlesCard(fixture.participantIds);
+  matches[0] = { ...matches[0]!, programmeId };
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "programme-linked-show",
+    expectedRevision: ready.world.revision,
+    expectedPlanVersion: ready.workspaceVersion,
+    matches,
+    championshipAssignments: [],
+  });
+  ok(saved.matches[0]?.programmeId === programmeId, "Programme match link did not round-trip the Show Card");
+  ok(saved.creativeConcerns.some((concern) => concern.personId === leadId
+    && concern.approvalSource === "STANDING_PROGRAMME" && concern.consent === "APPROVED"),
+    "Show Card failed to surface pre-negotiated Programme consent");
+  const persisted = await fixture.repository.load(fixture.worldId);
+  ok(persisted.planning.workspaces.some((workspace) =>
+    workspace.detailedShowDrafts.some((draft) => draft.matches[0]?.programmeId === programmeId)),
+    "explicit Programme link was not persisted by the authoritative planning command");
+
+  const unrelated = matches.map((match, index) =>
+    index === 0 ? { ...match, programmeId: null } : match);
+  const unlinked = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "programme-unlinked-show",
+    expectedRevision: saved.world.revision,
+    expectedPlanVersion: saved.workspaceVersion,
+    matches: unrelated,
+    championshipAssignments: [],
+  });
+  ok(unlinked.creativeConcerns.some((concern) => concern.personId === leadId
+    && concern.consent === "NOT_REQUESTED"),
+    "removing a Programme link did not restore exact-match consent");
+  const illegal = unlinked.matches.map((match, index) =>
+    index === 1 ? { ...match, programmeId } : match);
+  let denied = false;
+  try {
+    await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: "programme-foreign-competitors",
+      expectedRevision: unlinked.world.revision,
+      expectedPlanVersion: unlinked.workspaceVersion,
+      matches: illegal,
+      championshipAssignments: [],
+    });
+  } catch { denied = true; }
+  ok(denied, "server accepted a Programme link on a different set of match competitors");
+  const unchanged = await fixture.repository.load(fixture.worldId);
+  ok(unchanged.runtime.revision === unlinked.world.revision,
+    "rejected fraudulent Programme match link mutated World revision");
+});
 console.log(`\nAlpha web card service tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;

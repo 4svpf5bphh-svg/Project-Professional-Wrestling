@@ -16,8 +16,14 @@ import {
   maxShowParticipantsForEventType,
   playerShowPlanningStatus,
   reservationForDraft,
+  assessPersonShowDateAvailability,
   reserveDetailedShowDraftCommand,
   upsertDetailedShowDraftCommand,
+  requestCreativeBookingConsentCommand,
+  creativeConcernsForDraft,
+  creativeBlockersForDraft,
+  executeIdempotentCommand,
+  type CreativeBookingConcern,
   type ApplicationWorldRepository,
   type ChampionshipDraftAssignment,
   type DetailedMatchDraft,
@@ -36,7 +42,9 @@ import {
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
 import { wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
-import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
+import type { WorldPlanningState } from "../../application/src/planning.js";
 import {
   assessMatchStyleReadiness,
   normalizeMatchStyle,
@@ -76,6 +84,9 @@ export interface AlphaCardParticipantView {
     presentation: number;
   };
   datesRemaining: number;
+  /** Purchased dates not already used or reserved, excluding this show's reservation. */
+  unreservedDatesRemaining: number;
+  unlimitedAppearances: boolean;
 }
 
 export interface AlphaCardMatchReadinessParticipantView {
@@ -96,6 +107,7 @@ export interface AlphaCardMatchReadinessView {
 
 export interface AlphaCardMatchView {
   draftMatchId: string;
+  programmeId?: Id | null;
   type: MatchType;
   sideAIds: Id[];
   sideBIds: Id[];
@@ -187,6 +199,26 @@ export interface AlphaCardStableView {
   formerMemberIds: Id[];
 }
 
+export interface AlphaCardCreativeConcernView extends Omit<CreativeBookingConcern, "bookingSignature"> {
+  wrestlerName: string;
+}
+
+export interface AlphaWithdrawCreativeCardRequest {
+  requestId: string;
+  expectedRevision: number;
+  expectedPlanVersion: number;
+  draftId: string;
+}
+
+export interface AlphaCreativeConsentRequest {
+  requestId: string;
+  expectedRevision: number;
+  expectedPlanVersion: number;
+  draftId: string;
+  draftMatchId: string;
+  personId: Id;
+}
+
 export interface AlphaCurrentWeekCardView {
   world: {
     worldId: Id;
@@ -220,6 +252,9 @@ export interface AlphaCurrentWeekCardView {
   recentMeetings: AlphaRecentMeetingView[];
   championships: AlphaCardChampionshipView[];
   championshipAssignments: AlphaChampionshipAssignmentView[];
+  creativeConcerns: AlphaCardCreativeConcernView[];
+  /** A saved amendment to an already materialized show awaits wrestler consent. */
+  cardPendingConsent: boolean;
 }
 
 export interface AlphaShowCardRequest {
@@ -335,6 +370,7 @@ function normalizeCompleteCard(
     if (interfererPersonId) orderedParticipants.push(interfererPersonId);
     return {
       draftMatchId,
+      ...(match.programmeId ? { programmeId: requiredText(match.programmeId, "match programmeId", 128) } : {}),
       type: match.type,
       sideAIds: [...match.sideAIds],
       sideBIds: [...match.sideBIds],
@@ -826,35 +862,37 @@ function weekIndex(date: PpwDate, weeksPerYear: number): number {
   return ((date.year - 1) * weeksPerYear) + (date.week - 1);
 }
 
-function contractCoversDate(
-  state: WorldState,
-  contract: WorldState["contracts"][number],
-  date: PpwDate,
-): boolean {
-  return contract.status === "SIGNED"
-    && comparePpwDates(date, contract.startDate, state.ruleset.weeksPerYear) >= 0
-    && comparePpwDates(date, contract.endDate, state.ruleset.weeksPerYear) <= 0;
-}
-
 function availableCardParticipants(
   state: WorldState,
+  planning: WorldPlanningState,
   promotionId: Id,
   targetDate: PpwDate,
-  selectedIds: readonly Id[],
+  ownReservationId: string | null,
+  ownCommittedEventIds: ReadonlySet<Id> | null,
 ): AlphaCardParticipantView[] {
-  const selected = new Set(selectedIds);
-  const datesByPerson = new Map<Id, number>();
-  for (const contract of state.contracts) {
-    if (contract.promotionId !== promotionId || !contractCoversDate(state, contract, targetDate)) continue;
-    const remaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
-    if (remaining <= 0 && !selected.has(contract.personId)) continue;
-    datesByPerson.set(contract.personId, (datesByPerson.get(contract.personId) ?? 0) + remaining);
-  }
-
+  const contractRows = state.contracts.filter(contract =>
+    contract.promotionId === promotionId && contractCoversBookedDate(state, contract, targetDate));
   const result: AlphaCardParticipantView[] = [];
-  for (const [personId, datesRemaining] of datesByPerson.entries()) {
-    const person = state.people.find((candidate) => candidate.id === personId);
-    if (!person || person.status !== "ACTIVE") continue;
+  for (const personId of new Set(contractRows.map(contract => contract.personId))) {
+    const assessment = assessPersonShowDateAvailability(
+      state, planning, promotionId, personId, targetDate, ownReservationId ?? "",
+    );
+    if (!assessment.contractId && !ownCommittedEventIds?.has(personId)) continue;
+    const person = state.people.find(candidate => candidate.id === personId);
+    if (!person) continue;
+    const contracts = contractRows.filter(contract => contract.personId === personId);
+    const unlimitedAppearances = contracts.some(contract => contract.family === "EXCLUSIVE");
+    const datesRemaining = contracts.reduce((sum, contract) =>
+      sum + (contract.family === "EXCLUSIVE" ? 0 : Math.max(0, contract.dateEntitlement - contract.datesUsed)), 0);
+    const unreservedDatesRemaining = contracts.reduce((sum, contract) => {
+      if (contract.family === "EXCLUSIVE") return sum;
+      const committed = state.scheduledAppearances.filter(appearance =>
+        appearance.contractId === contract.id && appearance.status !== "CANCELLED").length;
+      const reserved = planning.showReservations.reduce((count, reservation) =>
+        count + (reservation.reservationId === ownReservationId ? 0 :
+          reservation.participants.filter(participant => participant.contractId === contract.id).length), 0);
+      return sum + Math.max(0, contract.dateEntitlement - contract.datesUsed - committed - reserved);
+    }, 0);
     result.push({
       personId,
       name: person.name,
@@ -873,6 +911,8 @@ function availableCardParticipants(
         presentation: person.skills.presentation,
       },
       datesRemaining,
+      unreservedDatesRemaining,
+      unlimitedAppearances,
     });
   }
   return result.sort((left, right) => right.popularity - left.popularity || left.name.localeCompare(right.name));
@@ -978,15 +1018,17 @@ export async function loadAlphaShowCard(
     draftId,
   );
   const peopleById = new Map(aggregate.state.people.map((person) => [person.id, person]));
-  const candidateParticipants = availableCardParticipants(
-    aggregate.state,
-    promotion.id,
-    draft.targetDate,
-    draft.participantIds,
-  );
   const committedIds = status.eventId === null
     ? null
     : new Set(committedEventParticipantIds(aggregate.state, status.eventId));
+  const candidateParticipants = availableCardParticipants(
+    aggregate.state,
+    aggregate.planning,
+    promotion.id,
+    draft.targetDate,
+    reservation?.reservationId ?? null,
+    committedIds,
+  );
   const availableParticipants = committedIds === null
     ? candidateParticipants
     : candidateParticipants.filter((person) => committedIds.has(person.personId));
@@ -1050,6 +1092,8 @@ export async function loadAlphaShowCard(
         presentation: person.skills.presentation,
       },
       datesRemaining: 0,
+      unreservedDatesRemaining: 0,
+      unlimitedAppearances: false,
     } satisfies AlphaCardParticipantView;
   });
 
@@ -1157,6 +1201,7 @@ export async function loadAlphaShowCard(
       match.intendedWinnerSide !== null && match.intent !== null && match.plannedLengthMinutes !== null
         ? [{
           draftMatchId: match.draftMatchId,
+          programmeId: match.programmeId ?? null,
           type: match.type,
           sideAIds: [...match.sideAIds],
           sideBIds: [...match.sideBIds],
@@ -1185,6 +1230,13 @@ export async function loadAlphaShowCard(
     ),
     championships,
     championshipAssignments: draft.championshipAssignments.map((assignment) => ({ ...assignment })),
+    creativeConcerns: creativeConcernsForDraft(aggregate.state, aggregate.planning, draft).map(({ bookingSignature: _signature, ...concern }) => ({
+      ...concern, wrestlerName: peopleById.get(concern.personId)?.name ?? concern.personId,
+    })),
+    cardPendingConsent: status.eventId !== null
+      && (aggregate.planning.pendingCardAmendments ?? []).some((entry) =>
+        entry.promotionId === promotion.id && entry.draftId === draftId
+        && entry.eventId === status.eventId),
   };
 }
 
@@ -1289,6 +1341,11 @@ export async function saveAlphaShowCard(
       aggregate.state,
       control.promotionId,
     );
+    const committedDraftBeforeEdit = materializedEventId !== null ? structuredClone(draft) : null;
+    const committedConsentsBeforeEdit = materializedEventId !== null
+      ? structuredClone((aggregate.planning.creativeConsents ?? []).filter((entry) =>
+          entry.promotionId === control.promotionId && entry.draftId === draftId))
+      : [];
     const nextWorkspace = upsertDetailedShowDraftCommand(
       aggregate.state,
       aggregate.ownership,
@@ -1317,13 +1374,35 @@ export async function saveAlphaShowCard(
     );
 
     if (materializedEventId !== null) {
+      const storedDraft = nextWorkspace.detailedShowDrafts.find((entry) => entry.draftId === draftId)!;
+      // Keep the previously committed card in place until ALL protected
+      // participants approve this exact amended script. Saving a proposal
+      // never substitutes a different winner or silently overrides a veto.
       if (!cardReceipt) {
-        replaceMaterializedEventCard(
-          aggregate.state,
-          materializedEventId,
-          matches,
-          championshipAssignments,
-        );
+        const blockers = creativeBlockersForDraft(aggregate.state, aggregate.planning, storedDraft);
+        if (blockers.length > 0) {
+          aggregate.planning.pendingCardAmendments ??= [];
+          if (!aggregate.planning.pendingCardAmendments.some((entry) =>
+            entry.promotionId === control.promotionId && entry.draftId === draftId)) {
+            aggregate.planning.pendingCardAmendments.push({
+              promotionId: control.promotionId,
+              draftId,
+              eventId: materializedEventId,
+              committedDraft: committedDraftBeforeEdit!,
+              committedConsents: committedConsentsBeforeEdit,
+            });
+          }
+        } else {
+          replaceMaterializedEventCard(
+            aggregate.state,
+            materializedEventId,
+            matches,
+            championshipAssignments,
+          );
+          // The new script was applied; its previous rollback point is stale.
+          aggregate.planning.pendingCardAmendments = (aggregate.planning.pendingCardAmendments ?? [])
+            .filter((entry) => !(entry.promotionId === control.promotionId && entry.draftId === draftId));
+        }
       }
       return;
     }
@@ -1358,4 +1437,128 @@ export async function saveAlphaCurrentWeekCard(
   request: AlphaShowCardRequest,
 ): Promise<AlphaCurrentWeekCardView> {
   return saveAlphaShowCard(repository, worldId, playerId, { ...request, draftId: undefined });
+}
+
+/**
+ * Request agreement to a saved booking, never an unsaved client-side script.
+ * The same World transaction both records the response and, once fully
+ * approved, applies a pending edit to an already-materialized show.
+ */
+export async function requestAlphaShowCreativeConsent(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  request: AlphaCreativeConsentRequest,
+): Promise<AlphaCurrentWeekCardView> {
+  const requestId = requiredText(request.requestId, "requestId");
+  const draftId = requiredText(request.draftId, "draftId", 128);
+  const draftMatchId = requiredText(request.draftMatchId, "draftMatchId", 128);
+  const personId = requiredText(request.personId, "personId", 128);
+  const expectedRevision = requireExpectedRevision(request.expectedRevision);
+  const expectedPlanVersion = requirePlanVersion(request.expectedPlanVersion);
+  await repository.transact(worldId, null, (aggregate) => {
+    const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
+    if (!control) throw new Error("Take control of a promotion before requesting consent");
+    const commandRequestId = `${requestId}:creative-consent`;
+    const oldReceipt = aggregate.commands.receipts.find((entry) => entry.requestId === commandRequestId);
+    if (!oldReceipt && aggregate.runtime.revision !== expectedRevision) {
+      throw new Error(`stale World revision for ${worldId}: expected ${expectedRevision}, current ${aggregate.runtime.revision}`);
+    }
+    const workspace = aggregate.planning.workspaces.find((entry) => entry.promotionId === control.promotionId);
+    const draft = workspace?.detailedShowDrafts.find((entry) => entry.draftId === draftId);
+    if (!workspace || !draft) throw new Error("Save this show before requesting wrestler consent");
+
+    const status = playerShowPlanningStatus(aggregate.state, aggregate.planning, aggregate.runtime, control.promotionId, draftId);
+    if (!oldReceipt && !status.availableActions.some((action) => action === "EDIT_DRAFT" || action === "EDIT_CARD")) {
+      throw new Error("Creative approval requests are closed for this show");
+    }
+
+    const result = requestCreativeBookingConsentCommand(
+      aggregate.state, aggregate.ownership, aggregate.planning, aggregate.commands, aggregate.runtime,
+      {
+        requestId: commandRequestId, worldId, playerId,
+        commandType: "REQUEST_CREATIVE_BOOKING_CONSENT",
+        payload: { promotionId: control.promotionId, draftId, draftMatchId, personId, expectedPlanVersion },
+      },
+    );
+    if (!oldReceipt && result.decision === "APPROVED" && status.eventId !== null
+      && creativeBlockersForDraft(aggregate.state, aggregate.planning, draft).length === 0) {
+      const plans = draft.matches.filter((match) => (
+        match.intendedWinnerSide !== null && match.intent !== null && match.plannedLengthMinutes !== null
+      ));
+      if (plans.length !== draft.matches.length || plans.length === 0) {
+        throw new Error("A complete show card is required before applying approved changes");
+      }
+      replaceMaterializedEventCard(
+        aggregate.state, status.eventId, plans, draft.championshipAssignments,
+      );
+      aggregate.planning.pendingCardAmendments = (aggregate.planning.pendingCardAmendments ?? [])
+        .filter((entry) => !(entry.promotionId === control.promotionId && entry.draftId === draftId));
+    }
+  });
+  return loadAlphaShowCard(repository, worldId, playerId, draftId);
+}
+
+/**
+ * Discard only a pending amendment and return the show editor to its most
+ * recent committed script. Actual scheduled match objects were never changed,
+ * so no match IDs, titles, fees, contract dates or outcomes are rewritten.
+ */
+export async function withdrawAlphaShowCreativeAmendment(
+  repository: ApplicationWorldRepository,
+  worldId: string,
+  playerId: string,
+  request: AlphaWithdrawCreativeCardRequest,
+): Promise<AlphaCurrentWeekCardView> {
+  const requestId = requiredText(request.requestId, "requestId", 220);
+  const draftId = requiredText(request.draftId, "draftId", 128);
+  const expectedRevision = requireExpectedRevision(request.expectedRevision);
+  const expectedPlanVersion = requirePlanVersion(request.expectedPlanVersion);
+  const commandRequestId = `${requestId}:withdraw-creative-card`;
+  await repository.transact(worldId, null, (aggregate) => {
+    const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
+    if (!control) throw new Error("Take control of a promotion before withdrawing a card amendment");
+    const priorReceipt = aggregate.commands.receipts.find((entry) => entry.requestId === commandRequestId);
+    if (!priorReceipt && aggregate.runtime.revision !== expectedRevision) {
+      throw new Error(`stale World revision for ${worldId}: expected ${expectedRevision}, current ${aggregate.runtime.revision}`);
+    }
+    executeIdempotentCommand(
+      aggregate.commands, aggregate.runtime,
+      {
+        requestId: commandRequestId, worldId, playerId,
+        commandType: "WITHDRAW_CREATIVE_CARD_AMENDMENT",
+        payload: { promotionId: control.promotionId, draftId, expectedPlanVersion },
+      },
+      aggregate.state.world.currentDate,
+      () => {
+        const workspace = aggregate.planning.workspaces.find((entry) =>
+          entry.promotionId === control.promotionId);
+        if (!workspace || workspace.version !== expectedPlanVersion) {
+          throw new Error("stale show plan version: reload the Show Card before withdrawing");
+        }
+        const status = playerShowPlanningStatus(
+          aggregate.state, aggregate.planning, aggregate.runtime, control.promotionId, draftId,
+        );
+        if (status.eventId === null || !status.availableActions.includes("EDIT_CARD")) {
+          throw new Error("Only an editable materialized show can restore its committed card");
+        }
+        const pending = (aggregate.planning.pendingCardAmendments ?? []).find((entry) =>
+          entry.promotionId === control.promotionId && entry.draftId === draftId
+          && entry.eventId === status.eventId);
+        if (!pending) throw new Error("No pending creative card amendment to withdraw");
+        const draftIndex = workspace.detailedShowDrafts.findIndex((entry) => entry.draftId === draftId);
+        if (draftIndex < 0) throw new Error("The amended show draft no longer exists");
+
+        workspace.detailedShowDrafts[draftIndex] = structuredClone(pending.committedDraft);
+        const otherConsents = (aggregate.planning.creativeConsents ?? []).filter((entry) =>
+          entry.promotionId !== control.promotionId || entry.draftId !== draftId);
+        aggregate.planning.creativeConsents = [...otherConsents, ...structuredClone(pending.committedConsents)];
+        aggregate.planning.pendingCardAmendments = (aggregate.planning.pendingCardAmendments ?? [])
+          .filter((entry) => entry !== pending);
+        workspace.version += 1;
+        return { restoredDraftId: draftId, restoredPlanVersion: workspace.version };
+      },
+    );
+  });
+  return loadAlphaShowCard(repository, worldId, playerId, draftId);
 }

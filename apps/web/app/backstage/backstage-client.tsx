@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { PlayerBackstageView } from "../../../../dist/packages/application/src/backstage.js";
+import type { PlayerBackstageView, PlayerBackstageProgrammeOption } from "../../../../dist/packages/application/src/backstage.js";
 import type { BackstageResponse } from "../../../../dist/packages/application/src/engagement.js";
 
 type ErrorPayload = { error?: string };
@@ -36,6 +36,8 @@ export default function BackstageClient(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [choices, setChoices] = useState<Record<string, BackstageResponse>>({});
+  const [creativeScopes, setCreativeScopes] = useState<Record<string, "WIN_ONLY" | "WIN_OR_PROTECTED_LOSS">>({});
+  const [creativeWeeks, setCreativeWeeks] = useState<Record<string, number>>({});
   const requestIds = useRef(new Map<string, string>());
 
   async function load(): Promise<void> {
@@ -83,6 +85,39 @@ export default function BackstageClient(): React.JSX.Element {
     }
   }
 
+  async function discussProgramme(option: PlayerBackstageProgrammeOption): Promise<void> {
+    if (!view?.canRespond || busyId || option.previousDecision !== null) return;
+    const key = `programme-creative:${option.programmeId}:${option.wrestlerId}`;
+    const requestId = requestIds.current.get(key) ?? crypto.randomUUID();
+    requestIds.current.set(key, requestId);
+    setBusyId(key);
+    setError(null);
+    try {
+      const response = await fetch("/api/backstage/programme-creative", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId,
+          programmeId: option.programmeId,
+          personId: option.wrestlerId,
+          matchType: option.matchType,
+          permittedOutcome: creativeScopes[key] ?? "WIN_ONLY",
+          termWeeks: creativeWeeks[key] ?? 2,
+        }),
+      });
+      const payload = await response.json() as PlayerBackstageView | ErrorPayload;
+      if (!response.ok || isError(payload)) {
+        throw Error(isError(payload) && payload.error ? payload.error : "Unable to discuss Programme terms");
+      }
+      setView(payload);
+      requestIds.current.delete(key);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to discuss Programme terms");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <main className="page-shell" style={{ paddingBottom: 120 }}>
       <section className="panel">
@@ -105,6 +140,74 @@ export default function BackstageClient(): React.JSX.Element {
       {!loading && view?.promotionId === null ? (
         <section className="panel"><p className="muted">Take control of a promotion to receive private Backstage conversations.</p></section>
       ) : null}
+      {!loading && view?.promotionId && view.programmeCreativeOptions.length > 0 ? (
+        <section className="panel">
+          <div className="section-heading">
+            <div><span className="eyebrow">CREATIVE CONTROL / BACKSTAGE</span><h2>Discuss a Programme direction</h2></div>
+            <a href="/programmes" className="secondary-button">Programmes</a>
+          </div>
+          <p className="muted body-copy">
+            Agree a short run of matches once instead of seeking approval every week.
+            A clean loss, changed opponent or unagreed interference still requires a fresh discussion.
+            This does not book any results.
+          </p>
+          <div className="choice-grid">
+            {view.programmeCreativeOptions.map((option) => {
+              const key = `programme-creative:${option.programmeId}:${option.wrestlerId}`;
+              const scope = creativeScopes[key] ?? "WIN_ONLY";
+              const weeks = creativeWeeks[key] ?? 2;
+              const locked = option.previousDecision !== null || !view.canRespond || busyId !== null;
+              return (
+                <article key={key} className="choice-card">
+                  <span className="eyebrow">{option.matchType === "TAG" ? "TAG PROGRAMME" : "SINGLES PROGRAMME"}</span>
+                  <h3>{option.wrestlerName}</h3>
+                  <p className="muted body-copy">{option.programmeLabel}</p>
+                  {option.previousDecision !== null ? (
+                    <p className="body-copy">
+                      <strong>{option.previousDecision === "APPROVED" ? "Agreed" : "Declined"}</strong>
+                      {" "}— conversation recorded.
+                      {option.expiryDate ? ` Terms expire before Y${option.expiryDate.year} W${option.expiryDate.week} D${option.expiryDate.day}.` : ""}
+                      {" "}A refused agreement cannot be rerolled within the same Programme and contract.
+                    </p>
+                  ) : (
+                    <>
+                      <p className="muted micro-copy">What can the wrestler agree to?</p>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {([
+                          ["WIN_ONLY", "Wins only"],
+                          ["WIN_OR_PROTECTED_LOSS", "Wins + protected losses"],
+                        ] as const).map(([value, label]) => (
+                          <button type="button" key={value} disabled={locked}
+                            className={scope === value ? "primary-button" : "secondary-button"}
+                            onClick={() => {
+                              setCreativeScopes((previous) => ({ ...previous, [key]: value }));
+                              requestIds.current.delete(key);
+                            }}>{label}</button>
+                        ))}
+                      </div>
+                      <p className="muted micro-copy">Agreement length · PPW weeks</p>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {[2, 4, 6].map((value) => (
+                          <button type="button" key={value} disabled={locked}
+                            className={weeks === value ? "primary-button" : "secondary-button"}
+                            onClick={() => {
+                              setCreativeWeeks((previous) => ({ ...previous, [key]: value }));
+                              requestIds.current.delete(key);
+                            }}>{value} weeks</button>
+                        ))}
+                      </div>
+                      <button type="button" className="primary-button" disabled={locked}
+                        onClick={() => void discussProgramme(option)}>
+                        {busyId === key ? "Discussing…" : "Discuss terms with wrestler"}
+                      </button>
+                    </>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
       {!loading && view?.promotionId ? (
         <section className="panel">
           <div className="section-heading">
@@ -119,6 +222,7 @@ export default function BackstageClient(): React.JSX.Element {
               const moment = conversation.kind === "TEAM_MOMENT";
               const gimmick = conversation.kind === "GIMMICK_CHANGE_PITCH";
               const working = conversation.kind === "WORKING_PARTNERSHIP_CONCERN";
+              const programmeCreative = conversation.kind === "PROGRAMME_CREATIVE_AGREEMENT";
               const replies = REPLIES.filter((reply) => pitch
                 ? reply.value === "CONSIDER_TAG_TEAM" || reply.value === "PASS_TAG_TEAM"
                 : rivalry
@@ -138,7 +242,7 @@ export default function BackstageClient(): React.JSX.Element {
                 <article className="choice-card" key={conversation.conversationId}>
                   <div className="choice-card-top">
                     <div>
-                      <span className="eyebrow">{moment ? "LOCKER-ROOM GOOD NEWS" : pitch ? "TAG-TEAM PITCH" : rivalry ? "RIVALRY PITCH"
+                      <span className="eyebrow">{programmeCreative ? "PROGRAMME CREATIVE DISCUSSION" : moment ? "LOCKER-ROOM GOOD NEWS" : pitch ? "TAG-TEAM PITCH" : rivalry ? "RIVALRY PITCH"
                         : gimmick ? "CHARACTER PITCH" : working ? "TAG PARTNERSHIP CONCERN" : conversation.status === "OPEN" ? "WANTS A WORD" : "CONVERSATION RECORDED"}</span>
                       <h3>{conversation.wrestlerName}</h3>
                     </div>
@@ -300,7 +404,13 @@ export default function BackstageClient(): React.JSX.Element {
                     </p>
                   ) : null}
                   {conversation.status === "NOTED" ? (
-                    <p className="muted body-copy">Good news noted in your Backstage history. You can carry on booking as normal.</p>
+                    programmeCreative && conversation.programmeCreative ? (
+                      <p className="muted body-copy"><strong>{conversation.programmeCreative.approved ? "Agreed" : "Declined"}.</strong>{" "}
+                        {conversation.programmeCreative.permittedOutcome === "WIN_ONLY" ? "Win assignments" : "Wins and protected losses"}
+                        {" "}for {conversation.programmeCreative.matchType.toLowerCase()} matches. Effective until before
+                        {" "}Y{conversation.programmeCreative.expiryDate.year} W{conversation.programmeCreative.expiryDate.week} D{conversation.programmeCreative.expiryDate.day}.
+                        Nothing has been booked automatically.</p>
+                    ) : <p className="muted body-copy">Good news noted in your Backstage history. You can carry on booking as normal.</p>
                   ) : conversation.status === "OPEN" ? (
                     <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
                       {replies.map((reply) => (

@@ -2,17 +2,29 @@ declare const process: { exitCode?: number };
 
 import {
   createWorldCommandState,
+  activityForPlayer,
+  claimIndependentPromotionForPlayer,
+  joinPlayerToWorld,
+  recordPlayerActivity,
+  activeSchedulerDaysBetween,
+  createWorldEngagementState,
+  recordMissedSchedulerCycles,
+  evaluatePlayerInactivity,
   createWorldOwnershipState,
   createWorldPlanningState,
   createWorldRuntimeState,
   lockPersistedWorldForResolution,
   lockScheduledShowCommitments,
   resolveScheduledWorldCycle,
+  PPW_COMMITMENT_UTC_HOUR,
+  PPW_RESOLUTION_UTC_HOUR,
+  utcScheduledCycleKey,
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
+import { readFileSync } from "node:fs";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/memory-world-repository.js";
-import { createWorld } from "../packages/sim-core/src/index.js";
+import { addPpwWeeks, advanceWeek, createWorld } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -262,5 +274,161 @@ await test("scheduler rejects malformed real-cycle keys", async () => {
   ok(rejected, "malformed cycle key was accepted");
 });
 
+
+await test("all seven UTC weekdays lock then resolve once, with Sunday and duplicate delivery safe", async () => {
+  const aggregate = fixture(18020);
+  const repository = new InMemoryApplicationWorldRepository();
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  for (let offset = 0; offset < 7; offset += 1) {
+    const cycle = new Date(Date.UTC(2026, 9, 5 + offset));
+    const cycleKey = utcScheduledCycleKey(cycle);
+    const weekday = new Intl.DateTimeFormat("en-GB", { weekday: "long", timeZone: "UTC" }).format(cycle);
+    ok(weekday === weekdays[offset], `calendar drift on day ${offset}: got ${weekday}`);
+    const commitment = await lockScheduledShowCommitments(repository, worldId, cycleKey);
+    ok(commitment.status === "COMMITTED", `${weekday} was not committed`);
+    const beforeResolution = await repository.load(worldId);
+    ok(beforeResolution.runtime.commitmentLockedRealCycleKey === cycleKey,
+      `${weekday} commitment used a different UTC date`);
+    ok(beforeResolution.state.world.currentDate.week === offset + 1,
+      `${weekday} commitment advanced the World prematurely`);
+    const resolution = await resolveScheduledWorldCycle(repository, worldId, cycleKey);
+    ok(resolution.status === "RESOLVED", `${weekday} did not resolve once`);
+    const after = await repository.load(worldId);
+    ok(after.state.world.currentDate.year === 1 && after.state.world.currentDate.week === offset + 2
+      && after.state.world.currentDate.day === 1,
+      `${weekday} did not advance exactly one complete seven-day PPW week`);
+    ok(after.runtime.lastResolvedRealCycleKey === cycleKey, `${weekday} cycle was not recorded`);
+    const repeated = await resolveScheduledWorldCycle(repository, worldId, cycleKey);
+    ok(repeated.status === "ALREADY_RESOLVED", `${weekday} duplicate caused another resolution`);
+  }
+  const mondayAfterSunday = utcScheduledCycleKey(new Date(Date.UTC(2026, 9, 12)));
+  const nextCommitment = await lockScheduledShowCommitments(repository, worldId, mondayAfterSunday);
+  ok(nextCommitment.status === "COMMITTED", "Monday after Sunday rollover could not commit");
+  await resolveScheduledWorldCycle(repository, worldId, mondayAfterSunday);
+  const nextWeek = await repository.load(worldId);
+  ok(nextWeek.state.world.currentDate.week === 9 && nextWeek.state.world.currentDate.day === 1,
+    "Monday rollover lost or duplicated an in-game week");
+});
+
+await test("daily production cron rules and shared UTC lock/resolve keys stay aligned", async () => {
+  const config = JSON.parse(readFileSync("vercel.json", "utf8")) as {
+    crons: Array<{ path: string; schedule: string }>;
+  };
+  const commit = config.crons.find((entry) => entry.path === "/api/internal/commit-shows");
+  const resolve = config.crons.find((entry) => entry.path === "/api/internal/resolve-week");
+  ok(commit?.schedule === `0 ${PPW_COMMITMENT_UTC_HOUR} * * *`,
+    "production commitment cron must run all 7 UTC weekdays at the canonical hour");
+  ok(resolve?.schedule === `0 ${PPW_RESOLUTION_UTC_HOUR} * * *`,
+    "production resolution cron must run all 7 UTC weekdays at the canonical hour");
+  ok(PPW_COMMITMENT_UTC_HOUR < PPW_RESOLUTION_UTC_HOUR,
+    "the full World cannot resolve before the show commitment deadline");
+  for (const timestamp of [
+    "2026-10-10T23:59:59.999Z", "2026-10-11T00:00:00.000Z",
+    "2026-10-24T23:59:59.999Z", "2026-10-25T00:00:00.000Z",
+    "2027-03-28T00:00:00.000Z", "2028-02-29T08:00:00.000Z",
+  ]) {
+    const instant = new Date(timestamp);
+    ok(utcScheduledCycleKey(instant) === timestamp.slice(0, 10),
+      `UTC cycle key drifted at ${timestamp}`);
+  }
+  function londonTime(utcIso: string): string {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    }).format(new Date(utcIso));
+  }
+  // Vercel schedules UTC, not British wall-clock time. Tests make the
+  // shift explicit rather than accidentally declaring both as 06/08 UK.
+  ok(londonTime("2026-10-24T06:00:00Z") === "07:00"
+    && londonTime("2026-10-24T08:00:00Z") === "09:00",
+    "BST scheduler display is not one hour ahead of UTC");
+  ok(londonTime("2026-10-25T06:00:00Z") === "06:00"
+    && londonTime("2026-10-25T08:00:00Z") === "08:00",
+    "GMT scheduler display did not adjust after autumn clock change");
+  ok(londonTime("2027-03-27T06:00:00Z") === "06:00"
+    && londonTime("2027-03-28T06:00:00Z") === "07:00",
+    "spring clock change was not recognized");
+});
+
+await test("PPW's internal day 1–7 calendar stays distinct from daily UTC scheduler cycles", async () => {
+  const state = createWorld(18021, DEFAULT_RULESET);
+  const weeks = state.ruleset.weeksPerYear;
+  ok(weeks === 52, "PPW year must have 52 in-game weeks");
+  for (let day = 1; day <= 7; day += 1) {
+    const date = { year: 1, week: 52, day };
+    const next = addPpwWeeks(date, 1, weeks);
+    ok(next.year === 2 && next.week === 1 && next.day === day,
+      `PPW day ${day} did not survive the 52-week year boundary`);
+  }
+  state.world.currentDate = { year: 1, week: 52, day: 7 };
+  advanceWeek(state.world, weeks);
+  ok(state.world.currentDate.year === 2
+    && state.world.currentDate.week === 1
+    && state.world.currentDate.day === 1,
+    "new PPW week did not restart at Monday after Sunday/year rollover");
+});
+
+await test("outage resumes exactly one PPW week and protects accrued inactivity days", async () => {
+  const aggregate = fixture(18030);
+  joinPlayerToWorld(aggregate.ownership, "offline-player", aggregate.state.world.currentDate);
+  const independent = aggregate.state.promotions.find((entry) =>
+    entry.tier === "INDEPENDENT" && entry.lifecycle === "ACTIVE");
+  if (!independent) throw new Error("fixture has no claimable independent promotion");
+  claimIndependentPromotionForPlayer(aggregate.state, aggregate.ownership, "offline-player", independent.id);
+  aggregate.engagement = createWorldEngagementState(aggregate.state.world.id);
+  recordPlayerActivity(
+    aggregate.engagement, "offline-player", aggregate.state.world.currentDate, 0, "2026-10-01",
+  );
+  const repository = new InMemoryApplicationWorldRepository();
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await resolveScheduledWorldCycle(repository, worldId, "2026-10-01");
+  const first = await repository.load(worldId);
+  const recovered = await resolveScheduledWorldCycle(repository, worldId, "2026-10-12");
+  ok(recovered.status === "RESOLVED", "World did not resume after 10 missing cycles");
+  let after = await repository.load(worldId);
+  ok(after.state.world.currentDate.week === first.state.world.currentDate.week + 1,
+    "scheduler replayed multiple unplanned PPW weeks after outage");
+  ok(after.runtime.lastResolvedRealCycleKey === "2026-10-12", "resumed cycle did not become authoritative");
+  ok(after.engagement?.schedulerPauseSpans?.length === 1
+    && after.engagement.schedulerPauseSpans[0]?.firstMissedCycleKey === "2026-10-02"
+    && after.engagement.schedulerPauseSpans[0]?.lastMissedCycleKey === "2026-10-11",
+    "missing real calendar days were not persisted exactly once");
+  ok(after.engagement
+    && activeSchedulerDaysBetween(after.engagement, "2026-10-01", "2026-10-12") === 1,
+    "missed dates counted toward effective inactive days");
+  ok(activityForPlayer(after.engagement!, "offline-player")?.status === "ACTIVE",
+    "offline player was unfairly warned or stewarded on recovery");
+  ok(after.state.ledger.filter((entry) => entry.type === "SCHEDULER_MISSED_CYCLES_PROTECTED").length === 1,
+    "outage was not auditable");
+
+  const duplicate = await resolveScheduledWorldCycle(repository, worldId, "2026-10-12");
+  after = await repository.load(worldId);
+  ok(duplicate.status === "ALREADY_RESOLVED"
+    && after.engagement?.schedulerPauseSpans?.length === 1,
+    "retry duplicated outage credit or advanced the World again");
+  await resolveScheduledWorldCycle(repository, worldId, "2026-10-18");
+  after = await repository.load(worldId);
+  ok(after.engagement?.schedulerPauseSpans?.length === 2,
+    "second disconnected run of missed cycles was not tracked");
+  ok(after.engagement && activeSchedulerDaysBetween(after.engagement, "2026-10-01", "2026-10-18") === 2,
+    "second pause did not protect multiple disjoint outages");
+});
+
+await test("next normal days accrue inactivity after missed-cycle credit without resetting player activity", async () => {
+  const aggregate = fixture(18031);
+  const engagement = createWorldEngagementState(aggregate.state.world.id);
+  recordPlayerActivity(engagement, "player-a", aggregate.state.world.currentDate, 0, "2026-10-01");
+  recordMissedSchedulerCycles(engagement, "2026-10-01", "2026-10-06");
+  ok(activeSchedulerDaysBetween(engagement, "2026-10-01", "2026-10-06") === 1,
+    "recording a skipped window did not exclude four real dates");
+  ok(evaluatePlayerInactivity(engagement, "player-a", "2026-10-11") === "ACTIVE",
+    "missing days prematurely caused a warning");
+  ok(evaluatePlayerInactivity(engagement, "player-a", "2026-10-12") === "WARNING",
+    "normal successful days no longer trigger fair inactivity warnings");
+  ok(evaluatePlayerInactivity(engagement, "player-a", "2026-10-19") === "STEWARDED",
+    "normal inactivity can no longer progress into Stewardship");
+});
 console.log(`\nApplication scheduler tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;

@@ -1,4 +1,6 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
+import type { CreativeConsentRecord } from "./creative-consent.js";
+import type { StandingProgrammeCreativeAgreement } from "./programme-creative-standing.js";
 import type {
   Id,
   MatchIntent,
@@ -12,6 +14,7 @@ import type {
 import { isWrestlerAlignment, wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
 import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
+import { comparePpwDates } from "../../sim-core/src/clock.js";
 import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
 
@@ -19,6 +22,8 @@ export const DETAILED_PLANNING_HORIZON_WEEKS = 6 as const;
 
 export interface DetailedMatchDraft {
   draftMatchId: string;
+  /** Explicit storyline link; missing on historical matches (no implicit waiver). */
+  programmeId?: Id | null;
   type: MatchType;
   sideAIds: Id[];
   sideBIds: Id[];
@@ -148,10 +153,28 @@ export interface PromotionPlanningWorkspace {
   detailedShowDrafts: DetailedShowDraft[];
 }
 
+/**
+ * The last committed version of a materialized show, retained only while a
+ * proposed amendment waits on wrestler approval. This is never the live card.
+ */
+export interface PendingCreativeCardAmendment {
+  promotionId: Id;
+  draftId: string;
+  eventId: Id;
+  committedDraft: DetailedShowDraft;
+  committedConsents: CreativeConsentRecord[];
+}
+
 export interface WorldPlanningState {
   worldId: Id;
   workspaces: PromotionPlanningWorkspace[];
   showReservations: DetailedShowReservation[];
+  /** Match-scoped wrestler agreements; absent in older World planning snapshots. */
+  creativeConsents?: CreativeConsentRecord[];
+  /** Optional for old saves; Programme-bound agreements do not waive other bookings. */
+  standingProgrammeCreativeAgreements?: StandingProgrammeCreativeAgreement[];
+  /** Optional for older World snapshots. One record per pending live amendment. */
+  pendingCardAmendments?: PendingCreativeCardAmendment[];
 }
 
 const TICKET_STRATEGIES = new Set<TicketStrategy>(["ACCESSIBLE", "STANDARD", "PREMIUM", "PRESTIGE"]);
@@ -211,6 +234,7 @@ function weekIndex(date: PpwDate, weeksPerYear: number): number {
 function validateMatchDraft(
   state: WorldState,
   draft: DetailedMatchDraft,
+  promotionId: Id,
   participantIds: Set<Id>,
   usedParticipantIds: Set<Id>,
 ): DetailedMatchDraft {
@@ -226,6 +250,16 @@ function validateMatchDraft(
   }
 
   const sideIds = [...draft.sideAIds, ...draft.sideBIds];
+  const programmeId = draft.programmeId == null ? null : normalizedId(draft.programmeId, "match programmeId");
+  if (programmeId !== null) {
+    const programme = (state.programmes ?? []).find((entry) =>
+      entry.id === programmeId && entry.promotionId === promotionId && entry.status === "ACTIVE");
+    if (!programme) throw new Error("match Programme must be active and belong to this promotion");
+    const members = programmePersonIds(state, programmeId);
+    if (!sideIds.every((personId) => members.has(personId))) {
+      throw new Error("a match linked to a Programme must book only its actual participants");
+    }
+  }
   if (new Set(sideIds).size !== sideIds.length) throw new Error("one wrestler cannot occupy multiple positions in a draft match");
   const sidePeople = sideIds.map((personId) => state.people.find((candidate) => candidate.id === personId));
   if (sidePeople.some((person) => !person)) throw new Error("draft match references a missing wrestler");
@@ -277,6 +311,7 @@ function validateMatchDraft(
 
   return {
     draftMatchId,
+    ...(programmeId === null ? {} : { programmeId }),
     type: draft.type,
     sideAIds: [...draft.sideAIds],
     sideBIds: [...draft.sideBIds],
@@ -558,7 +593,7 @@ export function detailedShowRunningOrder(draft: DetailedShowDraft): DetailedShow
 }
 
 export function createWorldPlanningState(worldId: Id): WorldPlanningState {
-  return { worldId, workspaces: [], showReservations: [] };
+  return { worldId, workspaces: [], showReservations: [], creativeConsents: [], standingProgrammeCreativeAgreements: [], pendingCardAmendments: [] };
 }
 
 export function promotionPlanningWorkspace(
@@ -575,6 +610,10 @@ export function normalizeWorldPlanningState(planning: WorldPlanningState): World
     worldId: legacy.worldId,
     workspaces: legacy.workspaces ?? [],
     showReservations: Array.isArray(legacy.showReservations) ? legacy.showReservations : [],
+    creativeConsents: Array.isArray(legacy.creativeConsents) ? legacy.creativeConsents : [],
+    standingProgrammeCreativeAgreements: Array.isArray(legacy.standingProgrammeCreativeAgreements)
+      ? legacy.standingProgrammeCreativeAgreements : [],
+    pendingCardAmendments: Array.isArray(legacy.pendingCardAmendments) ? legacy.pendingCardAmendments : [],
   });
 }
 
@@ -582,6 +621,16 @@ export function validateWorldPlanningStateShape(state: WorldState, planning: Wor
   if (planning.worldId !== state.world.id) throw new Error("planning state crosses World boundary");
   if (!Array.isArray(planning.workspaces)) throw new Error("planning workspaces must be an array");
   if (!Array.isArray(planning.showReservations)) throw new Error("planning reservations must be an array");
+  if (planning.creativeConsents !== undefined && !Array.isArray(planning.creativeConsents)) {
+    throw new Error("creative consent records must be an array");
+  }
+  if (planning.standingProgrammeCreativeAgreements !== undefined
+    && !Array.isArray(planning.standingProgrammeCreativeAgreements)) {
+    throw new Error("standing Programme creative agreements must be an array");
+  }
+  if (planning.pendingCardAmendments !== undefined && !Array.isArray(planning.pendingCardAmendments)) {
+    throw new Error("pending card amendments must be an array");
+  }
   const promotionIds = new Set(state.promotions.map((promotion) => promotion.id));
   const seenPromotions = new Set<Id>();
 
@@ -600,6 +649,85 @@ export function validateWorldPlanningStateShape(state: WorldState, planning: Wor
       if (draftIds.has(draftId)) throw new Error("planning workspace contains duplicate show draft IDs");
       draftIds.add(draftId);
     }
+  }
+
+  const pendingKeys = new Set<string>();
+  for (const pending of planning.pendingCardAmendments ?? []) {
+    const key = JSON.stringify([pending.promotionId, pending.draftId]);
+    if (pendingKeys.has(key)) throw new Error("duplicate pending creative card amendments");
+    pendingKeys.add(key);
+    const workspace = planning.workspaces.find((item) => item.promotionId === pending.promotionId);
+    if (!workspace?.detailedShowDrafts.some((draft) => draft.draftId === pending.draftId)) {
+      throw new Error("pending card amendment references missing show draft");
+    }
+    if (!state.events.some((event) => event.id === pending.eventId
+      && event.promotionId === pending.promotionId)) {
+      throw new Error("pending card amendment references unrelated live event");
+    }
+    if (pending.committedDraft.promotionId !== pending.promotionId
+      || pending.committedDraft.draftId !== pending.draftId
+      || !Array.isArray(pending.committedConsents)) {
+      throw new Error("pending card amendment references invalid committed snapshot");
+    }
+    for (const consent of pending.committedConsents) {
+      if (consent.worldId !== state.world.id
+        || consent.promotionId !== pending.promotionId
+        || consent.draftId !== pending.draftId) {
+        throw new Error("pending card amendment contains foreign approval record");
+      }
+    }
+  }
+  const standingKeys = new Set<string>();
+  for (const agreement of planning.standingProgrammeCreativeAgreements ?? []) {
+    if (agreement.worldId !== state.world.id || !promotionIds.has(agreement.promotionId)) {
+      throw new Error("standing Programme creative agreement crosses World boundary");
+    }
+    const programme = (state.programmes ?? []).find((item) => item.id === agreement.programmeId);
+    if (!programme || programme.promotionId !== agreement.promotionId) {
+      throw new Error("standing Programme creative agreement references foreign Programme");
+    }
+    const contract = state.contracts.find((item) => item.id === agreement.contractId);
+    if (!contract || contract.promotionId !== agreement.promotionId || contract.personId !== agreement.personId) {
+      throw new Error("standing Programme creative agreement references unrelated contract");
+    }
+    if (agreement.matchType !== "SINGLES" && agreement.matchType !== "TAG"
+      || agreement.permittedOutcome !== "WIN_ONLY" && agreement.permittedOutcome !== "WIN_OR_PROTECTED_LOSS"
+      || typeof agreement.approved !== "boolean"
+      || !Number.isFinite(agreement.score) || agreement.score < 0 || agreement.score > 100) {
+      throw new Error("standing Programme creative agreement has invalid scope");
+    }
+    const key = JSON.stringify([agreement.promotionId, agreement.programmeId, agreement.personId, agreement.contractId]);
+    if (standingKeys.has(key)) throw new Error("duplicate standing Programme creative agreement");
+    standingKeys.add(key);
+    weekIndex(agreement.decidedDate, state.ruleset.weeksPerYear);
+    weekIndex(agreement.expiresDate, state.ruleset.weeksPerYear);
+    if (comparePpwDates(agreement.expiresDate, agreement.decidedDate, state.ruleset.weeksPerYear) < 0
+      || !Array.isArray(agreement.ownSidePersonIds) || !Array.isArray(agreement.opposingPersonIds)
+      || !agreement.ownSidePersonIds.includes(agreement.personId)
+      || agreement.opposingPersonIds.length === 0) {
+      throw new Error("standing Programme creative agreement has invalid participant evidence");
+    }
+  }
+  const consentKeys = new Set<string>();
+  for (const consent of planning.creativeConsents ?? []) {
+    if (consent.worldId !== state.world.id) throw new Error("creative consent crosses World boundary");
+    if (!promotionIds.has(consent.promotionId)) throw new Error("creative consent references unknown promotion");
+    if (!state.people.some((person) => person.id === consent.personId)) throw new Error("creative consent references missing wrestler");
+    const contract = state.contracts.find((entry) => entry.id === consent.contractId);
+    if (!contract || contract.personId !== consent.personId || contract.promotionId !== consent.promotionId) {
+      throw new Error("creative consent references an unrelated contract");
+    }
+    if (consent.decision !== "APPROVED" && consent.decision !== "DECLINED") {
+      throw new Error("creative consent has invalid decision");
+    }
+    if (!Number.isSafeInteger(consent.requestedPlanVersion) || consent.requestedPlanVersion < 0
+      || !Number.isFinite(consent.score) || consent.score < 0 || consent.score > 100
+      || typeof consent.bookingSignature !== "string" || !consent.bookingSignature) {
+      throw new Error("creative consent record has invalid evidence");
+    }
+    const key = JSON.stringify([consent.promotionId, consent.draftId, consent.draftMatchId, consent.personId]);
+    if (consentKeys.has(key)) throw new Error("duplicate creative consent for same booked wrestler");
+    consentKeys.add(key);
   }
 
   const reservationIds = new Set<string>();
@@ -689,7 +817,7 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
   const usedParticipantIds = new Set<Id>();
   const draftMatchIds = new Set<string>();
   const matches = draft.matches.map((match) => {
-    const validated = validateMatchDraft(state, match, participantIds, usedParticipantIds);
+    const validated = validateMatchDraft(state, match, draft.promotionId, participantIds, usedParticipantIds);
     if (draftMatchIds.has(validated.draftMatchId)) throw new Error("draft card contains duplicate match IDs");
     draftMatchIds.add(validated.draftMatchId);
     return validated;
@@ -840,6 +968,13 @@ export function removeDetailedShowDraft(
   const index = workspace.detailedShowDrafts.findIndex((candidate) => candidate.draftId === draftId);
   if (index < 0) throw new Error(`show draft ${draftId} was not found`);
   workspace.detailedShowDrafts.splice(index, 1);
+  // Removing a draft must revoke approvals for its matches.
+  planning.creativeConsents = (planning.creativeConsents ?? []).filter((entry) => !(
+    entry.promotionId === promotionId && entry.draftId === draftId
+  ));
+  planning.pendingCardAmendments = (planning.pendingCardAmendments ?? []).filter((entry) => !(
+    entry.promotionId === promotionId && entry.draftId === draftId
+  ));
   workspace.version += 1;
   return structuredClone(workspace);
 }

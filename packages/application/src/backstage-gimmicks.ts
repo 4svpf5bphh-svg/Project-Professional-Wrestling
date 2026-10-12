@@ -73,7 +73,7 @@ export function generateGimmickChangePitches(aggregate: ApplicationWorldAggregat
   let created = 0;
   for (const control of controls) {
     const promotionId = control.promotionId;
-    const existing = engagement.backstageConversations.filter((item) => item.promotionId === promotionId);
+    const existing = engagement.backstageConversations.filter((item) => item.promotionId === promotionId && item.kind !== "PROGRAMME_CREATIVE_AGREEMENT");
     const newThisWeek = existing.filter((item) =>
       item.createdDate.year === state.world.currentDate.year
       && item.createdDate.week === state.world.currentDate.week

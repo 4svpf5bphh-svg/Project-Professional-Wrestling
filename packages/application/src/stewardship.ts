@@ -9,6 +9,7 @@ import {
 } from "../../sim-core/src/index.js";
 import {
   activityForPlayer,
+  activeSchedulerDaysBetween,
   type StewardshipExitRequest,
 } from "./engagement.js";
 import {
@@ -204,7 +205,7 @@ export function stewardshipExitEligibilityForContract(
   }
 
   const stewardshipStart = requireUtcCycleKey(activity.statusSinceCycleKey);
-  const stewardedDays = realDaysBetween(stewardshipStart, currentCycleKey);
+  const stewardedDays = activeSchedulerDaysBetween(aggregate.engagement, stewardshipStart, currentCycleKey);
   const withDuration = { ...base, stewardedDays };
   if (stewardedDays < STEWARDSHIP_EXIT_GRACE_DAYS) {
     return { ...withDuration, eligible: false, reason: "GRACE_PERIOD" };

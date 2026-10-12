@@ -14,6 +14,12 @@ import type {
 } from "../../domain/src/types.js";
 import { applyMatchLoad, createInjury } from "./career.js";
 import { buildBookingCard } from "./booking.js";
+import {
+  applicableCreativeContract,
+  creativeBookingAgreed,
+  creativeBookingDecisionScore,
+  resolvedCreativeControl,
+} from "./creative-control.js";
 import { nextEntityId } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import {
@@ -220,6 +226,30 @@ function makeMatch(state: WorldState, event: WrestlingEvent, order: number, tota
     finishChangedDueToInjury: false, executionQuality: 0, criticalRatingStars: 0, crowdResponse: 0,
   };
   setPlannedMatchFinish(match, aiPlannedFinish(state, event, order, intent));
+  const bookedFinish = plannedMatchFinish(match);
+  if (bookedFinish === "CLEAN_PIN" || bookedFinish === "SUBMISSION") {
+    const losingSide = match.intendedWinnerSide === "A" ? sideB : sideA;
+    const protectedLosers = losingSide.flatMap((person) => {
+      const contract = applicableCreativeContract(state, event.promotionId, person.id, event.date);
+      return resolvedCreativeControl(contract?.creativeControl) === "PROTECTED_FINISHES"
+        ? [{ person, contract: contract! }] : [];
+    });
+    if (protectedLosers.length > 0) {
+      // Only the autonomous match writer can select a contract-safe finish.
+      // This is never called for an already player-scripted human card.
+      setPlannedMatchFinish(match, "PROTECTED_FINISH");
+      const writer = new LedgerWriter(state.world.id, state.ledger);
+      for (const { person, contract } of protectedLosers) {
+        writer.append({
+          date: event.date,
+          type: "AUTOMATED_CREATIVE_FINISH_PROTECTED",
+          significance: "ROUTINE",
+          entityIds: [event.id, match.id, event.promotionId, person.id, contract.id],
+          payload: { originalFinish: bookedFinish, agreedFinish: "PROTECTED_FINISH" },
+        });
+      }
+    }
+  }
   state.matches.push(match);
   const createdParticipants: MatchParticipant[] = [];
   for (const [side, people] of [["A", sideA], ["B", sideB]] as const) {
@@ -240,10 +270,52 @@ function buildEventCard(state: WorldState, event: WrestlingEvent, appearances: S
   const ranked = appearances.map((appearance) => peopleById.get(appearance.personId))
     .filter((person): person is Person => Boolean(person) && person!.status === "ACTIVE")
     .sort((a, b) => (b.recognition + b.popularity + b.momentum + b.skills.matchCraft) - (a.recognition + a.popularity + a.momentum + a.skills.matchCraft) || a.id.localeCompare(b.id));
+  const staffApprovals = new Map<string, { contractId: string; score: number }>();
+  const eligible = ranked.filter((person) => {
+    const contract = applicableCreativeContract(state, event.promotionId, person.id, event.date);
+    if (resolvedCreativeControl(contract?.creativeControl) !== "FULL_APPROVAL") return true;
+    const score = creativeBookingDecisionScore(person, contract!, "MATCH_APPROVAL");
+    if (creativeBookingAgreed(score)) {
+      staffApprovals.set(person.id, { contractId: contract!.id, score });
+      return true;
+    }
+    // Full control is a meaningful right. A refused appearance is removed
+    // before constructing a card; a promoter cannot force it by being AI.
+    new LedgerWriter(state.world.id, state.ledger).append({
+      date: event.date,
+      type: "AUTOMATED_CREATIVE_MATCH_DECLINED",
+      significance: "NOTABLE",
+      entityIds: [event.id, event.promotionId, person.id, contract!.id],
+      payload: { score, reason: "full contractual match approval withheld" },
+    });
+    return false;
+  });
   const rng = new DeterministicRng(deterministicSeedFromText(`${state.world.seed}:${event.id}:card`));
-  const cards = buildBookingCard(state, event, ranked, rng);
+  const cards = buildBookingCard(state, event, eligible, rng);
   const total = cards.length;
-  return cards.map((card, index) => makeMatch(state, event, index + 1, total, card.type, card.sideA, card.sideB));
+  const planned = cards.map((card, index) => makeMatch(state, event, index + 1, total, card.type, card.sideA, card.sideB));
+  if (staffApprovals.size > 0) {
+    const writer = new LedgerWriter(state.world.id, state.ledger);
+    for (const { match, participants } of planned) {
+      for (const participant of participants) {
+        const decision = staffApprovals.get(participant.personId);
+        if (!decision) continue;
+        writer.append({
+          date: event.date,
+          type: "AUTOMATED_CREATIVE_MATCH_APPROVED",
+          significance: "ROUTINE",
+          entityIds: [event.id, match.id, event.promotionId, participant.personId, decision.contractId],
+          payload: {
+            score: decision.score,
+            bookedWinner: match.intendedWinnerSide,
+            bookedFinish: plannedMatchFinish(match),
+            reason: "full contractual match approval granted",
+          },
+        });
+      }
+    }
+  }
+  return planned;
 }
 
 function chemistryModifier(state: WorldState, match: Match, sideA: Person[], sideB: Person[]): number {

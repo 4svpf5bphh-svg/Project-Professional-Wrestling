@@ -64,6 +64,16 @@ function scene(
   names: Map<Id,string>,
 ): string {
   switch (entry.kind) {
+    case "PROGRAMME_CREATIVE_AGREEMENT": {
+      const terms = entry.programmeCreative;
+      if (!terms) return "We have no agreed Programme terms on record.";
+      const scope = terms.permittedOutcome === "WIN_ONLY" ? "winning match assignments"
+        : "wins or explicitly protected losses";
+      const end = `Year ${terms.expiryDate.year}, Week ${terms.expiryDate.week}`;
+      return terms.approved
+        ? `I've looked at your proposed ${terms.programmeLabel} direction. I'm happy to work the ${terms.matchType.toLowerCase()} matches with ${scope} until ${end}. A clean loss, outside opponent or different finish still needs another conversation.`
+        : `I've looked at the ${terms.programmeLabel} proposal. I can't agree to ${scope} across the next stretch. We can still discuss an individual match, but I'm not signing off the whole Programme direction.`;
+    }
     case "ROLE_USAGE_CONCERN":
       return `My deal was for a ${entry.promisedRole === "MAIN_EVENT" ? "main-event" : "featured upper-card"} spot, and I've worked ${entry.observedMatchShows} matches without getting that position. What's the plan for me?`;
     case "TAG_TEAM_PITCH":
@@ -141,6 +151,7 @@ export function buildBackstageDialogue(
   const motivation = personality.motivations[0] ?? "PRESTIGE";
   // Positive news isn't a request for anything and should not end with
   // an implied demand for a reward or push.
-  const suffix = entry.kind === "TEAM_MOMENT" ? "" : " " + endings[motivation];
+  const suffix = entry.kind === "TEAM_MOMENT"
+    || entry.kind === "PROGRAMME_CREATIVE_AGREEMENT" ? "" : " " + endings[motivation];
   return {speech:`${prefix} ${evidence}${suffix}`,voice:tone};
 }

@@ -1,6 +1,7 @@
 import type {
   CareerStage,
   ContractFamily,
+  CreativeControlLevel,
   ContractOfferStatus,
   ExclusivityType,
   Id,
@@ -18,6 +19,7 @@ import {
   comparePpwDates,
   contractIsActive,
   contractRoleExpectationForPerson,
+  resolvedCreativeControl,
   currentRosterPersonIds,
   marketWeeklyValue,
   ppwDateToWeekIndex,
@@ -29,6 +31,7 @@ import {
   wrestlerPromotionAffiliationsForPerson,
 } from "../../sim-core/src/index.js";
 import { talentIsWatched } from "./engagement.js";
+import { sameTermsRenewalTemplate, type SameTermsRenewalTemplate } from "./contract-renewal.js";
 import {
   activePromotionControlForPlayer,
   activeWorldMembership,
@@ -89,15 +92,19 @@ export interface PlayerRosterContractView extends PlayerPublicTalentIdentityView
     family: ContractFamily;
     exclusivity: ExclusivityType;
     roleExpectation: RoleExpectation;
+    creativeControl: CreativeControlLevel;
     startDate: PpwDate;
     endDate: PpwDate;
     weeksToExpiry: number;
     dateEntitlement: number;
     datesUsed: number;
     datesRemaining: number;
+    unlimitedAppearances: boolean;
     weeklyGuarantee: number;
     appearanceFee: number;
     signingBonus: number;
+    /** Own contract's repeatable terms; excludes historic one-time bonuses. */
+    sameTermsRenewal: SameTermsRenewalTemplate | null;
     renewalWindowOpen: boolean;
     renewalReason: "DATES_EXHAUSTED" | "EXPIRY_WINDOW" | null;
   };
@@ -148,12 +155,13 @@ export interface PlayerPendingContractOfferView {
   offerId: Id;
   personId: Id;
   personName: string;
-  offerKind: "RECRUITMENT" | "RENEWAL";
+  offerKind: "RECRUITMENT" | "RENEWAL" | "DATES_ADDENDUM";
   status: ContractOfferStatus;
   submittedDate: PpwDate;
   family: ContractFamily;
   exclusivity: ExclusivityType;
   roleExpectation: RoleExpectation;
+  creativeControl: CreativeControlLevel;
   endDate: PpwDate;
   dateEntitlement: number;
   weeklyGuarantee: number;
@@ -383,7 +391,7 @@ export function buildPlayerTalentManagementView(
       if (!person) return null;
       const remaining = weeksToExpiry(aggregate, contract.endDate);
       const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
-      const datesExhausted = contract.family !== "ONE_OFF" && datesRemaining === 0;
+      const datesExhausted = contract.family === "LIMITED_NON_EXCLUSIVE" && datesRemaining === 0;
       const expiryWindowOpen = remaining <= aggregate.state.ruleset.renewalWindowWeeks;
       const alignment = wrestlerAlignmentForPromotion(aggregate.state, promotion.id, person.id);
       const alignmentContext = promotionAlignmentChangeContext(aggregate.state, promotion.id, person.id);
@@ -405,15 +413,18 @@ export function buildPlayerTalentManagementView(
           family: contract.family,
           exclusivity: contract.exclusivity,
           roleExpectation: contract.roleExpectation,
+          creativeControl: resolvedCreativeControl(contract.creativeControl),
           startDate: { ...contract.startDate },
           endDate: { ...contract.endDate },
           weeksToExpiry: remaining,
           dateEntitlement: contract.dateEntitlement,
           datesUsed: contract.datesUsed,
           datesRemaining,
+          unlimitedAppearances: contract.family === "EXCLUSIVE",
           weeklyGuarantee: contract.weeklyGuarantee,
           appearanceFee: contract.appearanceFee,
           signingBonus: contract.signingBonus,
+          sameTermsRenewal: sameTermsRenewalTemplate(aggregate.state, contract),
           renewalWindowOpen: datesExhausted || expiryWindowOpen,
           renewalReason: datesExhausted ? "DATES_EXHAUSTED" : expiryWindowOpen ? "EXPIRY_WINDOW" : null,
         },
@@ -467,6 +478,7 @@ export function buildPlayerTalentManagementView(
       family: offer.family,
       exclusivity: offer.exclusivity,
       roleExpectation: offer.roleExpectation,
+      creativeControl: resolvedCreativeControl(offer.creativeControl),
       endDate: { ...offer.endDate },
       dateEntitlement: offer.dateEntitlement,
       weeklyGuarantee: offer.weeklyGuarantee,

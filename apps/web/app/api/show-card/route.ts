@@ -138,6 +138,7 @@ function matches(value: unknown): AlphaCardMatchView[] {
 
     return {
       draftMatchId: requiredText(candidate.draftMatchId, `matches[${index}].draftMatchId`, 128),
+      programmeId: optionalText(candidate.programmeId, `matches[${index}].programmeId`, 128) ?? null,
       type,
       sideAIds: personIds(candidate.sideAIds, `matches[${index}].sideAIds`),
       sideBIds: personIds(candidate.sideBIds, `matches[${index}].sideBIds`),
