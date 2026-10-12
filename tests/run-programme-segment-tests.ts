@@ -182,6 +182,38 @@ test("pre-recorded Video Package has a real subject but no live reservation, and
     "cryptic public video exposed its hidden subject or invented an in-person appearance");
 });
 
+test("a signed-now wrestler cannot be promoted with a package after their contract ends", () => {
+  const setup = fixture(91503);
+  const subject = setup.rosterIds[0]!;
+  const contract = activeContractsForPromotion(setup.state, setup.promotion.id)
+    .find((entry) => entry.personId === subject);
+  if (!contract) throw new Error("video fixture needs a signed contract");
+  contract.endDate = { year: setup.state.world.currentDate.year, week: setup.state.world.currentDate.week, day: 1 };
+  const futureDate = { year: setup.state.world.currentDate.year, week: setup.state.world.currentDate.week + 1, day: 6 };
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    draftId: "video-after-contract",
+    promotionId: setup.promotion.id,
+    targetDate: futureDate,
+    marketId: null,
+    venueId: null,
+    ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(1, 3),
+    matches: [],
+    championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "video-future",
+      type: "VIDEO_PACKAGE",
+      participantIds: [],
+      programmeId: null,
+      plannedLengthMinutes: 3,
+      videoSubjectPersonId: subject,
+      videoKind: "DEBUT_TEASER",
+      videoObjective: "CREATE_INTRIGUE",
+      videoReveal: "CRYPTIC",
+    }],
+  }), "show date");
+});
+
 test("video package cannot use an unsigned subject or reserve wrestlers as prerecorded footage", () => {
   const setup = fixture(91502);
   const outsider = setup.state.people.find((person) => !setup.rosterIds.includes(person.id))!;
