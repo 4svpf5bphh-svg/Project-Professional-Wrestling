@@ -27,3 +27,6 @@ Live appearances, including genuine promotion-relative debuts and returns, must 
 
 ## Verification
 Regression tests target (a) authoritative draft roundtrip and the ledger, (b) forbidden unsigned subjects, (c) no video-induced physical booking or date usage, (d) opaque public teaser identity, and (e) existing World/simulation tests. Final readiness requires full GitHub CI on the stacked branch plus manual iPhone review in a future controlled release.
+
+## Final UI and disclosure checks
+The segment editor uses touch-friendly format and objective choices rather than large grey dropdowns. A separate private/public Results regression verifies that a cryptic teaser remains cryptic to other players. Neither the footage nor its reported crowd response is allowed to create the subject's actual promotion debut.
