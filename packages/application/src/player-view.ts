@@ -10,6 +10,7 @@ import type {
 } from "../../domain/src/types.js";
 import type { HumanWeekReadinessStatus } from "../../sim-core/src/human-routine.js";
 import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
+import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { buildPlayerAttention, type PlayerAttentionItem } from "./attention.js";
 import {
   activePromotionControlForPlayer,
@@ -95,6 +96,7 @@ export interface AlphaCurrentWeekShowPlanView {
 }
 
 export interface AlphaShowPlanningView {
+  dueShows: Array<{ showSeriesId: Id; name: string; role: string }>;
   workspaceVersion: number;
   draftId: string;
   canPlanThisWeek: boolean;
@@ -341,6 +343,10 @@ export function buildAlphaPlayerWorldView(
           staffHelpRequired: !readiness.readyForLock,
         },
         showPlanning: {
+          // A premium week may have multiple distinct mandatory series.
+          // The one-show Alpha shortcut is not the authoritative planner.
+          dueShows: promotionShowSeriesDueForDate(aggregate.state, promotion.id, currentDate)
+            .map(series => ({ showSeriesId: series.id, name: series.name, role: series.role })),
           workspaceVersion: workspace?.version ?? 0,
           draftId,
           canPlanThisWeek: aggregate.runtime.phase === "OPEN"
