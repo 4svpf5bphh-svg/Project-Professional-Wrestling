@@ -587,6 +587,9 @@ export default function CardClient(): React.JSX.Element {
       videoKind: type === "VIDEO_PACKAGE" ? "CHARACTER_SPOTLIGHT" : null,
       videoObjective: type === "VIDEO_PACKAGE" ? "BUILD_ANTICIPATION" : null,
       videoReveal: type === "VIDEO_PACKAGE" ? "NAMED" : null,
+      liveAppearanceKind: type === "LIVE_APPEARANCE" ? "INTRODUCTION" : null,
+      liveAppearanceObjective: type === "LIVE_APPEARANCE" ? "ESTABLISH_STAR" : null,
+      liveAppearancePresentation: type === "LIVE_APPEARANCE" ? "DRAMATIC_ENTRANCE" : null,
       attackerPersonId: null,
       victimPersonId: null,
       rescuerPersonId: null,
@@ -783,7 +786,7 @@ export default function CardClient(): React.JSX.Element {
     const segment = segments.find((candidate) => candidate.draftSegmentId === segmentId);
     if (!segment) return;
     const minimum = segmentMinimum(type);
-    const participantIds = type === "VIDEO_PACKAGE" ? [] : [...segment.participantIds];
+    const participantIds = type === "VIDEO_PACKAGE" ? [] : type === "LIVE_APPEARANCE" ? segment.participantIds.slice(0, 1) : [...segment.participantIds];
     while (participantIds.length < minimum) participantIds.push("");
     const sourceDraftMatchId = type === "POST_MATCH_ASSAULT"
       ? (segment.type === type ? (segment.sourceDraftMatchId ?? null)
@@ -797,6 +800,9 @@ export default function CardClient(): React.JSX.Element {
       videoKind: type === "VIDEO_PACKAGE" ? (segment.type === type ? (segment.videoKind ?? "CHARACTER_SPOTLIGHT") : "CHARACTER_SPOTLIGHT") : null,
       videoObjective: type === "VIDEO_PACKAGE" ? (segment.type === type ? (segment.videoObjective ?? "BUILD_ANTICIPATION") : "BUILD_ANTICIPATION") : null,
       videoReveal: type === "VIDEO_PACKAGE" ? (segment.type === type ? (segment.videoReveal ?? "NAMED") : "NAMED") : null,
+      liveAppearanceKind: type === "LIVE_APPEARANCE" ? (segment.type === type ? (segment.liveAppearanceKind ?? "INTRODUCTION") : "INTRODUCTION") : null,
+      liveAppearanceObjective: type === "LIVE_APPEARANCE" ? (segment.type === type ? (segment.liveAppearanceObjective ?? "ESTABLISH_STAR") : "ESTABLISH_STAR") : null,
+      liveAppearancePresentation: type === "LIVE_APPEARANCE" ? (segment.type === type ? (segment.liveAppearancePresentation ?? "DRAMATIC_ENTRANCE") : "DRAMATIC_ENTRANCE") : null,
       attackerPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[0] === segment.attackerPersonId
         ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[1] === segment.victimPersonId
@@ -1099,6 +1105,9 @@ export default function CardClient(): React.JSX.Element {
   }
 
   function segmentSummary(segment: AlphaCardSegmentView): string {
+    if (segment.type === "LIVE_APPEARANCE") {
+      return `${pretty(segment.liveAppearanceKind ?? "INTRODUCTION")} · ${segment.participantIds[0] ? personName(segment.participantIds[0]) : "Choose wrestler"} · ${segment.plannedLengthMinutes} min`;
+    }
     if (segment.type === "VIDEO_PACKAGE") {
       const subject = view?.videoSubjects.find((person) => person.personId === segment.videoSubjectPersonId)?.name
         ?? (segment.videoSubjectPersonId || "Choose featured wrestler");
@@ -1761,6 +1770,43 @@ export default function CardClient(): React.JSX.Element {
                   </div>
                 </div>
 
+                {segment.type === "LIVE_APPEARANCE" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>In-person arrival</span>
+                      <small>This wrestler attends the show and must have a bookable appearance date. A debut or return is checked against actual promotion history.</small>
+                    </div>
+                    <div className={styles.segmentPeopleHeader}><span>What happens?</span></div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Live appearance kind">
+                      {([["DEBUT", "Promotion debut"], ["RETURN", "Comeback / return"], ["SURPRISE_REVEAL", "Surprise reveal"], ["INTRODUCTION", "Introduction / entrance"]] as const).map(([kind, label]) => (
+                        <button key={kind} type="button" aria-pressed={segment.liveAppearanceKind === kind}
+                          className={(segment.liveAppearanceKind ?? "INTRODUCTION") === kind ? styles.typeActive : styles.secondaryButton}
+                          disabled={!view.canEdit}
+                          onClick={() => updateSegment(segment.draftSegmentId, { liveAppearanceKind: kind })}>{label}</button>
+                      ))}
+                    </div>
+                    <div className={styles.segmentPeopleHeader}><span>What should it achieve?</span></div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Live appearance objective">
+                      {([["ESTABLISH_STAR", "Establish a star"], ["CREATE_SHOCK", "Shock the crowd"], ["GENERATE_HEAT", "Generate heel heat"], ["BUILD_SYMPATHY", "Win sympathy"], ["REIGNITE_RIVALRY", "Reignite a feud"]] as const).map(([objective, label]) => (
+                        <button key={objective} type="button" aria-pressed={segment.liveAppearanceObjective === objective}
+                          className={(segment.liveAppearanceObjective ?? "ESTABLISH_STAR") === objective ? styles.typeActive : styles.secondaryButton}
+                          disabled={!view.canEdit}
+                          onClick={() => updateSegment(segment.draftSegmentId, { liveAppearanceObjective: objective })}>{label}</button>
+                      ))}
+                    </div>
+                    <div className={styles.segmentPeopleHeader}><span>How is it presented?</span></div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Live appearance presentation">
+                      {([["ANNOUNCED", "Announced"], ["SURPRISE", "Unannounced surprise"], ["DRAMATIC_ENTRANCE", "Dramatic entrance"]] as const).map(([presentation, label]) => (
+                        <button key={presentation} type="button" aria-pressed={segment.liveAppearancePresentation === presentation}
+                          className={(segment.liveAppearancePresentation ?? "DRAMATIC_ENTRANCE") === presentation ? styles.typeActive : styles.secondaryButton}
+                          disabled={!view.canEdit}
+                          onClick={() => updateSegment(segment.draftSegmentId, { liveAppearancePresentation: presentation })}>{label}</button>
+                      ))}
+                    </div>
+                    <small className={styles.sideLabel}>A return needs a completed previous appearance followed by at least four PPW weeks away. An in-person arrival never invents an injury, contract or unscripted match.</small>
+                  </div>
+                ) : null}
+
                 {segment.type === "VIDEO_PACKAGE" ? (
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
@@ -2134,7 +2180,7 @@ export default function CardClient(): React.JSX.Element {
                 ) : segment.type === "VIDEO_PACKAGE" ? null : (
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
-                      <span>{segment.type === "RESCUE" ? "Who attacks, who is saved, and who makes the save?" : segment.type === "POST_MATCH_ASSAULT" ? "Who attacks after the match?" : segment.type === "ATTACK" ? "Who attacks whom?" : isDirectedSegment(segment.type) ? "Who starts it?" : "Who is involved?"}</span>
+                      <span>{segment.type === "LIVE_APPEARANCE" ? "Who is appearing in person?" : segment.type === "RESCUE" ? "Who attacks, who is saved, and who makes the save?" : segment.type === "POST_MATCH_ASSAULT" ? "Who attacks after the match?" : segment.type === "ATTACK" ? "Who attacks whom?" : isDirectedSegment(segment.type) ? "Who starts it?" : "Who is involved?"}</span>
                       {segment.programmeId ? <small>{segment.type === "RESCUE" ? "Aggressor and victim from Programme; rescuer can be an outsider"
                         : segment.type === "POST_MATCH_ASSAULT" ? "Victim belongs to the Programme; aggressor may be an outsider"
                         : "Limited to this Programme"}</small> : <small>Any contracted wrestler</small>}
@@ -2192,7 +2238,7 @@ export default function CardClient(): React.JSX.Element {
                     ) : null}
                     {bookingMode === "ADVANCED" ? (
                       <div className={styles.advancedSection}>
-                        <button type="button" className={styles.secondaryButton} disabled={!view.canEdit || segment.participantIds.length >= 4} onClick={() => addSegmentParticipant(segment.draftSegmentId)}>+ Add extra wrestler</button>
+                        {segment.type !== "LIVE_APPEARANCE" ? <button type="button" className={styles.secondaryButton} disabled={!view.canEdit || segment.participantIds.length >= 4} onClick={() => addSegmentParticipant(segment.draftSegmentId)}>+ Add extra wrestler</button> : null}
                         {view.programmes.length > 0 ? <a className={styles.programmeLink} href="/programmes">Manage Programmes →</a> : <a className={styles.programmeLink} href="/programmes">Start a Programme →</a>}
                       </div>
                     ) : null}
