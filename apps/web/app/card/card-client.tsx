@@ -852,6 +852,8 @@ export default function CardClient(): React.JSX.Element {
     updateSegment(segmentId, {
       programmeId,
       participantIds,
+      videoSubjectPersonId: segment.videoSubjectPersonId && !allowed.has(segment.videoSubjectPersonId)
+        ? null : (segment.videoSubjectPersonId ?? null),
       victimPersonId: segment.victimPersonId && participantIds[1] === segment.victimPersonId ? segment.victimPersonId : null,
       attackerPersonId: segment.attackerPersonId && participantIds[0] === segment.attackerPersonId ? segment.attackerPersonId : null,
       rescuerPersonId: segment.rescuerPersonId && participantIds[2] === segment.rescuerPersonId ? segment.rescuerPersonId : null,
@@ -1771,7 +1773,11 @@ export default function CardClient(): React.JSX.Element {
                         <select value={segment.videoSubjectPersonId ?? ""} disabled={!view.canEdit}
                           onChange={(event) => updateSegment(segment.draftSegmentId, { videoSubjectPersonId: event.target.value || null })}>
                           <option value="">Choose subject of the footage</option>
-                          {view.videoSubjects.map((person) => (
+                          {view.videoSubjects
+                            .filter((person) => !segment.programmeId || view.programmes.some((programme) => (
+                              programme.programmeId === segment.programmeId && programme.participantIds.includes(person.personId)
+                            )))
+                            .map((person) => (
                             <option value={person.personId} key={person.personId}>{person.name}</option>
                           ))}
                         </select>
