@@ -183,7 +183,7 @@ function requestMatchesOffer(
     && offer.signingBonus === request.signingBonus;
 }
 
-function buildFreshPlan(
+export function buildFreshPlan(
   aggregate: ApplicationWorldAggregate,
   promotionId: string,
   request: AlphaTalentOfferRequest,
