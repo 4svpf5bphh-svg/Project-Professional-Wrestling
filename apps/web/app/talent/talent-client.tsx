@@ -475,6 +475,7 @@ function RosterCard({
             <span className={styles.availability}>{label(wrestler.alignment)}</span>
             <InjuryBadge injury={wrestler.injury} />
             <span className={styles.availability}>{contract.exclusivity === "EXCLUSIVE" ? "Exclusive" : "Non-exclusive"}</span>
+            {pending ? <span className={styles.pending}>Offer pending</span> : contract.renewalWindowOpen ? <span className={styles.pending}>Contract decision</span> : null}
           </div>
           <span>{label(wrestler.careerStage)} · {label(contract.family)} · {contract.exclusivity === "EXCLUSIVE" ? "Exclusive" : "Non-exclusive"}</span>
         </div>
@@ -1241,6 +1242,16 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
     [view, query],
   );
   const pendingPeople = useMemo(() => new Set((view?.pendingOffers ?? []).map((offer) => offer.personId)), [view]);
+  const contractDeskActionable = useMemo(() => (view?.roster ?? [])
+    .filter((entry) => entry.contract.renewalWindowOpen && !pendingPeople.has(entry.personId))
+    .filter((entry) => matchesQuery(entry.name, query))
+    .sort((left, right) => (
+      Number(right.contract.renewalReason === "DATES_EXHAUSTED") - Number(left.contract.renewalReason === "DATES_EXHAUSTED")
+      || left.contract.weeksToExpiry - right.contract.weeksToExpiry
+      || left.name.localeCompare(right.name)
+    )), [view, pendingPeople, query]);
+  const contractDeskPending = useMemo(() => (view?.pendingOffers ?? [])
+    .filter((offer) => matchesQuery(offer.personName, query)), [view, query]);
 
   useEffect(() => {
     setMarketLimit(25);
@@ -1291,17 +1302,21 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
   const watchedMarket = view?.market.filter((entry) => entry.watched).length ?? 0;
   const recruitmentOffers = view?.pendingOffers.filter((offer) => offer.offerKind === "RECRUITMENT").length ?? 0;
   const renewalOffers = view?.pendingOffers.filter((offer) => offer.offerKind === "RENEWAL").length ?? 0;
-  const pageEyebrow = tab === "ROSTER" ? "YOUR ROSTER" : tab === "MARKET" ? "TALENT MARKET" : "CONTRACT OFFERS";
+  const pageEyebrow = tab === "ROSTER" ? "YOUR ROSTER" : tab === "MARKET" ? "TALENT MARKET" : tab === "CONTRACTS" ? "TALENT CONTRACTS" : "CONTRACT OFFERS";
   const pageTitle = tab === "ROSTER"
     ? view?.promotion?.name ?? "Your roster"
     : tab === "MARKET"
       ? "Find talent"
-      : "Pending offers";
+      : tab === "CONTRACTS"
+        ? "Contracts"
+        : "Pending offers";
   const pageDescription = tab === "ROSTER"
     ? "Your contracted wrestlers and roster structure."
     : tab === "MARKET"
       ? "Search wrestlers currently available to approach."
-      : "Recruitment and renewal offers awaiting resolution.";
+      : tab === "CONTRACTS"
+        ? "Renewal decisions, purchased dates and pending offers in one place."
+        : "Recruitment and renewal offers awaiting resolution.";
 
   return (
     <main className={styles.shell}>
@@ -1314,7 +1329,13 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
         <button className={styles.button} disabled={loading || submitting} onClick={() => void refresh()}>{loading ? "Loading…" : "Refresh"}</button>
       </header>
 
-      {view?.promotion && tab === "ROSTER" ? <a className={styles.backLink} href="/staff">Talent Manager · Staff & renewals →</a> : null}
+      {view?.promotion && tab === "ROSTER" ? (
+        <div className={styles.contractNavLinks}>
+          <a className={styles.backLink} href="/talent/contracts">Manage contracts &amp; pending offers →</a>
+          <a className={styles.backLink} href="/staff">Talent Manager · Staff &amp; renewals →</a>
+        </div>
+      ) : null}
+      {view?.promotion && tab === "CONTRACTS" ? <a className={styles.backLink} href="/talent">← Back to roster</a> : null}
       {error ? <div className={styles.error}>{error}</div> : null}
       {notice ? <div className={styles.notice}>{notice}</div> : null}
       {view && !view.promotion ? <section className={styles.panel}><p>Take control of a promotion before managing talent.</p></section> : null}
@@ -1371,6 +1392,12 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
               </section>
               <RosterNav active="SINGLES" />
             </>
+          ) : tab === "CONTRACTS" ? (
+            <section className={styles.overview}>
+              <div><span>Decisions needed</span><strong>{contractDeskActionable.length}</strong></div>
+              <div><span>Offers pending</span><strong>{view.pendingOffers.length}</strong></div>
+              <div><span>Roster contracts</span><strong>{view.roster.length}</strong></div>
+            </section>
           ) : tab === "MARKET" ? (
             <section className={styles.overview}>
               <div><span>Available talent</span><strong>{view.market.length}</strong></div>
@@ -1429,6 +1456,11 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
                 </label>
               </div>
             </section>
+          ) : tab === "CONTRACTS" ? (
+            <label className={styles.search}>
+              <span>Find a contract or offer</span>
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search wrestlers…" />
+            </label>
           ) : tab === "OFFERS" ? (
             <label className={styles.search}>
               <span>Search pending offers</span>
@@ -1597,6 +1629,50 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
                   </button>
                 ) : null}
               </>
+            ) : null}
+
+            {tab === "CONTRACTS" ? (
+              <div className={styles.contractDesk}>
+                <section aria-label="Contract decisions needed">
+                  <h2>Needs a decision · {contractDeskActionable.length}</h2>
+                  <p className={styles.subtle}>Deal with each wrestler here. You stay on this page after sending an offer; their response is decided by the World.</p>
+                  {contractDeskActionable.map((entry) => {
+                    const contract = entry.contract;
+                    return (
+                      <article className={styles.contractDeskCard} key={entry.contractId}>
+                        <div className={styles.contractDeskHeader}>
+                          <div>
+                            <strong>{entry.name}</strong>
+                            <span>{label(contract.family)} · {contract.unlimitedAppearances ? "Unlimited dates" : contract.datesRemaining + " dates remaining"} · expires {ppwDate(contract.endDate)}</span>
+                          </div>
+                          <span className={styles.pending}>{contract.renewalReason === "DATES_EXHAUSTED" ? "Dates exhausted" : contract.weeksToExpiry <= 1 ? "Urgent renewal" : "Renewal open"}</span>
+                        </div>
+                        <div className={styles.contractDeskActions}>
+                          <a className={styles.actionButton} href={"/talent/profile?personId=" + encodeURIComponent(entry.personId) + "&from=talent"}>Wrestler profile</a>
+                          {contract.renewalReason === "DATES_EXHAUSTED" ? (
+                            <button className={styles.primaryButton} type="button" onClick={() => openMoreDates(entry)}>Negotiate more dates</button>
+                          ) : (
+                            <>
+                              {contract.sameTermsRenewal
+                                && (contract.family !== "EXCLUSIVE" || contract.weeklyGuarantee >= Math.ceil(entry.estimatedWeeklyValue * 0.5)) ? (
+                                <button className={styles.actionButton} type="button" onClick={() => openRenewal(entry, "SAME_TERMS")}>Renew same terms</button>
+                              ) : null}
+                              <button className={styles.primaryButton} type="button" onClick={() => openRenewal(entry, "NEGOTIATE")}>Negotiate renewal</button>
+                            </>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                  {contractDeskActionable.length === 0 ? <p className={styles.empty}>No outstanding contract decisions match your search.</p> : null}
+                </section>
+                <section aria-label="Pending contract offers">
+                  <h2>Waiting for response · {contractDeskPending.length}</h2>
+                  <p className={styles.subtle}>Pending recruitment, renewals and additional-dates proposals. Responses resolve through the usual World contract rules.</p>
+                  {contractDeskPending.map((offer) => <OfferCard key={offer.offerId} offer={offer} />)}
+                  {contractDeskPending.length === 0 ? <p className={styles.empty}>No pending offers match your search.</p> : null}
+                </section>
+              </div>
             ) : null}
             {tab === "OFFERS" ? offers.map((entry) => <OfferCard key={entry.offerId} offer={entry} />) : null}
             {(tab === "ROSTER" && roster.length === 0) || (tab === "MARKET" && market.length === 0) || (tab === "OFFERS" && offers.length === 0) ? (
