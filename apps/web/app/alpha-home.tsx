@@ -237,6 +237,8 @@ export default function AlphaHome(): React.JSX.Element {
   const promotion = view.promotion;
   const planning = promotion?.showPlanning ?? null;
   const currentPlan = planning?.currentPlan ?? null;
+  const dueShows = planning?.dueShows ?? [];
+  const multipleShowsDue = dueShows.length > 1;
   const actionRequiredCount = view.attention.filter((item) => item.category === "ACTION_REQUIRED").length;
   const currentMarket = currentPlan?.marketId && planning
     ? planning.markets.find((market) => market.marketId === currentPlan.marketId) ?? null
@@ -265,7 +267,14 @@ export default function AlphaHome(): React.JSX.Element {
 
   let weekActionHref = "/planner";
   let weekActionLabel = "Open six-week planner";
-  if (promotion?.weekReadiness.status === "SHOW_REQUIRED") {
+  if (multipleShowsDue) {
+    // The current-week card shortcut addresses only the primary identity.
+    // A regular + premium week must send the owner to the series-aware
+    // Planner, where each show has its own venue/day/card and commitments.
+    weekActionLabel = promotion?.weekReadiness.readyToFinish
+      ? "Review both scheduled shows"
+      : "Prepare both shows in the planner";
+  } else if (promotion?.weekReadiness.status === "SHOW_REQUIRED") {
     weekActionLabel = "Plan this week's show";
   } else if (promotion?.weekReadiness.status === "CARD_REQUIRED" && currentPlan) {
     weekActionHref = `/card?draftId=${encodeURIComponent(currentPlan.draftId)}`;
@@ -440,6 +449,13 @@ export default function AlphaHome(): React.JSX.Element {
               </span>
             </div>
             <p className="muted body-copy">{readinessCopy(promotion.weekReadiness.status)}</p>
+            {multipleShowsDue ? (
+              <p className="micro-copy">
+                {dueShows.length} separate events this PPW week: {dueShows.map(show => show.name).join(" and ")}.
+                Book each card separately in the six-week Planner. Choose different PPW days;
+                wrestler contracts and weekly workload apply to both shows.
+              </p>
+            ) : null}
 
             {currentPlan ? (
               <>
