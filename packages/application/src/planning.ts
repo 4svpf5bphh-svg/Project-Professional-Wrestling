@@ -17,6 +17,7 @@ import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
 import { comparePpwDates } from "../../sim-core/src/clock.js";
 import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
 import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
+import { validateLiveAppearanceHistory, type LiveAppearanceKind } from "../../sim-core/src/live-appearance-history.js";
 import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
 
@@ -65,8 +66,11 @@ export type DetailedShowSegmentType =
   | "POST_MATCH_ASSAULT"
   | "CELEBRATION"
   | "TURN"
-  | "VIDEO_PACKAGE";
+  | "VIDEO_PACKAGE"
+  | "LIVE_APPEARANCE";
 
+export type LiveAppearanceObjective = "ESTABLISH_STAR" | "CREATE_SHOCK" | "GENERATE_HEAT" | "BUILD_SYMPATHY" | "REIGNITE_RIVALRY";
+export type LiveAppearancePresentation = "ANNOUNCED" | "SURPRISE" | "DRAMATIC_ENTRANCE";
 export type VideoPackageKind = "DEBUT_TEASER" | "RETURN_TEASER" | "CHARACTER_SPOTLIGHT" | "RIVALRY_RECAP" | "EVENT_HYPE" | "TRAINING_MONTAGE";
 export type VideoPackageObjective = "CREATE_INTRIGUE" | "BUILD_ANTICIPATION" | "ESTABLISH_THREAT" | "BUILD_SYMPATHY" | "RECAP_STAKES";
 export type VideoPackageReveal = "CRYPTIC" | "NAMED" | "FULL";
@@ -93,6 +97,9 @@ export interface DetailedShowSegmentDraft {
   videoKind?: VideoPackageKind | null;
   videoObjective?: VideoPackageObjective | null;
   videoReveal?: VideoPackageReveal | null;
+  liveAppearanceKind?: LiveAppearanceKind | null;
+  liveAppearanceObjective?: LiveAppearanceObjective | null;
+  liveAppearancePresentation?: LiveAppearancePresentation | null;
   // Roles are authored intent; participants alone must not invent attack direction.
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
@@ -224,6 +231,7 @@ const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CELEBRATION",
   "TURN",
   "VIDEO_PACKAGE",
+  "LIVE_APPEARANCE",
 ]);
 
 function normalizedId(value: string, label: string, maxLength = 128): string {
@@ -435,6 +443,20 @@ function validateShowSegmentDraft(
       throw new Error("video footage must feature a promotion wrestler under contract on the show date");
     }
   }
+  const liveAppearanceKind = draft.type === "LIVE_APPEARANCE" ? (draft.liveAppearanceKind ?? null) : null;
+  const liveAppearanceObjective = draft.type === "LIVE_APPEARANCE" ? (draft.liveAppearanceObjective ?? null) : null;
+  const liveAppearancePresentation = draft.type === "LIVE_APPEARANCE" ? (draft.liveAppearancePresentation ?? null) : null;
+  if (draft.type === "LIVE_APPEARANCE") {
+    if (draft.participantIds.length !== 1 || !draft.participantIds[0]) {
+      throw new Error("live appearance must feature exactly one booked wrestler");
+    }
+    if (!["DEBUT", "RETURN", "SURPRISE_REVEAL", "INTRODUCTION"].includes(liveAppearanceKind ?? "")
+      || !["ESTABLISH_STAR", "CREATE_SHOCK", "GENERATE_HEAT", "BUILD_SYMPATHY", "REIGNITE_RIVALRY"].includes(liveAppearanceObjective ?? "")
+      || !["ANNOUNCED", "SURPRISE", "DRAMATIC_ENTRANCE"].includes(liveAppearancePresentation ?? "")) {
+      throw new Error("live appearance requires a subtype, purpose and presentation");
+    }
+    validateLiveAppearanceHistory(state, promotionId, draft.participantIds[0]!, targetDate, liveAppearanceKind!);
+  }
   const turnPersonId = draft.type === "TURN"
     ? (draft.turnPersonId === null || draft.turnPersonId === undefined
       ? null
@@ -588,6 +610,7 @@ function validateShowSegmentDraft(
     programmeId,
     plannedLengthMinutes: draft.plannedLengthMinutes,
     ...(draft.type === "VIDEO_PACKAGE" ? { videoSubjectPersonId, videoKind, videoObjective, videoReveal } : {}),
+    ...(draft.type === "LIVE_APPEARANCE" ? { liveAppearanceKind, liveAppearanceObjective, liveAppearancePresentation } : {}),
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
     ...(draft.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
