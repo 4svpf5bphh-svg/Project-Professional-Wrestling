@@ -550,7 +550,11 @@ function RosterCard({
             Gimmick, moves &amp; profile →
           </a>
           <p className={styles.subtle}>Age {wrestler.biologicalAge.toFixed(1)} · Fatigue {Math.round(wrestler.fatigue)} · Wear {Math.round(wrestler.wear)} · Skill {averageSkill(wrestler)}</p>
-          {pending ? <span className={styles.pending}>Your offer pending</span> : (
+          {pending ? (
+            <a className={styles.actionButton} href={`/talent/contracts?personId=${encodeURIComponent(wrestler.personId)}`}>
+              View pending offer →
+            </a>
+          ) : (
             <>
               {contract.family === "LIMITED_NON_EXCLUSIVE" ? (
                 <button className={styles.actionButton} type="button" onClick={onAddDates}>Negotiate more dates</button>
