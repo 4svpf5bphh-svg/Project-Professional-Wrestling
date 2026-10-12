@@ -16,6 +16,7 @@ This branch builds on History PR #59 → Video Packages #56 → Story-first Segm
 ## Follow-up hardening before deployment
 
 - Audit multiple practical same-day show arrangements; if the same wrestler is double-booked, existing commitment rules must prevail.
+- Revalidate future-scripted debut/return claims as earlier shows resolve, before World Lock. If the truth has changed, prompt the controlling promoter for a fresh scripted choice; never silently invent an arrival or rewrite a settled finish. This remains an open design/implementation blocker for long-horizon use.
 - Future network of live appearances should prefer clearly labelled promotion history in the Card picker; don't perform N historical full scans on every talent card.
 - Add audiovisual hype payoff and anti-repetition memory only through deterministic capped reception logic; no automatic free recognition or unjustified star status just for the format.
 - Validate end-to-end across multi-year and historical World saves; use the existing backward-compatible optional attributes on segment records.
