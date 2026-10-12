@@ -1,6 +1,6 @@
 declare const process: { exitCode?: number };
 
-import { createWorld } from "../packages/sim-core/src/world-generator.js";
+import { createWorld } from "../packages/sim-core/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
 import { latestPromotionLiveAppearance, validateLiveAppearanceHistory } from "../packages/sim-core/src/live-appearance-history.js";
