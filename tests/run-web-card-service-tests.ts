@@ -14,6 +14,7 @@ import {
   advanceAlphaWorldWeek,
   claimAlphaPromotion,
   createAlphaWorldAggregate,
+  loadAlphaPlayerSession,
   saveAlphaCurrentWeekShowPlan,
 } from "../packages/web-adapter/src/alpha-service.js";
 import {
@@ -1328,6 +1329,9 @@ await test("regular and premium shows in one PPW week each keep a separate card 
     promotionId: independent.id, requestId: "dual-show-claim",
   });
 
+  const home = await loadAlphaPlayerSession(repository, worldId, playerId);
+  ok(home.promotion?.showPlanning.dueShows.length === 2,
+    "promotion home did not disclose regular and premium due in the same week");
   const before = await loadAlphaPlayerPlanner(repository, worldId, playerId);
   const own = before.promotion;
   const week = own?.weeks[0];
