@@ -128,6 +128,49 @@ function twoPlayerFixture(seed: number): {
   };
 }
 
+test("Planner distinguishes purchased dates from already reserved and day-specific booking rights", () => {
+  const { aggregate, promotionAId } = twoPlayerFixture(73061);
+  const own = aggregate.state.contracts.find(contract =>
+    contract.promotionId === promotionAId && contract.status === "SIGNED"
+    && contract.family === "LIMITED_NON_EXCLUSIVE");
+  if (!own) throw new Error("fixture needs a limited non-exclusive contract");
+  const date = { ...aggregate.state.world.currentDate, day: 1 };
+  // Final week stored end day 1 must still permit day 7 under PPW contract
+  // week coverage. Purchased but uncommitted dates remain genuine property.
+  own.startDate = { ...date };
+  own.endDate = { ...date };
+  own.datesUsed = 0;
+  own.dateEntitlement = 3;
+  const first = buildPlayerSixWeekPlannerView(aggregate, "player-a");
+  const before = first.promotion?.weeks[0]?.eligibleParticipants.find(p => p.personId === own.personId);
+  ok(before?.datesRemaining === 3 && before.unreservedDatesRemaining === 3,
+    "planner has wrong beginning purchased/unreserved balance");
+  ok(before?.bookableDays.includes(7),
+    "contract with endDate D1 lost the final bookable D7 of its last PPW week");
+
+  const venue = aggregate.state.venues.find(v => v.marketId === aggregate.state.promotions.find(p =>
+    p.id === promotionAId)!.homeMarketId) ?? aggregate.state.venues[0]!;
+  aggregate.planning.showReservations.push({
+    reservationId: "read-only-projection-reservation",
+    sourceDraftId: "projected-card",
+    promotionId: promotionAId,
+    showSeriesId: null,
+    targetDate: { ...date, day: 6 },
+    marketId: venue.marketId, venueId: venue.id, ticketStrategy: "STANDARD",
+    participants: [{ personId: own.personId, contractId: own.id, serviceCapacityAtReservation: 1 }],
+    reservedPlanVersion: 1,
+  });
+  const after = buildPlayerSixWeekPlannerView(aggregate, "player-a");
+  const reserved = after.promotion?.weeks[0]?.eligibleParticipants.find(p => p.personId === own.personId);
+  ok(reserved?.datesRemaining === 3 && reserved.unreservedDatesRemaining === 2,
+    "Planner counted reserved future appearances as freely available purchased dates");
+  ok(!reserved?.bookableDays.includes(6),
+    "already reserved wrestler appeared available for a second event on the same day");
+
+  const week2 = after.promotion?.weeks[1]?.eligibleParticipants.find(p => p.personId === own.personId);
+  ok(!week2, "historically signed contract leaked into the following PPW week");
+});
+
 test("six-week planner returns the complete current plus five future week horizon", () => {
   const { aggregate, promotionAId } = twoPlayerFixture(73001);
   const view = buildPlayerSixWeekPlannerView(aggregate, "player-a");
