@@ -133,5 +133,19 @@ test("completed matches count even without a completed appearance ledger", () =>
   equal(promotionLiveAppearanceHistory(f.state, f.promotionId, f.personId, f.date(3)).status,
     "ESTABLISHED", "match participant should be recorded");
 });
+test("an on-screen run-in counts as a live appearance even without a billed match", () => {
+  const f = fixture(91560), e = f.completed(2);
+  f.state.matches.push({
+    id: "run-in-evidence", worldId: f.state.world.id, eventId: e.id,
+    promotionId: f.promotionId, order: 1, type: "SINGLES", status: "COMPLETED",
+    intent: "COMPETITIVE", plannedLengthMinutes: 12, actualLengthMinutes: 11,
+    intendedWinnerSide: "A", actualWinnerSide: "A", finishChangedDueToInjury: false,
+    interference: {personId:f.personId,aidedSide:"A",plannedOutcome:"SUCCESS",outcome:"SUCCESS"},
+    executionQuality: 63, criticalRatingStars: 2.75, crowdResponse: 55,
+  });
+  equal(promotionLiveAppearanceHistory(f.state, f.promotionId, f.personId, f.date(3)).status,
+    "ESTABLISHED", "a completed run-in prevents a false later debut");
+});
+
 console.log("\nLive appearance history: " + passed + " passed, " + failed + " failed");
 if (failed) process.exitCode = 1;
