@@ -128,6 +128,7 @@ export default function StaffClient(): React.JSX.Element {
                         <small>{renewal.weeksToExpiry} weeks left · {renewal.termWeeks}-week proposal · {renewal.dates} contracted dates</small>
                         <small>{money(renewal.weeklyGuarantee)}/week · {money(renewal.appearanceFee)}/appearance · {renewal.creativeControl.replaceAll("_", " ").toLowerCase()}</small>
                         <small>Maximum potential pay: {money(renewal.totalPotential)} · no repeat signing bonus</small>
+                        <p className={styles.advice}>{renewal.advice}</p>
                         <button disabled={busy} onClick={() => void act("PATCH",
                           { sourceContractId: renewal.contractId },
                           `Your Talent Manager submitted ${renewal.personName}'s renewal offer. Acceptance is not guaranteed.`)}>
