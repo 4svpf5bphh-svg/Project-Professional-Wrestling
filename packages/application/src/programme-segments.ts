@@ -17,6 +17,9 @@ import type {
   DetailedShowDraft,
   DetailedShowSegmentDraft,
   DetailedShowSegmentType,
+  VideoPackageKind,
+  VideoPackageObjective,
+  VideoPackageReveal,
   AttackPresentation,
   AttackObjective,
   TurnPresentation,
@@ -45,6 +48,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "POST_MATCH_ASSAULT",
   "CELEBRATION",
   "TURN",
+  "VIDEO_PACKAGE",
 ]);
 
 export type ResolvedSegmentOutcomeBand = "POOR" | "FLAT" | "SOLID" | "STRONG" | "HOT";
@@ -60,6 +64,10 @@ export interface ResolvedShowSegment {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  videoSubjectPersonId: Id | null;
+  videoKind: VideoPackageKind | null;
+  videoObjective: VideoPackageObjective | null;
+  videoReveal: VideoPackageReveal | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
@@ -99,6 +107,10 @@ interface NormalizedDraftSegment {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  videoSubjectPersonId: Id | null;
+  videoKind: VideoPackageKind | null;
+  videoObjective: VideoPackageObjective | null;
+  videoReveal: VideoPackageReveal | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
@@ -151,9 +163,10 @@ function sameDate(
 function activityEntityIds(
   state: WorldState,
   programme: Programme,
-  segment: Pick<DetailedProgrammeSegmentDraft | DetailedShowSegmentDraft, "participantIds">,
+  segment: Pick<DetailedProgrammeSegmentDraft | DetailedShowSegmentDraft, "participantIds"> & { videoSubjectPersonId?: Id | null },
 ): Id[] {
   const selectedPeople = new Set(segment.participantIds);
+  if (segment.videoSubjectPersonId) selectedPeople.add(segment.videoSubjectPersonId);
   const result = new Set<Id>();
   for (const ref of [...programme.sideA, ...programme.sideB]) {
     if (ref.kind === "PERSON") {
@@ -177,6 +190,10 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     participantIds: [...segment.participantIds],
     programmeId: segment.programmeId,
     plannedLengthMinutes: segment.plannedLengthMinutes,
+    videoSubjectPersonId: segment.type === "VIDEO_PACKAGE" ? (segment.videoSubjectPersonId ?? null) : null,
+    videoKind: segment.type === "VIDEO_PACKAGE" ? (segment.videoKind ?? null) : null,
+    videoObjective: segment.type === "VIDEO_PACKAGE" ? (segment.videoObjective ?? null) : null,
+    videoReveal: segment.type === "VIDEO_PACKAGE" ? (segment.videoReveal ?? null) : null,
     attackerPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
       ? (segment.attackerPersonId ?? null) : null,
     victimPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
@@ -210,6 +227,10 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       participantIds: [...segment.participantIds],
       programmeId: segment.programmeId,
       plannedLengthMinutes: 6,
+      videoSubjectPersonId: null,
+      videoKind: null,
+      videoObjective: null,
+      videoReveal: null,
       attackerPersonId: null,
       victimPersonId: null,
       rescuerPersonId: null,
@@ -250,7 +271,8 @@ function segmentOutcome(
   alignmentVolatilityModifier: number;
   angleFitModifier: number;
 } {
-  const people = segment.participantIds
+  const people = (segment.type === "VIDEO_PACKAGE" && segment.videoSubjectPersonId
+    ? [segment.videoSubjectPersonId] : segment.participantIds)
     .map((personId) => state.people.find((person) => person.id === personId))
     .filter((person): person is WorldState["people"][number] => Boolean(person));
   const average = (selector: (person: WorldState["people"][number]) => number): number => (
@@ -276,14 +298,15 @@ function segmentOutcome(
     POST_MATCH_ASSAULT: [0.38, 0.35, 0.27],
     CELEBRATION: [0.40, 0.45, 0.15],
     TURN: [0.55, 0.25, 0.20],
+    VIDEO_PACKAGE: [0.50, 0.30, 0.20],
   };
   const [presentationWeight, starWeight, momentumWeight] = weights[segment.type];
   const delivery = presentation * presentationWeight + starPower * starWeight + momentum * momentumWeight;
-  const moraleModifier = round1((morale - 50) * 0.08);
+  const moraleModifier = segment.type === "VIDEO_PACKAGE" ? 0 : round1((morale - 50) * 0.08);
   // Normal/rested condition should not make every segment report that fatigue
   // hurt delivery. Only materially elevated fatigue becomes a visible penalty.
   // A future chronological show executor can model within-show fatigue by slot.
-  const fatigueModifier = round1(-Math.max(0, fatigue - 30) * 0.12);
+  const fatigueModifier = segment.type === "VIDEO_PACKAGE" ? 0 : round1(-Math.max(0, fatigue - 30) * 0.12);
   const programme = segment.programmeId
     ? (state.programmes ?? []).find((candidate) => candidate.id === segment.programmeId)
     : null;
@@ -295,6 +318,13 @@ function segmentOutcome(
   // A format's appeal depends on character roles and rivalry context.
   // An angle never invents an injury or changes a finish.
   let angleFitModifier = 0;
+  if (segment.type === "VIDEO_PACKAGE") {
+    // Booked subtype, reveal and objective remain fixed. Context only affects audience reception.
+    const mysteryFit = segment.videoReveal === "CRYPTIC" && segment.videoObjective === "CREATE_INTRIGUE" ? 1.5 : 0;
+    const milestoneFit = segment.videoKind === "RIVALRY_RECAP" && programme ? 1.2
+      : segment.videoKind === "RIVALRY_RECAP" ? -1.2 : 0;
+    angleFitModifier = round1(clamp(mysteryFit + milestoneFit, -5, 5));
+  }
   if (segment.type === "ATTACK" && segment.attackerPersonId && segment.victimPersonId
     && segment.attackPresentation && segment.attackObjective) {
     const attacker = people.find((person) => person.id === segment.attackerPersonId);
@@ -455,6 +485,10 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const participantIds = entry.payload.participantIds;
   const programmeId = entry.payload.programmeId;
   const plannedLengthMinutes = entry.payload.plannedLengthMinutes;
+  const videoSubjectPersonId = entry.payload.videoSubjectPersonId ?? null;
+  const videoKind = entry.payload.videoKind ?? null;
+  const videoObjective = entry.payload.videoObjective ?? null;
+  const videoReveal = entry.payload.videoReveal ?? null;
   const attackerPersonId = entry.payload.attackerPersonId ?? null;
   const victimPersonId = entry.payload.victimPersonId ?? null;
   const rescuerPersonId = entry.payload.rescuerPersonId ?? null;
@@ -501,6 +535,10 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || !SEGMENT_TYPES.has(type as DetailedShowSegmentType)
     || typeof participantIds !== "string"
     || (programmeId !== null && typeof programmeId !== "string")
+    || (videoSubjectPersonId !== null && typeof videoSubjectPersonId !== "string")
+    || (videoKind !== null && !["DEBUT_TEASER", "RETURN_TEASER", "CHARACTER_SPOTLIGHT", "RIVALRY_RECAP", "EVENT_HYPE", "TRAINING_MONTAGE"].includes(String(videoKind)))
+    || (videoObjective !== null && !["CREATE_INTRIGUE", "BUILD_ANTICIPATION", "ESTABLISH_THREAT", "BUILD_SYMPATHY", "RECAP_STAKES"].includes(String(videoObjective)))
+    || (videoReveal !== null && !["CRYPTIC", "NAMED", "FULL"].includes(String(videoReveal)))
     || typeof plannedLengthMinutes !== "number"
     || !Number.isInteger(plannedLengthMinutes)
     || (attackerPersonId !== null && typeof attackerPersonId !== "string")
@@ -539,6 +577,10 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     participantIds: participantIds ? participantIds.split(",").filter(Boolean) : [],
     programmeId,
     plannedLengthMinutes,
+    videoSubjectPersonId: videoSubjectPersonId as Id | null,
+    videoKind: videoKind as VideoPackageKind | null,
+    videoObjective: videoObjective as VideoPackageObjective | null,
+    videoReveal: videoReveal as VideoPackageReveal | null,
     attackerPersonId: attackerPersonId as Id | null,
     victimPersonId: victimPersonId as Id | null,
     rescuerPersonId: rescuerPersonId as Id | null,
@@ -655,7 +697,7 @@ export function recordResolvedShowSegments(
           date: event.date,
           type: RESOLVED_SEGMENT_LEDGER_TYPE,
           significance: "ROUTINE",
-          entityIds: [event.id, draft.promotionId, ...segment.participantIds, ...(segment.stableId ? [segment.stableId] : [])],
+          entityIds: [event.id, draft.promotionId, ...segment.participantIds, ...(segment.videoSubjectPersonId ? [segment.videoSubjectPersonId] : []), ...(segment.stableId ? [segment.stableId] : [])],
           payload: {
             eventId: event.id,
             promotionId: draft.promotionId,
@@ -666,6 +708,10 @@ export function recordResolvedShowSegments(
             participantIds: segment.participantIds.join(","),
             programmeId: segment.programmeId,
             plannedLengthMinutes: segment.plannedLengthMinutes,
+            videoSubjectPersonId: segment.videoSubjectPersonId,
+            videoKind: segment.videoKind,
+            videoObjective: segment.videoObjective,
+            videoReveal: segment.videoReveal,
             attackerPersonId: segment.attackerPersonId,
             victimPersonId: segment.victimPersonId,
             rescuerPersonId: segment.rescuerPersonId,
