@@ -20,6 +20,8 @@ import type {
   VideoPackageKind,
   VideoPackageObjective,
   VideoPackageReveal,
+  LiveAppearanceKind,
+  LiveAppearanceObjective,
   AttackPresentation,
   AttackObjective,
   TurnPresentation,
@@ -49,6 +51,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CELEBRATION",
   "TURN",
   "VIDEO_PACKAGE",
+  "LIVE_APPEARANCE",
 ]);
 
 export type ResolvedSegmentOutcomeBand = "POOR" | "FLAT" | "SOLID" | "STRONG" | "HOT";
@@ -68,6 +71,8 @@ export interface ResolvedShowSegment {
   videoKind: VideoPackageKind | null;
   videoObjective: VideoPackageObjective | null;
   videoReveal: VideoPackageReveal | null;
+  liveKind: LiveAppearanceKind | null;
+  liveObjective: LiveAppearanceObjective | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
@@ -111,6 +116,8 @@ interface NormalizedDraftSegment {
   videoKind: VideoPackageKind | null;
   videoObjective: VideoPackageObjective | null;
   videoReveal: VideoPackageReveal | null;
+  liveKind: LiveAppearanceKind | null;
+  liveObjective: LiveAppearanceObjective | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
@@ -194,6 +201,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     videoKind: segment.type === "VIDEO_PACKAGE" ? (segment.videoKind ?? null) : null,
     videoObjective: segment.type === "VIDEO_PACKAGE" ? (segment.videoObjective ?? null) : null,
     videoReveal: segment.type === "VIDEO_PACKAGE" ? (segment.videoReveal ?? null) : null,
+    liveKind: segment.type === "LIVE_APPEARANCE" ? (segment.liveKind ?? null) : null,
+    liveObjective: segment.type === "LIVE_APPEARANCE" ? (segment.liveObjective ?? null) : null,
     attackerPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
       ? (segment.attackerPersonId ?? null) : null,
     victimPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
@@ -231,6 +240,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       videoKind: null,
       videoObjective: null,
       videoReveal: null,
+      liveKind: null,
+      liveObjective: null,
       attackerPersonId: null,
       victimPersonId: null,
       rescuerPersonId: null,
@@ -299,6 +310,7 @@ function segmentOutcome(
     CELEBRATION: [0.40, 0.45, 0.15],
     TURN: [0.55, 0.25, 0.20],
     VIDEO_PACKAGE: [0.50, 0.30, 0.20],
+    LIVE_APPEARANCE: [0.45, 0.40, 0.15],
   };
   const [presentationWeight, starWeight, momentumWeight] = weights[segment.type];
   const delivery = presentation * presentationWeight + starPower * starWeight + momentum * momentumWeight;
@@ -318,6 +330,13 @@ function segmentOutcome(
   // A format's appeal depends on character roles and rivalry context.
   // An angle never invents an injury or changes a finish.
   let angleFitModifier = 0;
+  if (segment.type === "LIVE_APPEARANCE") {
+    // A signed wrestler's arrival can excite the crowd; it cannot invent a
+    // debut/return or a match outcome. Those are frozen authored facts.
+    angleFitModifier = segment.liveKind === "SURPRISE_REVEAL" ? 1.2
+      : segment.liveKind === "DEBUT" ? 1.0
+      : segment.liveKind === "RETURN" ? 0.8 : 0;
+  }
   if (segment.type === "VIDEO_PACKAGE") {
     // Booked subtype, reveal and objective remain fixed. Context only affects audience reception.
     const mysteryFit = segment.videoReveal === "CRYPTIC" && segment.videoObjective === "CREATE_INTRIGUE" ? 1.5 : 0;
@@ -489,6 +508,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const videoKind = entry.payload.videoKind ?? null;
   const videoObjective = entry.payload.videoObjective ?? null;
   const videoReveal = entry.payload.videoReveal ?? null;
+  const liveKind = entry.payload.liveKind ?? null;
+  const liveObjective = entry.payload.liveObjective ?? null;
   const attackerPersonId = entry.payload.attackerPersonId ?? null;
   const victimPersonId = entry.payload.victimPersonId ?? null;
   const rescuerPersonId = entry.payload.rescuerPersonId ?? null;
@@ -539,6 +560,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || (videoKind !== null && !["DEBUT_TEASER", "RETURN_TEASER", "CHARACTER_SPOTLIGHT", "RIVALRY_RECAP", "EVENT_HYPE", "TRAINING_MONTAGE"].includes(String(videoKind)))
     || (videoObjective !== null && !["CREATE_INTRIGUE", "BUILD_ANTICIPATION", "ESTABLISH_THREAT", "BUILD_SYMPATHY", "RECAP_STAKES"].includes(String(videoObjective)))
     || (videoReveal !== null && !["CRYPTIC", "NAMED", "FULL"].includes(String(videoReveal)))
+    || (liveKind !== null && !["DEBUT", "RETURN", "INTRODUCTION", "SURPRISE_REVEAL"].includes(String(liveKind)))
+    || (liveObjective !== null && !["ESTABLISH_STAR", "BUILD_SYMPATHY", "SHOCK_RIVAL", "REIGNITE_PROGRAMME"].includes(String(liveObjective)))
     || typeof plannedLengthMinutes !== "number"
     || !Number.isInteger(plannedLengthMinutes)
     || (attackerPersonId !== null && typeof attackerPersonId !== "string")
@@ -581,6 +604,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     videoKind: videoKind as VideoPackageKind | null,
     videoObjective: videoObjective as VideoPackageObjective | null,
     videoReveal: videoReveal as VideoPackageReveal | null,
+    liveKind: liveKind as LiveAppearanceKind | null,
+    liveObjective: liveObjective as LiveAppearanceObjective | null,
     attackerPersonId: attackerPersonId as Id | null,
     victimPersonId: victimPersonId as Id | null,
     rescuerPersonId: rescuerPersonId as Id | null,
@@ -712,6 +737,8 @@ export function recordResolvedShowSegments(
             videoKind: segment.videoKind,
             videoObjective: segment.videoObjective,
             videoReveal: segment.videoReveal,
+            liveKind: segment.liveKind,
+            liveObjective: segment.liveObjective,
             attackerPersonId: segment.attackerPersonId,
             victimPersonId: segment.victimPersonId,
             rescuerPersonId: segment.rescuerPersonId,
