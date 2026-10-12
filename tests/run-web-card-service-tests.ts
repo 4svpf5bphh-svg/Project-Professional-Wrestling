@@ -1379,8 +1379,10 @@ await test("regular and premium shows in one PPW week each keep a separate card 
     throw new Error("premium draft was not individually addressable");
   }
   const premiumCard = await loadAlphaShowCard(repository, worldId, playerId, premiumDraft.draftId);
-  ok(flagshipIds.every(personId => !premiumCard.availableParticipants.some(person => person.personId === personId)),
-    "premium card picker wrongly offers wrestlers already reserved for the flagship on the same PPW week");
+  ok(premiumCard.availableParticipants.every(person => person.unlimitedAppearances || person.unreservedDatesRemaining > 0),
+    "premium card picker offers a wrestler with no unreserved appearance dates");
+  // A Day-6 flagship worker may legally work the Day-7 premium show if
+  // their purchased dates and weekly Service Capacity still allow it.
   const readyPremium = await saveAlphaShowCard(repository, worldId, playerId, {
     requestId: "dual-show-premium-card", expectedRevision: premiumCard.world.revision,
     expectedPlanVersion: premiumCard.workspaceVersion, draftId: premiumDraft.draftId,
