@@ -4,7 +4,7 @@ import type { DetailedShowSegmentType } from "../../application/src/planning.js"
  * Presentation-only booking taxonomy. Every choice maps to an existing,
  * server-authoritative segment. Goals never introduce new outcome rules.
  */
-export type SegmentStoryGoal = "CHARACTER" | "RIVALRY" | "STAKES" | "FACTION" | "AFTERMATH" | "VIDEO";
+export type SegmentStoryGoal = "CHARACTER" | "RIVALRY" | "STAKES" | "FACTION" | "AFTERMATH" | "VIDEO" | "ARRIVAL";
 
 export interface SegmentGoalDefinition {
   id: SegmentStoryGoal;
@@ -29,6 +29,10 @@ export const SEGMENT_STORY_GOALS: readonly SegmentGoalDefinition[] = [
   {
     id: "FACTION", label: "Relationships", description: "Change alliances, stable stories and allegiances.",
     types: ["STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION", "TURN"],
+  },
+  {
+    id: "ARRIVAL", label: "Debut / Return", description: "Make an actual in-person introduction using a booked wrestler.",
+    types: ["LIVE_APPEARANCE"],
   },
   {
     id: "VIDEO", label: "Video", description: "Build anticipation with pre-recorded footage; the wrestler is not at the show.",
@@ -72,6 +76,7 @@ export function segmentDirectionHint(type: DetailedShowSegmentType): string {
     case "STABLE_EXIT": return "Script an expulsion or walkout from an existing stable. Roster membership remains separately controlled.";
     case "STABLE_RECONCILIATION": return "Use an existing stable history to script reunion or rejection.";
     case "TURN": return "Choose whose alignment changes, who is betrayed if relevant, and how the reveal happens.";
+    case "LIVE_APPEARANCE": return "Bring one contracted wrestler to the show for a scripted debut, return, surprise reveal or introduction. Live appearances use real booking dates.";
     case "VIDEO_PACKAGE": return "Choose whose footage airs, what it teases and how much is revealed. Pre-recorded video is not a live wrestler appearance.";
     case "POST_MATCH_ASSAULT": return "Book the attack immediately after its source match, without changing that match's result.";
   }
