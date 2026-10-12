@@ -1312,6 +1312,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
         <button className={styles.button} disabled={loading || submitting} onClick={() => void refresh()}>{loading ? "Loading…" : "Refresh"}</button>
       </header>
 
+      {view?.promotion && tab === "ROSTER" ? <a className={styles.backLink} href="/staff">Talent Manager · Staff & renewals →</a> : null}
       {error ? <div className={styles.error}>{error}</div> : null}
       {notice ? <div className={styles.notice}>{notice}</div> : null}
       {view && !view.promotion ? <section className={styles.panel}><p>Take control of a promotion before managing talent.</p></section> : null}
