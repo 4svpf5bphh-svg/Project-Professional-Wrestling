@@ -3,6 +3,7 @@ import { activeTalentManager } from "../../sim-core/src/staff.js";
 import { marketWeeklyValue } from "../../sim-core/src/contracts.js";
 import { activePromotionControlForPlayer, activeWorldMembership } from "./ownership.js";
 import { buildPlayerTalentManagementView } from "./talent-view.js";
+import { staffRetentionAdvice } from "./staff-retention-advice.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export interface PlayerStaffView {
@@ -32,6 +33,8 @@ export interface PlayerStaffView {
     appearanceFee: number;
     totalPotential: number;
     creativeControl: string;
+    /** Staff insight is a read-only warning, never a contract advantage. */
+    advice: string;
   }>;
 }
 export function buildPlayerStaffView(aggregate: ApplicationWorldAggregate, playerId: string): PlayerStaffView {
@@ -66,6 +69,16 @@ export function buildPlayerStaffView(aggregate: ApplicationWorldAggregate, playe
       totalPotential: terms.weeklyGuarantee * terms.termWeeks
         + (terms.family === "EXCLUSIVE" ? 0 : terms.appearanceFee * terms.dateEntitlement),
       creativeControl: terms.creativeControl,
+      advice: staffRetentionAdvice({
+        insight: manager?.member.insight ?? 0,
+        morale: row.morale,
+        weeklyGuarantee: terms.weeklyGuarantee,
+        appearanceFee: terms.appearanceFee,
+        dateEntitlement: terms.dateEntitlement,
+        termWeeks: terms.termWeeks,
+        marketWeeklyEstimate: marketWeeklyValue(state.people.find(person => person.id === row.personId)!),
+        weeksToExpiry: row.contract.weeksToExpiry,
+      }),
     }];
   }).filter(row => !state.contractOffers.some(offer =>
     offer.status === "PENDING" && offer.promotionId === promotion?.id && offer.personId === row.personId));
