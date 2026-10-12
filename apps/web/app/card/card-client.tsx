@@ -1805,18 +1805,19 @@ export default function CardClient(): React.JSX.Element {
                           onClick={() => updateSegment(segment.draftSegmentId, { videoObjective: objective })}>{label}</button>
                       ))}
                     </div>
-                    <div className={styles.controls}>
-                      <div className={styles.control}>
-                        <label>Reveal</label>
-                        <select value={segment.videoReveal ?? "NAMED"} disabled={!view.canEdit}
-                          onChange={(event) => updateSegment(segment.draftSegmentId, { videoReveal: event.target.value as AlphaCardSegmentView["videoReveal"] })}>
-                          <option value="CRYPTIC">Cryptic / silhouette</option>
-                          <option value="NAMED">Name reveal</option>
-                          <option value="FULL">Full footage</option>
-                        </select>
-                        <small className={styles.sideLabel}>A cryptic teaser does not reveal the wrestler's identity to the audience. This does not cause a real debut, return, contract or recovery.</small>
-                      </div>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>How much do we reveal?</span>
+                      <small>Control exactly what the audience learns</small>
                     </div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Video reveal level">
+                      {([["CRYPTIC", "Cryptic / silhouette"], ["NAMED", "Name reveal"], ["FULL", "Full footage"]] as const).map(([reveal, label]) => (
+                        <button type="button" key={reveal} disabled={!view.canEdit}
+                          aria-pressed={(segment.videoReveal ?? "NAMED") === reveal}
+                          className={(segment.videoReveal ?? "NAMED") === reveal ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { videoReveal: reveal })}>{label}</button>
+                      ))}
+                    </div>
+                    <small className={styles.sideLabel}>A cryptic teaser conceals the wrestler's identity from the audience. A video never causes an actual debut, return, contract or recovery.</small>
                   </div>
                 ) : null}
 
