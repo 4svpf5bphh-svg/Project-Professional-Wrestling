@@ -4,6 +4,7 @@ import { createWorld } from "../packages/sim-core/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
 import { latestPromotionLiveAppearance, validateLiveAppearanceHistory } from "../packages/sim-core/src/live-appearance-history.js";
+import { validateArrivalRunningOrder } from "../packages/application/src/live-appearance-order.js";
 import type { WrestlingEvent } from "../packages/domain/src/types.js";
 
 let passed = 0; let failed = 0;
@@ -74,6 +75,24 @@ test("a cryptic video is not an appearance or a return, and another promotion's 
     date: event.date, serviceCapacityAtBooking: 1, status: "COMPLETED",
   });
   ok(latestPromotionLiveAppearance(state, promotion.id, wrestler.id, future) === null, "other promotion counted as debut");
+});
+
+test("a debut can open a card before a match, but cannot follow that wrestler's live match", () => {
+  const match = { draftMatchId: "main", sideAIds: ["subject"], sideBIds: ["opponent"] };
+  const debut = { draftSegmentId: "intro", type: "LIVE_APPEARANCE", participantIds: ["subject"], liveAppearanceKind: "DEBUT" };
+  validateArrivalRunningOrder([{ kind: "SEGMENT", refId: "intro" }, { kind: "MATCH", refId: "main" }], [match], [debut]);
+  throwsContaining(
+    () => validateArrivalRunningOrder([{ kind: "MATCH", refId: "main" }, { kind: "SEGMENT", refId: "intro" }], [match], [debut]),
+    "first in-person",
+  );
+});
+
+test("a preceding cryptic video does not spoil an actual live debut", () => {
+  const clips = [
+    { draftSegmentId: "trailer", type: "VIDEO_PACKAGE", participantIds: [] },
+    { draftSegmentId: "debut", type: "LIVE_APPEARANCE", participantIds: ["subject"], liveAppearanceKind: "DEBUT" },
+  ];
+  validateArrivalRunningOrder([{ kind: "SEGMENT", refId: "trailer" }, { kind: "SEGMENT", refId: "debut" }], [], clips);
 });
 
 console.log("\nLive appearance tests: " + passed + " passed, " + failed + " failed");
