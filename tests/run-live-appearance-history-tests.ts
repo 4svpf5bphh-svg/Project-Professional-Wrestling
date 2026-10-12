@@ -19,10 +19,11 @@ function fixture(seed: number) {
   const state = createWorld(seed, DEFAULT_RULESET);
   const promotion = state.promotions.find((p) => p.tier === "INDEPENDENT" && p.lifecycle === "ACTIVE");
   if (!promotion) throw new Error("no active indie promotion");
-  const personId = state.contracts.find((c) => c.promotionId === promotion.id && c.status === "SIGNED")?.personId;
+  const promotionId = promotion.id;
+  const personId = state.contracts.find((c) => c.promotionId === promotionId && c.status === "SIGNED")?.personId;
   if (!personId) throw new Error("no contracted indie wrestler");
   const date = (week: number): PpwDate => ({year: 1, week, day: 6});
-  function completed(week: number, targetPromotionId = promotion.id): WrestlingEvent {
+  function completed(week: number, targetPromotionId = promotionId): WrestlingEvent {
     const market = state.markets[0]!, venue = state.venues[0]!;
     const event: WrestlingEvent = {
       id: `live-history-${seed}-${week}-${targetPromotionId}`,
@@ -54,7 +55,7 @@ function fixture(seed: number) {
       date: {...event.date}, serviceCapacityAtBooking: 1, status,
     });
   }
-  return {state, promotionId: promotion.id, personId, completed, segment, appearance, date};
+  return {state, promotionId, personId, completed, segment, appearance, date};
 }
 
 test("no live appearances means an eligible debut", () => {
