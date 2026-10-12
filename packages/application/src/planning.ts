@@ -16,6 +16,7 @@ import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
 import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
 import { comparePpwDates } from "../../sim-core/src/clock.js";
 import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
+import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
 import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
 
@@ -380,6 +381,7 @@ function validateProgrammeSegmentDraft(
 function validateShowSegmentDraft(
   state: WorldState,
   promotionId: Id,
+  targetDate: PpwDate,
   draft: DetailedShowSegmentDraft,
   showParticipantIds: Set<Id>,
 ): DetailedShowSegmentDraft {
@@ -427,8 +429,10 @@ function validateShowSegmentDraft(
     if (!["CRYPTIC", "NAMED", "FULL"].includes(videoReveal ?? "")) {
       throw new Error("video package needs a reveal level");
     }
-    if (!activeContractsForPromotion(state, promotionId).some((contract) => contract.personId === videoSubjectPersonId)) {
-      throw new Error("video footage must feature a wrestler currently contracted to your promotion");
+    if (!activeContractsForPromotion(state, promotionId).some((contract) => (
+      contract.personId === videoSubjectPersonId && contractCoversBookedDate(state, contract, targetDate)
+    ))) {
+      throw new Error("video footage must feature a promotion wrestler under contract on the show date");
     }
   }
   const turnPersonId = draft.type === "TURN"
@@ -898,7 +902,7 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
   const rawSegments = draft.segments;
   if (rawSegments !== undefined && !Array.isArray(rawSegments)) throw new Error("draft segments must be an array");
   const segments = (rawSegments ?? []).map((segment) => {
-    const validated = validateShowSegmentDraft(state, draft.promotionId, segment, participantIds);
+    const validated = validateShowSegmentDraft(state, draft.promotionId, draft.targetDate, segment, participantIds);
     if (draftSegmentIds.has(validated.draftSegmentId)) throw new Error("draft contains duplicate segment IDs");
     if (validated.programmeId && segmentProgrammeIds.has(validated.programmeId)) {
       throw new Error("one Programme can have only one segment on a show");
