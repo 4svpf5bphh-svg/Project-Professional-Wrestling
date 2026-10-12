@@ -259,7 +259,7 @@ test("v8 saves migrate to empty portable identities without inventing global cha
   ok(deterministicWorldHash(restored)===deterministicWorldHash(state),
     "v8 migration changed unrelated simulation output");
   const reSaved=createPersistedWorldState(restored);
-  ok(reSaved.stateSchemaVersion===9&&Array.isArray(reSaved.wrestlerIdentities),
+  ok(reSaved.stateSchemaVersion===CURRENT_WORLD_STATE_SCHEMA_VERSION&&Array.isArray(reSaved.wrestlerIdentities),
     "v8 save did not upgrade safely to the portable identity schema");
 });
 
