@@ -16,7 +16,7 @@ import {
   resolvedShowSegmentsForEvent,
   type ResolvedSegmentOutcomeBand,
 } from "./programme-segments.js";
-import type { DetailedShowSegmentType, AttackPresentation, AttackObjective } from "./planning.js";
+import type { DetailedShowSegmentType, AttackPresentation, AttackObjective, VideoPackageKind, VideoPackageObjective, VideoPackageReveal, LiveAppearanceKind, LiveAppearanceObjective } from "./planning.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const PLAYER_SHOW_HISTORY_LIMIT = 12;
@@ -135,6 +135,13 @@ export interface PlayerShowSegmentView {
   type: DetailedShowSegmentType;
   plannedLengthMinutes: number;
   participants: PlayerShowSegmentParticipantView[];
+  videoSubjectPersonId: Id | null;
+  videoSubjectName: string | null;
+  videoKind: VideoPackageKind | null;
+  videoObjective: VideoPackageObjective | null;
+  videoReveal: VideoPackageReveal | null;
+  liveKind: LiveAppearanceKind | null;
+  liveObjective: LiveAppearanceObjective | null;
   programmeId: Id | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
@@ -593,6 +600,13 @@ export function buildPlayerShowHistory(
           name: peopleById.get(personId)?.name ?? "Unknown wrestler",
         })),
         programmeId: segment.programmeId,
+        videoSubjectPersonId: segment.videoSubjectPersonId,
+        videoSubjectName: segment.videoSubjectPersonId ? (peopleById.get(segment.videoSubjectPersonId)?.name ?? null) : null,
+        videoKind: segment.videoKind,
+        videoObjective: segment.videoObjective,
+        videoReveal: segment.videoReveal,
+        liveKind: segment.liveKind,
+        liveObjective: segment.liveObjective,
         attackerPersonId: segment.attackerPersonId,
         victimPersonId: segment.victimPersonId,
         rescuerPersonId: segment.rescuerPersonId,

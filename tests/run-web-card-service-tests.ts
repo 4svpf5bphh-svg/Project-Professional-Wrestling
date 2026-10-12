@@ -174,6 +174,80 @@ await test("Show Builder exposes established teams as tag-booking shortcuts", as
   );
 });
 
+await test("Video Package saves its pre-recorded subject without buying or reserving a live date", async () => {
+  const fixture = await reservedShowFixture(61591);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const subject = before.videoSubjects.find((person) => !fixture.participantIds.includes(person.personId));
+  if (!subject) throw new Error("fixture needs a contracted video subject not on the card");
+  const matches = singlesCard(fixture.participantIds);
+  const video: AlphaCardSegmentView = {
+    draftSegmentId: "video-first-teaser",
+    type: "VIDEO_PACKAGE",
+    participantIds: [],
+    programmeId: null,
+    plannedLengthMinutes: 3,
+    videoSubjectPersonId: subject.personId,
+    videoKind: "DEBUT_TEASER",
+    videoObjective: "CREATE_INTRIGUE",
+    videoReveal: "CRYPTIC",
+  };
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "video-pre-recorded-61591",
+    expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion,
+    matches,
+    segments: [video],
+    championshipAssignments: [],
+    runningOrder: [
+      { kind: "SEGMENT", refId: video.draftSegmentId },
+      ...matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ],
+  });
+  ok(saved.segments[0]?.videoKind === "DEBUT_TEASER" && saved.segments[0]?.videoReveal === "CRYPTIC",
+    "saved video package lost its booking choices");
+  ok(saved.segments[0]?.participantIds.length === 0, "video became an on-site segment");
+  const persisted = await fixture.repository.load(fixture.worldId);
+  const reservation = persisted.planning.showReservations[0];
+  ok(Boolean(reservation), "show reservation missing");
+  ok(!reservation!.participants.some((person) => person.personId === subject.personId),
+    "video footage consumed an appearance or physical talent reservation");
+  ok(!persisted.planning.workspaces[0]!.detailedShowDrafts[0]!.participantIds.includes(subject.personId),
+    "video subject leaked into the show's participant count");
+  ok(saved.runningOrder[0]?.kind === "SEGMENT", "video package could not open the show");
+});
+
+await test("live promotion debut on a Card uses real contracted show participation, never video-only booking", async () => {
+  const fixture = await reservedShowFixture(61592);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const wrestler = fixture.participantIds[0]!;
+  const matches = singlesCard(fixture.participantIds);
+  const segment: AlphaCardSegmentView = {
+    draftSegmentId: "live-debut-61592",
+    type: "LIVE_APPEARANCE",
+    participantIds: [wrestler],
+    plannedLengthMinutes: 5,
+    programmeId: null,
+    liveKind: "DEBUT",
+    liveObjective: "ESTABLISH_STAR",
+  };
+  const result = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "book-live-debut-61592",
+    expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion,
+    matches, segments: [segment], championshipAssignments: [],
+    runningOrder: [
+      { kind: "SEGMENT", refId: segment.draftSegmentId },
+      ...matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ],
+  });
+  ok(result.segments[0]?.liveKind === "DEBUT", "live debut was not preserved by Card API");
+  ok(result.segments[0]?.participantIds[0] === wrestler, "debut lacks an actual live booked person");
+  const aggregate = await fixture.repository.load(fixture.worldId);
+  const reservation = aggregate.planning.showReservations[0]!;
+  ok(reservation.participants.filter((person) => person.personId === wrestler).length === 1,
+    "wrestler booked for live debut and match was double-charged or reserved twice");
+});
+
 await test("Alpha browser card booking persists a complete card, title assignment and materializes both", async () => {
   const fixture = await reservedShowFixture(61011);
   const beforeCard = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");

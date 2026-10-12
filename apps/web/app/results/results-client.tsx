@@ -240,7 +240,7 @@ export default function ResultsClient(): React.JSX.Element {
                           return (
                             <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
                               <div className={styles.matchTop}>
-                                <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : label(slot.segment.type)}</span>
+                                <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "VIDEO_PACKAGE" && slot.segment.videoKind ? `video · ${label(slot.segment.videoKind)}` : slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : label(slot.segment.type)}</span>
                                 <strong>
                                   {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
                                     ? `${slot.segment.plannedLengthMinutes} min`
@@ -252,6 +252,28 @@ export default function ResultsClient(): React.JSX.Element {
                                   <span key={participant.personId}>{participant.name}</span>
                                 ))}
                               </div>
+                              {slot.segment.type === "LIVE_APPEARANCE" ? (
+
+                                <div className={styles.matchMeta}>
+
+                                  <span>Live {label(slot.segment.liveKind ?? "introduction")} · {slot.segment.participants[0]?.name ?? "Wrestler"} · {slot.segment.liveObjective ? label(slot.segment.liveObjective) : "Establish a star"}</span>
+
+                                  <span>In-person arrival · promotion appearance</span>
+
+                                </div>
+
+                              ) : null}
+                              {slot.segment.type === "VIDEO_PACKAGE" ? (
+
+                                <div className={styles.matchMeta}>
+
+                                  <span>{slot.segment.videoReveal === "CRYPTIC" ? "Mystery footage / silhouette" : slot.segment.videoSubjectName ?? "Featured talent"} · {slot.segment.videoKind ? label(slot.segment.videoKind) : "Wrestler spotlight"} · {slot.segment.videoObjective ? label(slot.segment.videoObjective) : "Build anticipation"}</span>
+
+                                  <span>Pre-recorded footage · not a live appearance</span>
+
+                                </div>
+
+                              ) : null}
                               {slot.segment.type === "INTERRUPTION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.interruptionOutcome ? (
                                 <div className={styles.matchMeta}>
                                   <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Interrupter"} interrupts {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "speaker"} · {slot.segment.interruptionOutcome === "VERBAL_EXCHANGE" ? "Verbal exchange" : slot.segment.interruptionOutcome === "INTERRUPTER_PREVAILS" ? "Interrupter gets the better of them" : slot.segment.interruptionOutcome === "SPEAKER_PREVAILS" ? "Original speaker gets the better of them" : "Brawl erupts"}</span>
@@ -483,7 +505,7 @@ export default function ResultsClient(): React.JSX.Element {
                               return (
                                 <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
                                   <div className={styles.matchTop}>
-                                    <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : label(slot.segment.type)}</span>
+                                    <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "VIDEO_PACKAGE" && slot.segment.videoKind ? `video · ${label(slot.segment.videoKind)}` : slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : label(slot.segment.type)}</span>
                                     <strong>
                                       {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
                                         ? "SEGMENT"
@@ -497,6 +519,28 @@ export default function ResultsClient(): React.JSX.Element {
                                       </a>
                                     ))}
                                   </div>
+                                  {slot.segment.type === "LIVE_APPEARANCE" ? (
+
+                                    <div className={styles.matchMeta}>
+
+                                      <span>Live {label(slot.segment.liveKind ?? "introduction")} · {slot.segment.participants[0]?.name ?? "Wrestler"} · {slot.segment.liveObjective ? label(slot.segment.liveObjective) : "Establish a star"}</span>
+
+                                      <span>In-person arrival · promotion appearance</span>
+
+                                    </div>
+
+                                  ) : null}
+                                  {slot.segment.type === "VIDEO_PACKAGE" ? (
+
+                                    <div className={styles.matchMeta}>
+
+                                      <span>{slot.segment.videoReveal === "CRYPTIC" ? "Mystery footage / silhouette" : slot.segment.videoSubjectName ?? "Featured talent"} · {slot.segment.videoKind ? label(slot.segment.videoKind) : "Wrestler spotlight"}</span>
+
+                                      <span>Pre-recorded footage · not a live appearance</span>
+
+                                    </div>
+
+                                  ) : null}
                                   {slot.segment.type === "INTERRUPTION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.interruptionOutcome ? (
                                 <div className={styles.matchMeta}>
                                   <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Interrupter"} interrupts {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "speaker"} · {slot.segment.interruptionOutcome === "VERBAL_EXCHANGE" ? "Verbal exchange" : slot.segment.interruptionOutcome === "INTERRUPTER_PREVAILS" ? "Interrupter gets the better of them" : slot.segment.interruptionOutcome === "SPEAKER_PREVAILS" ? "Original speaker gets the better of them" : "Brawl erupts"}</span>

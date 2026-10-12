@@ -14,35 +14,36 @@
 }
 
 .summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin: 14px 0 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0;
 }
 
-.summary div {
+.summary > span {
   min-width: 0;
-  padding: 12px;
-  border-radius: 14px;
-  border: 1px solid #202938;
-  background: #10151d;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid #243544;
+  background: #101a22;
+  color: #aabac6;
+  font-size: 11px;
 }
 
-.summary span,
+.summary > span b { color: #f0f7fa; font-size: 13px; }
+.summary > span small { color: #8199aa; font-size: 10px; }
+.summary > .timeOver b { color: #ffad9f; }
+
 .matchMeta,
 .sideLabel,
 .hint,
 .timeGuide {
   color: #7f8b9b;
   font-size: 11px;
-}
-
-.summary strong {
-  display: block;
-  margin-top: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .timeGuide {
@@ -83,7 +84,8 @@
 }
 
 .slotToggle {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -323,13 +325,7 @@
   line-height: 1.45;
 }
 
-@media (max-width: 900px) {
-  .summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 760px) {
+ @media (max-width: 760px) {
   .controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -337,10 +333,6 @@
 
 @media (max-width: 560px) {
   .controls {
-    grid-template-columns: 1fr;
-  }
-
-  .summary {
     grid-template-columns: 1fr;
   }
 
@@ -989,5 +981,360 @@
 
   .pickerMetrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+
+/* Fast booking strip: the card itself should dominate an iPhone screen. */
+.addSlotToolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.addSlotToolbar button {
+  min-width: 0;
+  min-height: 46px;
+  border: 1px solid rgba(93, 233, 206, .35);
+  border-radius: 12px;
+  background: rgba(50, 155, 136, .09);
+  color: #99f4e1;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.addSlotToolbar button:disabled {
+  opacity: .45;
+}
+
+.startHint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #90a6b1;
+  text-align: center;
+}
+
+.slotTopRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 4px;
+}
+
+.slotOrderControls {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.slotOrderControls button {
+  width: 42px;
+  height: 44px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(93, 233, 206, .32);
+  border-radius: 10px;
+  background: #13232a;
+  color: #9af3df;
+  font-size: 20px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.slotOrderControls button:disabled {
+  opacity: .28;
+  cursor: default;
+}
+
+.slotOrderControls button:focus-visible,
+.addSlotToolbar button:focus-visible {
+  outline: 2px solid #b1ffe7;
+  outline-offset: 2px;
+}
+
+@media (max-width: 560px) {
+  .summary { gap: 5px; }
+  .summary > span { padding: 6px 8px; }
+  .slotTopRow { align-items: flex-start; }
+  .slotOrderControls button { width: 40px; min-height: 46px; }
+  .slotHeaderBadges .mainEvent,
+  .slotHeaderBadges .segmentBadge { display: none; }
+}
+
+
+/* A focused booking sheet keeps the running order visible without form-wall expansion.
+   The existing draft/editing state is untouched and the separate wrestler picker is above it. */
+.editorOverlay {
+  position: fixed;
+  z-index: 210;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(10px, env(safe-area-inset-top)) 12px max(10px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: rgba(2, 6, 12, .78);
+  overscroll-behavior: contain;
+}
+
+.editorSheet {
+  box-sizing: border-box;
+  width: min(880px, 100%);
+  max-height: min(860px, 96dvh);
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(93, 233, 206, .4);
+  border-radius: 19px;
+  background: #0b131c;
+  box-shadow: 0 20px 70px rgba(0, 0, 0, .55);
+  color: #e8f3f4;
+}
+
+.editorHeading {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 17px 17px 11px;
+  border-bottom: 1px solid #273542;
+}
+
+.editorHeading > div { min-width: 0; }
+.editorHeading h2 {
+  margin: 4px 0 4px;
+  font-size: 18px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.editorHeading small { color: #91a7b4; font-size: 11px; }
+
+.editorClose {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid #304353;
+  border-radius: 11px;
+  background: #12202b;
+  color: #d4e3ea;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.editorTabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #273542;
+}
+
+.editorTab,
+.editorTabActive {
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid #2d4650;
+  background: rgba(255, 255, 255, .025);
+  color: #91aab8;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.editorTabActive {
+  border-color: #5de9ce;
+  background: rgba(93, 233, 206, .13);
+  color: #b8ffe9;
+}
+
+.editorBody {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
+}
+
+.advancedSection {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  border-top: 1px solid #243545;
+  padding-top: 12px;
+}
+
+.editorFooter {
+  min-height: 64px;
+  padding: 10px 14px max(10px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #273542;
+  background: #0d1920;
+}
+.editorFooter span { font-size: 11px; color: #a5b6c0; }
+.editorDone {
+  min-height: 44px;
+  min-width: 154px;
+  padding: 9px 13px;
+  border: 1px solid rgba(93, 233, 206, .55);
+  border-radius: 11px;
+  background: rgba(93, 233, 206, .17);
+  color: #acffe9;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.editorClose:focus-visible,
+.editorTab:focus-visible,
+.editorTabActive:focus-visible,
+.editorDone:focus-visible {
+  outline: 2px solid #b9fff1;
+  outline-offset: 2px;
+}
+
+@media (max-width: 560px) {
+  .editorOverlay {
+    align-items: end;
+    padding: 0;
+  }
+  .editorSheet {
+    width: 100%;
+    max-height: 95dvh;
+    border-radius: 20px 20px 0 0;
+    border-bottom: 0;
+  }
+  .editorHeading { padding: 12px 14px 10px; }
+  .editorHeading h2 { font-size: 16px; }
+  .editorBody { padding: 12px 14px 18px; }
+  .editorSheet input, .editorSheet select { font-size: 16px; }
+  .editorFooter span { max-width: 135px; }
+}
+
+
+.editorFooterActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.editorDoneSecondary {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #3b4c5a;
+  border-radius: 11px;
+  background: #17242d;
+  color: #c2d1dc;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.editorDone:disabled {
+  opacity: .38;
+  cursor: default;
+}
+.editorDoneSecondary:focus-visible {
+  outline: 2px solid #b9fff1;
+  outline-offset: 2px;
+}
+.editorHint,
+.editorConcern {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: rgba(93, 233, 206, .06);
+  border: 1px solid rgba(93, 233, 206, .23);
+  color: #b0d5d0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.editorConcern {
+  border-color: rgba(255, 191, 112, .3);
+  color: #ffd09b;
+  background: rgba(73, 46, 17, .18);
+}
+@media (max-width: 560px) {
+  .editorFooter {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .editorFooter span { max-width: none; }
+  .editorFooterActions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  }
+  .editorDone { min-width: 0; }
+}
+
+
+/* Story-first authoring: meaning before the technical segment format. */
+.storyGoalSection {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid rgba(93, 233, 206, .24);
+  border-radius: 12px;
+  background: rgba(25, 48, 51, .25);
+}
+.storyGoalPrompt {
+  color: #e4f5ef;
+  font-size: 13px;
+  font-weight: 900;
+}
+.storyGoalChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.storyGoalChoice,
+.storyGoalSelected {
+  min-height: 42px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  border: 1px solid #344e57;
+  background: rgba(255, 255, 255, .03);
+  color: #b1c8d0;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+.storyGoalSelected {
+  border-color: #5de9ce;
+  background: rgba(93, 233, 206, .17);
+  color: #c2ffee;
+}
+.storyGoalChoice:disabled,
+.storyGoalSelected:disabled {
+  opacity: .45;
+}
+.storyGoalSection small,
+.storyDirectionHint {
+  color: #9ebbb9;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.storyDirectionHint {
+  margin-top: 6px;
+}
+.storyGoalChoice:focus-visible,
+.storyGoalSelected:focus-visible {
+  outline: 2px solid #a6ffe7;
+  outline-offset: 2px;
+}
+@media (max-width: 560px) {
+  .storyGoalChoices {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .storyGoalChoice,
+  .storyGoalSelected {
+    min-width: 0;
+    width: 100%;
   }
 }

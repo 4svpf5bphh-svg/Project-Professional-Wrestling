@@ -17,6 +17,14 @@ import {
   defaultMatchStyleForIntent,
   evaluateMatchStyleLoad,
 } from "../../../../dist/packages/sim-core/src/match-style.js";
+import { canMoveRunningOrderSlot, moveRunningOrderSlot } from "../../../../dist/packages/web-adapter/src/card-running-order.js";
+import {
+  SEGMENT_STORY_GOALS,
+  firstSegmentForGoal,
+  segmentDirectionHint,
+  storyGoalForSegment,
+  typesForStoryGoal,
+} from "../../../../dist/packages/web-adapter/src/segment-story-goals.js";
 import styles from "./card.module.css";
 
 type ErrorPayload = { error?: string };
@@ -38,11 +46,18 @@ const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
   "HIGH_RISK", "STORY", "PROTECTIVE", "EPIC",
 ];
 const MATCH_FINISHES: BookableFinish[] = ["CLEAN_PIN", "SUBMISSION", "FLASH_PIN", "PROTECTED_FINISH"];
-const SEGMENT_TYPES: AlphaCardSegmentView["type"][] = [
-  "PROMO", "INTERVIEW", "CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION", "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN",
-];
 const ATTACK_FORMATS = ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"] as const;
 const ATTACK_OBJECTIVES = ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"] as const;
+const VIDEO_KINDS = [
+  ["DEBUT_TEASER", "Coming soon"], ["RETURN_TEASER", "Return teaser"],
+  ["CHARACTER_SPOTLIGHT", "Character spotlight"], ["RIVALRY_RECAP", "Rivalry recap"],
+  ["EVENT_HYPE", "Match / event hype"], ["TRAINING_MONTAGE", "Training montage"],
+] as const;
+const VIDEO_GOALS = [
+  ["CREATE_INTRIGUE", "Create mystery"], ["BUILD_ANTICIPATION", "Build anticipation"],
+  ["ESTABLISH_THREAT", "Establish a threat"], ["BUILD_SYMPATHY", "Build sympathy"],
+  ["RECAP_STAKES", "Raise the stakes"],
+] as const;
 const SHOW_TIME_GUIDE_MINUTES = 120;
 const STYLE_DIMENSIONS = [
   ["competitiveness", "Competitive"],
@@ -118,6 +133,7 @@ function isDirectedSegment(type: AlphaCardSegmentView["type"]): boolean {
 }
 
 function segmentMinimum(type: AlphaCardSegmentView["type"]): number {
+  if (type === "VIDEO_PACKAGE") return 0;
   return type === "RESCUE" ? 3 : type === "POST_MATCH_ASSAULT" || type === "CONFRONTATION" || type === "INTERRUPTION" || type === "CHALLENGE" || type === "CONTRACT_SIGNING" || type === "STABLE_INVITATION" || type === "STABLE_EXIT" || type === "STABLE_RECONCILIATION" || type === "ATTACK" ? 2 : 1;
 }
 
@@ -341,6 +357,8 @@ export default function CardClient(): React.JSX.Element {
   const [withdrawingAmendment, setWithdrawingAmendment] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedSlotKey, setExpandedSlotKey] = useState<string | null>(null);
+  const [bookingMode, setBookingMode] = useState<"QUICK" | "ADVANCED">("QUICK");
+  const editorCloseRef = useRef<HTMLButtonElement | null>(null);
   const [wrestlerPicker, setWrestlerPicker] = useState<WrestlerPickerTarget | null>(null);
   const requestId = useRef<string | null>(null);
 
@@ -374,6 +392,31 @@ export default function CardClient(): React.JSX.Element {
   }
 
   useEffect(() => { void load(); }, []);
+
+  // An editor is a focused mobile sheet, not an expanded card inside the running order.
+  // The wrestler picker is a higher-priority sheet and owns Escape while it is open.
+  useEffect(() => {
+    if (!expandedSlotKey) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    if (!wrestlerPicker) editorCloseRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !wrestlerPicker) {
+        event.preventDefault();
+        setExpandedSlotKey(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [expandedSlotKey, wrestlerPicker]);
+
+  function openSlotEditor(key: string): void {
+    setBookingMode("QUICK");
+    setExpandedSlotKey(key);
+  }
 
   const matchPersonIds = useMemo(
     () => matches.flatMap((match) => [...match.sideAIds, ...match.sideBIds]).filter(Boolean),
@@ -409,6 +452,14 @@ export default function CardClient(): React.JSX.Element {
     && segment.participantIds.length <= 4
     && segment.participantIds.every(Boolean)
     && new Set(segment.participantIds).size === segment.participantIds.length
+    && (segment.type !== "LIVE_APPEARANCE" || Boolean(
+      segment.participantIds.length === 1 && segment.liveKind && segment.liveObjective
+    ))
+    && (segment.type !== "VIDEO_PACKAGE" || Boolean(
+      segment.videoSubjectPersonId
+      && view?.videoSubjects.some((person) => person.personId === segment.videoSubjectPersonId)
+      && segment.videoKind && segment.videoObjective && segment.videoReveal
+    ))
     && (!isDirectedSegment(segment.type) || (
       Boolean(segment.initiatorPersonId) && Boolean(segment.targetPersonId)
       && segment.initiatorPersonId !== segment.targetPersonId
@@ -523,7 +574,7 @@ export default function CardClient(): React.JSX.Element {
       interferenceSide: null,
     }]);
     setRunningOrder((current) => [...current, { kind: "MATCH", refId: id }]);
-    setExpandedSlotKey(`MATCH:${id}`);
+    openSlotEditor(`MATCH:${id}`);
     markDirty();
   }
 
@@ -535,6 +586,12 @@ export default function CardClient(): React.JSX.Element {
       participantIds: Array.from({ length: segmentMinimum(type) }, () => ""),
       programmeId: null,
       plannedLengthMinutes: 6,
+      videoSubjectPersonId: type === "VIDEO_PACKAGE" ? null : undefined,
+      videoKind: type === "VIDEO_PACKAGE" ? "CHARACTER_SPOTLIGHT" : null,
+      videoObjective: type === "VIDEO_PACKAGE" ? "BUILD_ANTICIPATION" : null,
+      videoReveal: type === "VIDEO_PACKAGE" ? "NAMED" : null,
+      liveKind: type === "LIVE_APPEARANCE" ? "INTRODUCTION" : null,
+      liveObjective: type === "LIVE_APPEARANCE" ? "ESTABLISH_STAR" : null,
       attackerPersonId: null,
       victimPersonId: null,
       rescuerPersonId: null,
@@ -557,7 +614,7 @@ export default function CardClient(): React.JSX.Element {
       betrayedPersonId: null,
     }]);
     setRunningOrder((current) => [...current, { kind: "SEGMENT", refId: id }]);
-    setExpandedSlotKey(`SEGMENT:${id}`);
+    openSlotEditor(`SEGMENT:${id}`);
     markDirty();
   }
 
@@ -731,7 +788,8 @@ export default function CardClient(): React.JSX.Element {
     const segment = segments.find((candidate) => candidate.draftSegmentId === segmentId);
     if (!segment) return;
     const minimum = segmentMinimum(type);
-    const participantIds = [...segment.participantIds];
+    const participantIds = type === "VIDEO_PACKAGE" ? []
+      : type === "LIVE_APPEARANCE" ? segment.participantIds.slice(0, 1) : [...segment.participantIds];
     while (participantIds.length < minimum) participantIds.push("");
     const sourceDraftMatchId = type === "POST_MATCH_ASSAULT"
       ? (segment.type === type ? (segment.sourceDraftMatchId ?? null)
@@ -740,6 +798,13 @@ export default function CardClient(): React.JSX.Element {
     updateSegment(segmentId, {
       type,
       participantIds,
+      videoSubjectPersonId: type === "VIDEO_PACKAGE"
+        ? (segment.type === type ? (segment.videoSubjectPersonId ?? null) : null) : null,
+      videoKind: type === "VIDEO_PACKAGE" ? (segment.type === type ? (segment.videoKind ?? "CHARACTER_SPOTLIGHT") : "CHARACTER_SPOTLIGHT") : null,
+      videoObjective: type === "VIDEO_PACKAGE" ? (segment.type === type ? (segment.videoObjective ?? "BUILD_ANTICIPATION") : "BUILD_ANTICIPATION") : null,
+      videoReveal: type === "VIDEO_PACKAGE" ? (segment.type === type ? (segment.videoReveal ?? "NAMED") : "NAMED") : null,
+      liveKind: type === "LIVE_APPEARANCE" ? (segment.type === type ? (segment.liveKind ?? "INTRODUCTION") : "INTRODUCTION") : null,
+      liveObjective: type === "LIVE_APPEARANCE" ? (segment.type === type ? (segment.liveObjective ?? "ESTABLISH_STAR") : "ESTABLISH_STAR") : null,
       attackerPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[0] === segment.attackerPersonId
         ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[1] === segment.victimPersonId
@@ -795,6 +860,8 @@ export default function CardClient(): React.JSX.Element {
     updateSegment(segmentId, {
       programmeId,
       participantIds,
+      videoSubjectPersonId: segment.videoSubjectPersonId && !allowed.has(segment.videoSubjectPersonId)
+        ? null : (segment.videoSubjectPersonId ?? null),
       victimPersonId: segment.victimPersonId && participantIds[1] === segment.victimPersonId ? segment.victimPersonId : null,
       attackerPersonId: segment.attackerPersonId && participantIds[0] === segment.attackerPersonId ? segment.attackerPersonId : null,
       rescuerPersonId: segment.rescuerPersonId && participantIds[2] === segment.rescuerPersonId ? segment.rescuerPersonId : null,
@@ -917,13 +984,10 @@ export default function CardClient(): React.JSX.Element {
   }
 
   function moveSlot(index: number, direction: -1 | 1): void {
-    const target = index + direction;
-    if (target < 0 || target >= runningOrder.length) return;
-    setRunningOrder((current) => {
-      const next = [...current];
-      [next[index], next[target]] = [next[target]!, next[index]!];
-      return next;
-    });
+    if (!view?.canEdit) return;
+    const moved = moveRunningOrderSlot(runningOrder, segments, index, direction);
+    if (!moved) return;
+    setRunningOrder(moved);
     markDirty();
   }
 
@@ -1043,6 +1107,12 @@ export default function CardClient(): React.JSX.Element {
   }
 
   function segmentSummary(segment: AlphaCardSegmentView): string {
+    if (segment.type === "LIVE_APPEARANCE") return `Live ${pretty(segment.liveKind ?? "INTRODUCTION")} · ${personName(segment.participantIds[0] ?? "")} · ${segment.plannedLengthMinutes} min`;
+    if (segment.type === "VIDEO_PACKAGE") {
+      const subject = view?.videoSubjects.find((person) => person.personId === segment.videoSubjectPersonId)?.name
+        ?? (segment.videoSubjectPersonId || "Choose featured wrestler");
+      return `Video · ${pretty(segment.videoKind ?? "CHARACTER_SPOTLIGHT")} · ${subject} · ${segment.plannedLengthMinutes} min`;
+    }
     const people = segment.participantIds.map(personName).join(" · ") || "No wrestlers selected";
     if (segment.type === "TURN") {
       const who = segment.turnPersonId ? personName(segment.turnPersonId) : "Choose wrestler";
@@ -1125,8 +1195,8 @@ export default function CardClient(): React.JSX.Element {
     ));
   }
 
-  async function save(): Promise<void> {
-    if (!view || !canSave) return;
+  async function save(): Promise<boolean> {
+    if (!view || !canSave) return false;
     setSaving(true);
     setError(null);
     try {
@@ -1165,11 +1235,17 @@ export default function CardClient(): React.JSX.Element {
       setSaved(true);
       setDirty(false);
       requestId.current = null;
+      return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to save show booking");
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  async function saveAndCloseEditor(): Promise<void> {
+    if (await save()) setExpandedSlotKey(null);
   }
 
   async function withdrawPendingAmendment(): Promise<void> {
@@ -1292,27 +1368,18 @@ export default function CardClient(): React.JSX.Element {
           <div><span className="eyebrow">RUNNING ORDER</span><h2>{view.venueName}</h2></div>
           <span className="plan-pill plan-reserved">{view.reservationId ? "RESERVED" : "DRAFT"}</span>
         </div>
-        <p className="muted body-copy">Build the show in order. Wrestlers chosen in matches or segments become the shared-World talent reservation automatically.</p>
-
-        <div className={styles.summary}>
-          <div><span>Booked talent</span><strong>{uniqueBookedCount} / {view.maxParticipants}</strong></div>
-          <div><span>Minimum</span><strong>{view.minParticipants}</strong></div>
-          <div><span>Show time</span><strong>{bookedMinutes} min</strong></div>
-          <div><span>Guide left</span><strong className={minutesRemaining < 0 ? styles.timeOver : undefined}>{minutesRemaining >= 0 ? `${minutesRemaining} min` : `${Math.abs(minutesRemaining)} over`}</strong></div>
+        <div className={styles.summary} aria-label="Running order progress">
+          <span><b>{uniqueBookedCount}/{view.maxParticipants}</b> booked <small>(min {view.minParticipants})</small></span>
+          <span><b>{bookedMinutes} min</b> planned</span>
+          <span className={minutesRemaining < 0 ? styles.timeOver : undefined}><b>{minutesRemaining >= 0 ? `${minutesRemaining} min` : `${Math.abs(minutesRemaining)} min`}</b> {minutesRemaining >= 0 ? "guide left" : "over guide"}</span>
         </div>
+        <div className={styles.addSlotToolbar} aria-label="Add to the running order">
+          <button type="button" onClick={() => addMatch("SINGLES")} disabled={!view.canEdit}>+ Match</button>
+          <button type="button" onClick={() => addSegment()} disabled={!view.canEdit}>+ Segment</button>
+        </div>
+        {runningOrder.length === 0 ? <p className={styles.startHint}>Add a match or segment to begin your running order.</p> : null}
 
         <div className={styles.cardList}>
-          {runningOrder.length === 0 ? (
-            <div className={styles.emptySlot}>
-              <strong>Add your first slot</strong>
-              <span>Build the show from matches and segments in the order the audience will see them.</span>
-              <div className={styles.emptyActions}>
-                <button type="button" onClick={() => addMatch("SINGLES")} disabled={!view.canEdit}>+ Match</button>
-                <button type="button" onClick={() => addSegment()} disabled={!view.canEdit}>+ Segment</button>
-              </div>
-            </div>
-          ) : null}
-
           {runningOrder.map((slot, slotIndex) => {
             if (slot.kind === "MATCH") {
               const match = matches.find((candidate) => candidate.draftMatchId === slot.refId);
@@ -1327,11 +1394,12 @@ export default function CardClient(): React.JSX.Element {
               const expanded = expandedSlotKey === slotKey;
               return (
                 <article className={`${styles.matchCard} ${match.draftMatchId === lastMatchId ? styles.mainEventCard : ""}`} key={slotKey}>
+                  <div className={styles.slotTopRow}>
                   <button
                     className={styles.slotToggle}
                     type="button"
                     aria-expanded={expanded}
-                    onClick={() => setExpandedSlotKey(expanded ? null : slotKey)}
+                    onClick={() => expanded ? setExpandedSlotKey(null) : openSlotEditor(slotKey)}
                   >
                     <div className={styles.slotHeading}>
                       <span className={styles.slotNumber}>SLOT {slotIndex + 1} · MATCH</span>
@@ -1342,8 +1410,32 @@ export default function CardClient(): React.JSX.Element {
                       <span className={styles.chevron}>{expanded ? "▲" : "▼"}</span>
                     </div>
                   </button>
+                    <div className={styles.slotOrderControls} role="group" aria-label={`Reorder match slot ${slotIndex + 1}`}>
+                      <button type="button" title="Move up" aria-label={`Move match in slot ${slotIndex + 1} up`} disabled={!view.canEdit || !canMoveRunningOrderSlot(runningOrder, segments, slotIndex, -1)} onClick={() => moveSlot(slotIndex, -1)}>↑</button>
+                      <button type="button" title="Move down" aria-label={`Move match in slot ${slotIndex + 1} down`} disabled={!view.canEdit || !canMoveRunningOrderSlot(runningOrder, segments, slotIndex, 1)} onClick={() => moveSlot(slotIndex, 1)}>↓</button>
+                    </div>
+                  </div>
 
-                  {expanded ? <>
+                  {expanded ? (
+                    <div className={styles.editorOverlay} onClick={() => setExpandedSlotKey(null)}>
+                      <section className={styles.editorSheet} role="dialog" aria-modal="true"
+                        aria-labelledby={`booking-title-${slotKey}`} onClick={(event) => event.stopPropagation()}>
+                        <header className={styles.editorHeading}>
+                          <div>
+                            <span className="eyebrow">MATCH {slotIndex + 1} · SHOW RUNDOWN</span>
+                            <h2 id={`booking-title-${slotKey}`}>{matchSummary(match)}</h2>
+                            <small>Changes stay in this draft until you save the show.</small>
+                          </div>
+                          <button ref={editorCloseRef} className={styles.editorClose} type="button"
+                            onClick={() => setExpandedSlotKey(null)} aria-label="Return to running order">✕</button>
+                        </header>
+                        <div className={styles.editorTabs} role="group" aria-label="Booking detail">
+                          <button type="button" className={bookingMode === "QUICK" ? styles.editorTabActive : styles.editorTab}
+                            aria-pressed={bookingMode === "QUICK"} onClick={() => setBookingMode("QUICK")}>Quick Book</button>
+                          <button type="button" className={bookingMode === "ADVANCED" ? styles.editorTabActive : styles.editorTab}
+                            aria-pressed={bookingMode === "ADVANCED"} onClick={() => setBookingMode("ADVANCED")}>Advanced Booking</button>
+                        </div>
+                        <div className={styles.editorBody}>
                   <div className={styles.slotTypeRow}>
                     <button className={match.type === "SINGLES" ? styles.typeActive : styles.secondaryButton} type="button" onClick={() => setMatchType(match.draftMatchId, "SINGLES")} disabled={!view.canEdit}>Singles</button>
                     <button className={match.type === "TAG" ? styles.typeActive : styles.secondaryButton} type="button" onClick={() => setMatchType(match.draftMatchId, "TAG")} disabled={!view.canEdit}>Tag Team</button>
@@ -1470,6 +1562,13 @@ export default function CardClient(): React.JSX.Element {
                     </div>
                   </div>
 
+                  {bookingMode === "QUICK" && match.interfererPersonId ? (
+                    <p className={styles.editorHint}>A run-in is already scripted for this match. Open Advanced Booking to review or change it.</p>
+                  ) : null}
+                  {bookingMode === "QUICK" && concernPeople.length > 0 ? (
+                    <p className={styles.editorConcern}>Wrestler creative concerns detected. Open Advanced Booking for the details before saving.</p>
+                  ) : null}
+                  {bookingMode === "ADVANCED" ? <div className={styles.advancedSection}>
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
                       <span>Run-in / Match interference</span>
@@ -1552,13 +1651,25 @@ export default function CardClient(): React.JSX.Element {
                       {readiness?.provisional ? <em>Future-card assessment will be checked again when the show materialises.</em> : null}
                     </div>
                   </details>
+                  </div> : null}
 
                   <div className={styles.actions}>
-                    <button className={styles.secondaryButton} type="button" disabled={!view.canEdit || slotIndex === 0} onClick={() => moveSlot(slotIndex, -1)}>↑ Earlier</button>
-                    <button className={styles.secondaryButton} type="button" disabled={!view.canEdit || slotIndex === runningOrder.length - 1} onClick={() => moveSlot(slotIndex, 1)}>↓ Later</button>
+                    
+                    
                     <button className={styles.removeButton} type="button" disabled={!view.canEdit} onClick={() => removeSlot(slot)}>Remove</button>
                   </div>
-                  </> : null}
+                        </div>
+                        <footer className={styles.editorFooter}>
+                          <span>{dirty ? "Unsaved card changes" : "No new changes"}</span>
+                          <div className={styles.editorFooterActions}>
+                            <button className={styles.editorDoneSecondary} type="button" onClick={() => setExpandedSlotKey(null)}>Done editing</button>
+                            <button className={styles.editorDone} type="button" disabled={!canSave || saving}
+                              onClick={() => void saveAndCloseEditor()}>{saving ? "Saving…" : "Save show & return"}</button>
+                          </div>
+                        </footer>
+                      </section>
+                    </div>
+                  ) : null}
                 </article>
               );
             }
@@ -1574,11 +1685,12 @@ export default function CardClient(): React.JSX.Element {
             );
             return (
               <article className={`${styles.matchCard} ${styles.segmentCard}`} key={slotKey}>
+                <div className={styles.slotTopRow}>
                 <button
                   className={styles.slotToggle}
                   type="button"
                   aria-expanded={expanded}
-                  onClick={() => setExpandedSlotKey(expanded ? null : slotKey)}
+                  onClick={() => expanded ? setExpandedSlotKey(null) : openSlotEditor(slotKey)}
                 >
                   <div className={styles.slotHeading}>
                     <span className={styles.slotNumber}>SLOT {slotIndex + 1} · SEGMENT</span>
@@ -1589,14 +1701,57 @@ export default function CardClient(): React.JSX.Element {
                     <span className={styles.chevron}>{expanded ? "▲" : "▼"}</span>
                   </div>
                 </button>
+                  <div className={styles.slotOrderControls} role="group" aria-label={`Reorder segment slot ${slotIndex + 1}`}>
+                    <button type="button" title="Move up" aria-label={`Move segment in slot ${slotIndex + 1} up`} disabled={!view.canEdit || !canMoveRunningOrderSlot(runningOrder, segments, slotIndex, -1)} onClick={() => moveSlot(slotIndex, -1)}>↑</button>
+                    <button type="button" title="Move down" aria-label={`Move segment in slot ${slotIndex + 1} down`} disabled={!view.canEdit || !canMoveRunningOrderSlot(runningOrder, segments, slotIndex, 1)} onClick={() => moveSlot(slotIndex, 1)}>↓</button>
+                  </div>
+                </div>
 
-                {expanded ? <>
+                {expanded ? (
+                  <div className={styles.editorOverlay} onClick={() => setExpandedSlotKey(null)}>
+                    <section className={styles.editorSheet} role="dialog" aria-modal="true"
+                      aria-labelledby={`booking-title-${slotKey}`} onClick={(event) => event.stopPropagation()}>
+                      <header className={styles.editorHeading}>
+                        <div>
+                          <span className="eyebrow">SEGMENT {slotIndex + 1} · SHOW RUNDOWN</span>
+                          <h2 id={`booking-title-${slotKey}`}>{segmentSummary(segment)}</h2>
+                          <small>Script the story you want the audience to see.</small>
+                        </div>
+                        <button ref={editorCloseRef} className={styles.editorClose} type="button"
+                          onClick={() => setExpandedSlotKey(null)} aria-label="Return to running order">✕</button>
+                      </header>
+                      <div className={styles.editorTabs} role="group" aria-label="Segment detail">
+                        <button type="button" className={bookingMode === "QUICK" ? styles.editorTabActive : styles.editorTab}
+                          aria-pressed={bookingMode === "QUICK"} onClick={() => setBookingMode("QUICK")}>Quick Book</button>
+                        <button type="button" className={bookingMode === "ADVANCED" ? styles.editorTabActive : styles.editorTab}
+                          aria-pressed={bookingMode === "ADVANCED"} onClick={() => setBookingMode("ADVANCED")}>Advanced Booking</button>
+                      </div>
+                      <div className={styles.editorBody}>
+                <div className={styles.storyGoalSection}>
+                  <span className={styles.storyGoalPrompt}>What kind of moment are we booking?</span>
+                  <div className={styles.storyGoalChoices} role="group" aria-label="Segment story goal">
+                    {SEGMENT_STORY_GOALS.map((goal) => (
+                      <button key={goal.id} type="button"
+                        className={storyGoalForSegment(segment.type) === goal.id ? styles.storyGoalSelected : styles.storyGoalChoice}
+                        aria-pressed={storyGoalForSegment(segment.type) === goal.id}
+                        title={goal.description}
+                        disabled={!view.canEdit}
+                        onClick={() => {
+                          if (storyGoalForSegment(segment.type) !== goal.id) {
+                            setSegmentType(segment.draftSegmentId, firstSegmentForGoal(goal.id));
+                          }
+                        }}>{goal.label}</button>
+                    ))}
+                  </div>
+                  <small>{SEGMENT_STORY_GOALS.find((goal) => goal.id === storyGoalForSegment(segment.type))?.description}</small>
+                </div>
                 <div className={styles.controls}>
                   <div className={styles.control}>
-                    <label>What happens?</label>
+                    <label>How does it happen?</label>
                     <select value={segment.type} disabled={!view.canEdit} onChange={(event) => setSegmentType(segment.draftSegmentId, event.target.value as AlphaCardSegmentView["type"])}>
-                      {SEGMENT_TYPES.map((type) => <option key={type} value={type}>{pretty(type)}</option>)}
+                      {typesForStoryGoal(storyGoalForSegment(segment.type)).map((type) => <option key={type} value={type}>{pretty(type)}</option>)}
                     </select>
+                    <small className={styles.storyDirectionHint}>{segmentDirectionHint(segment.type)}</small>
                   </div>
                   <div className={styles.control}>
                     <label>Active Programme</label>
@@ -1614,6 +1769,106 @@ export default function CardClient(): React.JSX.Element {
                     <MinuteField value={segment.plannedLengthMinutes} min={2} max={20} disabled={!view.canEdit} onCommit={(plannedLengthMinutes) => updateSegment(segment.draftSegmentId, { plannedLengthMinutes })} />
                   </div>
                 </div>
+
+                {segment.type === "LIVE_APPEARANCE" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Live introduction</span>
+                      <small>Book an actual in-person appearance. It uses the wrestler's show reservation and contracted date.</small>
+                    </div>
+                    <div className={styles.control}>
+                      <label>Who's appearing?</label>
+                      <WrestlerSlotButton person={pickerPerson(segment.participantIds[0] ?? "")} disabled={!view.canEdit}
+                        onClick={() => setWrestlerPicker({
+                          kind: "SEGMENT", segmentId: segment.draftSegmentId, slotIndex: 0,
+                          currentId: segment.participantIds[0] ?? "", label: "Live appearance · featured wrestler",
+                        })} />
+                    </div>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>What's the moment?</span>
+                      <small>Debuts and returns are based on this promotion's completed live show history, not videos.</small>
+                    </div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Live appearance kind">
+                      {([["DEBUT", "Promotion debut"], ["RETURN", "Comeback"], ["INTRODUCTION", "Introduction"], ["SURPRISE_REVEAL", "Surprise reveal"]] as const).map(([kind, label]) => (
+                        <button type="button" key={kind} disabled={!view.canEdit} aria-pressed={segment.liveKind === kind}
+                          className={segment.liveKind === kind ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { liveKind: kind })}>{label}</button>
+                      ))}
+                    </div>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>What's the objective?</span>
+                      <small>The booker scripts the moment; the World judges the crowd's response.</small>
+                    </div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Live appearance objective">
+                      {([["ESTABLISH_STAR", "Establish a star"], ["BUILD_SYMPATHY", "Build sympathy"], ["SHOCK_RIVAL", "Shock a rival"], ["REIGNITE_PROGRAMME", "Reignite a feud"]] as const).map(([goal, label]) => (
+                        <button type="button" key={goal} disabled={!view.canEdit} aria-pressed={segment.liveObjective === goal}
+                          className={segment.liveObjective === goal ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { liveObjective: goal })}>{label}</button>
+                      ))}
+                    </div>
+                    <small className={styles.sideLabel}>A debut must be their first live appearance for your promotion. A comeback requires at least four PPW weeks since their last live appearance; a spotlight video doesn't count.</small>
+                  </div>
+                ) : null}
+
+                {segment.type === "VIDEO_PACKAGE" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Pre-recorded video package</span>
+                      <small>Footage does not bring the subject to the venue or spend contracted appearance dates.</small>
+                    </div>
+                    <div className={styles.controls}>
+                      <div className={styles.control}>
+                        <label>Featured wrestler (signed talent)</label>
+                        <select value={segment.videoSubjectPersonId ?? ""} disabled={!view.canEdit}
+                          onChange={(event) => updateSegment(segment.draftSegmentId, { videoSubjectPersonId: event.target.value || null })}>
+                          <option value="">Choose subject of the footage</option>
+                          {view.videoSubjects
+                            .filter((person) => !segment.programmeId || view.programmes.some((programme) => (
+                              programme.programmeId === segment.programmeId && programme.participantIds.includes(person.personId)
+                            )))
+                            .map((person) => (
+                            <option value={person.personId} key={person.personId}>{person.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Video format</span>
+                      <small>What the audience actually sees</small>
+                    </div>
+                    <div className={styles.slotTypeRow}>
+                      {VIDEO_KINDS.map(([kind, label]) => (
+                        <button type="button" key={kind} disabled={!view.canEdit}
+                          className={(segment.videoKind ?? "CHARACTER_SPOTLIGHT") === kind ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { videoKind: kind })}>{label}</button>
+                      ))}
+                    </div>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Booking objective</span>
+                      <small>The feeling you're trying to create</small>
+                    </div>
+                    <div className={styles.slotTypeRow}>
+                      {VIDEO_GOALS.map(([objective, label]) => (
+                        <button type="button" key={objective} disabled={!view.canEdit}
+                          className={(segment.videoObjective ?? "BUILD_ANTICIPATION") === objective ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { videoObjective: objective })}>{label}</button>
+                      ))}
+                    </div>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>How much do we reveal?</span>
+                      <small>Control exactly what the audience learns</small>
+                    </div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Video reveal level">
+                      {([["CRYPTIC", "Cryptic / silhouette"], ["NAMED", "Name reveal"], ["FULL", "Full footage"]] as const).map(([reveal, label]) => (
+                        <button type="button" key={reveal} disabled={!view.canEdit}
+                          aria-pressed={(segment.videoReveal ?? "NAMED") === reveal}
+                          className={(segment.videoReveal ?? "NAMED") === reveal ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { videoReveal: reveal })}>{label}</button>
+                      ))}
+                    </div>
+                    <small className={styles.sideLabel}>A cryptic teaser conceals the wrestler's identity from the audience. A video never causes an actual debut, return, contract or recovery.</small>
+                  </div>
+                ) : null}
 
                 {segment.type === "POST_MATCH_ASSAULT" ? (
                   <div className={styles.controls}>
@@ -1925,7 +2180,7 @@ export default function CardClient(): React.JSX.Element {
                     </button>
                     {view.programmes.length > 0 ? <a className={styles.programmeLink} href="/programmes">Manage Programmes →</a> : <a className={styles.programmeLink} href="/programmes">Start a Programme →</a>}
                   </div>
-                ) : (
+                ) : segment.type === "VIDEO_PACKAGE" || segment.type === "LIVE_APPEARANCE" ? null : (
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
                       <span>{segment.type === "RESCUE" ? "Who attacks, who is saved, and who makes the save?" : segment.type === "POST_MATCH_ASSAULT" ? "Who attacks after the match?" : segment.type === "ATTACK" ? "Who attacks whom?" : isDirectedSegment(segment.type) ? "Who starts it?" : "Who is involved?"}</span>
@@ -1984,29 +2239,44 @@ export default function CardClient(): React.JSX.Element {
                         <button type="button" className={styles.secondaryButton} disabled={!view.canEdit || !segment.participantIds[0] || !segment.participantIds[1]} onClick={() => swapDirectedPair(segment.draftSegmentId)}>Swap initiator / target</button>
                       </div>
                     ) : null}
-                    <button type="button" className={styles.secondaryButton} disabled={!view.canEdit || segment.participantIds.length >= 4} onClick={() => addSegmentParticipant(segment.draftSegmentId)}>+ Add wrestler</button>
-                    {view.programmes.length > 0 ? <a className={styles.programmeLink} href="/programmes">Manage Programmes →</a> : <a className={styles.programmeLink} href="/programmes">Start a Programme →</a>}
+                    {bookingMode === "ADVANCED" ? (
+                      <div className={styles.advancedSection}>
+                        <button type="button" className={styles.secondaryButton} disabled={!view.canEdit || segment.participantIds.length >= 4} onClick={() => addSegmentParticipant(segment.draftSegmentId)}>+ Add extra wrestler</button>
+                        {view.programmes.length > 0 ? <a className={styles.programmeLink} href="/programmes">Manage Programmes →</a> : <a className={styles.programmeLink} href="/programmes">Start a Programme →</a>}
+                      </div>
+                    ) : null}
                   </div>
                 )}
 
                 <div className={styles.actions}>
-                  <button className={styles.secondaryButton} type="button" disabled={!view.canEdit || slotIndex === 0} onClick={() => moveSlot(slotIndex, -1)}>↑ Earlier</button>
-                  <button className={styles.secondaryButton} type="button" disabled={!view.canEdit || slotIndex === runningOrder.length - 1} onClick={() => moveSlot(slotIndex, 1)}>↓ Later</button>
+                  
+                  
                   <button className={styles.removeButton} type="button" disabled={!view.canEdit} onClick={() => removeSlot(slot)}>Remove</button>
                 </div>
-                </> : null}
+                      </div>
+                      <footer className={styles.editorFooter}>
+                        <span>{dirty ? "Unsaved card changes" : "No new changes"}</span>
+                        <div className={styles.editorFooterActions}>
+                          <button className={styles.editorDoneSecondary} type="button" onClick={() => setExpandedSlotKey(null)}>Done editing</button>
+                          <button className={styles.editorDone} type="button" disabled={!canSave || saving}
+                            onClick={() => void saveAndCloseEditor()}>{saving ? "Saving…" : "Save show & return"}</button>
+                        </div>
+                      </footer>
+                    </section>
+                  </div>
+                ) : null}
               </article>
             );
           })}
         </div>
 
-        <div className={styles.addSlotBar}>
+        {runningOrder.length > 0 ? <div className={styles.addSlotBar}>
           <span>Add next slot</span>
           <div>
             <button className={styles.secondaryButton} type="button" onClick={() => addMatch("SINGLES")} disabled={!view.canEdit}>+ Match</button>
             <button className={styles.secondaryButton} type="button" onClick={() => addSegment()} disabled={!view.canEdit}>+ Segment</button>
           </div>
-        </div>
+        </div> : null}
 
         {view.creativeConcerns?.length ? (
           <section className={styles.saveBlockers} aria-live="polite" aria-label="Wrestler creative approval">

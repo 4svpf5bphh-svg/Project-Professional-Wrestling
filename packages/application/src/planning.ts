@@ -15,6 +15,9 @@ import { isWrestlerAlignment, wrestlerAlignmentForPromotion } from "../../sim-co
 import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
 import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
 import { comparePpwDates } from "../../sim-core/src/clock.js";
+import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
+import { liveAppearanceHistoryError } from "./live-appearances.js";
+import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
 import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
 
@@ -62,7 +65,16 @@ export type DetailedShowSegmentType =
   | "RESCUE"
   | "POST_MATCH_ASSAULT"
   | "CELEBRATION"
-  | "TURN";
+  | "TURN"
+  | "VIDEO_PACKAGE"
+  | "LIVE_APPEARANCE";
+
+export type LiveAppearanceKind = "DEBUT" | "RETURN" | "INTRODUCTION" | "SURPRISE_REVEAL";
+export type LiveAppearanceObjective = "ESTABLISH_STAR" | "BUILD_SYMPATHY" | "SHOCK_RIVAL" | "REIGNITE_PROGRAMME";
+
+export type VideoPackageKind = "DEBUT_TEASER" | "RETURN_TEASER" | "CHARACTER_SPOTLIGHT" | "RIVALRY_RECAP" | "EVENT_HYPE" | "TRAINING_MONTAGE";
+export type VideoPackageObjective = "CREATE_INTRIGUE" | "BUILD_ANTICIPATION" | "ESTABLISH_THREAT" | "BUILD_SYMPATHY" | "RECAP_STAKES";
+export type VideoPackageReveal = "CRYPTIC" | "NAMED" | "FULL";
 
 export type AttackPresentation = "BLINDSIDE" | "BEATDOWN" | "PULL_APART_BRAWL";
 export type AttackObjective = "GENERATE_HEAT" | "BUILD_SYMPATHY" | "ESCALATE_RIVALRY";
@@ -81,6 +93,13 @@ export interface DetailedShowSegmentDraft {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  /** The subject of licensed pre-recorded footage, never a live show participant. */
+  videoSubjectPersonId?: Id | null;
+  videoKind?: VideoPackageKind | null;
+  videoObjective?: VideoPackageObjective | null;
+  videoReveal?: VideoPackageReveal | null;
+  liveKind?: LiveAppearanceKind | null;
+  liveObjective?: LiveAppearanceObjective | null;
   // Roles are authored intent; participants alone must not invent attack direction.
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
@@ -211,6 +230,8 @@ const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "POST_MATCH_ASSAULT",
   "CELEBRATION",
   "TURN",
+  "VIDEO_PACKAGE",
+  "LIVE_APPEARANCE",
 ]);
 
 function normalizedId(value: string, label: string, maxLength = 128): string {
@@ -368,13 +389,18 @@ function validateProgrammeSegmentDraft(
 function validateShowSegmentDraft(
   state: WorldState,
   promotionId: Id,
+  targetDate: PpwDate,
   draft: DetailedShowSegmentDraft,
   showParticipantIds: Set<Id>,
 ): DetailedShowSegmentDraft {
   const draftSegmentId = normalizedId(draft.draftSegmentId, "draftSegmentId");
   if (!SHOW_SEGMENT_TYPES.has(draft.type)) throw new Error(`unsupported show segment type ${String(draft.type)}`);
-  if (!Array.isArray(draft.participantIds) || draft.participantIds.length < 1 || draft.participantIds.length > 4) {
-    throw new Error("show segment requires one to four wrestlers");
+  if (!Array.isArray(draft.participantIds)
+    || (draft.type === "VIDEO_PACKAGE" ? draft.participantIds.length !== 0
+      : draft.participantIds.length < 1 || draft.participantIds.length > 4)) {
+    throw new Error(draft.type === "VIDEO_PACKAGE"
+      ? "pre-recorded video package cannot reserve live wrestlers"
+      : "show segment requires one to four wrestlers");
   }
   if (new Set(draft.participantIds).size !== draft.participantIds.length) {
     throw new Error("show segment cannot include the same wrestler twice");
@@ -396,6 +422,41 @@ function validateShowSegmentDraft(
   }
 
   const programmeId = draft.programmeId === null ? null : normalizedId(draft.programmeId, "programmeId");
+  const videoSubjectPersonId = draft.type === "VIDEO_PACKAGE"
+    ? normalizedId(draft.videoSubjectPersonId ?? "", "videoSubjectPersonId") : null;
+  const videoKind = draft.type === "VIDEO_PACKAGE" ? (draft.videoKind ?? null) : null;
+  const videoObjective = draft.type === "VIDEO_PACKAGE" ? (draft.videoObjective ?? null) : null;
+  const videoReveal = draft.type === "VIDEO_PACKAGE" ? (draft.videoReveal ?? null) : null;
+  if (draft.type === "VIDEO_PACKAGE") {
+    if (!["DEBUT_TEASER", "RETURN_TEASER", "CHARACTER_SPOTLIGHT", "RIVALRY_RECAP", "EVENT_HYPE", "TRAINING_MONTAGE"].includes(videoKind ?? "")) {
+      throw new Error("video package needs a supported subtype");
+    }
+    if (!["CREATE_INTRIGUE", "BUILD_ANTICIPATION", "ESTABLISH_THREAT", "BUILD_SYMPATHY", "RECAP_STAKES"].includes(videoObjective ?? "")) {
+      throw new Error("video package needs a clear objective");
+    }
+    if (!["CRYPTIC", "NAMED", "FULL"].includes(videoReveal ?? "")) {
+      throw new Error("video package needs a reveal level");
+    }
+    if (!activeContractsForPromotion(state, promotionId).some((contract) => (
+      contract.personId === videoSubjectPersonId && contractCoversBookedDate(state, contract, targetDate)
+    ))) {
+      throw new Error("video footage must feature a promotion wrestler under contract on the show date");
+    }
+  }
+  const liveKind = draft.type === "LIVE_APPEARANCE" ? (draft.liveKind ?? null) : null;
+  const liveObjective = draft.type === "LIVE_APPEARANCE" ? (draft.liveObjective ?? null) : null;
+  if (draft.type === "LIVE_APPEARANCE") {
+    if (draft.participantIds.length !== 1) throw new Error("live appearance needs exactly one named wrestler");
+    if (!["DEBUT", "RETURN", "INTRODUCTION", "SURPRISE_REVEAL"].includes(liveKind ?? "")) {
+      throw new Error("live appearance needs a valid booked format");
+    }
+    if (!["ESTABLISH_STAR", "BUILD_SYMPATHY", "SHOCK_RIVAL", "REIGNITE_PROGRAMME"].includes(liveObjective ?? "")) {
+      throw new Error("live appearance needs a scripted objective");
+    }
+    const historyError = liveAppearanceHistoryError(state, promotionId, draft.participantIds[0]!, targetDate,
+      liveKind as LiveAppearanceKind);
+    if (historyError) throw new Error(historyError);
+  }
   const turnPersonId = draft.type === "TURN"
     ? (draft.turnPersonId === null || draft.turnPersonId === undefined
       ? null
@@ -530,6 +591,9 @@ function validateShowSegmentDraft(
     if (!programme || programme.status !== "ACTIVE") throw new Error(`active Programme ${programmeId} was not found`);
     if (programme.promotionId !== promotionId) throw new Error("show segment Programme belongs to another promotion");
     const storyPeople = programmePersonIds(state, programmeId);
+    if (videoSubjectPersonId && !storyPeople.has(videoSubjectPersonId)) {
+      throw new Error("video subject must belong to the attached Programme");
+    }
     for (const personId of draft.participantIds) {
       // A rescuer can intervene in an existing feud without becoming a
       // Programme participant. Aggressor and victim still belong to it.
@@ -545,6 +609,8 @@ function validateShowSegmentDraft(
     participantIds: [...draft.participantIds],
     programmeId,
     plannedLengthMinutes: draft.plannedLengthMinutes,
+    ...(draft.type === "VIDEO_PACKAGE" ? { videoSubjectPersonId, videoKind, videoObjective, videoReveal } : {}),
+    ...(draft.type === "LIVE_APPEARANCE" ? { liveKind, liveObjective } : {}),
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
     ...(draft.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
@@ -859,7 +925,7 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
   const rawSegments = draft.segments;
   if (rawSegments !== undefined && !Array.isArray(rawSegments)) throw new Error("draft segments must be an array");
   const segments = (rawSegments ?? []).map((segment) => {
-    const validated = validateShowSegmentDraft(state, draft.promotionId, segment, participantIds);
+    const validated = validateShowSegmentDraft(state, draft.promotionId, draft.targetDate, segment, participantIds);
     if (draftSegmentIds.has(validated.draftSegmentId)) throw new Error("draft contains duplicate segment IDs");
     if (validated.programmeId && segmentProgrammeIds.has(validated.programmeId)) {
       throw new Error("one Programme can have only one segment on a show");
@@ -874,6 +940,23 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
     ...segments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
     ...programmeSegments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
   ];
+  // A debut/return must occur before the wrestler first performs on the same show.
+  const announced = new Set<Id>();
+  for (const [slotIndex, slot] of actualOrder.entries()) {
+    if (slot.kind !== "SEGMENT") continue;
+    const segment = segments.find((entry) => entry.draftSegmentId === slot.refId);
+    if (!segment || segment.type !== "LIVE_APPEARANCE") continue;
+    const personId = segment.participantIds[0]!;
+    if (announced.has(personId)) throw new Error("book only one live introduction or reveal per wrestler per show");
+    announced.add(personId);
+    if (segment.liveKind !== "DEBUT" && segment.liveKind !== "RETURN") continue;
+    const performedEarlier = actualOrder.slice(0, slotIndex).some((prior) => (
+      prior.kind === "MATCH" && matches.some((match) => (
+        match.draftMatchId === prior.refId && [...match.sideAIds, ...match.sideBIds].includes(personId)
+      ))
+    ));
+    if (performedEarlier) throw new Error("a debut or return must occur before the wrestler's first match on the show");
+  }
   for (const segment of segments) {
     if (segment.type !== "POST_MATCH_ASSAULT") continue;
     const source = matches.find((match) => match.draftMatchId === segment.sourceDraftMatchId);
