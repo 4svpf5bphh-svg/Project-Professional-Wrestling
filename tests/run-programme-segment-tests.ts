@@ -240,6 +240,62 @@ test("video package cannot use an unsigned subject or reserve wrestlers as prere
     "cannot reserve live wrestlers");
 });
 
+test("a true debut is a reserved on-site wrestler and persists through settled show Results", () => {
+  const setup = fixture(91601);
+  const featured = setup.rosterIds[0]!;
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    draftId: "live-arrival-debut",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [], championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "arrives-in-person", type: "LIVE_APPEARANCE",
+      participantIds: [featured], programmeId: null,
+      plannedLengthMinutes: 5,
+      liveAppearanceKind: "DEBUT",
+      liveAppearanceObjective: "ESTABLISH_STAR",
+    }],
+    runningOrder: [{kind:"SEGMENT",refId:"arrives-in-person"}],
+  });
+  const draft = setup.planning.workspaces[0]!.detailedShowDrafts[0]!;
+  ok(draft.segments?.[0]?.participantIds[0] === featured, "debut did not reserve a physical performer");
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "live debut failed to resolve");
+  const result = resolvedShowSegmentsForEvent(setup.state, setup.state.events.at(-1)!.id)[0];
+  ok(result?.liveAppearanceKind === "DEBUT" && result.liveAppearanceObjective === "ESTABLISH_STAR",
+    "debut's authored storyline detail was lost at World resolution");
+  ok(result.participantIds[0] === featured && result.videoSubjectPersonId === null,
+    "in-person debut was incorrectly treated as a video-only package");
+});
+test("debut cannot appear after an earlier live angle on the same card", () => {
+  const setup = fixture(91602), featured = setup.rosterIds[0]!;
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    draftId: "bad-second-debut",
+    promotionId: setup.promotion.id, targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+    segments: [
+      {draftSegmentId:"opening-promo",type:"PROMO",participantIds:[featured],programmeId:null,plannedLengthMinutes:5},
+      {draftSegmentId:"belated-debut",type:"LIVE_APPEARANCE",participantIds:[featured],programmeId:null,
+       plannedLengthMinutes:5,liveAppearanceKind:"DEBUT",liveAppearanceObjective:"BUILD_EXCITEMENT"},
+    ],
+    runningOrder: [{kind:"SEGMENT",refId:"opening-promo"},{kind:"SEGMENT",refId:"belated-debut"}],
+  }), "first on-screen appearance");
+});
+test("return requires meaningful previous live appearance, not a video package", () => {
+  const setup = fixture(91603);
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    draftId: "no-history-return",
+    promotionId: setup.promotion.id, targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+    segments: [{draftSegmentId:"false-return",type:"LIVE_APPEARANCE",participantIds:[setup.rosterIds[0]!],
+      programmeId:null,plannedLengthMinutes:5,liveAppearanceKind:"RETURN",liveAppearanceObjective:"BUILD_EXCITEMENT"}],
+  }), "previous promotion appearance");
+});
+
 test("typed show segments can attach an active Programme and preserve running order", () => {
   const setup = fixture(9150);
   upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
