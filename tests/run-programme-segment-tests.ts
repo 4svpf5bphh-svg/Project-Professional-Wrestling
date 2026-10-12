@@ -123,6 +123,76 @@ test("Programme segments are validated against the show roster and Programme par
   );
 });
 
+test("pre-recorded Video Package has a real subject but no live reservation, and resolves exactly once", () => {
+  const setup = fixture(91501);
+  const subject = setup.rosterIds[0]!;
+  const draft = {
+    draftId: "video-story-fixture",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null,
+    venueId: null,
+    ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(1, 3),
+    matches: [],
+    championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "video-one",
+      type: "VIDEO_PACKAGE" as const,
+      participantIds: [],
+      programmeId: setup.programme.id,
+      plannedLengthMinutes: 3,
+      videoSubjectPersonId: subject,
+      videoKind: "DEBUT_TEASER" as const,
+      videoObjective: "CREATE_INTRIGUE" as const,
+      videoReveal: "CRYPTIC" as const,
+    }],
+    runningOrder: [{ kind: "SEGMENT" as const, refId: "video-one" }],
+  };
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, draft);
+  const stored = setup.planning.workspaces[0]!.detailedShowDrafts[0]!;
+  ok(stored.segments?.[0]?.participantIds.length === 0, "video recruited a live performer");
+  ok(!stored.participantIds.includes(subject), "video added subject to the live reservations");
+  ok(stored.segments?.[0]?.videoSubjectPersonId === subject, "video subject was not saved");
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "video did not create one show-story beat");
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 0, "video duplicated on repeated resolution");
+  const resolved = resolvedShowSegmentsForEvent(setup.state, setup.state.events.at(-1)!.id)[0];
+  ok(resolved?.type === "VIDEO_PACKAGE", "resolved ledger did not retain Video Package type");
+  ok(resolved?.videoKind === "DEBUT_TEASER" && resolved.videoReveal === "CRYPTIC",
+    "video lost authored teaser and reveal detail");
+  ok(resolved?.videoSubjectPersonId === subject && resolved.participantIds.length === 0,
+    "video mutated subject into a real show participant");
+  ok(resolved?.crowdResponse !== null && resolved?.outcomeBand !== null,
+    "video audience reaction was not determined");
+});
+
+test("video package cannot use an unsigned subject or reserve wrestlers as prerecorded footage", () => {
+  const setup = fixture(91502);
+  const outsider = setup.state.people.find((person) => !setup.rosterIds.includes(person.id))!;
+  const segment = {
+    draftSegmentId: "video-invalid",
+    type: "VIDEO_PACKAGE" as const,
+    participantIds: [],
+    programmeId: null,
+    plannedLengthMinutes: 3,
+    videoSubjectPersonId: outsider.id,
+    videoKind: "RETURN_TEASER" as const,
+    videoObjective: "BUILD_ANTICIPATION" as const,
+    videoReveal: "NAMED" as const,
+  };
+  const base = {
+    draftId: "video-invalid-fixture", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 2), matches: [], championshipAssignments: [],
+  };
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0,
+    { ...base, segments: [segment] }), "currently contracted");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0,
+    { ...base, segments: [{ ...segment, videoSubjectPersonId: setup.rosterIds[0], participantIds: [setup.rosterIds[0]!] }] }),
+    "cannot reserve live wrestlers");
+});
+
 test("typed show segments can attach an active Programme and preserve running order", () => {
   const setup = fixture(9150);
   upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
