@@ -4,6 +4,7 @@ import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorldOwnershipState, joinPlayerToWorld, claimIndependentPromotionForPlayer } from "../packages/application/src/ownership.js";
 import { createWorldCommandState } from "../packages/application/src/commands.js";
 import { createWorldRuntimeState } from "../packages/application/src/runtime.js";
+import { createWorldPlanningState } from "../packages/application/src/planning.js";
 import { hireStaffCommand, authoriseStaffRenewalCommand } from "../packages/application/src/staff-commands.js";
 import { sameTermsRenewalTemplate } from "../packages/application/src/contract-renewal.js";
 import { staffRetentionAdvice } from "../packages/application/src/staff-retention-advice.js";
@@ -50,7 +51,7 @@ test("staff renewal command independently refuses a forged later term and early 
   });
   const template = sameTermsRenewalTemplate(state, contract);
   if (!template) throw Error("fixture not suitable for same-terms renewal");
-  const aggregate = { state, ownership, commands, runtime, planning: { worldId: state.world.id, showDrafts: [], showReservations: [] } } as Parameters<typeof buildFreshPlan>[0];
+  const aggregate = { state, ownership, commands, runtime, planning: createWorldPlanningState(state.world.id) };
   const plan = buildFreshPlan(aggregate, chosen.id, {
     requestId: "audit-renewal", sourceContractId: contract.id,
     personId: contract.personId, ...template,
