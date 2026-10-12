@@ -1314,9 +1314,9 @@ await test("regular and premium shows in one PPW week each keep a separate card 
       pairs.push([eligible[i]!.personId, eligible[i + 1]!.personId]);
     }
   }
-  if (pairs.length < 4) throw new Error("dual-show fixture cannot field two valid four-wrestler cards");
-  const flagshipIds = pairs.slice(0, 2).flat();
-  const premiumIds = pairs.slice(2, 4).flat();
+  if (pairs.length < 6) throw new Error("dual-show fixture cannot field two valid six-wrestler cards");
+  const flagshipIds = pairs.slice(0, 3).flat();
+  const premiumIds = pairs.slice(3, 6).flat();
   for (const personId of [...flagshipIds, ...premiumIds]) {
     const contract = roster.find(c => c.personId === personId)!;
     contract.startDate = { year: 1, week: 24, day: 1 };
@@ -1358,7 +1358,7 @@ await test("regular and premium shows in one PPW week each keep a separate card 
     expectedPlanVersion: regularCard.workspaceVersion, draftId: regularDraft.draftId,
     matches: singlesCard(flagshipIds), championshipAssignments: [],
   });
-  ok(readyRegular.reservationId !== null, "flagship could not reserve its four real purchased dates");
+  ok(readyRegular.reservationId !== null, "flagship could not reserve its six real purchased dates");
 
   const nextPlanner = await loadAlphaPlayerPlanner(repository, worldId, playerId);
   const nextPromotion = nextPlanner.promotion!;
@@ -1379,13 +1379,13 @@ await test("regular and premium shows in one PPW week each keep a separate card 
     expectedPlanVersion: premiumCard.workspaceVersion, draftId: premiumDraft.draftId,
     matches: singlesCard(premiumIds), championshipAssignments: [],
   });
-  ok(readyPremium.reservationId !== null, "premium could not reserve its four separate purchased dates");
+  ok(readyPremium.reservationId !== null, "premium could not reserve its six separate purchased dates");
 
   const stored = await repository.load(worldId);
   const reservations = stored.planning.showReservations.filter(r => r.promotionId === independent.id);
   ok(reservations.length === 2 && reservations[0]!.sourceDraftId !== reservations[1]!.sourceDraftId,
     "one show overwrote the other shared-World reservation");
-  ok(new Set(reservations.flatMap(r => r.participants.map(p => p.personId))).size === 8,
+  ok(new Set(reservations.flatMap(r => r.participants.map(p => p.personId))).size === 12,
     "the two shows consumed overlapping purchased dates despite a distinct-roster policy");
   const finalPlanner = await loadAlphaPlayerPlanner(repository, worldId, playerId);
   const shows = finalPlanner.promotion?.weeks[0]?.shows ?? [];
