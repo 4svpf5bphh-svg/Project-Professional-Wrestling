@@ -7,6 +7,7 @@ import {
   createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  playerShowPlanningStatus,
   releaseDetailedShowReservationCommand,
   reservationForDraft,
   reserveDetailedShowDraftCommand,
@@ -165,6 +166,38 @@ function reserve(
     payload: { promotionId, expectedPlanVersion, draftId },
   });
 }
+
+test("unrelated show edits do not stale a reservation, while its own logistics edits require refresh", () => {
+  const f = fixture(16015);
+  const date = commonRequiredDate(f, 6);
+  const first = draftFor(f, f.promotionA.id, date, "stable-flagship");
+  saveDraft(f, "player-a", f.promotionA.id, "stable-save-first", 0, first);
+  reserve(f, "player-a", f.promotionA.id, "stable-reserve-first", 1, first.draftId);
+  const initially = playerShowPlanningStatus(
+    f.state, f.planning, f.runtime, f.promotionA.id, first.draftId);
+  ok(initially.reservationId !== null && !initially.workspaceChangedSinceReservation,
+    "initially reserved flagship reports a modified reservation");
+
+  const otherDate = addPpwWeeks(date, 1, f.state.ruleset.weeksPerYear);
+  const unrelated = draftFor(f, f.promotionA.id, otherDate, "future-unrelated");
+  saveDraft(f, "player-a", f.promotionA.id, "stable-save-unrelated", 1, unrelated);
+  const afterOther = playerShowPlanningStatus(
+    f.state, f.planning, f.runtime, f.promotionA.id, first.draftId);
+  ok(afterOther.reservationId === initially.reservationId
+    && !afterOther.workspaceChangedSinceReservation
+    && afterOther.readiness !== "RESERVATION_DUE",
+    "editing another show made this signed wrestler/venue reservation stale");
+
+  const venue = venuePair(f).second;
+  saveDraft(f, "player-a", f.promotionA.id, "stable-save-first-change", 2, {
+    ...first, marketId: venue.marketId, venueId: venue.id,
+  });
+  const afterOwnChange = playerShowPlanningStatus(
+    f.state, f.planning, f.runtime, f.promotionA.id, first.draftId);
+  ok(afterOwnChange.workspaceChangedSinceReservation
+    && afterOwnChange.readiness === "RESERVATION_DUE",
+    "editing this reserved show's venue did not require authoritative re-reservation");
+});
 
 test("reserving a detailed show commits scarce resources without creating simulation entities", () => {
   const f = fixture(16001);
