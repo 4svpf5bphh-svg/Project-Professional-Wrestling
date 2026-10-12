@@ -16,6 +16,7 @@ import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
 import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
 import { comparePpwDates } from "../../sim-core/src/clock.js";
 import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
+import { liveAppearanceHistoryError } from "./live-appearances.js";
 import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
 import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
@@ -65,7 +66,11 @@ export type DetailedShowSegmentType =
   | "POST_MATCH_ASSAULT"
   | "CELEBRATION"
   | "TURN"
-  | "VIDEO_PACKAGE";
+  | "VIDEO_PACKAGE"
+  | "LIVE_APPEARANCE";
+
+export type LiveAppearanceKind = "DEBUT" | "RETURN" | "INTRODUCTION" | "SURPRISE_REVEAL";
+export type LiveAppearanceObjective = "ESTABLISH_STAR" | "BUILD_SYMPATHY" | "SHOCK_RIVAL" | "REIGNITE_PROGRAMME";
 
 export type VideoPackageKind = "DEBUT_TEASER" | "RETURN_TEASER" | "CHARACTER_SPOTLIGHT" | "RIVALRY_RECAP" | "EVENT_HYPE" | "TRAINING_MONTAGE";
 export type VideoPackageObjective = "CREATE_INTRIGUE" | "BUILD_ANTICIPATION" | "ESTABLISH_THREAT" | "BUILD_SYMPATHY" | "RECAP_STAKES";
@@ -93,6 +98,8 @@ export interface DetailedShowSegmentDraft {
   videoKind?: VideoPackageKind | null;
   videoObjective?: VideoPackageObjective | null;
   videoReveal?: VideoPackageReveal | null;
+  liveKind?: LiveAppearanceKind | null;
+  liveObjective?: LiveAppearanceObjective | null;
   // Roles are authored intent; participants alone must not invent attack direction.
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
@@ -224,6 +231,7 @@ const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CELEBRATION",
   "TURN",
   "VIDEO_PACKAGE",
+  "LIVE_APPEARANCE",
 ]);
 
 function normalizedId(value: string, label: string, maxLength = 128): string {
@@ -435,6 +443,20 @@ function validateShowSegmentDraft(
       throw new Error("video footage must feature a promotion wrestler under contract on the show date");
     }
   }
+  const liveKind = draft.type === "LIVE_APPEARANCE" ? (draft.liveKind ?? null) : null;
+  const liveObjective = draft.type === "LIVE_APPEARANCE" ? (draft.liveObjective ?? null) : null;
+  if (draft.type === "LIVE_APPEARANCE") {
+    if (draft.participantIds.length !== 1) throw new Error("live appearance needs exactly one named wrestler");
+    if (!["DEBUT", "RETURN", "INTRODUCTION", "SURPRISE_REVEAL"].includes(liveKind ?? "")) {
+      throw new Error("live appearance needs a valid booked format");
+    }
+    if (!["ESTABLISH_STAR", "BUILD_SYMPATHY", "SHOCK_RIVAL", "REIGNITE_PROGRAMME"].includes(liveObjective ?? "")) {
+      throw new Error("live appearance needs a scripted objective");
+    }
+    const historyError = liveAppearanceHistoryError(state, promotionId, draft.participantIds[0]!, targetDate,
+      liveKind as LiveAppearanceKind);
+    if (historyError) throw new Error(historyError);
+  }
   const turnPersonId = draft.type === "TURN"
     ? (draft.turnPersonId === null || draft.turnPersonId === undefined
       ? null
@@ -588,6 +610,7 @@ function validateShowSegmentDraft(
     programmeId,
     plannedLengthMinutes: draft.plannedLengthMinutes,
     ...(draft.type === "VIDEO_PACKAGE" ? { videoSubjectPersonId, videoKind, videoObjective, videoReveal } : {}),
+    ...(draft.type === "LIVE_APPEARANCE" ? { liveKind, liveObjective } : {}),
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
     ...(draft.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
@@ -917,6 +940,23 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
     ...segments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
     ...programmeSegments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
   ];
+  // A debut/return must occur before the wrestler first performs on the same show.
+  const announced = new Set<Id>();
+  for (const [slotIndex, slot] of actualOrder.entries()) {
+    if (slot.kind !== "SEGMENT") continue;
+    const segment = segments.find((entry) => entry.draftSegmentId === slot.refId);
+    if (!segment || segment.type !== "LIVE_APPEARANCE") continue;
+    const personId = segment.participantIds[0]!;
+    if (announced.has(personId)) throw new Error("book only one live introduction or reveal per wrestler per show");
+    announced.add(personId);
+    if (segment.liveKind !== "DEBUT" && segment.liveKind !== "RETURN") continue;
+    const performedEarlier = actualOrder.slice(0, slotIndex).some((prior) => (
+      prior.kind === "MATCH" && matches.some((match) => (
+        match.draftMatchId === prior.refId && [...match.sideAIds, ...match.sideBIds].includes(personId)
+      ))
+    ));
+    if (performedEarlier) throw new Error("a debut or return must occur before the wrestler's first match on the show");
+  }
   for (const segment of segments) {
     if (segment.type !== "POST_MATCH_ASSAULT") continue;
     const source = matches.find((match) => match.draftMatchId === segment.sourceDraftMatchId);
