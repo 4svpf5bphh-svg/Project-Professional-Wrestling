@@ -264,24 +264,35 @@ export function buildPlayerAttention(
 
     const resolvedDate = aggregate.runtime.lastResolvedPpwDate;
     if (resolvedDate) {
+      const managerOfferIds = new Set(aggregate.commands.receipts
+        .filter(receipt => receipt.playerId === playerId
+          && receipt.commandType === "AUTHORISE_TALENT_MANAGER_RENEWAL")
+        .map(receipt => (JSON.parse(receipt.resultJson) as { id: string }).id));
       for (const offer of aggregate.state.contractOffers) {
         if (offer.promotionId !== promotion.id || offer.status === "PENDING") continue;
         if (!sameWeek(offer.submittedDate, resolvedDate)) continue;
         const name = personName(aggregate, offer.personId);
         const accepted = offer.status === "ACCEPTED";
+        const delegated = managerOfferIds.has(offer.id);
         pushIfVisible(aggregate, playerId, items, {
           attentionId: `contract-offer-result:${offer.id}`,
           category: "IMPORTANT",
-          title: accepted
-            ? (offer.offerKind === "DATES_ADDENDUM" ? `${name} agreed to extra dates` : `${name} accepted your contract offer`)
-            : (offer.offerKind === "DATES_ADDENDUM" ? `${name} declined extra dates` : `${name} rejected your contract offer`),
-          summary: accepted
-            ? `${offer.offerKind === "DATES_ADDENDUM"
-              ? `${name} agreed to additional appearances under the existing non-exclusive contract. No renewal was required.`
-              : `${name} accepted your ${contractFamilyLabel(offer.family)} offer for ${offer.family === "EXCLUSIVE" ? "unlimited appearances" : `${offer.dateEntitlement} dates`}. The contract is now signed.`}`
-            : contractOfferRejectionSummary(offer.rejectionReason),
+          title: delegated
+            ? (accepted ? `Talent Manager: ${name} accepted renewal` : `Talent Manager: ${name} declined renewal`)
+            : accepted
+              ? (offer.offerKind === "DATES_ADDENDUM" ? `${name} agreed to extra dates` : `${name} accepted your contract offer`)
+              : (offer.offerKind === "DATES_ADDENDUM" ? `${name} declined extra dates` : `${name} rejected your contract offer`),
+          summary: delegated
+            ? accepted
+              ? `${name} accepted the same-terms proposal your Talent Manager submitted. The contract is signed; no previous one-time bonus was repeated.`
+              : `The Talent Manager's renewal attempt was unsuccessful. ${contractOfferRejectionSummary(offer.rejectionReason)} You can negotiate different terms manually.`
+            : accepted
+              ? `${offer.offerKind === "DATES_ADDENDUM"
+                ? `${name} agreed to additional appearances under the existing non-exclusive contract. No renewal was required.`
+                : `${name} accepted your ${contractFamilyLabel(offer.family)} offer for ${offer.family === "EXCLUSIVE" ? "unlimited appearances" : `${offer.dateEntitlement} dates`}. The contract is now signed.`}`
+              : contractOfferRejectionSummary(offer.rejectionReason),
           deadline: null,
-          deepLink: "/business",
+          deepLink: delegated ? "/staff" : "/business",
           dismissible: true,
           sourceOpportunityCategory: null,
         });
