@@ -216,6 +216,38 @@ await test("Video Package saves its pre-recorded subject without buying or reser
   ok(saved.runningOrder[0]?.kind === "SEGMENT", "video package could not open the show");
 });
 
+await test("live promotion debut on a Card uses real contracted show participation, never video-only booking", async () => {
+  const fixture = await reservedShowFixture(61592);
+  const before = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const wrestler = fixture.participantIds[0]!;
+  const matches = singlesCard(fixture.participantIds);
+  const segment: AlphaCardSegmentView = {
+    draftSegmentId: "live-debut-61592",
+    type: "LIVE_APPEARANCE",
+    participantIds: [wrestler],
+    plannedLengthMinutes: 5,
+    programmeId: null,
+    liveKind: "DEBUT",
+    liveObjective: "ESTABLISH_STAR",
+  };
+  const result = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "book-live-debut-61592",
+    expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion,
+    matches, segments: [segment], championshipAssignments: [],
+    runningOrder: [
+      { kind: "SEGMENT", refId: segment.draftSegmentId },
+      ...matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ],
+  });
+  ok(result.segments[0]?.liveKind === "DEBUT", "live debut was not preserved by Card API");
+  ok(result.segments[0]?.participantIds[0] === wrestler, "debut lacks an actual live booked person");
+  const aggregate = await fixture.repository.load(fixture.worldId);
+  const reservation = aggregate.planning.showReservations[0]!;
+  ok(reservation.participants.filter((person) => person.personId === wrestler).length === 1,
+    "wrestler booked for live debut and match was double-charged or reserved twice");
+});
+
 await test("Alpha browser card booking persists a complete card, title assignment and materializes both", async () => {
   const fixture = await reservedShowFixture(61011);
   const beforeCard = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
