@@ -310,7 +310,7 @@ export function buildPlayerAttention(
           title: `${name} has no contracted dates remaining`,
           summary: `${name}'s calendar contract is still active, but every purchased appearance has been used. Renegotiate now to buy more dates; an accepted addendum adds dates to the existing deal.`,
           deadline: null,
-          deepLink: "/talent",
+          deepLink: `/talent/contracts?personId=${encodeURIComponent(contract.personId)}`,
           dismissible: false,
           sourceOpportunityCategory: null,
         });
@@ -326,7 +326,7 @@ export function buildPlayerAttention(
         title: urgent ? `${name}’s contract decision is due` : `${name} is entering the renewal window`,
         summary: `${name}’s ${contractFamilyLabel(contract.family)} contract expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`,
         deadline: { ...contract.endDate },
-        deepLink: null,
+        deepLink: `/talent/contracts?personId=${encodeURIComponent(contract.personId)}`,
         dismissible: !urgent,
         sourceOpportunityCategory: null,
       });
