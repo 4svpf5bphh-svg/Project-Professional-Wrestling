@@ -10,8 +10,8 @@
 .stats { display: flex; gap: 18px; flex-wrap: wrap; margin: 15px 0; }
 .stats div { display: flex; flex-direction: column; background: #14282b; border-radius: 10px; padding: 12px; min-width: 145px; }
 .stats small, .candidate small, .renewal small { color: #9dbbb6; }
-button { border: 1px solid rgba(91,236,201,.55); border-radius: 999px; padding: 10px 16px; background: #1b5149; color: #e7fff8; font-weight: 800; cursor: pointer; font: inherit; }
-button:disabled { opacity: .5; cursor: not-allowed; }
+ .panel button { border: 1px solid rgba(91,236,201,.55); border-radius: 999px; padding: 10px 16px; background: #1b5149; color: #e7fff8; font-weight: 800; cursor: pointer; font: inherit; }
+.panel button:disabled { opacity: .5; cursor: not-allowed; }
 .secondary { background: transparent; color: #80e4d1; }
 .candidates { display: grid; gap: 11px; margin-top: 17px; }
 .candidate { background: #112529; border-radius: 12px; border: 1px solid #24413f; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 13px 15px; }
