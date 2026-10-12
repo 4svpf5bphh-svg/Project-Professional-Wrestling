@@ -1270,3 +1270,71 @@
   }
   .editorDone { min-width: 0; }
 }
+
+
+/* Story-first authoring: meaning before the technical segment format. */
+.storyGoalSection {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+  padding: 12px;
+  border: 1px solid rgba(93, 233, 206, .24);
+  border-radius: 12px;
+  background: rgba(25, 48, 51, .25);
+}
+.storyGoalPrompt {
+  color: #e4f5ef;
+  font-size: 13px;
+  font-weight: 900;
+}
+.storyGoalChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.storyGoalChoice,
+.storyGoalSelected {
+  min-height: 42px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  border: 1px solid #344e57;
+  background: rgba(255, 255, 255, .03);
+  color: #b1c8d0;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+.storyGoalSelected {
+  border-color: #5de9ce;
+  background: rgba(93, 233, 206, .17);
+  color: #c2ffee;
+}
+.storyGoalChoice:disabled,
+.storyGoalSelected:disabled {
+  opacity: .45;
+}
+.storyGoalSection small,
+.storyDirectionHint {
+  color: #9ebbb9;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.storyDirectionHint {
+  margin-top: 6px;
+}
+.storyGoalChoice:focus-visible,
+.storyGoalSelected:focus-visible {
+  outline: 2px solid #a6ffe7;
+  outline-offset: 2px;
+}
+@media (max-width: 560px) {
+  .storyGoalChoices {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .storyGoalChoice,
+  .storyGoalSelected {
+    min-width: 0;
+    width: 100%;
+  }
+}
