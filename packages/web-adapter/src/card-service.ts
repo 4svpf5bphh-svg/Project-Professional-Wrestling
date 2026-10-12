@@ -495,6 +495,7 @@ function normalizeSegments(
   segments: AlphaCardSegmentView[] | undefined,
   state: WorldState,
   promotionId: Id,
+  targetDate: PpwDate,
 ): { segments: DetailedShowSegmentDraft[]; participantIds: Id[] } {
   if (segments === undefined) return { segments: [], participantIds: [] };
   if (!Array.isArray(segments)) throw new Error("segments must be an array");
@@ -545,8 +546,10 @@ function normalizeSegments(
         || !["CRYPTIC", "NAMED", "FULL"].includes(videoReveal ?? "")) {
         throw new Error("video package requires a subtype, objective and reveal level");
       }
-      if (!activeContractsForPromotion(state, promotionId).some((contract) => contract.personId === videoSubjectPersonId)) {
-        throw new Error("video package must feature a currently signed promotion wrestler");
+      if (!activeContractsForPromotion(state, promotionId).some((contract) => (
+        contract.personId === videoSubjectPersonId && contractCoversBookedDate(state, contract, targetDate)
+      ))) {
+        throw new Error("video package subject must have a signed promotion contract covering the show date");
       }
     }
     const turnPersonId = segment.type === "TURN"
@@ -1067,6 +1070,7 @@ export async function loadAlphaShowCard(
     ? candidateParticipants
     : candidateParticipants.filter((person) => committedIds.has(person.personId));
   const videoSubjects = [...new Set(activeContractsForPromotion(aggregate.state, promotion.id)
+    .filter((contract) => contractCoversBookedDate(aggregate.state, contract, draft.targetDate))
     .map((contract) => contract.personId))]
     .map((personId) => ({ personId, name: peopleById.get(personId)?.name ?? personId }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -1341,7 +1345,7 @@ export async function saveAlphaShowCard(
         `${names.join(" & ") || "A wrestler"} refuses this match style in their current condition`,
       );
     }
-    const normalizedSegments = normalizeSegments(request.segments, aggregate.state, control.promotionId);
+    const normalizedSegments = normalizeSegments(request.segments, aggregate.state, control.promotionId, draft.targetDate);
     const runningOrder = normalizeRunningOrder(request.runningOrder, normalizedCard.matches, normalizedSegments.segments);
     for (const segment of normalizedSegments.segments) {
       if (segment.type !== "POST_MATCH_ASSAULT") continue;
