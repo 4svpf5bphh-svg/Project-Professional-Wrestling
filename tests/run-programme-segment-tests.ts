@@ -1,6 +1,7 @@
 declare const process: { exitCode?: number };
 
 import { createWorldPlanningState, upsertDetailedShowDraft } from "../packages/application/src/planning.js";
+import { buildPlayerWorldResultsView, createWorldOwnershipState, createWorldCommandState, createWorldRuntimeState, joinPlayerToWorld } from "../packages/application/src/index.js";
 import {
   applyResolvedShowTurns,
   recordResolvedProgrammeSegments,
@@ -165,6 +166,20 @@ test("pre-recorded Video Package has a real subject but no live reservation, and
     "video mutated subject into a real show participant");
   ok(resolved?.crowdResponse !== null && resolved?.outcomeBand !== null,
     "video audience reaction was not determined");
+  const ownership = createWorldOwnershipState(setup.state.world.id, 1);
+  joinPlayerToWorld(ownership, "video-observer", setup.state.world.currentDate);
+  const result = buildPlayerWorldResultsView({
+    state: setup.state,
+    planning: setup.planning,
+    ownership,
+    commands: createWorldCommandState(setup.state.world.id),
+    runtime: createWorldRuntimeState(setup.state.world.id),
+  }, "video-observer");
+  const publicVideo = result.shows.find((show) => show.eventId === setup.state.events.at(-1)!.id)?.segments[0];
+  ok(publicVideo?.videoReveal === "CRYPTIC" && publicVideo.videoKind === "DEBUT_TEASER",
+    "World show history failed to report the cryptic teaser");
+  ok(publicVideo?.videoSubjectName === null && publicVideo.participants.length === 0,
+    "cryptic public video exposed its hidden subject or invented an in-person appearance");
 });
 
 test("video package cannot use an unsigned subject or reserve wrestlers as prerecorded footage", () => {
