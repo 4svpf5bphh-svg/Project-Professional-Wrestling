@@ -14,35 +14,36 @@
 }
 
 .summary {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin: 14px 0 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0;
 }
 
-.summary div {
+.summary > span {
   min-width: 0;
-  padding: 12px;
-  border-radius: 14px;
-  border: 1px solid #202938;
-  background: #10151d;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid #243544;
+  background: #101a22;
+  color: #aabac6;
+  font-size: 11px;
 }
 
-.summary span,
+.summary > span b { color: #f0f7fa; font-size: 13px; }
+.summary > span small { color: #8199aa; font-size: 10px; }
+.summary > .timeOver b { color: #ffad9f; }
+
 .matchMeta,
 .sideLabel,
 .hint,
 .timeGuide {
   color: #7f8b9b;
   font-size: 11px;
-}
-
-.summary strong {
-  display: block;
-  margin-top: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .timeGuide {
@@ -83,7 +84,8 @@
 }
 
 .slotToggle {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -323,13 +325,7 @@
   line-height: 1.45;
 }
 
-@media (max-width: 900px) {
-  .summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 760px) {
+ @media (max-width: 760px) {
   .controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -337,10 +333,6 @@
 
 @media (max-width: 560px) {
   .controls {
-    grid-template-columns: 1fr;
-  }
-
-  .summary {
     grid-template-columns: 1fr;
   }
 
@@ -990,4 +982,82 @@
   .pickerMetrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+}
+
+
+/* Fast booking strip: the card itself should dominate an iPhone screen. */
+.addSlotToolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.addSlotToolbar button {
+  min-width: 0;
+  min-height: 46px;
+  border: 1px solid rgba(93, 233, 206, .35);
+  border-radius: 12px;
+  background: rgba(50, 155, 136, .09);
+  color: #99f4e1;
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.addSlotToolbar button:disabled {
+  opacity: .45;
+}
+
+.startHint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #90a6b1;
+  text-align: center;
+}
+
+.slotTopRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 4px;
+}
+
+.slotOrderControls {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.slotOrderControls button {
+  width: 42px;
+  height: 44px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(93, 233, 206, .32);
+  border-radius: 10px;
+  background: #13232a;
+  color: #9af3df;
+  font-size: 20px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.slotOrderControls button:disabled {
+  opacity: .28;
+  cursor: default;
+}
+
+.slotOrderControls button:focus-visible,
+.addSlotToolbar button:focus-visible {
+  outline: 2px solid #b1ffe7;
+  outline-offset: 2px;
+}
+
+@media (max-width: 560px) {
+  .summary { gap: 5px; }
+  .summary > span { padding: 6px 8px; }
+  .slotTopRow { align-items: flex-start; }
+  .slotOrderControls button { width: 40px; min-height: 46px; }
+  .slotHeaderBadges .mainEvent,
+  .slotHeaderBadges .segmentBadge { display: none; }
 }
