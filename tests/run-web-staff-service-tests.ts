@@ -8,6 +8,7 @@ import {
 } from "../packages/web-adapter/src/staff-service.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import { joinPlayerToWorld } from "../packages/application/src/ownership.js";
+import { buildPlayerAttention } from "../packages/application/src/attention.js";
 import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
 
 let passed = 0, failed = 0;
@@ -117,6 +118,21 @@ await test("delegate requires an employed manager and preserves exact money, rol
   await rejects(() => authoriseAlphaTalentManagerRenewal(repo, worldId, "player-a", {
     requestId: "delegate-again", sourceContractId: source.id,
   }), "pending offer");
+  // Simulate a rejected standard resolver result to test staff outcome routing;
+  // never claim that a real multiweek World resolution ran here.
+  await repo.transact(worldId, null, current => {
+    const pending = current.state.contractOffers.find(row => row.id === submitted.offerId);
+    if (!pending) throw new Error("missing staff proposal");
+    pending.status = "REJECTED";
+    pending.rejectionReason = "offer utility below acceptance threshold";
+    current.runtime.lastResolvedPpwDate = { ...current.state.world.currentDate };
+  });
+  const attention = buildPlayerAttention(await repo.load(worldId), "player-a");
+  const outcome = attention.find(item => item.attentionId === `contract-offer-result:${submitted.offerId}`);
+  ok(outcome?.deepLink === "/staff" && outcome.title.includes("Talent Manager"),
+    "manager refusal did not return to staff context");
+  ok(outcome.summary.includes("negotiate different terms manually"),
+    "manager rejection hid the need for player negotiation");
 });
 
 console.log(`\nWeb staff service tests: ${passed} passed, ${failed} failed`);
