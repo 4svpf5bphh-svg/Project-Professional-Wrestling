@@ -6,7 +6,7 @@ type WrestlerProfilePageProps = {
 
 function profileOrigin(value: string | string[] | undefined): WrestlerProfileOrigin {
   const raw = Array.isArray(value) ? value[0] : value;
-  if (raw === "industry" || raw === "directory" || raw === "talent") return raw;
+  if (raw === "industry" || raw === "directory" || raw === "talent" || raw === "contracts") return raw;
   return "directory";
 }
 
