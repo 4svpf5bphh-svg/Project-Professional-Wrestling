@@ -21,7 +21,7 @@ function test(name: string, run: () => void): void {
 const allTypes: readonly DetailedShowSegmentType[] = [
   "PROMO", "INTERVIEW", "CONFRONTATION", "INTERRUPTION", "CHALLENGE",
   "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION",
-  "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN",
+  "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN", "VIDEO_PACKAGE",
 ];
 
 test("each supported segment appears exactly once across storytelling goals", () => {
