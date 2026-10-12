@@ -10,7 +10,7 @@ import { GIMMICK_CATALOG, gimmickDefinition, gimmickUsableBy } from "../../../..
 import styles from "./wrestler-profile.module.css";
 
 type ErrorPayload = { error?: string };
-export type WrestlerProfileOrigin = "talent" | "directory" | "industry";
+export type WrestlerProfileOrigin = "talent" | "directory" | "industry" | "contracts";
 
 type BackDestination = {
   href: string;
@@ -46,6 +46,7 @@ function matchDescription(match: PlayerWrestlerProfileView["recentMatches"][numb
 function backDestination(origin: WrestlerProfileOrigin): BackDestination {
   if (origin === "industry") return { href: "/industry", label: "Industry" };
   if (origin === "talent") return { href: "/talent", label: "Talent management" };
+  if (origin === "contracts") return { href: "/talent/contracts", label: "Contracts" };
   return { href: "/talent/directory", label: "Wrestler profiles" };
 }
 
