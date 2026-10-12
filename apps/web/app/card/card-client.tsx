@@ -18,6 +18,13 @@ import {
   evaluateMatchStyleLoad,
 } from "../../../../dist/packages/sim-core/src/match-style.js";
 import { canMoveRunningOrderSlot, moveRunningOrderSlot } from "../../../../dist/packages/web-adapter/src/card-running-order.js";
+import {
+  SEGMENT_STORY_GOALS,
+  firstSegmentForGoal,
+  segmentDirectionHint,
+  storyGoalForSegment,
+  typesForStoryGoal,
+} from "../../../../dist/packages/web-adapter/src/segment-story-goals.js";
 import styles from "./card.module.css";
 
 type ErrorPayload = { error?: string };
@@ -39,9 +46,6 @@ const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
   "HIGH_RISK", "STORY", "PROTECTIVE", "EPIC",
 ];
 const MATCH_FINISHES: BookableFinish[] = ["CLEAN_PIN", "SUBMISSION", "FLASH_PIN", "PROTECTED_FINISH"];
-const SEGMENT_TYPES: AlphaCardSegmentView["type"][] = [
-  "PROMO", "INTERVIEW", "CONFRONTATION", "INTERRUPTION", "CHALLENGE", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION", "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN",
-];
 const ATTACK_FORMATS = ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"] as const;
 const ATTACK_OBJECTIVES = ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"] as const;
 const SHOW_TIME_GUIDE_MINUTES = 120;
@@ -1682,12 +1686,31 @@ export default function CardClient(): React.JSX.Element {
                           aria-pressed={bookingMode === "ADVANCED"} onClick={() => setBookingMode("ADVANCED")}>Advanced Booking</button>
                       </div>
                       <div className={styles.editorBody}>
+                <div className={styles.storyGoalSection}>
+                  <span className={styles.storyGoalPrompt}>What kind of moment are we booking?</span>
+                  <div className={styles.storyGoalChoices} role="group" aria-label="Segment story goal">
+                    {SEGMENT_STORY_GOALS.map((goal) => (
+                      <button key={goal.id} type="button"
+                        className={storyGoalForSegment(segment.type) === goal.id ? styles.storyGoalSelected : styles.storyGoalChoice}
+                        aria-pressed={storyGoalForSegment(segment.type) === goal.id}
+                        title={goal.description}
+                        disabled={!view.canEdit}
+                        onClick={() => {
+                          if (storyGoalForSegment(segment.type) !== goal.id) {
+                            setSegmentType(segment.draftSegmentId, firstSegmentForGoal(goal.id));
+                          }
+                        }}>{goal.label}</button>
+                    ))}
+                  </div>
+                  <small>{SEGMENT_STORY_GOALS.find((goal) => goal.id === storyGoalForSegment(segment.type))?.description}</small>
+                </div>
                 <div className={styles.controls}>
                   <div className={styles.control}>
-                    <label>What happens?</label>
+                    <label>How does it happen?</label>
                     <select value={segment.type} disabled={!view.canEdit} onChange={(event) => setSegmentType(segment.draftSegmentId, event.target.value as AlphaCardSegmentView["type"])}>
-                      {SEGMENT_TYPES.map((type) => <option key={type} value={type}>{pretty(type)}</option>)}
+                      {typesForStoryGoal(storyGoalForSegment(segment.type)).map((type) => <option key={type} value={type}>{pretty(type)}</option>)}
                     </select>
+                    <small className={styles.storyDirectionHint}>{segmentDirectionHint(segment.type)}</small>
                   </div>
                   <div className={styles.control}>
                     <label>Active Programme</label>
