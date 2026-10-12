@@ -1213,3 +1213,60 @@
   .editorSheet input, .editorSheet select { font-size: 16px; }
   .editorFooter span { max-width: 135px; }
 }
+
+
+.editorFooterActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.editorDoneSecondary {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #3b4c5a;
+  border-radius: 11px;
+  background: #17242d;
+  color: #c2d1dc;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.editorDone:disabled {
+  opacity: .38;
+  cursor: default;
+}
+.editorDoneSecondary:focus-visible {
+  outline: 2px solid #b9fff1;
+  outline-offset: 2px;
+}
+.editorHint,
+.editorConcern {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: rgba(93, 233, 206, .06);
+  border: 1px solid rgba(93, 233, 206, .23);
+  color: #b0d5d0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.editorConcern {
+  border-color: rgba(255, 191, 112, .3);
+  color: #ffd09b;
+  background: rgba(73, 46, 17, .18);
+}
+@media (max-width: 560px) {
+  .editorFooter {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .editorFooter span { max-width: none; }
+  .editorFooterActions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  }
+  .editorDone { min-width: 0; }
+}
