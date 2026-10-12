@@ -1,3 +1,4 @@
+import type { WorldStaffMember, StaffEmployment } from "./staff.js";
 import type { Programme, ProgrammeActivity } from "./programmes.js";
 
 export type Id = string;
@@ -21,6 +22,7 @@ export type FinancialTransactionCategory =
   | "SPONSOR_INCOME"
   | "FIXED_OVERHEAD"
   | "CONTRACT_GUARANTEE"
+  | "STAFF_SALARY"
   | "CONTRACT_SIGNING_BONUS"
   | "CONTRACT_BUYOUT"
   | "GATE_REVENUE"
@@ -575,6 +577,9 @@ export interface WorldState {
   promotionStandings?: PromotionStanding[];
   promotionSurvivalStates?: PromotionSurvivalState[];
   people: Person[];
+  /** World-unique staff, separate from the wrestler population. */
+  staffMembers?: WorldStaffMember[];
+  staffEmployments?: StaffEmployment[];
   contracts: Contract[];
   contractOffers: ContractOffer[];
   events: WrestlingEvent[];
