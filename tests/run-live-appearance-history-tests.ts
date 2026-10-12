@@ -3,7 +3,7 @@ declare const process: { exitCode?: number };
 import { promotionLiveAppearanceHistory } from "../packages/application/src/live-appearance-history.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld } from "../packages/sim-core/src/index.js";
-import type { LedgerEvent, PpwDate, WrestlingEvent, WorldState } from "../packages/domain/src/types.js";
+import type { LedgerEvent, PpwDate, WrestlingEvent } from "../packages/domain/src/types.js";
 
 let passed = 0; let failed = 0;
 function test(name: string, fn: () => void): void {
