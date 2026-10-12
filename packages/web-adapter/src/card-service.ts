@@ -50,6 +50,7 @@ import { wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
 import { validateLiveAppearanceHistory, type LiveAppearanceKind } from "../../sim-core/src/live-appearance-history.js";
+import { validateArrivalRunningOrder } from "../../application/src/live-appearance-order.js";
 import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
 import type { WorldPlanningState } from "../../application/src/planning.js";
 import {
@@ -1370,6 +1371,7 @@ export async function saveAlphaShowCard(
     }
     const normalizedSegments = normalizeSegments(request.segments, aggregate.state, control.promotionId, draft.targetDate);
     const runningOrder = normalizeRunningOrder(request.runningOrder, normalizedCard.matches, normalizedSegments.segments);
+    validateArrivalRunningOrder(runningOrder, normalizedCard.matches, normalizedSegments.segments);
     for (const segment of normalizedSegments.segments) {
       if (segment.type !== "POST_MATCH_ASSAULT") continue;
       const source = normalizedCard.matches.find((match) => match.draftMatchId === segment.sourceDraftMatchId);
