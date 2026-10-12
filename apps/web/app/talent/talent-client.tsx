@@ -1648,7 +1648,7 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
                           <span className={styles.pending}>{contract.renewalReason === "DATES_EXHAUSTED" ? "Dates exhausted" : contract.weeksToExpiry <= 1 ? "Urgent renewal" : "Renewal open"}</span>
                         </div>
                         <div className={styles.contractDeskActions}>
-                          <a className={styles.actionButton} href={"/talent/profile?personId=" + encodeURIComponent(entry.personId) + "&from=talent"}>Wrestler profile</a>
+                          <a className={styles.actionButton} href={"/talent/profile?personId=" + encodeURIComponent(entry.personId) + "&from=contracts"}>Wrestler profile</a>
                           {contract.renewalReason === "DATES_EXHAUSTED" ? (
                             <button className={styles.primaryButton} type="button" onClick={() => openMoreDates(entry)}>Negotiate more dates</button>
                           ) : (
