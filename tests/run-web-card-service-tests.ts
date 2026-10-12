@@ -1003,6 +1003,8 @@ await test("a logistics-only show draft opens in the builder and the first valid
   const builder = await loadAlphaShowCard(repository, worldId, playerId, show.draftId);
   ok(builder.reservationId === null, "unbooked show builder unexpectedly had a reservation");
   ok(builder.availableParticipants.length >= builder.minParticipants, "builder did not expose enough contracted talent");
+  ok(builder.availableParticipants.every(person => person.unlimitedAppearances || person.unreservedDatesRemaining > 0),
+    "unreserved card picker displayed a wrestler with no free show date");
 
   const persistedForBuilder = await repository.load(worldId);
   const firstPickerPerson = builder.availableParticipants[0];
@@ -1359,6 +1361,9 @@ await test("regular and premium shows in one PPW week each keep a separate card 
     matches: singlesCard(flagshipIds), championshipAssignments: [],
   });
   ok(readyRegular.reservationId !== null, "flagship could not reserve its six real purchased dates");
+  const reopenedRegular = await loadAlphaShowCard(repository, worldId, playerId, regularDraft.draftId);
+  ok(flagshipIds.every(personId => reopenedRegular.availableParticipants.some(person => person.personId === personId)),
+    "reopening the flagship excluded wrestlers reserved on its own card");
 
   const nextPlanner = await loadAlphaPlayerPlanner(repository, worldId, playerId);
   const nextPromotion = nextPlanner.promotion!;
@@ -1374,6 +1379,8 @@ await test("regular and premium shows in one PPW week each keep a separate card 
     throw new Error("premium draft was not individually addressable");
   }
   const premiumCard = await loadAlphaShowCard(repository, worldId, playerId, premiumDraft.draftId);
+  ok(flagshipIds.every(personId => !premiumCard.availableParticipants.some(person => person.personId === personId)),
+    "premium card picker wrongly offers wrestlers already reserved for the flagship on the same PPW week");
   const readyPremium = await saveAlphaShowCard(repository, worldId, playerId, {
     requestId: "dual-show-premium-card", expectedRevision: premiumCard.world.revision,
     expectedPlanVersion: premiumCard.workspaceVersion, draftId: premiumDraft.draftId,
