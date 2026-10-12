@@ -131,7 +131,7 @@ await test("delegate requires an employed manager and preserves exact money, rol
   const outcome = attention.find(item => item.attentionId === `contract-offer-result:${submitted.offerId}`);
   ok(outcome?.deepLink === "/staff" && outcome.title.includes("Talent Manager"),
     "manager refusal did not return to staff context");
-  ok(outcome.summary.includes("negotiate different terms manually"),
+  ok(outcome?.summary.includes("negotiate different terms manually"),
     "manager rejection hid the need for player negotiation");
 });
 
