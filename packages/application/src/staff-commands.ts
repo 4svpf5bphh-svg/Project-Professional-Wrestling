@@ -1,6 +1,7 @@
 import type { ContractOffer, Id, WorldState } from "../../domain/src/types.js";
 import type { StaffEmployment } from "../../domain/src/staff.js";
 import { resolvedCreativeControl } from "../../sim-core/src/creative-control.js";
+import { addPpwWeeks, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { contractIsActive } from "../../sim-core/src/contracts.js";
 import { submitHumanContractOffer, type HumanContractOfferPlan } from "../../sim-core/src/human-contracts.js";
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
@@ -138,6 +139,22 @@ export function authoriseStaffRenewalCommand(
     }
     const template = sameTermsRenewalTemplate(state, contract);
     const plan = envelope.payload.plan;
+    const currentWeek = ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear);
+    const endWeek = ppwDateToWeekIndex(contract.endDate, state.ruleset.weeksPerYear);
+    const datesExhausted = contract.family === "LIMITED_NON_EXCLUSIVE"
+      && contract.datesUsed >= contract.dateEntitlement;
+    if (!datesExhausted && endWeek - currentWeek > state.ruleset.renewalWindowWeeks) {
+      throw new Error("contract is not within its renewal window");
+    }
+    const expectedStart = datesExhausted
+      ? { ...addPpwWeeks(state.world.currentDate, 1, state.ruleset.weeksPerYear), day: 1 }
+      : addPpwWeeks(contract.endDate, 1, state.ruleset.weeksPerYear);
+    const expectedEnd = template
+      ? addPpwWeeks(expectedStart, template.termWeeks - 1, state.ruleset.weeksPerYear)
+      : null;
+    const sameDate = (left: typeof expectedStart, right: typeof expectedStart): boolean => (
+      left.year === right.year && left.week === right.week && left.day === right.day
+    );
     if (!template
       || plan.sourceContractId !== contract.id || plan.personId !== contract.personId
       || plan.promotionId !== contract.promotionId
@@ -145,10 +162,13 @@ export function authoriseStaffRenewalCommand(
       || resolvedCreativeControl(plan.creativeControl) !== template.creativeControl
       || plan.dateEntitlement !== template.dateEntitlement
       || plan.weeklyGuarantee !== template.weeklyGuarantee
-      || plan.appearanceFee !== template.appearanceFee || plan.signingBonus !== 0) {
+      || plan.appearanceFee !== template.appearanceFee || plan.signingBonus !== 0
+      || !sameDate(plan.startDate, expectedStart)
+      || !expectedEnd || !sameDate(plan.endDate, expectedEnd)) {
       throw new Error("staff renewal must match active recurring contract terms exactly");
     }
-    // Required term/date checks stay in the existing human offer submission.
+    // The application command also independently verifies the canonical dates;
+    // the general wrestler resolver still applies consent and capacity normally.
     return submitHumanContractOffer(state, plan);
   });
 }
