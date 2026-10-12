@@ -18,6 +18,7 @@ import { comparePpwDates } from "../../sim-core/src/clock.js";
 import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
 import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
 import { validateLiveAppearanceHistory, type LiveAppearanceKind } from "../../sim-core/src/live-appearance-history.js";
+import { validateArrivalRunningOrder } from "./live-appearance-order.js";
 import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
 
@@ -940,6 +941,7 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
     ...segments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
     ...programmeSegments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
   ];
+  validateArrivalRunningOrder(actualOrder, matches, [...segments, ...programmeSegments]);
   for (const segment of segments) {
     if (segment.type !== "POST_MATCH_ASSAULT") continue;
     const source = matches.find((match) => match.draftMatchId === segment.sourceDraftMatchId);
