@@ -48,6 +48,16 @@ const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
 const MATCH_FINISHES: BookableFinish[] = ["CLEAN_PIN", "SUBMISSION", "FLASH_PIN", "PROTECTED_FINISH"];
 const ATTACK_FORMATS = ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"] as const;
 const ATTACK_OBJECTIVES = ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"] as const;
+const VIDEO_KINDS = [
+  ["DEBUT_TEASER", "Coming soon"], ["RETURN_TEASER", "Return teaser"],
+  ["CHARACTER_SPOTLIGHT", "Character spotlight"], ["RIVALRY_RECAP", "Rivalry recap"],
+  ["EVENT_HYPE", "Match / event hype"], ["TRAINING_MONTAGE", "Training montage"],
+] as const;
+const VIDEO_GOALS = [
+  ["CREATE_INTRIGUE", "Create mystery"], ["BUILD_ANTICIPATION", "Build anticipation"],
+  ["ESTABLISH_THREAT", "Establish a threat"], ["BUILD_SYMPATHY", "Build sympathy"],
+  ["RECAP_STAKES", "Raise the stakes"],
+] as const;
 const SHOW_TIME_GUIDE_MINUTES = 120;
 const STYLE_DIMENSIONS = [
   ["competitiveness", "Competitive"],
@@ -1766,29 +1776,30 @@ export default function CardClient(): React.JSX.Element {
                           ))}
                         </select>
                       </div>
-                      <div className={styles.control}>
-                        <label>Package type</label>
-                        <select value={segment.videoKind ?? "CHARACTER_SPOTLIGHT"} disabled={!view.canEdit}
-                          onChange={(event) => updateSegment(segment.draftSegmentId, { videoKind: event.target.value as AlphaCardSegmentView["videoKind"] })}>
-                          <option value="DEBUT_TEASER">Coming soon / debut teaser</option>
-                          <option value="RETURN_TEASER">Return teaser</option>
-                          <option value="CHARACTER_SPOTLIGHT">Character spotlight</option>
-                          <option value="RIVALRY_RECAP">Rivalry recap</option>
-                          <option value="EVENT_HYPE">Match or event hype</option>
-                          <option value="TRAINING_MONTAGE">Training / recovery montage</option>
-                        </select>
-                      </div>
-                      <div className={styles.control}>
-                        <label>What should it achieve?</label>
-                        <select value={segment.videoObjective ?? "BUILD_ANTICIPATION"} disabled={!view.canEdit}
-                          onChange={(event) => updateSegment(segment.draftSegmentId, { videoObjective: event.target.value as AlphaCardSegmentView["videoObjective"] })}>
-                          <option value="CREATE_INTRIGUE">Create intrigue</option>
-                          <option value="BUILD_ANTICIPATION">Build anticipation</option>
-                          <option value="ESTABLISH_THREAT">Establish a threat</option>
-                          <option value="BUILD_SYMPATHY">Build sympathy</option>
-                          <option value="RECAP_STAKES">Remind viewers what is at stake</option>
-                        </select>
-                      </div>
+                    </div>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Video format</span>
+                      <small>What the audience actually sees</small>
+                    </div>
+                    <div className={styles.slotTypeRow}>
+                      {VIDEO_KINDS.map(([kind, label]) => (
+                        <button type="button" key={kind} disabled={!view.canEdit}
+                          className={(segment.videoKind ?? "CHARACTER_SPOTLIGHT") === kind ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { videoKind: kind })}>{label}</button>
+                      ))}
+                    </div>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Booking objective</span>
+                      <small>The feeling you're trying to create</small>
+                    </div>
+                    <div className={styles.slotTypeRow}>
+                      {VIDEO_GOALS.map(([objective, label]) => (
+                        <button type="button" key={objective} disabled={!view.canEdit}
+                          className={(segment.videoObjective ?? "BUILD_ANTICIPATION") === objective ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { videoObjective: objective })}>{label}</button>
+                      ))}
+                    </div>
+                    <div className={styles.controls}>
                       <div className={styles.control}>
                         <label>Reveal</label>
                         <select value={segment.videoReveal ?? "NAMED"} disabled={!view.canEdit}
