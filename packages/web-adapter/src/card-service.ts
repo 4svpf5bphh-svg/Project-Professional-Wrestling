@@ -32,6 +32,8 @@ import {
   type VideoPackageKind,
   type VideoPackageObjective,
   type VideoPackageReveal,
+  type LiveAppearanceObjective,
+  type LiveAppearancePresentation,
   type AttackPresentation,
   type AttackObjective,
   type TurnPresentation,
@@ -47,6 +49,7 @@ import {
 import { wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
+import { validateLiveAppearanceHistory, type LiveAppearanceKind } from "../../sim-core/src/live-appearance-history.js";
 import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
 import type { WorldPlanningState } from "../../application/src/planning.js";
 import {
@@ -136,6 +139,9 @@ export interface AlphaCardSegmentView {
   videoKind?: VideoPackageKind | null;
   videoObjective?: VideoPackageObjective | null;
   videoReveal?: VideoPackageReveal | null;
+  liveAppearanceKind?: LiveAppearanceKind | null;
+  liveAppearanceObjective?: LiveAppearanceObjective | null;
+  liveAppearancePresentation?: LiveAppearancePresentation | null;
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
   rescuerPersonId?: Id | null;
@@ -306,6 +312,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CELEBRATION",
   "TURN",
   "VIDEO_PACKAGE",
+  "LIVE_APPEARANCE",
 ]);
 
 function requiredText(value: string, label: string, maxLength = 220): string {
@@ -552,6 +559,18 @@ function normalizeSegments(
         throw new Error("video package subject must have a signed promotion contract covering the show date");
       }
     }
+    const liveAppearanceKind = segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceKind ?? null) : null;
+    const liveAppearanceObjective = segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceObjective ?? null) : null;
+    const liveAppearancePresentation = segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearancePresentation ?? null) : null;
+    if (segment.type === "LIVE_APPEARANCE") {
+      if (people.length !== 1 || !people[0]) throw new Error("live appearance must book exactly one wrestler");
+      if (!["DEBUT", "RETURN", "SURPRISE_REVEAL", "INTRODUCTION"].includes(liveAppearanceKind ?? "")
+        || !["ESTABLISH_STAR", "CREATE_SHOCK", "GENERATE_HEAT", "BUILD_SYMPATHY", "REIGNITE_RIVALRY"].includes(liveAppearanceObjective ?? "")
+        || !["ANNOUNCED", "SURPRISE", "DRAMATIC_ENTRANCE"].includes(liveAppearancePresentation ?? "")) {
+        throw new Error("live appearance needs its kind, objective and presentation");
+      }
+      validateLiveAppearanceHistory(state, promotionId, people[0], targetDate, liveAppearanceKind!);
+    }
     const turnPersonId = segment.type === "TURN"
       ? requiredText(segment.turnPersonId ?? "", `segments[${index}].turnPersonId`, 128)
       : null;
@@ -696,6 +715,7 @@ function normalizeSegments(
       programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
       ...(segment.type === "VIDEO_PACKAGE" ? { videoSubjectPersonId, videoKind, videoObjective, videoReveal } : {}),
+      ...(segment.type === "LIVE_APPEARANCE" ? { liveAppearanceKind, liveAppearanceObjective, liveAppearancePresentation } : {}),
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
       ...(segment.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
@@ -1153,6 +1173,9 @@ export async function loadAlphaShowCard(
       videoKind: segment.type === "VIDEO_PACKAGE" ? (segment.videoKind ?? null) : null,
       videoObjective: segment.type === "VIDEO_PACKAGE" ? (segment.videoObjective ?? null) : null,
       videoReveal: segment.type === "VIDEO_PACKAGE" ? (segment.videoReveal ?? null) : null,
+      liveAppearanceKind: segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceKind ?? null) : null,
+      liveAppearanceObjective: segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceObjective ?? null) : null,
+      liveAppearancePresentation: segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearancePresentation ?? null) : null,
       attackerPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
