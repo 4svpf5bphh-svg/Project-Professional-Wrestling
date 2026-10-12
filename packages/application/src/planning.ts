@@ -944,6 +944,26 @@ export function validateDetailedShowDraft(state: WorldState, draft: DetailedShow
     ...programmeSegments.map((segment) => ({ kind: "SEGMENT" as const, refId: segment.draftSegmentId })),
   ];
   for (const segment of segments) {
+    if (segment.type !== "LIVE_APPEARANCE"
+      || (segment.liveAppearanceKind !== "DEBUT" && segment.liveAppearanceKind !== "RETURN")) continue;
+    const personId = segment.participantIds[0]!;
+    const appearanceIndex = actualOrder.findIndex((slot) => slot.kind === "SEGMENT" && slot.refId === segment.draftSegmentId);
+    if (appearanceIndex < 0) throw new Error("live introduction must exist in the card running order");
+    const previouslyAppearedOnCard = actualOrder.slice(0, appearanceIndex).some((slot) => {
+      if (slot.kind === "MATCH") {
+        const match = matches.find((entry) => entry.draftMatchId === slot.refId);
+        return Boolean(match && ([...match.sideAIds, ...match.sideBIds].includes(personId)
+          || match.interfererPersonId === personId));
+      }
+      const earlier = segments.find((entry) => entry.draftSegmentId === slot.refId)
+        ?? programmeSegments.find((entry) => entry.draftSegmentId === slot.refId);
+      return Boolean(earlier?.participantIds.includes(personId));
+    });
+    if (previouslyAppearedOnCard) {
+      throw new Error("a debut or return must be the wrestler's first on-screen appearance in this show's running order");
+    }
+  }
+  for (const segment of segments) {
     if (segment.type !== "POST_MATCH_ASSAULT") continue;
     const source = matches.find((match) => match.draftMatchId === segment.sourceDraftMatchId);
     if (!source) throw new Error("post-match assault must reference a match booked on this card");
