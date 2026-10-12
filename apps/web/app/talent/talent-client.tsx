@@ -43,6 +43,7 @@ type OfferTarget = {
   interest: PlayerTalentMarketView["interest"] | null;
   trust: number | null;
   currentContract: PlayerRosterContractView["contract"] | null;
+  renewalMode: "SAME_TERMS" | "NEGOTIATE";
 };
 
 type OfferDraft = Omit<AlphaTalentOfferRequest, "requestId" | "personId" | "sourceContractId">;
@@ -251,18 +252,21 @@ function requestIdFor(personId: string): string {
 function defaultDraft(target: OfferTarget): OfferDraft {
   const contract = target.currentContract;
   if (contract) {
+    if (target.renewalMode === "SAME_TERMS" && contract.sameTermsRenewal) {
+      return { ...contract.sameTermsRenewal };
+    }
     const family = contract.family;
     return {
       family,
       roleExpectation: contract.roleExpectation,
       creativeControl: contract.creativeControl,
-      termWeeks: family === "EXCLUSIVE" ? 26 : family === "ONE_OFF" ? 1 : 13,
-      dateEntitlement: family === "EXCLUSIVE" ? 26 : family === "ONE_OFF" ? 1 : Math.max(1, contract.dateEntitlement),
+      termWeeks: contract.sameTermsRenewal?.termWeeks ?? (family === "EXCLUSIVE" ? 26 : family === "ONE_OFF" ? 1 : 13),
+      dateEntitlement: family === "EXCLUSIVE" ? (contract.sameTermsRenewal?.termWeeks ?? 26) : family === "ONE_OFF" ? 1 : Math.max(1, contract.dateEntitlement),
       weeklyGuarantee: family === "ONE_OFF" ? 0
         : family === "EXCLUSIVE" ? Math.max(contract.weeklyGuarantee, Math.ceil(target.referenceValue * 0.5))
           : contract.weeklyGuarantee,
       appearanceFee: family === "EXCLUSIVE" ? 0 : contract.appearanceFee,
-      signingBonus: contract.signingBonus,
+      signingBonus: 0, // Previous signing bonuses were one-time payments, not standing renewal terms.
     };
   }
 
@@ -457,7 +461,7 @@ function RosterCard({
   pending: boolean;
   alignmentSaving: boolean;
   onAlignment: (alignment: Alignment) => void;
-  onRenew: () => void;
+  onRenew: (mode: "SAME_TERMS" | "NEGOTIATE") => void;
   onAddDates: () => void;
 }): React.JSX.Element {
   const contract = wrestler.contract;
@@ -551,7 +555,15 @@ function RosterCard({
                 <button className={styles.actionButton} type="button" onClick={onAddDates}>Negotiate more dates</button>
               ) : null}
               {contract.renewalWindowOpen && contract.renewalReason === "EXPIRY_WINDOW" ? (
-                <button className={styles.actionButton} type="button" onClick={onRenew}>Negotiate renewal</button>
+                <>
+                  {contract.sameTermsRenewal
+                    && (contract.family !== "EXCLUSIVE" || contract.weeklyGuarantee >= Math.ceil(wrestler.estimatedWeeklyValue * 0.5)) ? (
+                    <button className={styles.actionButton} type="button"
+                      onClick={() => onRenew("SAME_TERMS")}>Renew on current terms</button>
+                  ) : null}
+                  <button className={styles.actionButton} type="button"
+                    onClick={() => onRenew("NEGOTIATE")}>Negotiate renewal</button>
+                </>
               ) : null}
             </>
           )}
@@ -658,6 +670,25 @@ function OfferCard({ offer }: { offer: PlayerPendingContractOfferView }): React.
   );
 }
 
+function ContractCostSummary({ draft }: { draft: OfferDraft }): React.JSX.Element {
+  const guaranteedPay = draft.weeklyGuarantee * draft.termWeeks;
+  const possibleAppearanceFees = draft.family === "EXCLUSIVE" ? 0 : draft.appearanceFee * draft.dateEntitlement;
+  const totalPotential = draft.signingBonus + guaranteedPay + possibleAppearanceFees;
+  return (
+    <div className={styles.contractBox} aria-label="Contract financial exposure">
+      <strong>What this offer could cost</strong>
+      <div className={styles.moneyRows}>
+        <span>One-time bonus if accepted <b>{money(draft.signingBonus)}</b></span>
+        <span>Guaranteed pay over {draft.termWeeks} weeks <b>{money(guaranteedPay)}</b></span>
+        <span>Appearance fees if all dates used <b>{money(possibleAppearanceFees)}</b></span>
+        <span>Potential total contractual outlay <b>{money(totalPotential)}</b></span>
+      </div>
+      <small>Only the bonus is due on acceptance. Weekly guarantees accrue during the contract;
+        appearance fees are paid for appearances actually worked. This is not an acceptance promise or an immediate cash charge.</small>
+    </div>
+  );
+}
+
 function OfferEditor({
   target,
   draft,
@@ -665,6 +696,7 @@ function OfferEditor({
   onChange,
   onCancel,
   onSubmit,
+  onEdit,
 }: {
   target: OfferTarget;
   draft: OfferDraft;
@@ -672,6 +704,7 @@ function OfferEditor({
   onChange: (next: OfferDraft) => void;
   onCancel: () => void;
   onSubmit: () => void;
+  onEdit: () => void;
 }): React.JSX.Element {
   const terms = draft.family === "ONE_OFF" ? [1] : draft.family === "EXCLUSIVE" ? [13, 26, 52] : [4, 13, 26];
   const guide = negotiationGuide(target, draft);
@@ -679,6 +712,36 @@ function OfferEditor({
   const exclusiveWeeklyFloor = Math.max(1, Math.ceil(target.referenceValue * 0.5));
   const invalidExclusivePay = draft.family === "EXCLUSIVE"
     && (draft.weeklyGuarantee < exclusiveWeeklyFloor || draft.appearanceFee !== 0);
+  if (target.renewalMode === "SAME_TERMS") {
+    return (
+      <section className={styles.editor} aria-label={`Authorise contract renewal for ${target.personName}`}>
+        <div className={styles.editorHeader}>
+          <div><span className={styles.eyebrow}>RENEWAL PROPOSAL</span><h2>{target.personName}</h2>
+            <p>Offer the same ongoing terms for another {draft.termWeeks} PPW weeks.
+              The previous one-time signing bonus is not repeated. The wrestler can still refuse.</p></div>
+          <button className={styles.button} type="button" onClick={onCancel} disabled={submitting}>Cancel</button>
+        </div>
+        <div className={styles.editorBody}>
+          <div className={styles.contractBox}>
+            <strong>{label(draft.family)} · {label(draft.roleExpectation)} · {draft.family === "EXCLUSIVE" ? "Unlimited contracted appearances" : `${draft.dateEntitlement} dates`}</strong>
+            <div className={styles.moneyRows}>
+              <span>Weekly guarantee <b>{money(draft.weeklyGuarantee)}</b></span>
+              <span>Appearance fee <b>{money(draft.appearanceFee)}</b></span>
+              <span>Creative rights <b>{label(draft.creativeControl ?? "NONE")}</b></span>
+              <span>New signing bonus <b>{money(0)}</b></span>
+            </div>
+          </div>
+          <ContractCostSummary draft={draft} />
+          <p className={styles.subtle}>You are authorising an offer, not signing the wrestler. Acceptance, competing commitments and service limits are decided by the normal World resolver.</p>
+        </div>
+        <div className={styles.editorFooter}>
+          <button className={styles.button} type="button" onClick={onEdit} disabled={submitting}>Change terms</button>
+          <button className={styles.primaryButton} type="button" disabled={submitting || invalidExclusivePay}
+            onClick={onSubmit}>{submitting ? "Submitting…" : "Authorise renewal offer"}</button>
+        </div>
+      </section>
+    );
+  }
   return (
     <section className={styles.editor} aria-label={`Contract offer for ${target.personName}`}>
       <div className={styles.editorHeader}>
@@ -722,6 +785,7 @@ function OfferEditor({
           <p>{guide.structure}</p>
           <small>Acceptance can still move with wrestler priorities, promotion standing, competing offers, Service Capacity and normal PPW uncertainty. Rival contract terms remain private.</small>
         </section>
+        <ContractCostSummary draft={draft} />
         <div className={styles.formGrid}>
         <label>
           <span>Contract</span>
@@ -778,7 +842,7 @@ function OfferEditor({
           />
         </label>
         <label>
-          <span>Signing bonus</span>
+          <span>New one-time bonus</span>
           <MoneyInput
             value={draft.signingBonus}
             onChange={(value) => onChange({ ...draft, signingBonus: value })}
@@ -925,6 +989,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       interest: wrestler.interest,
       trust: null,
       currentContract: null,
+      renewalMode: "NEGOTIATE",
     };
     setTarget(next);
     setDraft(defaultDraft(next));
@@ -932,7 +997,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
     setNotice(null);
   }
 
-  function openRenewal(wrestler: PlayerRosterContractView): void {
+  function openRenewal(wrestler: PlayerRosterContractView, renewalMode: "SAME_TERMS" | "NEGOTIATE"): void {
     setDateAddendum(null);
     const next: OfferTarget = {
       requestId: requestIdFor(wrestler.personId),
@@ -944,6 +1009,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       interest: null,
       trust: wrestler.trust,
       currentContract: wrestler.contract,
+      renewalMode,
     };
     setTarget(next);
     setDraft(defaultDraft(next));
@@ -1287,6 +1353,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
           onChange={setDraft}
           onCancel={() => { setTarget(null); setDraft(null); }}
           onSubmit={() => void submitOffer()}
+          onEdit={() => setTarget(current => current ? { ...current, renewalMode: "NEGOTIATE" } : null)}
         />
       ) : null}
 
@@ -1493,7 +1560,7 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
                               pending={pendingPeople.has(entry.personId)}
                               alignmentSaving={alignmentSaving === entry.personId}
                               onAlignment={(alignment) => void changeAlignment(entry, alignment)}
-                              onRenew={() => openRenewal(entry)}
+                              onRenew={(mode) => openRenewal(entry, mode)}
                               onAddDates={() => openMoreDates(entry)}
                             />
                           ))}
