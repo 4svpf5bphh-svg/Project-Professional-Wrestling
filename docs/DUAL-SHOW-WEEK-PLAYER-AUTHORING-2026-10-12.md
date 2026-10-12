@@ -13,6 +13,14 @@ Existing server infrastructure is already series-aware:
 
 The older Alpha home and current-week quick-card path, however, assume only **one** primary due show identity. The home screen could therefore fail to direct the player towards a second premium card.
 
+## Additional finding from end-to-end CI #951
+
+The initial legal six-wrestler test showed that the server successfully persisted two independent reservations and cards, but the Planner did **not** mark both READY_TO_LOCK. Reason: `playerShowPlanningStatus` compared the **global** `workspace.version` to the earlier reserved plan version. Editing/reserving the premium show advances the same promotion workspace version and falsely marks the untouched flagship reservation `RESERVATION_DUE`. Refreshing the flagship in turn would stale the premium, making both impossible to mark ready together.
+
+The correction uses **show-specific reservable details** instead: exact PPW date, show identity, market, venue, ticket strategy and complete distinct wrestler set. Modifying the second show no longer invalidates the first; altering the original show's venue, day or people still requires an actual re-reservation. We preserve the persisted `reservedPlanVersion` for historical/optimistic concurrency records and retain the existing status field's wire shape for old clients.
+
+Regression now tests both **independent-show stability** and **own-show logistics invalidation**. No World Lock bypass, blind acceptance, extra talent dates or changes to signed wages.
+
 ## This small, complete first wave
 
 1. Expose every due show identity (and name) in the authorized Alpha Home projection; this remains a **read-only** presentation of canonical schedule data.
