@@ -234,7 +234,7 @@ test("video package cannot use an unsigned subject or reserve wrestlers as prere
     participantIds: setup.rosterIds.slice(0, 2), matches: [], championshipAssignments: [],
   };
   throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0,
-    { ...base, segments: [segment] }), "currently contracted");
+    { ...base, segments: [segment] }), "under contract on the show date");
   throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0,
     { ...base, segments: [{ ...segment, videoSubjectPersonId: setup.rosterIds[0], participantIds: [setup.rosterIds[0]!] }] }),
     "cannot reserve live wrestlers");
