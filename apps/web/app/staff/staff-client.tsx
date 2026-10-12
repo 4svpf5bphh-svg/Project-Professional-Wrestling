@@ -6,7 +6,9 @@ import styles from "./staff.module.css";
 
 type Action = "POST" | "DELETE" | "PATCH";
 type Result = { view: PlayerStaffView; offerId?: string; error?: string };
-function money(value: number): string { return "£" + Math.round(value).toLocaleString("en-GB"); }
+function money(value: number): string {
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
+}
 
 export default function StaffClient(): React.JSX.Element {
   const [view, setView] = useState<PlayerStaffView | null>(null);
