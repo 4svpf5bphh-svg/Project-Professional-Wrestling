@@ -100,6 +100,22 @@ test("same-world appearances in a rival promotion never erase a local debut", ()
   equal(promotionLiveAppearanceHistory(f.state, f.promotionId, f.personId, f.date(8)).status,
     "DEBUT_ELIGIBLE", "a debut belongs to the promotion");
 });
+test("an appearance on the same show date never becomes earlier debut history", () => {
+  const f = fixture(91558), e = f.completed(2);
+  f.appearance(e);
+  equal(promotionLiveAppearanceHistory(f.state, f.promotionId, f.personId, f.date(2)).status,
+    "DEBUT_ELIGIBLE", "same show must be checked with slot-order validation separately");
+});
+
+test("return eligibility respects the PPW year boundary", () => {
+  const f = fixture(91559), event = f.completed(52);
+  f.appearance(event);
+  equal(promotionLiveAppearanceHistory(f.state, f.promotionId, f.personId, {year:2,week:2,day:6}).status,
+    "ESTABLISHED", "a two-week rollover is not a comeback");
+  equal(promotionLiveAppearanceHistory(f.state, f.promotionId, f.personId, {year:2,week:4,day:6}).status,
+    "RETURN_ELIGIBLE", "four weeks over the PPW year must count");
+});
+
 test("completed matches count even without a completed appearance ledger", () => {
   const f = fixture(91557), e = f.completed(2);
   f.state.matches.push({
