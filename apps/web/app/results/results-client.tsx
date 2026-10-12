@@ -252,6 +252,17 @@ export default function ResultsClient(): React.JSX.Element {
                                   <span key={participant.personId}>{participant.name}</span>
                                 ))}
                               </div>
+                              {slot.segment.type === "LIVE_APPEARANCE" ? (
+
+                                <div className={styles.matchMeta}>
+
+                                  <span>Live {label(slot.segment.liveKind ?? "introduction")} · {slot.segment.participants[0]?.name ?? "Wrestler"} · {slot.segment.liveObjective ? label(slot.segment.liveObjective) : "Establish a star"}</span>
+
+                                  <span>In-person arrival · promotion appearance</span>
+
+                                </div>
+
+                              ) : null}
                               {slot.segment.type === "VIDEO_PACKAGE" ? (
 
                                 <div className={styles.matchMeta}>
@@ -508,6 +519,17 @@ export default function ResultsClient(): React.JSX.Element {
                                       </a>
                                     ))}
                                   </div>
+                                  {slot.segment.type === "LIVE_APPEARANCE" ? (
+
+                                    <div className={styles.matchMeta}>
+
+                                      <span>Live {label(slot.segment.liveKind ?? "introduction")} · {slot.segment.participants[0]?.name ?? "Wrestler"} · {slot.segment.liveObjective ? label(slot.segment.liveObjective) : "Establish a star"}</span>
+
+                                      <span>In-person arrival · promotion appearance</span>
+
+                                    </div>
+
+                                  ) : null}
                                   {slot.segment.type === "VIDEO_PACKAGE" ? (
 
                                     <div className={styles.matchMeta}>
