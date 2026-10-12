@@ -299,14 +299,19 @@ export function buildPlayerAttention(
       }
     }
 
+    // Compute once from the shared offer ledger; avoid repeated historical scans for every roster member.
+    const pendingNegotiations = new Set(
+      aggregate.state.contractOffers
+        .filter((offer) => (
+          offer.promotionId === promotion.id
+          && offer.status === "PENDING"
+          && (offer.offerKind === "RENEWAL" || offer.offerKind === "DATES_ADDENDUM")
+        ))
+        .map((offer) => offer.personId),
+    );
     for (const contract of activeContracts) {
       if (contract.family === "ONE_OFF") continue;
-      const pendingNegotiation = aggregate.state.contractOffers.find((offer) => (
-        offer.promotionId === promotion.id
-        && offer.personId === contract.personId
-        && offer.status === "PENDING"
-        && (offer.offerKind === "RENEWAL" || offer.offerKind === "DATES_ADDENDUM")
-      ));
+      const pendingNegotiation = pendingNegotiations.has(contract.personId);
       const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
       if (contract.family === "LIMITED_NON_EXCLUSIVE" && datesRemaining === 0) {
         const name = personName(aggregate, contract.personId);
