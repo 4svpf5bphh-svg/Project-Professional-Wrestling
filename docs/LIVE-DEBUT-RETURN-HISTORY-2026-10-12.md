@@ -12,6 +12,8 @@ Draft development work stacked **after** the Show Rundown, Story-first Segment p
 
 The calculation is reusable and has regression tests, but the actual `LIVE_APPEARANCE` segment **is not yet implemented** by this PR.
 
+Regression coverage additionally checks year rollover and excludes all same-day completed appearance evidence from **earlier** history; slot-by-slot ordering within a future show remains a separate validation requirement.
+
 ## Next complete slice
 
 1. Add `LIVE_APPEARANCE` to authoritative domain/card with `DEBUT / RETURN / SURPRISE_REVEAL / INTRODUCTION` and explicit booking objective. The live subject is a real participant (unlike video's `videoSubjectPersonId`), selected using the existing roster/availability picker.
