@@ -123,6 +123,7 @@ function isDirectedSegment(type: AlphaCardSegmentView["type"]): boolean {
 }
 
 function segmentMinimum(type: AlphaCardSegmentView["type"]): number {
+  if (type === "VIDEO_PACKAGE") return 0;
   return type === "RESCUE" ? 3 : type === "POST_MATCH_ASSAULT" || type === "CONFRONTATION" || type === "INTERRUPTION" || type === "CHALLENGE" || type === "CONTRACT_SIGNING" || type === "STABLE_INVITATION" || type === "STABLE_EXIT" || type === "STABLE_RECONCILIATION" || type === "ATTACK" ? 2 : 1;
 }
 
@@ -441,6 +442,11 @@ export default function CardClient(): React.JSX.Element {
     && segment.participantIds.length <= 4
     && segment.participantIds.every(Boolean)
     && new Set(segment.participantIds).size === segment.participantIds.length
+    && (segment.type !== "VIDEO_PACKAGE" || Boolean(
+      segment.videoSubjectPersonId
+      && view?.videoSubjects.some((person) => person.personId === segment.videoSubjectPersonId)
+      && segment.videoKind && segment.videoObjective && segment.videoReveal
+    ))
     && (!isDirectedSegment(segment.type) || (
       Boolean(segment.initiatorPersonId) && Boolean(segment.targetPersonId)
       && segment.initiatorPersonId !== segment.targetPersonId
@@ -567,6 +573,10 @@ export default function CardClient(): React.JSX.Element {
       participantIds: Array.from({ length: segmentMinimum(type) }, () => ""),
       programmeId: null,
       plannedLengthMinutes: 6,
+      videoSubjectPersonId: type === "VIDEO_PACKAGE" ? null : undefined,
+      videoKind: type === "VIDEO_PACKAGE" ? "CHARACTER_SPOTLIGHT" : null,
+      videoObjective: type === "VIDEO_PACKAGE" ? "BUILD_ANTICIPATION" : null,
+      videoReveal: type === "VIDEO_PACKAGE" ? "NAMED" : null,
       attackerPersonId: null,
       victimPersonId: null,
       rescuerPersonId: null,
@@ -763,7 +773,7 @@ export default function CardClient(): React.JSX.Element {
     const segment = segments.find((candidate) => candidate.draftSegmentId === segmentId);
     if (!segment) return;
     const minimum = segmentMinimum(type);
-    const participantIds = [...segment.participantIds];
+    const participantIds = type === "VIDEO_PACKAGE" ? [] : [...segment.participantIds];
     while (participantIds.length < minimum) participantIds.push("");
     const sourceDraftMatchId = type === "POST_MATCH_ASSAULT"
       ? (segment.type === type ? (segment.sourceDraftMatchId ?? null)
@@ -772,6 +782,11 @@ export default function CardClient(): React.JSX.Element {
     updateSegment(segmentId, {
       type,
       participantIds,
+      videoSubjectPersonId: type === "VIDEO_PACKAGE"
+        ? (segment.type === type ? (segment.videoSubjectPersonId ?? null) : null) : null,
+      videoKind: type === "VIDEO_PACKAGE" ? (segment.type === type ? (segment.videoKind ?? "CHARACTER_SPOTLIGHT") : "CHARACTER_SPOTLIGHT") : null,
+      videoObjective: type === "VIDEO_PACKAGE" ? (segment.type === type ? (segment.videoObjective ?? "BUILD_ANTICIPATION") : "BUILD_ANTICIPATION") : null,
+      videoReveal: type === "VIDEO_PACKAGE" ? (segment.type === type ? (segment.videoReveal ?? "NAMED") : "NAMED") : null,
       attackerPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[0] === segment.attackerPersonId
         ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[1] === segment.victimPersonId
@@ -1072,6 +1087,11 @@ export default function CardClient(): React.JSX.Element {
   }
 
   function segmentSummary(segment: AlphaCardSegmentView): string {
+    if (segment.type === "VIDEO_PACKAGE") {
+      const subject = view?.videoSubjects.find((person) => person.personId === segment.videoSubjectPersonId)?.name
+        ?? (segment.videoSubjectPersonId || "Choose featured wrestler");
+      return `Video · ${pretty(segment.videoKind ?? "CHARACTER_SPOTLIGHT")} · ${subject} · ${segment.plannedLengthMinutes} min`;
+    }
     const people = segment.participantIds.map(personName).join(" · ") || "No wrestlers selected";
     if (segment.type === "TURN") {
       const who = segment.turnPersonId ? personName(segment.turnPersonId) : "Choose wrestler";
@@ -1729,6 +1749,60 @@ export default function CardClient(): React.JSX.Element {
                   </div>
                 </div>
 
+                {segment.type === "VIDEO_PACKAGE" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Pre-recorded video package</span>
+                      <small>Footage does not bring the subject to the venue or spend contracted appearance dates.</small>
+                    </div>
+                    <div className={styles.controls}>
+                      <div className={styles.control}>
+                        <label>Featured wrestler (signed talent)</label>
+                        <select value={segment.videoSubjectPersonId ?? ""} disabled={!view.canEdit}
+                          onChange={(event) => updateSegment(segment.draftSegmentId, { videoSubjectPersonId: event.target.value || null })}>
+                          <option value="">Choose subject of the footage</option>
+                          {view.videoSubjects.map((person) => (
+                            <option value={person.personId} key={person.personId}>{person.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className={styles.control}>
+                        <label>Package type</label>
+                        <select value={segment.videoKind ?? "CHARACTER_SPOTLIGHT"} disabled={!view.canEdit}
+                          onChange={(event) => updateSegment(segment.draftSegmentId, { videoKind: event.target.value as AlphaCardSegmentView["videoKind"] })}>
+                          <option value="DEBUT_TEASER">Coming soon / debut teaser</option>
+                          <option value="RETURN_TEASER">Return teaser</option>
+                          <option value="CHARACTER_SPOTLIGHT">Character spotlight</option>
+                          <option value="RIVALRY_RECAP">Rivalry recap</option>
+                          <option value="EVENT_HYPE">Match or event hype</option>
+                          <option value="TRAINING_MONTAGE">Training / recovery montage</option>
+                        </select>
+                      </div>
+                      <div className={styles.control}>
+                        <label>What should it achieve?</label>
+                        <select value={segment.videoObjective ?? "BUILD_ANTICIPATION"} disabled={!view.canEdit}
+                          onChange={(event) => updateSegment(segment.draftSegmentId, { videoObjective: event.target.value as AlphaCardSegmentView["videoObjective"] })}>
+                          <option value="CREATE_INTRIGUE">Create intrigue</option>
+                          <option value="BUILD_ANTICIPATION">Build anticipation</option>
+                          <option value="ESTABLISH_THREAT">Establish a threat</option>
+                          <option value="BUILD_SYMPATHY">Build sympathy</option>
+                          <option value="RECAP_STAKES">Remind viewers what is at stake</option>
+                        </select>
+                      </div>
+                      <div className={styles.control}>
+                        <label>Reveal</label>
+                        <select value={segment.videoReveal ?? "NAMED"} disabled={!view.canEdit}
+                          onChange={(event) => updateSegment(segment.draftSegmentId, { videoReveal: event.target.value as AlphaCardSegmentView["videoReveal"] })}>
+                          <option value="CRYPTIC">Cryptic / silhouette</option>
+                          <option value="NAMED">Name reveal</option>
+                          <option value="FULL">Full footage</option>
+                        </select>
+                        <small className={styles.sideLabel}>A cryptic teaser does not reveal the wrestler's identity to the audience. This does not cause a real debut, return, contract or recovery.</small>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 {segment.type === "POST_MATCH_ASSAULT" ? (
                   <div className={styles.controls}>
                     <div className={styles.control}>
@@ -2039,7 +2113,7 @@ export default function CardClient(): React.JSX.Element {
                     </button>
                     {view.programmes.length > 0 ? <a className={styles.programmeLink} href="/programmes">Manage Programmes →</a> : <a className={styles.programmeLink} href="/programmes">Start a Programme →</a>}
                   </div>
-                ) : (
+                ) : segment.type === "VIDEO_PACKAGE" ? null : (
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
                       <span>{segment.type === "RESCUE" ? "Who attacks, who is saved, and who makes the save?" : segment.type === "POST_MATCH_ASSAULT" ? "Who attacks after the match?" : segment.type === "ATTACK" ? "Who attacks whom?" : isDirectedSegment(segment.type) ? "Who starts it?" : "Who is involved?"}</span>
