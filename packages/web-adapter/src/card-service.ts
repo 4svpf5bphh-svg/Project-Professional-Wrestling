@@ -32,6 +32,8 @@ import {
   type VideoPackageKind,
   type VideoPackageObjective,
   type VideoPackageReveal,
+  type LiveAppearanceKind,
+  type LiveAppearanceObjective,
   type AttackPresentation,
   type AttackObjective,
   type TurnPresentation,
@@ -48,6 +50,7 @@ import { wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
 import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
+import { promotionLiveAppearanceHistory } from "../../application/src/live-appearance-history.js";
 import type { WorldPlanningState } from "../../application/src/planning.js";
 import {
   assessMatchStyleReadiness,
@@ -136,6 +139,8 @@ export interface AlphaCardSegmentView {
   videoKind?: VideoPackageKind | null;
   videoObjective?: VideoPackageObjective | null;
   videoReveal?: VideoPackageReveal | null;
+  liveAppearanceKind?: LiveAppearanceKind | null;
+  liveAppearanceObjective?: LiveAppearanceObjective | null;
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
   rescuerPersonId?: Id | null;
@@ -306,6 +311,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CELEBRATION",
   "TURN",
   "VIDEO_PACKAGE",
+  "LIVE_APPEARANCE",
 ]);
 
 function requiredText(value: string, label: string, maxLength = 220): string {
@@ -510,9 +516,10 @@ function normalizeSegments(
     if (!SEGMENT_TYPES.has(segment.type)) throw new Error(`unsupported segment type ${String(segment.type)}`);
     if (!Array.isArray(segment.participantIds) ||
       (segment.type === "VIDEO_PACKAGE" ? segment.participantIds.length !== 0
+        : segment.type === "LIVE_APPEARANCE" ? segment.participantIds.length !== 1
         : segment.participantIds.length < 1 || segment.participantIds.length > 4)) {
-      throw new Error(segment.type === "VIDEO_PACKAGE"
-        ? "video package must not book on-site wrestlers"
+      throw new Error(segment.type === "VIDEO_PACKAGE" ? "video package must not book on-site wrestlers"
+        : segment.type === "LIVE_APPEARANCE" ? "live appearance must feature exactly one on-site wrestler"
         : "segment requires one to four wrestlers");
     }
     const people = segment.participantIds.map((personId, personIndex) => (
@@ -540,6 +547,21 @@ function normalizeSegments(
     const videoKind = segment.type === "VIDEO_PACKAGE" ? (segment.videoKind ?? null) : null;
     const videoObjective = segment.type === "VIDEO_PACKAGE" ? (segment.videoObjective ?? null) : null;
     const videoReveal = segment.type === "VIDEO_PACKAGE" ? (segment.videoReveal ?? null) : null;
+    const liveAppearanceKind = segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceKind ?? null) : null;
+    const liveAppearanceObjective = segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceObjective ?? null) : null;
+    if (segment.type === "LIVE_APPEARANCE") {
+      if (!["DEBUT", "RETURN", "SURPRISE_REVEAL", "INTRODUCTION"].includes(liveAppearanceKind ?? "")
+        || !["ESTABLISH_STAR", "BUILD_EXCITEMENT", "CREATE_MYSTERY", "UNSETTLE_RIVAL", "REIGNITE_PROGRAMME"].includes(liveAppearanceObjective ?? "")) {
+        throw new Error("live appearance needs a supported introduction type and booking objective");
+      }
+      const history = promotionLiveAppearanceHistory(state, promotionId, people[0]!, targetDate);
+      if (liveAppearanceKind === "DEBUT" && history.status !== "DEBUT_ELIGIBLE") {
+        throw new Error("the featured wrestler has already appeared live for this promotion");
+      }
+      if (liveAppearanceKind === "RETURN" && history.status !== "RETURN_ELIGIBLE") {
+        throw new Error("a return requires a completed previous appearance and at least four PPW weeks away");
+      }
+    }
     if (segment.type === "VIDEO_PACKAGE") {
       if (!["DEBUT_TEASER", "RETURN_TEASER", "CHARACTER_SPOTLIGHT", "RIVALRY_RECAP", "EVENT_HYPE", "TRAINING_MONTAGE"].includes(videoKind ?? "")
         || !["CREATE_INTRIGUE", "BUILD_ANTICIPATION", "ESTABLISH_THREAT", "BUILD_SYMPATHY", "RECAP_STAKES"].includes(videoObjective ?? "")
@@ -696,6 +718,7 @@ function normalizeSegments(
       programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
       ...(segment.type === "VIDEO_PACKAGE" ? { videoSubjectPersonId, videoKind, videoObjective, videoReveal } : {}),
+      ...(segment.type === "LIVE_APPEARANCE" ? { liveAppearanceKind, liveAppearanceObjective } : {}),
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
       ...(segment.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
@@ -1153,6 +1176,8 @@ export async function loadAlphaShowCard(
       videoKind: segment.type === "VIDEO_PACKAGE" ? (segment.videoKind ?? null) : null,
       videoObjective: segment.type === "VIDEO_PACKAGE" ? (segment.videoObjective ?? null) : null,
       videoReveal: segment.type === "VIDEO_PACKAGE" ? (segment.videoReveal ?? null) : null,
+      liveAppearanceKind: segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceKind ?? null) : null,
+      liveAppearanceObjective: segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceObjective ?? null) : null,
       attackerPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
