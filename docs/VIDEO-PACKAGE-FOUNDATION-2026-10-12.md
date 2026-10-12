@@ -5,7 +5,7 @@ Draft PR #56, stacked on #55 (story-purpose picker) and #54 (Show Rundown). No m
 ## Invariants
 
 1. A `VIDEO_PACKAGE` is **pre-recorded footage**, not the live appearance of the featured subject. It has `participantIds: []` and a separate `videoSubjectPersonId`. The subject never contributes to the show's on-site participant count or contracted live dates.
-2. The subject must have an **active contract with the booking promotion**. This first slice treats such a contract as consent to present footage; no unsigned talent can be advertised as a confirmed debut. Future footage media-rights contracts should be explicit and separately validated.
+2. The subject must have an **active contract with the booking promotion which covers the actual show date**, including when a player books several weeks ahead. This first slice treats such a contract as consent to present footage; no unsigned talent can be advertised as a confirmed debut. Future footage media-rights contracts should be explicit and separately validated.
 3. Each video has a scriptable kind, intended objective and reveal level (cryptic, named, full). The simulator may evaluate quality and crowd response, but cannot invent a different reveal, real debut, contract, match confirmation, alignment or recovery event.
 4. A linked Programme must include the video subject. Programme activity history can record the package even though no wrestler was physically at the venue.
 5. Public Results omit the featured identity from cryptic packages. The authoritative ledger and private player Results can retain the real subject for continuity without leaking through the public projection.
@@ -30,3 +30,5 @@ Regression tests target (a) authoritative draft roundtrip and the ledger, (b) fo
 
 ## Final UI and disclosure checks
 The segment editor uses touch-friendly format and objective choices rather than large grey dropdowns. A separate private/public Results regression verifies that a cryptic teaser remains cryptic to other players. Neither the footage nor its reported crowd response is allowed to create the subject's actual promotion debut.
+
+**Card UX:** video format, booking objective and reveal level use tappable selection controls rather than stacked grey dropdowns. The subject picker retains search/list behaviour. Future expiry is blocked at both Card API validation and authoritative planning validation.
