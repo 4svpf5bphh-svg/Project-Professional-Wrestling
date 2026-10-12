@@ -1316,6 +1316,7 @@ export default function CardClient(): React.JSX.Element {
               const expanded = expandedSlotKey === slotKey;
               return (
                 <article className={`${styles.matchCard} ${match.draftMatchId === lastMatchId ? styles.mainEventCard : ""}`} key={slotKey}>
+                  <div className={styles.slotTopRow}>
                   <button
                     className={styles.slotToggle}
                     type="button"
@@ -1331,6 +1332,11 @@ export default function CardClient(): React.JSX.Element {
                       <span className={styles.chevron}>{expanded ? "▲" : "▼"}</span>
                     </div>
                   </button>
+                    <div className={styles.slotOrderControls} role="group" aria-label={`Reorder match slot ${slotIndex + 1}`}>
+                      <button type="button" title="Move up" aria-label={`Move match in slot ${slotIndex + 1} up`} disabled={!view.canEdit || !canMoveRunningOrderSlot(runningOrder, segments, slotIndex, -1)} onClick={() => moveSlot(slotIndex, -1)}>↑</button>
+                      <button type="button" title="Move down" aria-label={`Move match in slot ${slotIndex + 1} down`} disabled={!view.canEdit || !canMoveRunningOrderSlot(runningOrder, segments, slotIndex, 1)} onClick={() => moveSlot(slotIndex, 1)}>↓</button>
+                    </div>
+                  </div>
 
                   {expanded ? <>
                   <div className={styles.slotTypeRow}>
@@ -1543,8 +1549,8 @@ export default function CardClient(): React.JSX.Element {
                   </details>
 
                   <div className={styles.actions}>
-                    <button className={styles.secondaryButton} type="button" disabled={!view.canEdit || slotIndex === 0} onClick={() => moveSlot(slotIndex, -1)}>↑ Earlier</button>
-                    <button className={styles.secondaryButton} type="button" disabled={!view.canEdit || slotIndex === runningOrder.length - 1} onClick={() => moveSlot(slotIndex, 1)}>↓ Later</button>
+                    
+                    
                     <button className={styles.removeButton} type="button" disabled={!view.canEdit} onClick={() => removeSlot(slot)}>Remove</button>
                   </div>
                   </> : null}
@@ -1563,6 +1569,7 @@ export default function CardClient(): React.JSX.Element {
             );
             return (
               <article className={`${styles.matchCard} ${styles.segmentCard}`} key={slotKey}>
+                <div className={styles.slotTopRow}>
                 <button
                   className={styles.slotToggle}
                   type="button"
@@ -1578,6 +1585,11 @@ export default function CardClient(): React.JSX.Element {
                     <span className={styles.chevron}>{expanded ? "▲" : "▼"}</span>
                   </div>
                 </button>
+                  <div className={styles.slotOrderControls} role="group" aria-label={`Reorder segment slot ${slotIndex + 1}`}>
+                    <button type="button" title="Move up" aria-label={`Move segment in slot ${slotIndex + 1} up`} disabled={!view.canEdit || !canMoveRunningOrderSlot(runningOrder, segments, slotIndex, -1)} onClick={() => moveSlot(slotIndex, -1)}>↑</button>
+                    <button type="button" title="Move down" aria-label={`Move segment in slot ${slotIndex + 1} down`} disabled={!view.canEdit || !canMoveRunningOrderSlot(runningOrder, segments, slotIndex, 1)} onClick={() => moveSlot(slotIndex, 1)}>↓</button>
+                  </div>
+                </div>
 
                 {expanded ? <>
                 <div className={styles.controls}>
@@ -1979,8 +1991,8 @@ export default function CardClient(): React.JSX.Element {
                 )}
 
                 <div className={styles.actions}>
-                  <button className={styles.secondaryButton} type="button" disabled={!view.canEdit || slotIndex === 0} onClick={() => moveSlot(slotIndex, -1)}>↑ Earlier</button>
-                  <button className={styles.secondaryButton} type="button" disabled={!view.canEdit || slotIndex === runningOrder.length - 1} onClick={() => moveSlot(slotIndex, 1)}>↓ Later</button>
+                  
+                  
                   <button className={styles.removeButton} type="button" disabled={!view.canEdit} onClick={() => removeSlot(slot)}>Remove</button>
                 </div>
                 </> : null}
