@@ -643,9 +643,14 @@ function MarketCard({
   );
 }
 
-function OfferCard({ offer }: { offer: PlayerPendingContractOfferView }): React.JSX.Element {
+function OfferCard({ offer, focused = false }: { offer: PlayerPendingContractOfferView; focused?: boolean }): React.JSX.Element {
   return (
-    <article className={styles.card}>
+    <article
+      id={`pending-contract-${offer.offerId}`}
+      className={`${styles.card} ${focused ? styles.focusedOffer : ""}`}
+      tabIndex={focused ? -1 : undefined}
+      aria-label={focused ? `Pending contract offer for ${offer.personName}` : undefined}
+    >
       <div className={styles.marketTop}>
         <div>
           <strong>{offer.personName}</strong>
@@ -930,7 +935,7 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
   const [target, setTarget] = useState<OfferTarget | null>(null);
   const [draft, setDraft] = useState<OfferDraft | null>(null);
   const [dateAddendum, setDateAddendum] = useState<{ wrestler: PlayerRosterContractView; requestId: string; extraDates: number; payment: number } | null>(null);
-  const offerOpen = Boolean(target && draft);
+  const offerOpen = Boolean((target && draft) || dateAddendum);
 
   useEffect(() => {
     if (!offerOpen || typeof window === "undefined") return;
@@ -1036,8 +1041,15 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
   useEffect(() => {
     if (tab !== "CONTRACTS" || !view?.promotion || !focusPersonId || handledFocus.current === focusPersonId) return;
     handledFocus.current = focusPersonId;
+    const pending = view.pendingOffers.find((offer) => offer.personId === focusPersonId);
+    if (pending) {
+      const card = document.getElementById(`pending-contract-${pending.offerId}`);
+      card?.scrollIntoView({ block: "center" });
+      card?.focus({ preventScroll: true });
+      return;
+    }
     const wrestler = view.roster.find((entry) => entry.personId === focusPersonId);
-    if (!wrestler || view.pendingOffers.some((offer) => offer.personId === focusPersonId)) return;
+    if (!wrestler) return;
     if (wrestler.contract.renewalReason === "DATES_EXHAUSTED") openMoreDates(wrestler);
     else if (wrestler.contract.renewalWindowOpen) openRenewal(wrestler, "NEGOTIATE");
   }, [tab, view, focusPersonId]);
@@ -1252,6 +1264,7 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
     )), [view, pendingPeople, query]);
   const contractDeskPending = useMemo(() => (view?.pendingOffers ?? [])
     .filter((offer) => matchesQuery(offer.personName, query)), [view, query]);
+  const focusedPendingOffer = view?.pendingOffers.find((offer) => offer.personId === focusPersonId) ?? null;
 
   useEffect(() => {
     setMarketLimit(25);
@@ -1633,6 +1646,13 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
 
             {tab === "CONTRACTS" ? (
               <div className={styles.contractDesk}>
+                {focusedPendingOffer ? (
+                  <a className={styles.pendingFocusLink}
+                    href={`#pending-contract-${focusedPendingOffer.offerId}`}>
+                    <strong>{focusedPendingOffer.personName}: offer awaiting a response</strong>
+                    <span>Submitted {ppwDate(focusedPendingOffer.submittedDate)}. View the existing proposal below; there is no need to send another.</span>
+                  </a>
+                ) : null}
                 <section aria-label="Contract decisions needed">
                   <h2>Needs a decision · {contractDeskActionable.length}</h2>
                   <p className={styles.subtle}>Deal with each wrestler here. You stay on this page after sending an offer; their response is decided by the World.</p>
@@ -1669,7 +1689,7 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
                 <section aria-label="Pending contract offers">
                   <h2>Waiting for response · {contractDeskPending.length}</h2>
                   <p className={styles.subtle}>Pending recruitment, renewals and additional-dates proposals. Responses resolve through the usual World contract rules.</p>
-                  {contractDeskPending.map((offer) => <OfferCard key={offer.offerId} offer={offer} />)}
+                  {contractDeskPending.map((offer) => <OfferCard key={offer.offerId} offer={offer} focused={offer.personId === focusPersonId} />)}
                   {contractDeskPending.length === 0 ? <p className={styles.empty}>No pending offers match your search.</p> : null}
                 </section>
               </div>
