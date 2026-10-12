@@ -17,6 +17,7 @@ import {
   defaultMatchStyleForIntent,
   evaluateMatchStyleLoad,
 } from "../../../../dist/packages/sim-core/src/match-style.js";
+import { canMoveRunningOrderSlot, moveRunningOrderSlot } from "../../../../dist/packages/web-adapter/src/card-running-order.js";
 import styles from "./card.module.css";
 
 type ErrorPayload = { error?: string };
@@ -917,13 +918,10 @@ export default function CardClient(): React.JSX.Element {
   }
 
   function moveSlot(index: number, direction: -1 | 1): void {
-    const target = index + direction;
-    if (target < 0 || target >= runningOrder.length) return;
-    setRunningOrder((current) => {
-      const next = [...current];
-      [next[index], next[target]] = [next[target]!, next[index]!];
-      return next;
-    });
+    if (!view?.canEdit) return;
+    const moved = moveRunningOrderSlot(runningOrder, segments, index, direction);
+    if (!moved) return;
+    setRunningOrder(moved);
     markDirty();
   }
 
@@ -1292,27 +1290,18 @@ export default function CardClient(): React.JSX.Element {
           <div><span className="eyebrow">RUNNING ORDER</span><h2>{view.venueName}</h2></div>
           <span className="plan-pill plan-reserved">{view.reservationId ? "RESERVED" : "DRAFT"}</span>
         </div>
-        <p className="muted body-copy">Build the show in order. Wrestlers chosen in matches or segments become the shared-World talent reservation automatically.</p>
-
-        <div className={styles.summary}>
-          <div><span>Booked talent</span><strong>{uniqueBookedCount} / {view.maxParticipants}</strong></div>
-          <div><span>Minimum</span><strong>{view.minParticipants}</strong></div>
-          <div><span>Show time</span><strong>{bookedMinutes} min</strong></div>
-          <div><span>Guide left</span><strong className={minutesRemaining < 0 ? styles.timeOver : undefined}>{minutesRemaining >= 0 ? `${minutesRemaining} min` : `${Math.abs(minutesRemaining)} over`}</strong></div>
+        <div className={styles.summary} aria-label="Running order progress">
+          <span><b>{uniqueBookedCount}/{view.maxParticipants}</b> booked <small>(min {view.minParticipants})</small></span>
+          <span><b>{bookedMinutes} min</b> planned</span>
+          <span className={minutesRemaining < 0 ? styles.timeOver : undefined}><b>{minutesRemaining >= 0 ? `${minutesRemaining} min` : `${Math.abs(minutesRemaining)} min`}</b> {minutesRemaining >= 0 ? "guide left" : "over guide"}</span>
         </div>
+        <div className={styles.addSlotToolbar} aria-label="Add to the running order">
+          <button type="button" onClick={() => addMatch("SINGLES")} disabled={!view.canEdit}>+ Match</button>
+          <button type="button" onClick={() => addSegment()} disabled={!view.canEdit}>+ Segment</button>
+        </div>
+        {runningOrder.length === 0 ? <p className={styles.startHint}>Add a match or segment to begin your running order.</p> : null}
 
         <div className={styles.cardList}>
-          {runningOrder.length === 0 ? (
-            <div className={styles.emptySlot}>
-              <strong>Add your first slot</strong>
-              <span>Build the show from matches and segments in the order the audience will see them.</span>
-              <div className={styles.emptyActions}>
-                <button type="button" onClick={() => addMatch("SINGLES")} disabled={!view.canEdit}>+ Match</button>
-                <button type="button" onClick={() => addSegment()} disabled={!view.canEdit}>+ Segment</button>
-              </div>
-            </div>
-          ) : null}
-
           {runningOrder.map((slot, slotIndex) => {
             if (slot.kind === "MATCH") {
               const match = matches.find((candidate) => candidate.draftMatchId === slot.refId);
@@ -2000,13 +1989,13 @@ export default function CardClient(): React.JSX.Element {
           })}
         </div>
 
-        <div className={styles.addSlotBar}>
+        {runningOrder.length > 0 ? <div className={styles.addSlotBar}>
           <span>Add next slot</span>
           <div>
             <button className={styles.secondaryButton} type="button" onClick={() => addMatch("SINGLES")} disabled={!view.canEdit}>+ Match</button>
             <button className={styles.secondaryButton} type="button" onClick={() => addSegment()} disabled={!view.canEdit}>+ Segment</button>
           </div>
-        </div>
+        </div> : null}
 
         {view.creativeConcerns?.length ? (
           <section className={styles.saveBlockers} aria-live="polite" aria-label="Wrestler creative approval">
