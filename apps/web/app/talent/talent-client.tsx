@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   PlayerPendingContractOfferView,
   PlayerRosterContractView,
@@ -19,7 +19,7 @@ import RosterNav from "./roster-nav";
 import styles from "./talent.module.css";
 
 type ErrorPayload = { error?: string };
-export type TalentTab = "ROSTER" | "MARKET" | "OFFERS";
+export type TalentTab = "ROSTER" | "MARKET" | "OFFERS" | "CONTRACTS";
 type OfferFamily = AlphaTalentOfferRequest["family"];
 type OfferRole = AlphaTalentOfferRequest["roleExpectation"];
 type OfferCreative = NonNullable<AlphaTalentOfferRequest["creativeControl"]>;
@@ -484,7 +484,7 @@ function RosterCard({
             : rosterSort.startsWith("FEE_")
               ? `${money(contract.appearanceFee)}/show`
               : `POP ${Math.round(wrestler.popularity)}`}</b>
-          <small>{contract.unlimitedAppearances ? "Unlimited dates" : `${contract.datesRemaining}/${contract.dateEntitlement} dates`} · {contract.weeksToExpiry}w left</small>
+          <small>{pending ? "Offer pending · " : contract.renewalWindowOpen ? "Contract action needed · " : ""}{contract.unlimitedAppearances ? "Unlimited dates" : `${contract.datesRemaining}/${contract.dateEntitlement} dates`} · {contract.weeksToExpiry}w left</small>
         </div>
       </summary>
       <div className={styles.cardBody}>
@@ -898,8 +898,9 @@ function OfferEditor({
   );
 }
 
-export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: TalentTab }): React.JSX.Element {
+export default function TalentClient({ initialTab = "ROSTER", focusPersonId = "" }: { initialTab?: TalentTab; focusPersonId?: string }): React.JSX.Element {
   const [view, setView] = useState<PlayerTalentManagementView | null>(null);
+  const handledFocus = useRef<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<TalentTab>(initialTab);
@@ -1031,6 +1032,15 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
     setNotice(null);
   }
 
+  useEffect(() => {
+    if (tab !== "CONTRACTS" || !view?.promotion || !focusPersonId || handledFocus.current === focusPersonId) return;
+    handledFocus.current = focusPersonId;
+    const wrestler = view.roster.find((entry) => entry.personId === focusPersonId);
+    if (!wrestler || view.pendingOffers.some((offer) => offer.personId === focusPersonId)) return;
+    if (wrestler.contract.renewalReason === "DATES_EXHAUSTED") openMoreDates(wrestler);
+    else if (wrestler.contract.renewalWindowOpen) openRenewal(wrestler, "NEGOTIATE");
+  }, [tab, view, focusPersonId]);
+
   async function submitMoreDates(): Promise<void> {
     if (!dateAddendum || submitting) return;
     setSubmitting(true);
@@ -1055,9 +1065,6 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       setView(payload.view);
       setNotice(`${dateAddendum.wrestler.name}: additional-dates offer submitted. The wrestler can accept or reject it.`);
       setDateAddendum(null);
-      setTab("OFFERS");
-      setQuery("");
-      if (typeof window !== "undefined") window.history.replaceState(window.history.state, "", "/talent?view=offers");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to negotiate additional dates");
     } finally {
@@ -1151,11 +1158,6 @@ export default function TalentClient({ initialTab = "ROSTER" }: { initialTab?: T
       setNotice(`${target.personName}: ${payload.offerKind === "RENEWAL" ? "renewal" : "recruitment"} offer submitted.`);
       setTarget(null);
       setDraft(null);
-      setTab("OFFERS");
-      setQuery("");
-      if (typeof window !== "undefined") {
-        window.history.replaceState(window.history.state, "", "/talent?view=offers");
-      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to submit contract offer");
     } finally {
