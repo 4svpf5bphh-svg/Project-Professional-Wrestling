@@ -31,6 +31,7 @@ import {
   wrestlerPromotionAffiliationsForPerson,
 } from "../../sim-core/src/index.js";
 import { talentIsWatched } from "./engagement.js";
+import { sameTermsRenewalTemplate, type SameTermsRenewalTemplate } from "./contract-renewal.js";
 import {
   activePromotionControlForPlayer,
   activeWorldMembership,
@@ -102,6 +103,8 @@ export interface PlayerRosterContractView extends PlayerPublicTalentIdentityView
     weeklyGuarantee: number;
     appearanceFee: number;
     signingBonus: number;
+    /** Own contract's repeatable terms; excludes historic one-time bonuses. */
+    sameTermsRenewal: SameTermsRenewalTemplate | null;
     renewalWindowOpen: boolean;
     renewalReason: "DATES_EXHAUSTED" | "EXPIRY_WINDOW" | null;
   };
@@ -421,6 +424,7 @@ export function buildPlayerTalentManagementView(
           weeklyGuarantee: contract.weeklyGuarantee,
           appearanceFee: contract.appearanceFee,
           signingBonus: contract.signingBonus,
+          sameTermsRenewal: sameTermsRenewalTemplate(aggregate.state, contract),
           renewalWindowOpen: datesExhausted || expiryWindowOpen,
           renewalReason: datesExhausted ? "DATES_EXHAUSTED" : expiryWindowOpen ? "EXPIRY_WINDOW" : null,
         },
