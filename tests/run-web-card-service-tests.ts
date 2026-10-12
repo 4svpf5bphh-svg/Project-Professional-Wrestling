@@ -1287,6 +1287,126 @@ await test("Alpha browser card booking rejects a championship on the wrong match
   );
 });
 
+await test("regular and premium shows in one PPW week each keep a separate card and resolve under one World Lock", async () => {
+  const playerId = "dual-week-player";
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 94271, playerId });
+  const independent = aggregate.state.promotions
+    .filter(p => p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE")
+    .sort((a, b) => a.id.localeCompare(b.id))[0];
+  if (!independent) throw new Error("dual-show World has no takeover indie");
+  aggregate.state.world.currentDate = { year: 1, week: 25, day: 1 };
+  const dueSeries = (aggregate.state.showSeries ?? []).filter(series =>
+    series.promotionId === independent.id && ["FLAGSHIP", "PREMIUM"].includes(series.role));
+  if (dueSeries.length < 2) throw new Error("dual-show fixture lacks flagship and premium series");
+  const roster = aggregate.state.contracts
+    .filter(c => c.promotionId === independent.id && c.status === "SIGNED")
+    .filter((c, i, all) => all.findIndex(x => x.personId === c.personId) === i);
+  // A fixture with legitimately acquired independent non-exclusive booking
+  // rights: two disjoint four-person cards, NOT artificial simulation power.
+  // Changing terms here is local to this test World, not a production balance.
+  const divisionById = new Map(aggregate.state.people.map(p => [p.id, p.division ?? "MEN"] as const));
+  const pairs: Array<[string, string]> = [];
+  for (const division of ["MEN", "WOMEN"] as const) {
+    const eligible = roster.filter(c => divisionById.get(c.personId) === division);
+    for (let i = 0; i + 1 < eligible.length; i += 2) {
+      pairs.push([eligible[i]!.personId, eligible[i + 1]!.personId]);
+    }
+  }
+  if (pairs.length < 4) throw new Error("dual-show fixture cannot field two valid four-wrestler cards");
+  const flagshipIds = pairs.slice(0, 2).flat();
+  const premiumIds = pairs.slice(2, 4).flat();
+  for (const personId of [...flagshipIds, ...premiumIds]) {
+    const contract = roster.find(c => c.personId === personId)!;
+    contract.startDate = { year: 1, week: 24, day: 1 };
+    contract.endDate = { year: 1, week: 26, day: 1 };
+    contract.dateEntitlement = Math.max(contract.dateEntitlement, contract.datesUsed + 2);
+  }
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, playerId, {
+    promotionId: independent.id, requestId: "dual-show-claim",
+  });
+
+  const before = await loadAlphaPlayerPlanner(repository, worldId, playerId);
+  const own = before.promotion;
+  const week = own?.weeks[0];
+  if (!own || !week || week.showSeriesOptions.length !== 2) {
+    throw new Error("real PPW week 25 does not expose both show identities in planner");
+  }
+  const regularSeries = week.showSeriesOptions.find(series => series.role === "FLAGSHIP");
+  const specialSeries = week.showSeriesOptions.find(series => series.role === "PREMIUM");
+  if (!regularSeries || !specialSeries) throw new Error("missing regular or premium identity");
+  const market = own.markets.find(m => m.marketId === independent.homeMarketId) ?? own.markets[0];
+  const venue = market?.venues[0];
+  if (!market || !venue) throw new Error("dual-show venue is missing");
+  const regular = await saveAlphaPlannerShowPlan(repository, worldId, playerId, {
+    requestId: "dual-show-regular-logistics", expectedRevision: before.world.revision,
+    expectedPlanVersion: own.workspaceVersion, year: 1, week: 25, day: 6,
+    showSeriesId: regularSeries.showSeriesId,
+    marketId: market.marketId, venueId: venue.venueId, ticketStrategy: "STANDARD",
+  });
+  const regularDraft = regular.promotion?.weeks[0]?.shows.find(s => s.showSeriesId === regularSeries.showSeriesId);
+  if (!regularDraft) throw new Error("flagship draft disappeared after planning");
+  const regularCard = await loadAlphaShowCard(repository, worldId, playerId, regularDraft.draftId);
+  const readyRegular = await saveAlphaShowCard(repository, worldId, playerId, {
+    requestId: "dual-show-regular-card", expectedRevision: regularCard.world.revision,
+    expectedPlanVersion: regularCard.workspaceVersion, draftId: regularDraft.draftId,
+    matches: singlesCard(flagshipIds), championshipAssignments: [],
+  });
+  ok(readyRegular.reservationId !== null, "flagship could not reserve its four real purchased dates");
+
+  const nextPlanner = await loadAlphaPlayerPlanner(repository, worldId, playerId);
+  const nextPromotion = nextPlanner.promotion!;
+  const plannedPremium = await saveAlphaPlannerShowPlan(repository, worldId, playerId, {
+    requestId: "dual-show-premium-logistics", expectedRevision: nextPlanner.world.revision,
+    expectedPlanVersion: nextPromotion.workspaceVersion, year: 1, week: 25, day: 7,
+    showSeriesId: specialSeries.showSeriesId,
+    marketId: market.marketId, venueId: venue.venueId, ticketStrategy: "STANDARD",
+  });
+  const premiumDraft = plannedPremium.promotion?.weeks[0]?.shows
+    .find(s => s.showSeriesId === specialSeries.showSeriesId);
+  if (!premiumDraft || premiumDraft.draftId === regularDraft.draftId) {
+    throw new Error("premium draft was not individually addressable");
+  }
+  const premiumCard = await loadAlphaShowCard(repository, worldId, playerId, premiumDraft.draftId);
+  const readyPremium = await saveAlphaShowCard(repository, worldId, playerId, {
+    requestId: "dual-show-premium-card", expectedRevision: premiumCard.world.revision,
+    expectedPlanVersion: premiumCard.workspaceVersion, draftId: premiumDraft.draftId,
+    matches: singlesCard(premiumIds), championshipAssignments: [],
+  });
+  ok(readyPremium.reservationId !== null, "premium could not reserve its four separate purchased dates");
+
+  const stored = await repository.load(worldId);
+  const reservations = stored.planning.showReservations.filter(r => r.promotionId === independent.id);
+  ok(reservations.length === 2 && reservations[0]!.sourceDraftId !== reservations[1]!.sourceDraftId,
+    "one show overwrote the other shared-World reservation");
+  ok(new Set(reservations.flatMap(r => r.participants.map(p => p.personId))).size === 8,
+    "the two shows consumed overlapping purchased dates despite a distinct-roster policy");
+  const finalPlanner = await loadAlphaPlayerPlanner(repository, worldId, playerId);
+  const shows = finalPlanner.promotion?.weeks[0]?.shows ?? [];
+  ok(shows.length === 2 && shows.every(show => show.readiness === "READY_TO_LOCK"),
+    "player does not see both shows fully ready before World Lock");
+  const resolved = await advanceAlphaWorldWeek(repository, worldId, playerId, {
+    expectedRevision: finalPlanner.world.revision,
+  });
+  ok(resolved.world.week === 26, "dual-show World Lock did not advance exactly one PPW week");
+  const after = await repository.load(worldId);
+  const completed = after.state.events.filter(event =>
+    event.promotionId === independent.id && event.date.year === 1 && event.date.week === 25
+    && event.status === "COMPLETED");
+  ok(completed.length === 2, `World Lock did not resolve exactly two authored events: ${completed.length}`);
+  ok(new Set(completed.map(e => e.showSeriesId)).size === 2,
+    "regular and premium outcomes lost their separate show identity");
+  ok(completed.some(e => e.date.day === 6) && completed.some(e => e.date.day === 7),
+    "different seven-day show calendar choices were overwritten at resolution");
+  const staffHelp = after.state.ledger.filter(entry =>
+    entry.type === "HUMAN_ROUTINE_CONTINUITY_TAKEOVER"
+    && entry.entityIds.includes(independent.id)
+    && entry.date.year === 1 && entry.date.week === 25);
+  ok(staffHelp.length === 0, "staff unnecessarily took over a fully player-authored two-show week");
+});
+
 await test("Alpha six-week card booking targets the selected future draft without changing the current card", async () => {
   const fixture = await reservedShowFixture(61014);
   const currentBefore = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
