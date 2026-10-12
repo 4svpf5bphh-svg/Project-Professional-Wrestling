@@ -60,7 +60,8 @@ test("a cryptic video is not an appearance or a return, and another promotion's 
   state.ledger.push({
     id: "video-historical",
     worldId: state.world.id, date: event.date, type: "SHOW_SEGMENT_COMPLETED",
-    significance: "ROUTINE", entityIds: [event.id, promotion.id, wrestler.id],
+    order: state.ledger.length + 1, significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+    entityIds: [event.id, promotion.id, wrestler.id],
     payload: { eventId: event.id, promotionId: promotion.id, segmentType: "VIDEO_PACKAGE", participantIds: "", videoSubjectPersonId: wrestler.id },
   });
   const future = addPpwWeeks(event.date, 5, state.ruleset.weeksPerYear);
