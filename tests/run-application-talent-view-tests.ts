@@ -233,6 +233,28 @@ test("global directory includes exclusive rival talent without private contract 
   ok(!serialized.includes(rivalContract!.id), "rival contract ID leaked into global Directory");
 });
 
+test("contract workbench can show an expiring roster deal alongside its pending offer", () => {
+  const { aggregate, promotionAId } = fixture(73018);
+  const contract = activeContractsForPromotion(aggregate.state, promotionAId)
+    .find((entry) => entry.family !== "ONE_OFF");
+  if (!contract) throw new Error("contract desk fixture needs a multiweek contract");
+  contract.endDate = { ...aggregate.state.world.currentDate, day: 7 };
+  const offerId = "contract-desk-renewal-pending";
+  pushPendingOffer(aggregate, promotionAId, contract.personId, offerId, contract.weeklyGuarantee);
+  const offer = aggregate.state.contractOffers.find((entry) => entry.id === offerId);
+  if (!offer) throw new Error("pending renewal fixture missing offer");
+  offer.offerKind = "RENEWAL";
+
+  const view = buildPlayerTalentManagementView(aggregate, "player-a");
+  const roster = view.roster.find((entry) => entry.contractId === contract.id);
+  ok(roster?.contract.renewalWindowOpen === true, "expiring contract disappeared from roster");
+  ok(roster?.personId === contract.personId, "contract roster lost its person identifier");
+  ok(view.pendingOffers.some((entry) => entry.personId === contract.personId && entry.offerId === offerId && entry.offerKind === "RENEWAL"),
+    "pending renewal is not available to the roster badge and consolidated Contracts queue");
+  ok(view.pendingOffers.every((entry) => entry.personId !== undefined),
+    "the Contracts pending queue cannot identify its wrestler");
+});
+
 test("pending contract offers are private to the controlling promotion", () => {
   const { aggregate, promotionAId, promotionBId } = fixture(73003);
   const rosterA = new Set(activeContractsForPromotion(aggregate.state, promotionAId).map((contract) => contract.personId));
