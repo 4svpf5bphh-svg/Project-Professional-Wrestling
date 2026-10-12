@@ -20,6 +20,7 @@ import { registerEntityIdCounters } from "./id-allocator.js";
 import { LedgerWriter } from "./ledger.js";
 import { seedWorldPromotionShowSeries } from "./show-calendar.js";
 import { fillUnassignedWrestlerIdentities } from "./identity-generation.js";
+import { seedWorldStaffPool } from "./staff.js";
 
 export type WorldShowSeriesSource = (
   worldId: string,
@@ -163,6 +164,8 @@ export function createWorld(
     promotionMarketStates,
     showSeries: showSeriesSource(worldId, promotions, ruleset),
     people,
+    staffMembers: seedWorldStaffPool(world.id, world.seed),
+    staffEmployments: [],
     contracts: [],
     contractOffers: [],
     events: [],
