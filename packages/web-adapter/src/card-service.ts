@@ -16,6 +16,7 @@ import {
   maxShowParticipantsForEventType,
   playerShowPlanningStatus,
   reservationForDraft,
+  assessPersonShowDateAvailability,
   reserveDetailedShowDraftCommand,
   upsertDetailedShowDraftCommand,
   requestCreativeBookingConsentCommand,
@@ -41,7 +42,9 @@ import {
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
 import { wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
-import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
+import type { WorldPlanningState } from "../../application/src/planning.js";
 import {
   assessMatchStyleReadiness,
   normalizeMatchStyle,
@@ -81,6 +84,8 @@ export interface AlphaCardParticipantView {
     presentation: number;
   };
   datesRemaining: number;
+  /** Purchased dates not already used or reserved, excluding this show's reservation. */
+  unreservedDatesRemaining: number;
   unlimitedAppearances: boolean;
 }
 
@@ -857,37 +862,36 @@ function weekIndex(date: PpwDate, weeksPerYear: number): number {
   return ((date.year - 1) * weeksPerYear) + (date.week - 1);
 }
 
-function contractCoversDate(
-  state: WorldState,
-  contract: WorldState["contracts"][number],
-  date: PpwDate,
-): boolean {
-  return contract.status === "SIGNED"
-    && comparePpwDates(date, contract.startDate, state.ruleset.weeksPerYear) >= 0
-    && comparePpwDates(date, contract.endDate, state.ruleset.weeksPerYear) <= 0;
-}
-
 function availableCardParticipants(
   state: WorldState,
+  planning: WorldPlanningState,
   promotionId: Id,
   targetDate: PpwDate,
-  selectedIds: readonly Id[],
+  ownReservationId: string | null,
 ): AlphaCardParticipantView[] {
-  const selected = new Set(selectedIds);
-  const datesByPerson = new Map<Id, number>();
-  for (const contract of state.contracts) {
-    if (contract.promotionId !== promotionId || !contractCoversDate(state, contract, targetDate)) continue;
-    const remaining = contract.family === "EXCLUSIVE"
-      ? Number.MAX_SAFE_INTEGER
-      : Math.max(0, contract.dateEntitlement - contract.datesUsed);
-    if (remaining <= 0 && !selected.has(contract.personId)) continue;
-    datesByPerson.set(contract.personId, (datesByPerson.get(contract.personId) ?? 0) + remaining);
-  }
-
+  const contractRows = state.contracts.filter(contract =>
+    contract.promotionId === promotionId && contractCoversBookedDate(state, contract, targetDate));
   const result: AlphaCardParticipantView[] = [];
-  for (const [personId, datesRemaining] of datesByPerson.entries()) {
-    const person = state.people.find((candidate) => candidate.id === personId);
-    if (!person || person.status !== "ACTIVE") continue;
+  for (const personId of new Set(contractRows.map(contract => contract.personId))) {
+    const assessment = assessPersonShowDateAvailability(
+      state, planning, promotionId, personId, targetDate, ownReservationId ?? "",
+    );
+    if (!assessment.contractId) continue;
+    const person = state.people.find(candidate => candidate.id === personId);
+    if (!person) continue;
+    const contracts = contractRows.filter(contract => contract.personId === personId);
+    const unlimitedAppearances = contracts.some(contract => contract.family === "EXCLUSIVE");
+    const datesRemaining = contracts.reduce((sum, contract) =>
+      sum + (contract.family === "EXCLUSIVE" ? 0 : Math.max(0, contract.dateEntitlement - contract.datesUsed)), 0);
+    const unreservedDatesRemaining = contracts.reduce((sum, contract) => {
+      if (contract.family === "EXCLUSIVE") return sum;
+      const committed = state.scheduledAppearances.filter(appearance =>
+        appearance.contractId === contract.id && appearance.status !== "CANCELLED").length;
+      const reserved = planning.showReservations.reduce((count, reservation) =>
+        count + (reservation.reservationId === ownReservationId ? 0 :
+          reservation.participants.filter(participant => participant.contractId === contract.id).length), 0);
+      return sum + Math.max(0, contract.dateEntitlement - contract.datesUsed - committed - reserved);
+    }, 0);
     result.push({
       personId,
       name: person.name,
@@ -905,8 +909,9 @@ function availableCardParticipants(
         stamina: person.skills.stamina,
         presentation: person.skills.presentation,
       },
-      datesRemaining: datesRemaining === Number.MAX_SAFE_INTEGER ? 0 : datesRemaining,
-      unlimitedAppearances: datesRemaining >= Number.MAX_SAFE_INTEGER,
+      datesRemaining,
+      unreservedDatesRemaining,
+      unlimitedAppearances,
     });
   }
   return result.sort((left, right) => right.popularity - left.popularity || left.name.localeCompare(right.name));
@@ -1014,9 +1019,10 @@ export async function loadAlphaShowCard(
   const peopleById = new Map(aggregate.state.people.map((person) => [person.id, person]));
   const candidateParticipants = availableCardParticipants(
     aggregate.state,
+    aggregate.planning,
     promotion.id,
     draft.targetDate,
-    draft.participantIds,
+    reservation?.reservationId ?? null,
   );
   const committedIds = status.eventId === null
     ? null
@@ -1084,6 +1090,7 @@ export async function loadAlphaShowCard(
         presentation: person.skills.presentation,
       },
       datesRemaining: 0,
+      unreservedDatesRemaining: 0,
       unlimitedAppearances: false,
     } satisfies AlphaCardParticipantView;
   });
