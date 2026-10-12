@@ -50,6 +50,8 @@ jobs:
         run: node dist/tests/run-card-running-order-tests.js
       - name: Run segment story-goal authoring regressions
         run: node dist/tests/run-segment-story-goal-tests.js
+      - name: Run live-appearance history regressions
+        run: node dist/tests/run-live-appearance-history-tests.js
       - name: Run contract-offer Attention coverage
         run: node dist/tests/run-contract-offer-attention-tests.js
       - name: Run alignment foundation coverage
