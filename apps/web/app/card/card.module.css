@@ -1061,3 +1061,155 @@
   .slotHeaderBadges .mainEvent,
   .slotHeaderBadges .segmentBadge { display: none; }
 }
+
+
+/* A focused booking sheet keeps the running order visible without form-wall expansion.
+   The existing draft/editing state is untouched and the separate wrestler picker is above it. */
+.editorOverlay {
+  position: fixed;
+  z-index: 210;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: max(10px, env(safe-area-inset-top)) 12px max(10px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: rgba(2, 6, 12, .78);
+  overscroll-behavior: contain;
+}
+
+.editorSheet {
+  box-sizing: border-box;
+  width: min(880px, 100%);
+  max-height: min(860px, 96dvh);
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+  border: 1px solid rgba(93, 233, 206, .4);
+  border-radius: 19px;
+  background: #0b131c;
+  box-shadow: 0 20px 70px rgba(0, 0, 0, .55);
+  color: #e8f3f4;
+}
+
+.editorHeading {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 17px 17px 11px;
+  border-bottom: 1px solid #273542;
+}
+
+.editorHeading > div { min-width: 0; }
+.editorHeading h2 {
+  margin: 4px 0 4px;
+  font-size: 18px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.editorHeading small { color: #91a7b4; font-size: 11px; }
+
+.editorClose {
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid #304353;
+  border-radius: 11px;
+  background: #12202b;
+  color: #d4e3ea;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.editorTabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #273542;
+}
+
+.editorTab,
+.editorTabActive {
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid #2d4650;
+  background: rgba(255, 255, 255, .025);
+  color: #91aab8;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.editorTabActive {
+  border-color: #5de9ce;
+  background: rgba(93, 233, 206, .13);
+  color: #b8ffe9;
+}
+
+.editorBody {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
+}
+
+.advancedSection {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  border-top: 1px solid #243545;
+  padding-top: 12px;
+}
+
+.editorFooter {
+  min-height: 64px;
+  padding: 10px 14px max(10px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #273542;
+  background: #0d1920;
+}
+.editorFooter span { font-size: 11px; color: #a5b6c0; }
+.editorDone {
+  min-height: 44px;
+  min-width: 154px;
+  padding: 9px 13px;
+  border: 1px solid rgba(93, 233, 206, .55);
+  border-radius: 11px;
+  background: rgba(93, 233, 206, .17);
+  color: #acffe9;
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.editorClose:focus-visible,
+.editorTab:focus-visible,
+.editorTabActive:focus-visible,
+.editorDone:focus-visible {
+  outline: 2px solid #b9fff1;
+  outline-offset: 2px;
+}
+
+@media (max-width: 560px) {
+  .editorOverlay {
+    align-items: end;
+    padding: 0;
+  }
+  .editorSheet {
+    width: 100%;
+    max-height: 95dvh;
+    border-radius: 20px 20px 0 0;
+    border-bottom: 0;
+  }
+  .editorHeading { padding: 12px 14px 10px; }
+  .editorHeading h2 { font-size: 16px; }
+  .editorBody { padding: 12px 14px 18px; }
+  .editorSheet input, .editorSheet select { font-size: 16px; }
+  .editorFooter span { max-width: 135px; }
+}
