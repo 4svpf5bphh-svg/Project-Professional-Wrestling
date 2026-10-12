@@ -16,6 +16,7 @@ import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
 import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
 import { comparePpwDates } from "../../sim-core/src/clock.js";
 import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
+import { promotionLiveAppearanceHistory } from "./live-appearance-history.js";
 import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
 import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
@@ -65,11 +66,15 @@ export type DetailedShowSegmentType =
   | "POST_MATCH_ASSAULT"
   | "CELEBRATION"
   | "TURN"
-  | "VIDEO_PACKAGE";
+  | "VIDEO_PACKAGE"
+  | "LIVE_APPEARANCE";
 
 export type VideoPackageKind = "DEBUT_TEASER" | "RETURN_TEASER" | "CHARACTER_SPOTLIGHT" | "RIVALRY_RECAP" | "EVENT_HYPE" | "TRAINING_MONTAGE";
 export type VideoPackageObjective = "CREATE_INTRIGUE" | "BUILD_ANTICIPATION" | "ESTABLISH_THREAT" | "BUILD_SYMPATHY" | "RECAP_STAKES";
 export type VideoPackageReveal = "CRYPTIC" | "NAMED" | "FULL";
+
+export type LiveAppearanceKind = "DEBUT" | "RETURN" | "SURPRISE_REVEAL" | "INTRODUCTION";
+export type LiveAppearanceObjective = "ESTABLISH_STAR" | "BUILD_EXCITEMENT" | "CREATE_MYSTERY" | "UNSETTLE_RIVAL" | "REIGNITE_PROGRAMME";
 
 export type AttackPresentation = "BLINDSIDE" | "BEATDOWN" | "PULL_APART_BRAWL";
 export type AttackObjective = "GENERATE_HEAT" | "BUILD_SYMPATHY" | "ESCALATE_RIVALRY";
@@ -93,6 +98,8 @@ export interface DetailedShowSegmentDraft {
   videoKind?: VideoPackageKind | null;
   videoObjective?: VideoPackageObjective | null;
   videoReveal?: VideoPackageReveal | null;
+  liveAppearanceKind?: LiveAppearanceKind | null;
+  liveAppearanceObjective?: LiveAppearanceObjective | null;
   // Roles are authored intent; participants alone must not invent attack direction.
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
@@ -224,6 +231,7 @@ const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "CELEBRATION",
   "TURN",
   "VIDEO_PACKAGE",
+  "LIVE_APPEARANCE",
 ]);
 
 function normalizedId(value: string, label: string, maxLength = 128): string {
@@ -389,9 +397,11 @@ function validateShowSegmentDraft(
   if (!SHOW_SEGMENT_TYPES.has(draft.type)) throw new Error(`unsupported show segment type ${String(draft.type)}`);
   if (!Array.isArray(draft.participantIds)
     || (draft.type === "VIDEO_PACKAGE" ? draft.participantIds.length !== 0
+      : draft.type === "LIVE_APPEARANCE" ? draft.participantIds.length !== 1
       : draft.participantIds.length < 1 || draft.participantIds.length > 4)) {
     throw new Error(draft.type === "VIDEO_PACKAGE"
       ? "pre-recorded video package cannot reserve live wrestlers"
+      : draft.type === "LIVE_APPEARANCE" ? "live appearance must feature exactly one on-site wrestler"
       : "show segment requires one to four wrestlers");
   }
   if (new Set(draft.participantIds).size !== draft.participantIds.length) {
@@ -419,6 +429,21 @@ function validateShowSegmentDraft(
   const videoKind = draft.type === "VIDEO_PACKAGE" ? (draft.videoKind ?? null) : null;
   const videoObjective = draft.type === "VIDEO_PACKAGE" ? (draft.videoObjective ?? null) : null;
   const videoReveal = draft.type === "VIDEO_PACKAGE" ? (draft.videoReveal ?? null) : null;
+  const liveAppearanceKind = draft.type === "LIVE_APPEARANCE" ? (draft.liveAppearanceKind ?? null) : null;
+  const liveAppearanceObjective = draft.type === "LIVE_APPEARANCE" ? (draft.liveAppearanceObjective ?? null) : null;
+  if (draft.type === "LIVE_APPEARANCE") {
+    if (!["DEBUT", "RETURN", "SURPRISE_REVEAL", "INTRODUCTION"].includes(liveAppearanceKind ?? "")
+      || !["ESTABLISH_STAR", "BUILD_EXCITEMENT", "CREATE_MYSTERY", "UNSETTLE_RIVAL", "REIGNITE_PROGRAMME"].includes(liveAppearanceObjective ?? "")) {
+      throw new Error("live appearance must define a valid format and booking objective");
+    }
+    const history = promotionLiveAppearanceHistory(state, promotionId, draft.participantIds[0]!, targetDate);
+    if (liveAppearanceKind === "DEBUT" && history.status !== "DEBUT_ELIGIBLE") {
+      throw new Error("wrestler already appeared live for this promotion; choose an introduction or return");
+    }
+    if (liveAppearanceKind === "RETURN" && history.status !== "RETURN_ELIGIBLE") {
+      throw new Error("a return requires a previous promotion appearance and four PPW weeks away");
+    }
+  }
   if (draft.type === "VIDEO_PACKAGE") {
     if (!["DEBUT_TEASER", "RETURN_TEASER", "CHARACTER_SPOTLIGHT", "RIVALRY_RECAP", "EVENT_HYPE", "TRAINING_MONTAGE"].includes(videoKind ?? "")) {
       throw new Error("video package needs a supported subtype");
@@ -588,6 +613,7 @@ function validateShowSegmentDraft(
     programmeId,
     plannedLengthMinutes: draft.plannedLengthMinutes,
     ...(draft.type === "VIDEO_PACKAGE" ? { videoSubjectPersonId, videoKind, videoObjective, videoReveal } : {}),
+    ...(draft.type === "LIVE_APPEARANCE" ? { liveAppearanceKind, liveAppearanceObjective } : {}),
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
     ...(draft.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
