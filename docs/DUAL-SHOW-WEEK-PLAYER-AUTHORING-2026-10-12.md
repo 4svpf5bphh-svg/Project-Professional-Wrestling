@@ -18,7 +18,7 @@ The older Alpha home and current-week quick-card path, however, assume only **on
 1. Expose every due show identity (and name) in the authorized Alpha Home projection; this remains a **read-only** presentation of canonical schedule data.
 2. When two shows are due, prominently tell the owner about both, and link to the **six-week Planner** instead of the single-current-show card. A single-show week retains existing shortcuts.
 3. Add a persisted, player-authored **Week 25 dual-show regression**: use a real seeded Alpha World containing a flagship and premium show due, establish two legal **nonoverlapping** sets of signed wrestling dates within the isolated test fixture, save flagship logistics/card on PPW Day 6, premium logistics/card on Day 7, and resolve both via the actual **player-triggered** World Lock. Assert separate stable draft IDs, reservations, ready-to-lock status, completed events and no staff takeover for either show.
-4. The isolated fixture adjusts only its own signed booking terms to provide enough legally bookable dates for two independent full cards. This does not grant additional dates, wages or power to the production World.
+4. The isolated fixture adjusts only its own signed booking terms to provide enough legally bookable dates for two independent legal six-wrestler cards. This does not grant additional dates, wages or power to the production World.
 5. Complete full application, Backstage, web build, HTTP/PostgreSQL, seven-seed economics, 26-week player-owned regressions and 10-year CI before recommending integration.
 
 ## Guardrails / downstream
