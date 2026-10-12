@@ -283,7 +283,7 @@ function defaultDraft(target: OfferTarget): OfferDraft {
   };
 }
 
-function draftForFamily(family: OfferFamily, referenceValue: number, current: OfferDraft): OfferDraft {
+function draftForFamily(family: OfferFamily, referenceValue: number, current: OfferDraft, isRenewal: boolean): OfferDraft {
   const value = Math.max(1_000, Math.round(referenceValue));
   if (family === "ONE_OFF") {
     return {
@@ -304,7 +304,7 @@ function draftForFamily(family: OfferFamily, referenceValue: number, current: Of
       dateEntitlement: 26, // retained for transport; exclusive appearances have no cap
       weeklyGuarantee: Math.max(current.weeklyGuarantee, Math.round(value * 1.3)),
       appearanceFee: 0,
-      signingBonus: Math.max(current.signingBonus, value * 4),
+      signingBonus: isRenewal ? current.signingBonus : Math.max(current.signingBonus, value * 4),
     };
   }
   return {
@@ -314,7 +314,7 @@ function draftForFamily(family: OfferFamily, referenceValue: number, current: Of
     dateEntitlement: 5,
     weeklyGuarantee: Math.max(0, Math.round(value * 0.2)),
     appearanceFee: Math.max(current.appearanceFee, value),
-    signingBonus: Math.max(current.signingBonus, value),
+    signingBonus: isRenewal ? current.signingBonus : Math.max(current.signingBonus, value),
   };
 }
 
@@ -789,7 +789,7 @@ function OfferEditor({
         <div className={styles.formGrid}>
         <label>
           <span>Contract</span>
-          <select value={draft.family} onChange={(event) => onChange(draftForFamily(event.target.value as OfferFamily, target.referenceValue, draft))}>
+          <select value={draft.family} onChange={(event) => onChange(draftForFamily(event.target.value as OfferFamily, target.referenceValue, draft, target.sourceContractId !== null))}>
             <option value="ONE_OFF">One-off date</option>
             <option value="LIMITED_NON_EXCLUSIVE">Limited non-exclusive</option>
             <option value="EXCLUSIVE">Exclusive</option>
