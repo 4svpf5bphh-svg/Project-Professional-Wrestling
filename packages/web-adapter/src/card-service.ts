@@ -29,6 +29,9 @@ import {
   type DetailedMatchDraft,
   type DetailedShowSegmentDraft,
   type DetailedShowSegmentType,
+  type VideoPackageKind,
+  type VideoPackageObjective,
+  type VideoPackageReveal,
   type AttackPresentation,
   type AttackObjective,
   type TurnPresentation,
@@ -44,6 +47,7 @@ import {
 import { wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
+import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
 import type { WorldPlanningState } from "../../application/src/planning.js";
 import {
   assessMatchStyleReadiness,
@@ -128,6 +132,10 @@ export interface AlphaCardSegmentView {
   participantIds: Id[];
   programmeId: Id | null;
   plannedLengthMinutes: number;
+  videoSubjectPersonId?: Id | null;
+  videoKind?: VideoPackageKind | null;
+  videoObjective?: VideoPackageObjective | null;
+  videoReveal?: VideoPackageReveal | null;
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
   rescuerPersonId?: Id | null;
@@ -243,6 +251,8 @@ export interface AlphaCurrentWeekCardView {
   venueName: string;
   participants: AlphaCardParticipantView[];
   availableParticipants: AlphaCardParticipantView[];
+  /** Pre-recorded footage subjects, not show-date reservations. */
+  videoSubjects: { personId: Id; name: string }[];
   availableTeams: AlphaCardTeamView[];
   availableStables: AlphaCardStableView[];
   matches: AlphaCardMatchView[];
@@ -295,6 +305,7 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "POST_MATCH_ASSAULT",
   "CELEBRATION",
   "TURN",
+  "VIDEO_PACKAGE",
 ]);
 
 function requiredText(value: string, label: string, maxLength = 220): string {
@@ -496,8 +507,12 @@ function normalizeSegments(
     if (segmentIds.has(draftSegmentId)) throw new Error("show contains duplicate segment IDs");
     segmentIds.add(draftSegmentId);
     if (!SEGMENT_TYPES.has(segment.type)) throw new Error(`unsupported segment type ${String(segment.type)}`);
-    if (!Array.isArray(segment.participantIds) || segment.participantIds.length < 1 || segment.participantIds.length > 4) {
-      throw new Error("segment requires one to four wrestlers");
+    if (!Array.isArray(segment.participantIds) ||
+      (segment.type === "VIDEO_PACKAGE" ? segment.participantIds.length !== 0
+        : segment.participantIds.length < 1 || segment.participantIds.length > 4)) {
+      throw new Error(segment.type === "VIDEO_PACKAGE"
+        ? "video package must not book on-site wrestlers"
+        : "segment requires one to four wrestlers");
     }
     const people = segment.participantIds.map((personId, personIndex) => (
       requiredText(personId, `segments[${index}].participantIds[${personIndex}]`, 128)
@@ -519,6 +534,21 @@ function normalizeSegments(
     const programmeId = segment.programmeId === null
       ? null
       : requiredText(segment.programmeId, `segments[${index}].programmeId`, 128);
+    const videoSubjectPersonId = segment.type === "VIDEO_PACKAGE"
+      ? requiredText(segment.videoSubjectPersonId ?? "", "videoSubjectPersonId", 128) : null;
+    const videoKind = segment.type === "VIDEO_PACKAGE" ? (segment.videoKind ?? null) : null;
+    const videoObjective = segment.type === "VIDEO_PACKAGE" ? (segment.videoObjective ?? null) : null;
+    const videoReveal = segment.type === "VIDEO_PACKAGE" ? (segment.videoReveal ?? null) : null;
+    if (segment.type === "VIDEO_PACKAGE") {
+      if (!["DEBUT_TEASER", "RETURN_TEASER", "CHARACTER_SPOTLIGHT", "RIVALRY_RECAP", "EVENT_HYPE", "TRAINING_MONTAGE"].includes(videoKind ?? "")
+        || !["CREATE_INTRIGUE", "BUILD_ANTICIPATION", "ESTABLISH_THREAT", "BUILD_SYMPATHY", "RECAP_STAKES"].includes(videoObjective ?? "")
+        || !["CRYPTIC", "NAMED", "FULL"].includes(videoReveal ?? "")) {
+        throw new Error("video package requires a subtype, objective and reveal level");
+      }
+      if (!activeContractsForPromotion(state, promotionId).some((contract) => contract.personId === videoSubjectPersonId)) {
+        throw new Error("video package must feature a currently signed promotion wrestler");
+      }
+    }
     const turnPersonId = segment.type === "TURN"
       ? requiredText(segment.turnPersonId ?? "", `segments[${index}].turnPersonId`, 128)
       : null;
@@ -645,6 +675,9 @@ function normalizeSegments(
       if (usedProgrammes.has(programmeId)) throw new Error("one Programme can have only one segment on a show");
       usedProgrammes.add(programmeId);
       const storyPeople = new Set(programmeParticipantIds(state, programmeId));
+      if (videoSubjectPersonId && !storyPeople.has(videoSubjectPersonId)) {
+        throw new Error("video subject must belong to the attached Programme");
+      }
       for (const personId of people) {
         if ((segment.type === "RESCUE" && personId === rescuerPersonId)
           || (segment.type === "POST_MATCH_ASSAULT" && personId === attackerPersonId)) continue;
@@ -659,6 +692,7 @@ function normalizeSegments(
       participantIds: people,
       programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
+      ...(segment.type === "VIDEO_PACKAGE" ? { videoSubjectPersonId, videoKind, videoObjective, videoReveal } : {}),
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
       ...(segment.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
@@ -1032,6 +1066,10 @@ export async function loadAlphaShowCard(
   const availableParticipants = committedIds === null
     ? candidateParticipants
     : candidateParticipants.filter((person) => committedIds.has(person.personId));
+  const videoSubjects = [...new Set(activeContractsForPromotion(aggregate.state, promotion.id)
+    .map((contract) => contract.personId))]
+    .map((personId) => ({ personId, name: peopleById.get(personId)?.name ?? personId }))
+    .sort((a, b) => a.name.localeCompare(b.name));
   const availableById = new Map(availableParticipants.map((person) => [person.personId, person]));
   const availableParticipantIds = new Set(availableParticipants.map((person) => person.personId));
   const availableTeams = (aggregate.state.teams ?? [])
@@ -1107,6 +1145,10 @@ export async function loadAlphaShowCard(
       participantIds: [...segment.participantIds],
       programmeId: segment.programmeId,
       plannedLengthMinutes: segment.plannedLengthMinutes,
+      videoSubjectPersonId: segment.type === "VIDEO_PACKAGE" ? (segment.videoSubjectPersonId ?? null) : null,
+      videoKind: segment.type === "VIDEO_PACKAGE" ? (segment.videoKind ?? null) : null,
+      videoObjective: segment.type === "VIDEO_PACKAGE" ? (segment.videoObjective ?? null) : null,
+      videoReveal: segment.type === "VIDEO_PACKAGE" ? (segment.videoReveal ?? null) : null,
       attackerPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
@@ -1195,6 +1237,7 @@ export async function loadAlphaShowCard(
     venueName: venue?.name ?? draft.venueId ?? "Venue not selected",
     participants,
     availableParticipants,
+    videoSubjects,
     availableTeams,
     availableStables,
     matches: draft.matches.flatMap((match) => (
