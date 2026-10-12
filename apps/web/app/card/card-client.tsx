@@ -1150,8 +1150,8 @@ export default function CardClient(): React.JSX.Element {
     ));
   }
 
-  async function save(): Promise<void> {
-    if (!view || !canSave) return;
+  async function save(): Promise<boolean> {
+    if (!view || !canSave) return false;
     setSaving(true);
     setError(null);
     try {
@@ -1190,11 +1190,17 @@ export default function CardClient(): React.JSX.Element {
       setSaved(true);
       setDirty(false);
       requestId.current = null;
+      return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to save show booking");
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  async function saveAndCloseEditor(): Promise<void> {
+    if (await save()) setExpandedSlotKey(null);
   }
 
   async function withdrawPendingAmendment(): Promise<void> {
@@ -1511,6 +1517,12 @@ export default function CardClient(): React.JSX.Element {
                     </div>
                   </div>
 
+                  {bookingMode === "QUICK" && match.interfererPersonId ? (
+                    <p className={styles.editorHint}>A run-in is already scripted for this match. Open Advanced Booking to review or change it.</p>
+                  ) : null}
+                  {bookingMode === "QUICK" && concernPeople.length > 0 ? (
+                    <p className={styles.editorConcern}>Wrestler creative concerns detected. Open Advanced Booking for the details before saving.</p>
+                  ) : null}
                   {bookingMode === "ADVANCED" ? <div className={styles.advancedSection}>
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
@@ -1604,7 +1616,11 @@ export default function CardClient(): React.JSX.Element {
                         </div>
                         <footer className={styles.editorFooter}>
                           <span>{dirty ? "Unsaved card changes" : "No new changes"}</span>
-                          <button className={styles.editorDone} type="button" onClick={() => setExpandedSlotKey(null)}>Done · Return to card</button>
+                          <div className={styles.editorFooterActions}>
+                            <button className={styles.editorDoneSecondary} type="button" onClick={() => setExpandedSlotKey(null)}>Done editing</button>
+                            <button className={styles.editorDone} type="button" disabled={!canSave || saving}
+                              onClick={() => void saveAndCloseEditor()}>{saving ? "Saving…" : "Save show & return"}</button>
+                          </div>
                         </footer>
                       </section>
                     </div>
@@ -2076,7 +2092,11 @@ export default function CardClient(): React.JSX.Element {
                       </div>
                       <footer className={styles.editorFooter}>
                         <span>{dirty ? "Unsaved card changes" : "No new changes"}</span>
-                        <button className={styles.editorDone} type="button" onClick={() => setExpandedSlotKey(null)}>Done · Return to card</button>
+                        <div className={styles.editorFooterActions}>
+                          <button className={styles.editorDoneSecondary} type="button" onClick={() => setExpandedSlotKey(null)}>Done editing</button>
+                          <button className={styles.editorDone} type="button" disabled={!canSave || saving}
+                            onClick={() => void saveAndCloseEditor()}>{saving ? "Saving…" : "Save show & return"}</button>
+                        </div>
                       </footer>
                     </section>
                   </div>
