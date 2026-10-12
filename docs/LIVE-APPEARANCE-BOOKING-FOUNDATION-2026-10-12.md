@@ -23,3 +23,5 @@ This branch builds on History PR #59 → Video Packages #56 → Story-first Segm
 - Manual iPhone review is required in a controlled later release.
 
 A test suite verifies history, same-card ordering, invalid returns, Card reservations, resolved scripted ledger and public reporting. Full CI must pass before marking this PR ready.
+
+Further regression: an earlier *completed match run-in* also counts as a wrestler's first physical promotion appearance, even without a billed match or completed scheduled appearance record. A video package never does.
