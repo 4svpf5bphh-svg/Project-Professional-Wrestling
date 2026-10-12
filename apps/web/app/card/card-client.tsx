@@ -342,6 +342,8 @@ export default function CardClient(): React.JSX.Element {
   const [withdrawingAmendment, setWithdrawingAmendment] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedSlotKey, setExpandedSlotKey] = useState<string | null>(null);
+  const [bookingMode, setBookingMode] = useState<"QUICK" | "ADVANCED">("QUICK");
+  const editorCloseRef = useRef<HTMLButtonElement | null>(null);
   const [wrestlerPicker, setWrestlerPicker] = useState<WrestlerPickerTarget | null>(null);
   const requestId = useRef<string | null>(null);
 
@@ -375,6 +377,31 @@ export default function CardClient(): React.JSX.Element {
   }
 
   useEffect(() => { void load(); }, []);
+
+  // An editor is a focused mobile sheet, not an expanded card inside the running order.
+  // The wrestler picker is a higher-priority sheet and owns Escape while it is open.
+  useEffect(() => {
+    if (!expandedSlotKey) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    if (!wrestlerPicker) editorCloseRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !wrestlerPicker) {
+        event.preventDefault();
+        setExpandedSlotKey(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [expandedSlotKey, wrestlerPicker]);
+
+  function openSlotEditor(key: string): void {
+    setBookingMode("QUICK");
+    setExpandedSlotKey(key);
+  }
 
   const matchPersonIds = useMemo(
     () => matches.flatMap((match) => [...match.sideAIds, ...match.sideBIds]).filter(Boolean),
@@ -524,7 +551,7 @@ export default function CardClient(): React.JSX.Element {
       interferenceSide: null,
     }]);
     setRunningOrder((current) => [...current, { kind: "MATCH", refId: id }]);
-    setExpandedSlotKey(`MATCH:${id}`);
+    openSlotEditor(`MATCH:${id}`);
     markDirty();
   }
 
@@ -558,7 +585,7 @@ export default function CardClient(): React.JSX.Element {
       betrayedPersonId: null,
     }]);
     setRunningOrder((current) => [...current, { kind: "SEGMENT", refId: id }]);
-    setExpandedSlotKey(`SEGMENT:${id}`);
+    openSlotEditor(`SEGMENT:${id}`);
     markDirty();
   }
 
@@ -1321,7 +1348,7 @@ export default function CardClient(): React.JSX.Element {
                     className={styles.slotToggle}
                     type="button"
                     aria-expanded={expanded}
-                    onClick={() => setExpandedSlotKey(expanded ? null : slotKey)}
+                    onClick={() => expanded ? setExpandedSlotKey(null) : openSlotEditor(slotKey)}
                   >
                     <div className={styles.slotHeading}>
                       <span className={styles.slotNumber}>SLOT {slotIndex + 1} · MATCH</span>
@@ -1338,7 +1365,26 @@ export default function CardClient(): React.JSX.Element {
                     </div>
                   </div>
 
-                  {expanded ? <>
+                  {expanded ? (
+                    <div className={styles.editorOverlay} onClick={() => setExpandedSlotKey(null)}>
+                      <section className={styles.editorSheet} role="dialog" aria-modal="true"
+                        aria-labelledby={`booking-title-${slotKey}`} onClick={(event) => event.stopPropagation()}>
+                        <header className={styles.editorHeading}>
+                          <div>
+                            <span className="eyebrow">MATCH {slotIndex + 1} · SHOW RUNDOWN</span>
+                            <h2 id={`booking-title-${slotKey}`}>{matchSummary(match)}</h2>
+                            <small>Changes stay in this draft until you save the show.</small>
+                          </div>
+                          <button ref={editorCloseRef} className={styles.editorClose} type="button"
+                            onClick={() => setExpandedSlotKey(null)} aria-label="Return to running order">✕</button>
+                        </header>
+                        <div className={styles.editorTabs} role="group" aria-label="Booking detail">
+                          <button type="button" className={bookingMode === "QUICK" ? styles.editorTabActive : styles.editorTab}
+                            aria-pressed={bookingMode === "QUICK"} onClick={() => setBookingMode("QUICK")}>Quick Book</button>
+                          <button type="button" className={bookingMode === "ADVANCED" ? styles.editorTabActive : styles.editorTab}
+                            aria-pressed={bookingMode === "ADVANCED"} onClick={() => setBookingMode("ADVANCED")}>Advanced Booking</button>
+                        </div>
+                        <div className={styles.editorBody}>
                   <div className={styles.slotTypeRow}>
                     <button className={match.type === "SINGLES" ? styles.typeActive : styles.secondaryButton} type="button" onClick={() => setMatchType(match.draftMatchId, "SINGLES")} disabled={!view.canEdit}>Singles</button>
                     <button className={match.type === "TAG" ? styles.typeActive : styles.secondaryButton} type="button" onClick={() => setMatchType(match.draftMatchId, "TAG")} disabled={!view.canEdit}>Tag Team</button>
@@ -1465,6 +1511,7 @@ export default function CardClient(): React.JSX.Element {
                     </div>
                   </div>
 
+                  {bookingMode === "ADVANCED" ? <div className={styles.advancedSection}>
                   <div className={styles.segmentPeople}>
                     <div className={styles.segmentPeopleHeader}>
                       <span>Run-in / Match interference</span>
@@ -1547,13 +1594,21 @@ export default function CardClient(): React.JSX.Element {
                       {readiness?.provisional ? <em>Future-card assessment will be checked again when the show materialises.</em> : null}
                     </div>
                   </details>
+                  </div> : null}
 
                   <div className={styles.actions}>
                     
                     
                     <button className={styles.removeButton} type="button" disabled={!view.canEdit} onClick={() => removeSlot(slot)}>Remove</button>
                   </div>
-                  </> : null}
+                        </div>
+                        <footer className={styles.editorFooter}>
+                          <span>{dirty ? "Unsaved card changes" : "No new changes"}</span>
+                          <button className={styles.editorDone} type="button" onClick={() => setExpandedSlotKey(null)}>Done · Return to card</button>
+                        </footer>
+                      </section>
+                    </div>
+                  ) : null}
                 </article>
               );
             }
@@ -1574,7 +1629,7 @@ export default function CardClient(): React.JSX.Element {
                   className={styles.slotToggle}
                   type="button"
                   aria-expanded={expanded}
-                  onClick={() => setExpandedSlotKey(expanded ? null : slotKey)}
+                  onClick={() => expanded ? setExpandedSlotKey(null) : openSlotEditor(slotKey)}
                 >
                   <div className={styles.slotHeading}>
                     <span className={styles.slotNumber}>SLOT {slotIndex + 1} · SEGMENT</span>
