@@ -16,7 +16,7 @@ import {
   resolvedShowSegmentsForEvent,
   type ResolvedSegmentOutcomeBand,
 } from "./programme-segments.js";
-import type { DetailedShowSegmentType, AttackPresentation } from "./planning.js";
+import type { DetailedShowSegmentType, AttackPresentation, VideoPackageKind, VideoPackageReveal } from "./planning.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const WORLD_RESULTS_HISTORY_LIMIT = 30;
@@ -64,6 +64,9 @@ export interface PlayerWorldResultSegmentView {
   order: number;
   type: DetailedShowSegmentType;
   participants: Array<{ personId: Id; name: string }>;
+  videoSubjectName: string | null;
+  videoKind: VideoPackageKind | null;
+  videoReveal: VideoPackageReveal | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
@@ -306,6 +309,10 @@ export function buildPlayerWorldResultsView(
           personId,
           name: peopleById.get(personId)?.name ?? "Unknown wrestler",
         })),
+        videoSubjectName: segment.videoSubjectPersonId && segment.videoReveal !== "CRYPTIC"
+          ? (peopleById.get(segment.videoSubjectPersonId)?.name ?? null) : null,
+        videoKind: segment.videoKind,
+        videoReveal: segment.videoReveal,
         attackerPersonId: segment.attackerPersonId,
         victimPersonId: segment.victimPersonId,
         rescuerPersonId: segment.rescuerPersonId,
