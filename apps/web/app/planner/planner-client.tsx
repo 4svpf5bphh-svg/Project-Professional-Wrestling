@@ -277,6 +277,10 @@ export default function PlannerClient(): React.JSX.Element {
               const canSave = Boolean(
                 isEditing && form!.showSeriesId && form!.marketId && form!.venueId && view.world.phase === "OPEN" && !saving,
               );
+              const dayTalent = isEditing ? week.eligibleParticipants
+                .filter(person => person.bookableDays.includes(form!.day)) : [];
+              const unavailableDayTalent = isEditing ? week.eligibleParticipants
+                .filter(person => !person.bookableDays.includes(form!.day)) : [];
 
               const isFocused = focusedKey === weekKey(week);
               return (
@@ -459,7 +463,37 @@ export default function PlannerClient(): React.JSX.Element {
                         </div>
                       ) : null}
 
-                      <p className={styles.editorNote}>Market context is factual World information. Staff advice and interpretation can layer on later. Talent is booked on the show card, so there is no separate show-roster step.</p>
+                      <section className={styles.marketContext}>
+                        <div className={styles.marketContextHeader}>
+                          <div>
+                            <span className={styles.eyebrow}>WRESTLER DATES · {DAY_NAMES[form!.day].toUpperCase()}</span>
+                            <strong>{dayTalent.length} available to book · {unavailableDayTalent.length} unavailable on this day</strong>
+                          </div>
+                        </div>
+                        <p className={styles.editorNote}>
+                          Purchased dates are not the same as bookable dates. Pending reservations,
+                          committed appearances and Service Capacity can make a contracted wrestler
+                          unavailable on the selected PPW day. These figures update after each saved card.
+                        </p>
+                        <div className={styles.people}>
+                          {dayTalent.slice(0, 12).map(person => (
+                            <span key={person.personId}>
+                              {person.name} · {person.unlimitedAppearances
+                                ? "exclusive"
+                                : `${person.unreservedDatesRemaining} unreserved / ${person.datesRemaining} purchased left`}
+                            </span>
+                          ))}
+                          {dayTalent.length > 12 ? <span>+{dayTalent.length - 12} more bookable wrestlers</span> : null}
+                          {dayTalent.length === 0 ? <span>No wrestler is currently free for this day</span> : null}
+                        </div>
+                        {unavailableDayTalent.length > 0 ? (
+                          <p className={styles.editorNote}>
+                            {unavailableDayTalent.length} contracted wrestler(s) have no extra booking
+                            rights on this day. Switch the show day or review their commitments before booking.
+                          </p>
+                        ) : null}
+                      </section>
+                      <p className={styles.editorNote}>Market context is factual World information. Talent is selected on each separate Show Card; the server rechecks all rights on save.</p>
                       <div className={styles.editorActions}>
                         <button className={styles.button} disabled={saving} onClick={cancelEdit}>Cancel</button>
                         <button className={styles.saveButton} disabled={!canSave} onClick={() => savePlan(week)}>{saving ? "Saving…" : "Save show details"}</button>
