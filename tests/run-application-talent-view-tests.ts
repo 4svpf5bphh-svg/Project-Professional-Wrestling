@@ -9,10 +9,11 @@ import {
   createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  sameTermsRenewalTemplate,
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
-import { activeContractsForPromotion, createWorld } from "../packages/sim-core/src/index.js";
+import { activeContractsForPromotion, addPpwWeeks, createWorld } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -122,6 +123,41 @@ test("talent view exposes full own roster contracts and remains source-agnostic"
     "roster view did not expose a suggested negotiation role",
   );
   ok(view.player.promotionId === promotionAId, "talent projection returned the wrong controlled promotion");
+});
+
+test("same-terms renewal copies recurring rights and fees, never the old signing bonus", () => {
+  const { aggregate, promotionAId } = fixture(73015);
+  const source = activeContractsForPromotion(aggregate.state, promotionAId)[0];
+  if (!source) throw new Error("fixture needs own active contract");
+  source.family = "LIMITED_NON_EXCLUSIVE";
+  source.exclusivity = "NON_EXCLUSIVE";
+  source.startDate = { ...aggregate.state.world.currentDate, day: 1 };
+  source.endDate = addPpwWeeks(source.startDate, 12, aggregate.state.ruleset.weeksPerYear);
+  source.dateEntitlement = 5;
+  source.weeklyGuarantee = 3210;
+  source.appearanceFee = 6789;
+  source.signingBonus = 99999;
+  source.roleExpectation = "UPPER_CARD";
+  source.creativeControl = "PROTECTED_FINISHES";
+  const proposal = sameTermsRenewalTemplate(aggregate.state, source);
+  ok(proposal?.termWeeks === 13 && proposal.family === "LIMITED_NON_EXCLUSIVE",
+    "renewal failed to preserve exact allowed contractual term");
+  ok(proposal?.weeklyGuarantee === 3210 && proposal.appearanceFee === 6789 && proposal.dateEntitlement === 5,
+    "renewal changed recurring compensation or purchased dates");
+  ok(proposal?.roleExpectation === "UPPER_CARD" && proposal.creativeControl === "PROTECTED_FINISHES",
+    "renewal lost role or negotiated creative rights");
+  ok(proposal?.signingBonus === 0, "previous one-time signing bonus was silently repeated");
+  const view = buildPlayerTalentManagementView(aggregate, "player-a");
+  ok(view.roster.find(entry => entry.contractId === source.id)?.contract.sameTermsRenewal?.signingBonus === 0,
+    "private roster did not expose safe renewal proposal");
+  const originalEnd = source.endDate;
+  source.endDate = addPpwWeeks(source.startDate, 10, aggregate.state.ruleset.weeksPerYear);
+  ok(sameTermsRenewalTemplate(aggregate.state, source) === null,
+    "unsupported historical term was misrepresented as repeatable same terms");
+  source.endDate = originalEnd;
+  source.family = "ONE_OFF";
+  ok(sameTermsRenewalTemplate(aggregate.state, source) === null,
+    "one-off appearance should not be staff-repeatable as a routine multiweek renewal");
 });
 
 test("talent market can expose non-exclusive availability without leaking rival contract terms", () => {
