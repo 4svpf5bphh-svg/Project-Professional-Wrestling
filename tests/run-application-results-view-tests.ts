@@ -19,7 +19,7 @@ import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
 import { setActualMatchFinish } from "../packages/sim-core/src/match-finishes.js";
 import { hotSegmentHeadline, showResultHighlights, showOpeningHighlights } from "../packages/web-adapter/src/results-highlights.js";
-import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShow, reviewPlayerShowChapters, reviewPlayerShowFinalBell } from "../packages/web-adapter/src/results-review.js";
+import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShow, reviewPlayerShowChapters, reviewPlayerShowFinalBell, reviewPlayerShowRunningOrder } from "../packages/web-adapter/src/results-review.js";
 import type { PlayerShowMatchView, PlayerShowSegmentView, PlayerShowResultView } from "../packages/application/src/results-view.js";
 import { discoverWorldResults, worldResultsWeekLabel, worldShowHasSpotlight } from "../packages/web-adapter/src/world-results-discovery.js";
 
@@ -1484,5 +1484,44 @@ test("final bell respects real title changes, injuries, scripted turns and histo
   ok(!JSON.stringify(old).includes("Hidden Name"), "cryptic talent was leaked by final bell");
 });
 
+
+
+test("complete-show copy desk avoids repeated verdicts without rewriting match or angle facts", () => {
+  const runningOrder = Array.from({ length: 12 }, (_, index) => {
+    const order = index + 1;
+    if (order % 3 === 0) {
+      return { kind: "MATCH" as const, order, match: {
+        matchId: "long-card-match-" + order,
+        type: "SINGLES", intent: "TECHNICAL", criticalRatingStars: 3.5,
+        crowdResponse: 67, winnerNames: ["Winner " + order], actualFinish: "CLEAN_PIN",
+        titleOutcomes: [], injuries: [], interference: null, styleResult: null,
+      } as unknown as PlayerShowMatchView };
+    }
+    return { kind: "SEGMENT" as const, order, segment: {
+      segmentId: "long-card-angle-" + order,
+      type: "PROMO", participants: [{ personId: "speaker-" + order, name: "Speaker " + order }],
+      promoPurpose: "BOAST", outcomeBand: "HOT", crowdResponse: 87,
+    } as unknown as PlayerShowSegmentView };
+  });
+  const show = { eventId: "long-card-review", runningOrder };
+  const before = JSON.stringify(show);
+  const first = reviewPlayerShowRunningOrder(show);
+  ok(first.length === runningOrder.length, "whole-card editor lost a recorded running-order slot");
+  for (let i = 0; i < first.length; i += 1) {
+    const current = first[i]!;
+    ok(current.order === i + 1 && current.kind === runningOrder[i]!.kind,
+      "whole-card editor reordered or changed a performed segment");
+    const recent = first.slice(Math.max(0, i - 4), i).map((entry) => entry.review.verdict);
+    ok(!recent.includes(current.review.verdict),
+      "whole-card review repeated a stock verdict within four consecutive slots");
+    ok(current.review.recap === (current.kind === "MATCH"
+      ? reviewPlayerMatch((runningOrder[i] as Extract<typeof runningOrder[number], { kind: "MATCH" }>).match).recap
+      : reviewPlayerSegment((runningOrder[i] as Extract<typeof runningOrder[number], { kind: "SEGMENT" }>).segment).recap),
+      "copy edit overwrote a factual booked match or angle recap");
+  }
+  ok(JSON.stringify(show) === before, "editorial variation mutated immutable show history");
+  ok(JSON.stringify(reviewPlayerShowRunningOrder(structuredClone(show))) === JSON.stringify(first),
+    "complete-show reviews were inconsistent across sessions");
+});
 console.log(`\nApplication results-view tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
