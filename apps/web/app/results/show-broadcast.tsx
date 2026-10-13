@@ -3,7 +3,7 @@
 import type { PlayerShowResultView, PlayerShowMatchView } from "../../../../dist/packages/application/src/results-view.js";
 import type { PlayerWorldResultShowView, PlayerWorldResultMatchView } from "../../../../dist/packages/application/src/world-results-view.js";
 import { showResultHighlights, type ShowResultHighlight } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
-import { reviewPlayerShow } from "../../../../dist/packages/web-adapter/src/results-review.js";
+import { reviewPlayerShow, reviewPlayerShowFinalBell, type FinalBellMoment } from "../../../../dist/packages/web-adapter/src/results-review.js";
 import styles from "./results.module.css";
 
 type BroadcastShow = Pick<PlayerShowResultView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating" | "bestMatchRating" | "titleChangeCount" | "injuryCount" | "matchCount" | "segmentCount"> |
@@ -154,6 +154,46 @@ export default function ShowBroadcast({ show }: { show: BroadcastShow }): React.
           ))}
         </div>
       ) : !lead ? <p className={styles.reelEmpty}>Full completed card and crowd response below.</p> : null}
+    </section>
+  );
+}
+
+
+function FinaleMoment({ moment, eventId, style }: {
+  moment: FinalBellMoment;
+  eventId: string;
+  style: "best" | "rough" | "fallout";
+}): React.JSX.Element {
+  return (
+    <a className={styles.finaleMoment + " " + (style === "best" ? styles.finaleBest
+      : style === "rough" ? styles.finaleRough : styles.finaleFallout)}
+      href={"#show-" + eventId + "-slot-" + moment.slotOrder}>
+      <small>{style === "best" ? "★" : style === "rough" ? "↘" : "⚡"} {moment.label}</small>
+      <strong>{moment.headline}</strong>
+      <span>{moment.detail}</span>
+      <em>Back to this moment ↗</em>
+    </a>
+  );
+}
+
+/** Read-only closing credits for player-owned shows. No extra match actions. */
+export function ShowFinalBell({ show }: { show: BroadcastShow }): React.JSX.Element {
+  const finale = reviewPlayerShowFinalBell(show);
+  return (
+    <section className={styles.finale} aria-label="The final word on this show">
+      <header className={styles.finaleHeader}>
+        <span>PPW · AT THE FINAL BELL</span>
+        <h2>The night in the books.</h2>
+        <p>What we'll remember — for better or worse.</p>
+      </header>
+      <div className={styles.finaleMoments}>
+        {finale.standout ? <FinaleMoment moment={finale.standout} eventId={show.eventId} style="best" /> : null}
+        {finale.disappointment
+          ? <FinaleMoment moment={finale.disappointment} eventId={show.eventId} style="rough" /> : null}
+        {finale.consequence
+          ? <FinaleMoment moment={finale.consequence} eventId={show.eventId} style="fallout" /> : null}
+      </div>
+      <p className={styles.finaleLastWord}><b>THE LAST WORD</b> {finale.lastWord}</p>
     </section>
   );
 }
