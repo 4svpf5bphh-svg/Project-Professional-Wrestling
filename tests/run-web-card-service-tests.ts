@@ -2561,9 +2561,9 @@ await test("post-show Card guidance uses the latest owner Programme note without
   const found = programmePostShowDirection(notes, [], "promotion-a", "rivalry-1", 52);
   ok(found?.choice === "PURSUE_REMATCH" && found.sourceMatchId === "match-new",
     "Card displayed obsolete or other-promotion direction");
-  ok(postShowDirectionHint(found, "MATCH").includes("Check the original opponents"),
+  ok(postShowDirectionHint(found!, "MATCH").includes("Check the original opponents"),
     "rematch booking hint no longer respects original opponent fit");
-  ok(postShowDirectionHint(found, "SEGMENT").includes("never books it automatically"),
+  ok(postShowDirectionHint(found!, "SEGMENT").includes("never books it automatically"),
     "segment hint implied that challenge acceptance books a rematch");
   ok(JSON.stringify(notes) === before, "read-only Card advice mutated saved planning choice");
   ok(programmePostShowDirection(notes, [], "promotion-a", "unrelated-programme", 52) === null,
