@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PlayerShowHistoryView } from "../../../../dist/packages/application/src/results-view.js";
 import type { PlayerWorldResultsView } from "../../../../dist/packages/application/src/world-results-view.js";
-import ShowBroadcast, { segmentResultIcon } from "./show-broadcast.js";
+import ShowBroadcast, { segmentResultIcon } from "./show-broadcast";
 import styles from "./results.module.css";
 
 type ErrorPayload = { error?: string };
