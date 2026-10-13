@@ -15,7 +15,7 @@ import { LedgerWriter } from "../../sim-core/src/ledger.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import {
   PROMO_PURPOSES, INTERVIEW_FORMATS, INTERVIEW_TOPICS, INTERVIEW_RESPONSES,
-  CELEBRATION_OCCASIONS, CELEBRATION_ENDINGS,
+  CELEBRATION_OCCASIONS, CELEBRATION_ENDINGS, CONFRONTATION_ENDINGS,
 } from "./planning.js";
 import type {
   DetailedProgrammeSegmentDraft,
@@ -39,6 +39,7 @@ import type {
   SigningOutcome,
   ChallengeResponse,
   InterruptionOutcome,
+  ConfrontationEnding,
   StableInvitationOutcome,
   StableExitOutcome,
   StableReconciliationOutcome,
@@ -101,6 +102,7 @@ export interface ResolvedShowSegment {
   signingOutcome: SigningOutcome | null;
   challengeResponse: ChallengeResponse | null;
   interruptionOutcome: InterruptionOutcome | null;
+  confrontationEnding: ConfrontationEnding | null;
   stableId: Id | null;
   stableName: string | null;
   stableInvitationOutcome: StableInvitationOutcome | null;
@@ -150,6 +152,7 @@ interface NormalizedDraftSegment {
   signingOutcome: SigningOutcome | null;
   challengeResponse: ChallengeResponse | null;
   interruptionOutcome: InterruptionOutcome | null;
+  confrontationEnding: ConfrontationEnding | null;
   stableId: Id | null;
   stableName: string | null;
   stableInvitationOutcome: StableInvitationOutcome | null;
@@ -243,6 +246,7 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     signingOutcome: segment.type === "CONTRACT_SIGNING" ? (segment.signingOutcome ?? "SIGNED") : null,
     challengeResponse: segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : null,
     interruptionOutcome: segment.type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null,
+    confrontationEnding: segment.type === "CONFRONTATION" ? (segment.confrontationEnding ?? null) : null,
     stableId: segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" || segment.type === "STABLE_RECONCILIATION" ? (segment.stableId ?? null) : null,
     stableName: null,
     stableInvitationOutcome: segment.type === "STABLE_INVITATION" ? (segment.stableInvitationOutcome ?? "REFUSED") : null,
@@ -286,6 +290,7 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       signingOutcome: null,
       challengeResponse: null,
       interruptionOutcome: null,
+      confrontationEnding: null,
       stableId: null,
       stableName: null,
       stableInvitationOutcome: null,
@@ -513,6 +518,35 @@ function segmentOutcome(
     const aftermath = victimMatchOutcome === "WON" ? 1 : victimMatchOutcome === "LOST" ? -0.5 : 0;
     angleFitModifier = round1(clamp(roleClarity + aftermath, -5, 5));
   }
+  if (segment.type === "CONFRONTATION" && segment.confrontationEnding
+    && segment.initiatorPersonId && segment.targetPersonId) {
+    const instigator = wrestlerAlignmentForPromotion(state, event.promotionId, segment.initiatorPersonId);
+    const opponent = wrestlerAlignmentForPromotion(state, event.promotionId, segment.targetPersonId);
+    const stakes = programme ? clamp(((programme.heat ?? 50) - 50) / 16, -2, 2) : -0.65;
+    const contrastingCharacters = instigator !== opponent ? 1.0 : 0;
+    const endingFit = segment.confrontationEnding === "STAREDOWN" ? (programme ? 1.15 : 0.2)
+      : segment.confrontationEnding === "INITIATOR_BACKS_DOWN" ? (instigator === "HEEL" ? 0.9 : -0.5)
+      : segment.confrontationEnding === "TARGET_BACKS_DOWN" ? (opponent === "HEEL" ? 0.9 : -0.5)
+      : instigator === "FACE" && opponent === "FACE" ? 1.25 : -0.7;
+    // Only a completed prior stand-off between the exact ordered pair with
+    // the same booked ending counts. An unperformed draft or rival promotion
+    // never changes this promoter's crowd response.
+    const thisWeek = ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear);
+    const repeated = state.ledger.filter((entry) => (
+      entry.type === RESOLVED_SEGMENT_LEDGER_TYPE
+      && entry.payload.promotionId === event.promotionId
+      && entry.payload.segmentType === "CONFRONTATION"
+      && entry.payload.initiatorPersonId === segment.initiatorPersonId
+      && entry.payload.targetPersonId === segment.targetPersonId
+      && entry.payload.confrontationEnding === segment.confrontationEnding
+      && thisWeek - ppwDateToWeekIndex(entry.date, state.ruleset.weeksPerYear) >= 1
+      && thisWeek - ppwDateToWeekIndex(entry.date, state.ruleset.weeksPerYear) <= 6
+    )).length;
+    angleFitModifier = round1(clamp(
+      stakes + contrastingCharacters + endingFit - Math.min(3.5, repeated * 1.25),
+      -5, 5,
+    ));
+  }
   if (segment.type === "INTERRUPTION" && segment.initiatorPersonId && segment.targetPersonId) {
     const interrupterAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, segment.initiatorPersonId);
     const speakerAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, segment.targetPersonId);
@@ -650,6 +684,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const signingOutcome = entry.payload.signingOutcome ?? null;
   const challengeResponse = entry.payload.challengeResponse ?? null;
   const interruptionOutcome = entry.payload.interruptionOutcome ?? null;
+  const confrontationEnding = entry.payload.confrontationEnding ?? null;
   const stableId = entry.payload.stableId ?? null;
   const stableName = entry.payload.stableName ?? null;
   const stableInvitationOutcome = entry.payload.stableInvitationOutcome ?? null;
@@ -697,6 +732,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || (interviewResponse !== null && !INTERVIEW_RESPONSES.includes(interviewResponse as InterviewResponse))
     || (celebrationOccasion !== null && !CELEBRATION_OCCASIONS.includes(celebrationOccasion as CelebrationOccasion))
     || (celebrationEnding !== null && !CELEBRATION_ENDINGS.includes(celebrationEnding as CelebrationEnding))
+    || (confrontationEnding !== null && !CONFRONTATION_ENDINGS.includes(confrontationEnding as ConfrontationEnding))
     || typeof plannedLengthMinutes !== "number"
     || !Number.isInteger(plannedLengthMinutes)
     || (attackerPersonId !== null && typeof attackerPersonId !== "string")
@@ -758,6 +794,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     signingOutcome: signingOutcome as SigningOutcome | null,
     challengeResponse: challengeResponse as ChallengeResponse | null,
     interruptionOutcome: interruptionOutcome as InterruptionOutcome | null,
+    confrontationEnding: confrontationEnding as ConfrontationEnding | null,
     stableId: stableId as Id | null,
     stableName: stableName as string | null,
     stableInvitationOutcome: stableInvitationOutcome as StableInvitationOutcome | null,
@@ -902,6 +939,7 @@ export function recordResolvedShowSegments(
             signingOutcome: segment.signingOutcome,
             challengeResponse: segment.challengeResponse,
             interruptionOutcome: segment.interruptionOutcome,
+            confrontationEnding: segment.confrontationEnding,
             stableId: segment.stableId,
             stableName: segment.stableId ? (state.stables ?? []).find((stable) => stable.id === segment.stableId)?.name ?? null : null,
             stableInvitationOutcome: segment.stableInvitationOutcome,
