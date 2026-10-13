@@ -16,7 +16,7 @@ import {
   resolvedShowSegmentsForEvent,
   type ResolvedSegmentOutcomeBand,
 } from "./programme-segments.js";
-import type { DetailedShowSegmentType, PromoPurpose, InterviewFormat, InterviewTopic, InterviewResponse, AttackPresentation, AttackObjective, VideoPackageKind, VideoPackageObjective, VideoPackageReveal, LiveAppearanceKind, LiveAppearanceObjective } from "./planning.js";
+import type { DetailedShowSegmentType, PromoPurpose, InterviewFormat, InterviewTopic, InterviewResponse, CelebrationOccasion, CelebrationEnding, AttackPresentation, AttackObjective, VideoPackageKind, VideoPackageObjective, VideoPackageReveal, LiveAppearanceKind, LiveAppearanceObjective } from "./planning.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const PLAYER_SHOW_HISTORY_LIMIT = 12;
@@ -146,6 +146,8 @@ export interface PlayerShowSegmentView {
   interviewFormat: InterviewFormat | null;
   interviewTopic: InterviewTopic | null;
   interviewResponse: InterviewResponse | null;
+  celebrationOccasion: CelebrationOccasion | null;
+  celebrationEnding: CelebrationEnding | null;
   programmeId: Id | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
@@ -645,6 +647,8 @@ export function buildPlayerShowHistory(
         interviewFormat: segment.interviewFormat,
         interviewTopic: segment.interviewTopic,
         interviewResponse: segment.interviewResponse,
+        celebrationOccasion: segment.celebrationOccasion,
+        celebrationEnding: segment.celebrationEnding,
         attackerPersonId: segment.attackerPersonId,
         victimPersonId: segment.victimPersonId,
         rescuerPersonId: segment.rescuerPersonId,
