@@ -16,7 +16,7 @@ import {
   resolvedShowSegmentsForEvent,
   type ResolvedSegmentOutcomeBand,
 } from "./programme-segments.js";
-import type { DetailedShowSegmentType, PromoPurpose, InterviewFormat, InterviewTopic, InterviewResponse, CelebrationOccasion, CelebrationEnding, AttackPresentation, VideoPackageKind, VideoPackageReveal, LiveAppearanceKind } from "./planning.js";
+import type { DetailedShowSegmentType, PromoPurpose, InterviewFormat, InterviewTopic, InterviewResponse, CelebrationOccasion, CelebrationEnding, AttackPresentation, AttackObjective, VideoPackageKind, VideoPackageReveal, LiveAppearanceKind } from "./planning.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const WORLD_RESULTS_HISTORY_LIMIT = 30;
@@ -93,6 +93,7 @@ export interface PlayerWorldResultSegmentView {
   stableExitOutcome: "EXPELLED" | "WALKED_OUT" | null;
   stableReconciliationOutcome: "RECONCILED" | "REBUFFED" | null;
   attackPresentation: AttackPresentation | null;
+  attackObjective: AttackObjective | null;
   turnPersonId: Id | null;
   turnTargetAlignment: WrestlerAlignment | null;
   turnPresentation: "REVEAL" | "BETRAYAL" | null;
@@ -349,6 +350,7 @@ export function buildPlayerWorldResultsView(
         stableExitOutcome: segment.stableExitOutcome,
         stableReconciliationOutcome: segment.stableReconciliationOutcome,
         attackPresentation: segment.attackPresentation,
+        attackObjective: segment.attackObjective,
         turnPersonId: segment.turnPersonId,
         turnTargetAlignment: segment.turnTargetAlignment,
         turnPresentation: segment.turnPresentation,
