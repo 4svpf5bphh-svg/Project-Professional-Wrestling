@@ -89,6 +89,9 @@ export function buildPlayerStableRosterView(aggregate: ApplicationWorldAggregate
   const now = aggregate.state.world.currentDate;
   const weeksPerYear = aggregate.state.ruleset.weeksPerYear;
   const recentStory = new Map<string, typeof aggregate.state.ledger[number]>();
+  const completedEventIds = new Set(aggregate.state.events
+    .filter((event) => event.promotionId === promotionId && event.status === "COMPLETED")
+    .map((event) => event.id));
   if (promotionId !== null) {
     const completed = aggregate.state.ledger.filter((entry) => {
       if (entry.type !== "SHOW_SEGMENT_COMPLETED" || entry.payload.promotionId !== promotionId) return false;
@@ -96,13 +99,12 @@ export function buildPlayerStableRosterView(aggregate: ApplicationWorldAggregate
       if (!["STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION"].includes(String(entry.payload.segmentType))) return false;
       const age = ppwDateToWeekIndex(now, weeksPerYear) - ppwDateToWeekIndex(entry.date, weeksPerYear);
       if (age < 0 || age > 6 || comparePpwDates(entry.date, now, weeksPerYear) > 0) return false;
-      return aggregate.state.events.some((event) => event.id === entry.payload.eventId
-        && event.promotionId === promotionId && event.status === "COMPLETED");
+      return completedEventIds.has(String(entry.payload.eventId));
     }).sort((left, right) =>
       comparePpwDates(left.date, right.date, weeksPerYear)
       || left.order - right.order || left.id.localeCompare(right.id));
     for (const entry of completed) {
-      recentStory.set(entry.payload.stableId + ":" + entry.payload.targetPersonId, entry);
+      recentStory.set(JSON.stringify([entry.payload.stableId, entry.payload.targetPersonId]), entry);
     }
   }
   const storyFollowThrough: PlayerStableStoryFollowThroughView[] = [];
@@ -126,7 +128,7 @@ export function buildPlayerStableRosterView(aggregate: ApplicationWorldAggregate
       && candidate.stableId !== stableId
       && candidate.currentMembers.some((member) => member.personId === personId));
     const status: PlayerStableStoryFollowThroughView["status"] = stable.status !== "ACTIVE"
-      ? "STABLE_INACTIVE" : action === "ADD" && !rosterIds.has(personId)
+      ? "STABLE_INACTIVE" : action === "ADD" && (!rosterIds.has(personId) || people.get(personId)?.status !== "ACTIVE")
         ? "NOT_ON_ROSTER" : action === "ADD" && otherStable
           ? "OTHER_STABLE" : action === "ADD" && stable.currentMembers.length >= 12
             ? "STABLE_FULL" : "READY";
