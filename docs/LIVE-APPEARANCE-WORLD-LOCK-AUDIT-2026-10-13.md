@@ -20,6 +20,25 @@ A show can be booked before an earlier chronological show has completed. Its deb
 
 Reservation assessment now rechecks DEBUT and RETURN segments against completed promotion history for the exact show date. If no longer truthful, `LIVE_APPEARANCE_HISTORY_CHANGED` marks the reservation AT_RISK before the existing commitment-lock path can materialize the impossible booking. The draft's scripted kind is unchanged. Regression: reserved debut, newly completed earlier live promo, at-risk explanation, no false event materialization, unchanged script and intact reservation until the existing lock policy runs.
 
+
+## Follow-up draft: materialized-card integrity guard
+
+A subsequent branch stacked on this audit handles **already-materialized** scheduled shows at final World Lock:
+
+- Recheck a materialized promotion debut or return against completed promotion history, plus earlier **scheduled and committed physical appearances** in the same PPW week.
+- The player's Planner keeps the real event MATERIALIZED but shows CARD_REQUIRED with the history-changed warning. The mobile Card shows a specific repair instruction; the scripted segment is not rewritten.
+- A manual Alpha advance by the affected promoter refuses with an actionable message, leaving World OPEN for an edit.
+- At automatic World Lock, never stall the shared World for an absent promoter. Append one `PLANNED_LIVE_ARRIVAL_CANCELLED_AT_LOCK` event with original segment ID, wrestler, authored kind and reason. Omit **only** the impossible live segment during resolved-segment projection; its match card and other segments remain intact.
+- Same-week earlier completed and committed appearances are promotion-scoped; a rival promotion's booking must not remove a promotion-relative debut. The original show remains committed. The resolver never converts DEBUT into INTRODUCTION on behalf of the booker.
+- Regressions exercise an earlier committed same-week show, a post-booking earlier completed promo, the private Card warning, manual World advancement refusal, automatic lock, the factual ledger marker, and unchanged full-show completion.
+
+The guards are conservative: a second same-week scheduled commitment is treated as an earlier physical appearance, although that show has not yet resolved. A future richer implementation can distinguish a cancelled first show safely with explicit commitment history, but may not fabricate a debut. The existing physical double-booking and service-capacity rules remain authoritative.
+
+### Verification outstanding
+
+Fresh stacked-branch GitHub CI has not run. The repository workflow currently triggers `pull_request` only when the target is `main`, while these drafts target one another. No claim of compilation or test success is made until an actual build and the full test matrix pass. No Preview/production deployment was requested or initiated.
+
+
 ## Remaining blockers; do not call the live-arrival feature release-ready yet
 
 1. **Already-materialized shows**: an earlier chronologically relevant event might resolve after this show's reservation has already materialized. Assessing only unmaterialized reservations is insufficient. The final World Lock needs an explicit, deterministic check for both newly materialized and already materialized cards, without letting a scheduled tick stall or rewriting authorial intent.
