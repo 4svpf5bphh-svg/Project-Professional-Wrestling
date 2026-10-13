@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import type { PlayerShowHistoryView } from "../../../../dist/packages/application/src/results-view.js";
 import type { PlayerWorldResultsView } from "../../../../dist/packages/application/src/world-results-view.js";
-import ShowBroadcast, { MatchFinishReplay, MatchStarRating, segmentResultIcon } from "./show-broadcast";
+import ShowBroadcast, { MatchFinishReplay, MatchStarRating, ShowFinalBell, segmentResultIcon } from "./show-broadcast";
 import { showResultHighlights } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
 import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShowChapters, type SlotReview, type ShowReviewChapter } from "../../../../dist/packages/web-adapter/src/results-review.js";
 import {
@@ -617,6 +617,7 @@ export default function ResultsClient(): React.JSX.Element {
                         );
                       })}
                     </div>
+                    <ShowFinalBell show={show} />
                   </div>
                 </details>
                 );
