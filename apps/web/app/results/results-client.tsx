@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PlayerShowHistoryView } from "../../../../dist/packages/application/src/results-view.js";
 import type { PlayerWorldResultsView } from "../../../../dist/packages/application/src/world-results-view.js";
+import ShowBroadcast, { segmentResultIcon } from "./show-broadcast.js";
 import styles from "./results.module.css";
 
 type ErrorPayload = { error?: string };
@@ -178,6 +179,7 @@ export default function ResultsClient(): React.JSX.Element {
                   </summary>
 
                   <div className={styles.showBody}>
+                    <ShowBroadcast show={show} />
                     <div className={styles.metrics}>
                       <div><span>Gate</span><strong>{money(show.gateRevenue)}</strong></div>
                       <div><span>Cost</span><strong>{money(show.totalCost)}</strong></div>
@@ -259,9 +261,10 @@ export default function ResultsClient(): React.JSX.Element {
                       {show.runningOrder.map((slot) => {
                         if (slot.kind === "SEGMENT") {
                           return (
-                            <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
+                            <article id={`show-${show.eventId}-slot-${slot.order}`}
+                              className={`${styles.matchCard} ${styles.segmentResultCard} ${slot.segment.outcomeBand === "HOT" ? styles.hotAngleResult : ""}`} key={slot.segment.segmentId}>
                               <div className={styles.matchTop}>
-                                <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "LIVE_APPEARANCE" && slot.segment.liveAppearanceKind ? `live · ${label(slot.segment.liveAppearanceKind)}` : slot.segment.type === "VIDEO_PACKAGE" && slot.segment.videoKind ? `video · ${label(slot.segment.videoKind)}` : slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : slot.segment.type === "PROMO" && slot.segment.promoPurpose ? `promo · ${label(slot.segment.promoPurpose)}` : slot.segment.type === "INTERVIEW" && slot.segment.interviewTopic && slot.segment.interviewResponse ? `interview · ${label(slot.segment.interviewTopic)} · ${label(slot.segment.interviewResponse)}` : slot.segment.type === "CELEBRATION" && slot.segment.celebrationOccasion && slot.segment.celebrationEnding ? `celebration · ${label(slot.segment.celebrationOccasion)}` : slot.segment.type === "CONFRONTATION" && slot.segment.confrontationEnding ? `face-off · ${label(slot.segment.confrontationEnding)}` : label(slot.segment.type)}</span>
+                                <span><b className={styles.slotGlyph} aria-hidden="true">{segmentResultIcon(slot.segment.type)}</b> SLOT {slot.order} · SEGMENT · {slot.segment.type === "LIVE_APPEARANCE" && slot.segment.liveAppearanceKind ? `live · ${label(slot.segment.liveAppearanceKind)}` : slot.segment.type === "VIDEO_PACKAGE" && slot.segment.videoKind ? `video · ${label(slot.segment.videoKind)}` : slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : slot.segment.type === "PROMO" && slot.segment.promoPurpose ? `promo · ${label(slot.segment.promoPurpose)}` : slot.segment.type === "INTERVIEW" && slot.segment.interviewTopic && slot.segment.interviewResponse ? `interview · ${label(slot.segment.interviewTopic)} · ${label(slot.segment.interviewResponse)}` : slot.segment.type === "CELEBRATION" && slot.segment.celebrationOccasion && slot.segment.celebrationEnding ? `celebration · ${label(slot.segment.celebrationOccasion)}` : slot.segment.type === "CONFRONTATION" && slot.segment.confrontationEnding ? `face-off · ${label(slot.segment.confrontationEnding)}` : label(slot.segment.type)}</span>
                                 <strong>
                                   {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
                                     ? `${slot.segment.plannedLengthMinutes} min`
@@ -407,10 +410,10 @@ export default function ResultsClient(): React.JSX.Element {
                         const sideA = match.participants.filter((participant) => participant.side === "A");
                         const sideB = match.participants.filter((participant) => participant.side === "B");
                         return (
-                          <article className={styles.matchCard} key={match.matchId}>
+                          <article id={`show-${show.eventId}-slot-${slot.order}`} className={`${styles.matchCard} ${styles.matchResultCard} ${match.isMainEvent ? styles.mainEventResult : ""}`} key={match.matchId}>
                             <div className={styles.matchTop}>
                               <span>SLOT {slot.order} · {match.isMainEvent ? "MAIN EVENT" : "MATCH"} · {label(match.type)}</span>
-                              <strong>★ {decimal(match.criticalRatingStars)}</strong>
+                              <strong className={styles.ratingMedallion}>★ {decimal(match.criticalRatingStars)}</strong>
                             </div>
                             <div className={styles.versus}>
                               <div>{sideA.map((participant) => <span className={participant.won ? styles.winner : undefined} key={participant.personId}>{participant.name}{participant.won ? " ✓" : ""}</span>)}</div>
@@ -464,7 +467,7 @@ export default function ResultsClient(): React.JSX.Element {
                               </div>
                             ) : null}
                             {match.titleOutcomes.map((title) => (
-                              <div className={styles.consequence} key={title.championshipId}>
+                              <div className={`${styles.consequence} ${title.titleChanged ? styles.titleChangeMoment : ""}`} key={title.championshipId}>
                                 <strong>{title.championshipName}</strong>
                                 <span>{title.titleChanged ? `Title change → ${title.winnerHolderName}` : `${title.winnerHolderName} retained`}</span>
                               </div>
@@ -539,6 +542,7 @@ export default function ResultsClient(): React.JSX.Element {
                       </summary>
 
                       <div className={styles.showBody}>
+                        <ShowBroadcast show={show} />
                         <div className={styles.metrics}>
                           <div><span>Average</span><strong>★ {decimal(show.averageMatchRating)}</strong></div>
                           <div><span>Best match</span><strong>★ {decimal(show.bestMatchRating)}</strong></div>
@@ -553,9 +557,10 @@ export default function ResultsClient(): React.JSX.Element {
                           {show.runningOrder.map((slot) => {
                             if (slot.kind === "SEGMENT") {
                               return (
-                                <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
+                                <article id={`show-${show.eventId}-slot-${slot.order}`}
+                              className={`${styles.matchCard} ${styles.segmentResultCard} ${slot.segment.outcomeBand === "HOT" ? styles.hotAngleResult : ""}`} key={slot.segment.segmentId}>
                                   <div className={styles.matchTop}>
-                                    <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "LIVE_APPEARANCE" && slot.segment.liveAppearanceKind ? `live · ${label(slot.segment.liveAppearanceKind)}` : slot.segment.type === "VIDEO_PACKAGE" && slot.segment.videoKind ? `video · ${label(slot.segment.videoKind)}` : slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : slot.segment.type === "PROMO" && slot.segment.promoPurpose ? `promo · ${label(slot.segment.promoPurpose)}` : slot.segment.type === "INTERVIEW" && slot.segment.interviewTopic && slot.segment.interviewResponse ? `interview · ${label(slot.segment.interviewTopic)} · ${label(slot.segment.interviewResponse)}` : slot.segment.type === "CELEBRATION" && slot.segment.celebrationOccasion && slot.segment.celebrationEnding ? `celebration · ${label(slot.segment.celebrationOccasion)}` : slot.segment.type === "CONFRONTATION" && slot.segment.confrontationEnding ? `face-off · ${label(slot.segment.confrontationEnding)}` : label(slot.segment.type)}</span>
+                                    <span><b className={styles.slotGlyph} aria-hidden="true">{segmentResultIcon(slot.segment.type)}</b> SLOT {slot.order} · SEGMENT · {slot.segment.type === "LIVE_APPEARANCE" && slot.segment.liveAppearanceKind ? `live · ${label(slot.segment.liveAppearanceKind)}` : slot.segment.type === "VIDEO_PACKAGE" && slot.segment.videoKind ? `video · ${label(slot.segment.videoKind)}` : slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : slot.segment.type === "PROMO" && slot.segment.promoPurpose ? `promo · ${label(slot.segment.promoPurpose)}` : slot.segment.type === "INTERVIEW" && slot.segment.interviewTopic && slot.segment.interviewResponse ? `interview · ${label(slot.segment.interviewTopic)} · ${label(slot.segment.interviewResponse)}` : slot.segment.type === "CELEBRATION" && slot.segment.celebrationOccasion && slot.segment.celebrationEnding ? `celebration · ${label(slot.segment.celebrationOccasion)}` : slot.segment.type === "CONFRONTATION" && slot.segment.confrontationEnding ? `face-off · ${label(slot.segment.confrontationEnding)}` : label(slot.segment.type)}</span>
                                     <strong>
                                       {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
                                         ? "SEGMENT"
@@ -675,10 +680,10 @@ export default function ResultsClient(): React.JSX.Element {
                             const sideA = match.participants.filter((participant) => participant.side === "A");
                             const sideB = match.participants.filter((participant) => participant.side === "B");
                             return (
-                              <article className={styles.matchCard} key={match.matchId}>
+                              <article id={`show-${show.eventId}-slot-${slot.order}`} className={`${styles.matchCard} ${styles.matchResultCard} ${match.isMainEvent ? styles.mainEventResult : ""}`} key={match.matchId}>
                                 <div className={styles.matchTop}>
                                   <span>SLOT {slot.order} · {match.isMainEvent ? "MAIN EVENT" : "MATCH"} · {label(match.type)}</span>
-                                  <strong>★ {decimal(match.criticalRatingStars)}</strong>
+                                  <strong className={styles.ratingMedallion}>★ {decimal(match.criticalRatingStars)}</strong>
                                 </div>
                                 <div className={styles.versus}>
                                   <div>{sideA.map((participant) => (
@@ -703,7 +708,7 @@ export default function ResultsClient(): React.JSX.Element {
                                   </div>
                                 ) : null}
                                 {match.titleOutcomes.map((title) => (
-                                  <a className={`${styles.consequence} ${styles.titleLink}`} href="/championships" key={title.championshipId}>
+                                  <a className={`${styles.consequence} ${styles.titleLink} ${title.titleChanged ? styles.titleChangeMoment : ""}`} href="/championships" key={title.championshipId}>
                                     <strong>{title.championshipName}</strong>
                                     <span>{title.titleChanged ? `Title change → ${title.winnerHolderName}` : `${title.winnerHolderName} retained`}</span>
                                   </a>
