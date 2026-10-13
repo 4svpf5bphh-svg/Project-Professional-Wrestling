@@ -316,6 +316,26 @@
   font-weight: 800;
 }
 
+.continuityNote {
+  display: grid;
+  gap: 7px;
+  padding: 11px 13px;
+  border: 1px solid rgba(245, 184, 91, .3);
+  border-radius: 11px;
+  background: rgba(224, 159, 66, .065);
+  color: #e6d2af;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.continuityNote strong {
+  color: #f6d8a2;
+  font-weight: 800;
+}
+
+.continuityNote p { margin: 0; }
+.continuityNote small { color: #b7ab95; }
+
 .errorBox {
   padding: 14px;
   border: 1px solid rgba(255, 103, 103, .35);
