@@ -799,3 +799,20 @@ export function reviewPlayerShowNarrative(
     recap: recap || overall.recap,
   };
 }
+
+
+/** Public-facing label list for an authored angle. The private booking record
+ * may know a cryptic video's subject; the audience must not see that subject. */
+export function reviewSegmentVisibleNames(
+  segment: Pick<PlayerShowSegmentView, "type" | "participants" | "videoReveal" | "videoSubjectName">,
+): string[] {
+  if (segment.type === "VIDEO_PACKAGE" && segment.videoReveal === "CRYPTIC") {
+    return ["Mystery footage"];
+  }
+  const visible = segment.participants.map((participant) => participant.name);
+  if (segment.type === "VIDEO_PACKAGE" && segment.videoReveal !== null
+    && segment.videoSubjectName && !visible.includes(segment.videoSubjectName)) {
+    visible.push(segment.videoSubjectName);
+  }
+  return visible;
+}

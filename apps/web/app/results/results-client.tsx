@@ -5,7 +5,7 @@ import type { PlayerShowHistoryView } from "../../../../dist/packages/applicatio
 import type { PlayerWorldResultsView } from "../../../../dist/packages/application/src/world-results-view.js";
 import ShowBroadcast, { MatchFinishReplay, MatchStarRating, ShowFinalBell, segmentResultIcon } from "./show-broadcast";
 import { showResultHighlights } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
-import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShowChapters, reviewPlayerShowRunningOrder, type SlotReview, type ShowReviewChapter } from "../../../../dist/packages/web-adapter/src/results-review.js";
+import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShowChapters, reviewPlayerShowRunningOrder, reviewSegmentVisibleNames, type SlotReview, type ShowReviewChapter } from "../../../../dist/packages/web-adapter/src/results-review.js";
 import {
   discoverWorldResults, worldResultsWeekLabel, WORLD_RESULTS_SPOTLIGHTS,
   type WorldResultsSpotlight,
@@ -357,8 +357,8 @@ export default function ResultsClient(): React.JSX.Element {
                                 </strong>
                               </div>
                               <div className={styles.segmentParticipants}>
-                                {slot.segment.participants.map((participant) => (
-                                  <span key={participant.personId}>{participant.name}</span>
+                                {reviewSegmentVisibleNames(slot.segment).map((name, index) => (
+                                  <span key={index}>{name}</span>
                                 ))}
                               </div>
                               <EditorialReview review={review} />

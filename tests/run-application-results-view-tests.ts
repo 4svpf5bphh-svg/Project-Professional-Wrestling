@@ -19,7 +19,7 @@ import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
 import { setActualMatchFinish } from "../packages/sim-core/src/match-finishes.js";
 import { hotSegmentHeadline, showResultHighlights, showOpeningHighlights } from "../packages/web-adapter/src/results-highlights.js";
-import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShow, reviewPlayerShowNarrative, reviewPlayerShowChapters, reviewPlayerShowFinalBell, reviewPlayerShowRunningOrder } from "../packages/web-adapter/src/results-review.js";
+import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShow, reviewPlayerShowNarrative, reviewPlayerShowChapters, reviewPlayerShowFinalBell, reviewPlayerShowRunningOrder, reviewSegmentVisibleNames } from "../packages/web-adapter/src/results-review.js";
 import type { PlayerShowMatchView, PlayerShowSegmentView, PlayerShowResultView } from "../packages/application/src/results-view.js";
 import { discoverWorldResults, worldResultsWeekLabel, worldShowHasSpotlight } from "../packages/web-adapter/src/world-results-discovery.js";
 
@@ -1643,6 +1643,32 @@ test("archived turns with no alignment cannot become fictional headline or fallo
   const end = reviewPlayerShowFinalBell(show);
   ok(end.consequence === null && end.lastWord.includes("angles"),
     "an incomplete historic turn became real fallout or generated a match-only signoff");
+});
+
+
+test("cryptic results participant strip conceals the unrevealed wrestler", () => {
+  const base = {
+    type: "VIDEO_PACKAGE" as const, videoReveal: "CRYPTIC" as const,
+    participants: [{ personId: "secret", name: "The Mystery Wrestler" }],
+    videoSubjectName: "The Mystery Wrestler",
+  };
+  const before = JSON.stringify(base);
+  const secret = reviewSegmentVisibleNames(base);
+  ok(secret.length === 1 && secret[0] === "Mystery footage",
+    "the public Results participant strip exposed a cryptic teaser's wrestler");
+  const revealed = reviewSegmentVisibleNames({ ...base, videoReveal: "NAMED" });
+  ok(revealed.includes("The Mystery Wrestler"),
+    "a deliberately named video failed to show its subject");
+  const old = reviewSegmentVisibleNames({
+    ...base, participants: [], videoReveal: null,
+  });
+  ok(old.length === 0, "missing archival reveal status was treated as permission to identify a wrestler");
+  const promo = reviewSegmentVisibleNames({
+    ...base, type: "PROMO", videoReveal: null,
+  });
+  ok(promo.includes("The Mystery Wrestler"), "ordinary angle participants were unnecessarily hidden");
+  ok(JSON.stringify(base) === before,
+    "display-only participant filtering modified the saved authored angle");
 });
 console.log(`\nApplication results-view tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
