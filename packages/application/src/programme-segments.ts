@@ -708,9 +708,14 @@ export function recordResolvedShowSegments(
       const existing = new Set(
         resolvedShowSegmentsForEvent(state, event.id).map((segment) => segment.draftSegmentId),
       );
+      const cancelled = new Set(state.ledger.filter((entry) => (
+        entry.type === "PLANNED_LIVE_ARRIVAL_CANCELLED_AT_LOCK"
+        && entry.payload.eventId === event.id
+        && entry.payload.sourceDraftId === draft.draftId
+      )).map((entry) => String(entry.payload.draftSegmentId)));
 
       segments.forEach((segment, segmentIndex) => {
-        if (existing.has(segment.draftSegmentId)) return;
+        if (existing.has(segment.draftSegmentId) || cancelled.has(segment.draftSegmentId)) return;
         const slotOrder = segmentSlotOrder(draft, segment.draftSegmentId, segmentIndex);
         const sourceMatch = segment.type === "POST_MATCH_ASSAULT"
           ? completedMatchForAftermath(state, event.id, draft, segment)
