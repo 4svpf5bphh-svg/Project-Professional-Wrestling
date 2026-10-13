@@ -7,7 +7,7 @@ import type {
   WorldState,
   WrestlingEvent,
 } from "../../domain/src/types.js";
-import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { contractCoversBookedDate, serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
 import { creativeBlockersForDraft } from "./creative-consent.js";
 import { promotionLiveAppearanceHistory } from "./live-appearance-history.js";
@@ -312,6 +312,84 @@ function sourceDraft(
 ): DetailedShowDraft | null {
   const workspace = planning.workspaces.find((candidate) => candidate.promotionId === reservation.promotionId);
   return workspace?.detailedShowDrafts.find((candidate) => candidate.draftId === reservation.sourceDraftId) ?? null;
+}
+
+/**
+ * Audit the ACTUAL committed event, not a speculative future draft. A booked
+ * arrival can become a false historical claim after an earlier show resolves,
+ * or because an earlier physical show on this very PPW week is committed.
+ * The latter remains tentative until resolution, so prohibit the later claim
+ * rather than retroactively rewriting a wrestler's first appearance.
+ */
+export interface MaterializedLiveArrivalConflict {
+  promotionId: Id;
+  eventId: Id;
+  sourceDraftId: string;
+  draftSegmentId: string;
+  personId: Id;
+  kind: "DEBUT" | "RETURN";
+  reason: "COMPLETED_HISTORY_CHANGED" | "EARLIER_COMMITTED_APPEARANCE";
+}
+
+export function materializedLiveArrivalConflicts(
+  state: WorldState,
+  planning: WorldPlanningState,
+): MaterializedLiveArrivalConflict[] {
+  if (planning.worldId !== state.world.id) throw new Error("live arrival audit crosses World boundary");
+  const conflicts: MaterializedLiveArrivalConflict[] = [];
+  const perYear = state.ruleset.weeksPerYear;
+  for (const workspace of planning.workspaces) {
+    for (const draft of workspace.detailedShowDrafts) {
+      if (!samePpwWeek(draft.targetDate, state.world.currentDate)) continue;
+      const materialized = state.ledger.find((entry) =>
+        entry.type === "PLANNED_SHOW_MATERIALIZED"
+        && entry.entityIds.includes(draft.promotionId)
+        && entry.payload.sourceDraftId === draft.draftId
+      );
+      if (!materialized) continue;
+      const event = state.events.find((entry) => (
+        entry.status === "SCHEDULED" && entry.promotionId === draft.promotionId
+        && materialized.entityIds.includes(entry.id)
+        && samePpwDate(entry.date, draft.targetDate)
+      ));
+      if (!event) continue;
+      for (const segment of draft.segments ?? []) {
+        if (segment.type !== "LIVE_APPEARANCE") continue;
+        const kind = segment.liveAppearanceKind;
+        if (kind !== "DEBUT" && kind !== "RETURN") continue;
+        const personId = segment.participantIds[0];
+        if (!personId) continue;
+        const history = promotionLiveAppearanceHistory(state, draft.promotionId, personId, event.date);
+        const invalidByHistory = (kind === "DEBUT" && history.status !== "DEBUT_ELIGIBLE")
+          || (kind === "RETURN" && history.status !== "RETURN_ELIGIBLE");
+        // Scheduled shows in the same PPW week have not yet been settled.
+        // A real earlier commitment still pre-empts a later 'first arrival'.
+        const earlierOnSite = state.events.some((earlier) => (
+          earlier.id !== event.id && earlier.promotionId === draft.promotionId
+          && earlier.status === "SCHEDULED"
+          && samePpwWeek(earlier.date, event.date)
+          && comparePpwDates(earlier.date, event.date, perYear) < 0
+          && state.scheduledAppearances.some((appearance) => (
+            appearance.eventId === earlier.id && appearance.personId === personId
+            && appearance.status === "COMMITTED"
+          ))
+        ));
+        if (invalidByHistory || earlierOnSite) {
+          conflicts.push({
+            promotionId: draft.promotionId,
+            eventId: event.id,
+            sourceDraftId: draft.draftId,
+            draftSegmentId: segment.draftSegmentId,
+            personId,
+            kind,
+            reason: invalidByHistory ? "COMPLETED_HISTORY_CHANGED" : "EARLIER_COMMITTED_APPEARANCE",
+          });
+        }
+      }
+    }
+  }
+  return conflicts.sort((left, right) => left.eventId.localeCompare(right.eventId)
+    || left.draftSegmentId.localeCompare(right.draftSegmentId));
 }
 
 function sameParticipantSet(draft: DetailedShowDraft, reservation: DetailedShowReservation): boolean {
