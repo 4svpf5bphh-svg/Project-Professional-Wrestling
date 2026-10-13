@@ -160,7 +160,7 @@ export function reviewPlayerSegment(segment: PlayerShowSegmentView): SlotReview 
         : segment.interviewResponse === "DEFIANT" ? who + " answered defiantly."
         : segment.interviewResponse === "CANDID" ? who + " gave a candid answer."
         : "The response wasn't recorded.";
-      recap = "Asked about " + topic + ", " + answer.charAt(0).toLowerCase() + answer.slice(1);
+      recap = "The interviewer asked about " + topic + ". " + answer;
       break;
     }
     case "CHALLENGE":
@@ -191,7 +191,7 @@ export function reviewPlayerSegment(segment: PlayerShowSegmentView): SlotReview 
           : segment.attackPresentation === "PULL_APART_BRAWL"
             ? attacker + " and " + victim + " were involved in a pull-apart brawl."
             : attacker + " attacked " + victim + ".";
-      recap = (segment.type === "POST_MATCH_ASSAULT" ? "After the bell, " + format.charAt(0).toLowerCase() + format.slice(1) : format);
+      recap = segment.type === "POST_MATCH_ASSAULT" ? "After the bell: " + format : format;
       if (segment.postMatchAssaultEnding === "ATTACKER_STANDS_TALL") recap += " " + attacker + " was left standing.";
       if (segment.postMatchAssaultEnding === "VICTIM_FIGHTS_BACK") recap += " " + victim + " fought back.";
       if (segment.postMatchAssaultEnding === "OFFICIALS_SEPARATE") recap += " Officials separated the wrestlers.";
