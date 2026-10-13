@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { PlayerShowHistoryView } from "../../../../dist/packages/application/src/results-view.js";
 import type { PlayerWorldResultsView } from "../../../../dist/packages/application/src/world-results-view.js";
 import ShowBroadcast, { MatchFinishReplay, segmentResultIcon } from "./show-broadcast";
+import { showResultHighlights } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
+import {
+  discoverWorldResults, worldResultsWeekLabel, WORLD_RESULTS_SPOTLIGHTS,
+  type WorldResultsSpotlight,
+} from "../../../../dist/packages/web-adapter/src/world-results-discovery.js";
 import styles from "./results.module.css";
 
 type ErrorPayload = { error?: string };
@@ -60,6 +65,8 @@ export default function ResultsClient(): React.JSX.Element {
   const [worldError, setWorldError] = useState<string | null>(null);
   const [tab, setTab] = useState<ResultsTab>("PROMOTION");
   const [worldPromotionId, setWorldPromotionId] = useState("ALL");
+  const [worldSpotlight, setWorldSpotlight] = useState<WorldResultsSpotlight>("ALL");
+  const [worldSearch, setWorldSearch] = useState("");
   const [worldRevision, setWorldRevision] = useState(0);
   const [canChooseFollowUp, setCanChooseFollowUp] = useState(false);
   const [followUpDrafts, setFollowUpDrafts] = useState<Record<string, "PURSUE_REMATCH" | "PLAN_RETALIATION" | "LET_STAND">>({});
@@ -126,9 +133,10 @@ export default function ResultsClient(): React.JSX.Element {
 
   const visibleWorldShows = useMemo(() => {
     if (!worldView) return [];
-    if (worldPromotionId === "ALL") return worldView.shows;
-    return worldView.shows.filter((show) => show.promotionId === worldPromotionId);
-  }, [worldPromotionId, worldView]);
+    return discoverWorldResults(worldView.shows, {
+      promotionId: worldPromotionId, spotlight: worldSpotlight, query: worldSearch,
+    });
+  }, [worldPromotionId, worldSpotlight, worldSearch, worldView]);
 
   const activeWorld = promotionView?.world ?? worldView?.world ?? null;
 
@@ -592,35 +600,71 @@ export default function ResultsClient(): React.JSX.Element {
               </section>
 
               <section className={styles.worldTools}>
-                <div>
+                <div className={styles.worldToolsHeading}>
                   <span className={styles.eyebrow}>WORLD TIMELINE</span>
-                  <strong>Latest completed shows across PPW</strong>
+                  <strong>Follow the stories across PPW</strong>
+                  <small>Search and filters cover the latest {worldView.shows.length} completed public shows, not the entire World archive.</small>
                 </div>
-                <label>
-                  <span>Promotion</span>
-                  <select value={worldPromotionId} onChange={(event) => setWorldPromotionId(event.target.value)}>
-                    <option value="ALL">All promotions</option>
-                    {worldPromotions.map(([promotionId, promotionName]) => (
-                      <option value={promotionId} key={promotionId}>{promotionName}</option>
-                    ))}
-                  </select>
-                </label>
+                <div className={styles.worldFilters}>
+                  <label>
+                    <span>Promotion</span>
+                    <select value={worldPromotionId} onChange={(event) => setWorldPromotionId(event.target.value)}>
+                      <option value="ALL">All promotions</option>
+                      {worldPromotions.map(([promotionId, promotionName]) => (
+                        <option value={promotionId} key={promotionId}>{promotionName}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Find a wrestler, title or venue</span>
+                    <input type="search" value={worldSearch}
+                      onChange={(event) => setWorldSearch(event.target.value)}
+                      placeholder="Search recent results" maxLength={100} autoComplete="off" />
+                  </label>
+                </div>
               </section>
+              <div className={styles.worldSpotlights} aria-label="Filter World results by moment">
+                {WORLD_RESULTS_SPOTLIGHTS.map((option) => (
+                  <button type="button" key={option.value}
+                    className={`${styles.worldSpotlight} ${worldSpotlight === option.value ? styles.worldSpotlightSelected : ""}`}
+                    aria-pressed={worldSpotlight === option.value}
+                    onClick={() => setWorldSpotlight(option.value)}>
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+              <p className={styles.worldResultCount} aria-live="polite">
+                {visibleWorldShows.length} of {worldView.shows.length} recent completed shows
+              </p>
 
               {visibleWorldShows.length === 0 ? (
-                <section className={styles.panel}><p>No completed shows match that promotion.</p></section>
+                <section className={styles.panel}>
+                  <p>No recent completed shows match those filters.</p>
+                  <button type="button" className={styles.button}
+                    onClick={() => { setWorldPromotionId("ALL"); setWorldSearch(""); setWorldSpotlight("ALL"); }}>
+                    Clear filters
+                  </button>
+                </section>
               ) : (
                 <section className={styles.history}>
                   {visibleWorldShows.map((show, index) => (
-                    <details className={`${styles.showCard} ${show.isPlayerPromotion ? styles.playerWorldShow : ""}`} key={show.eventId} open={index === 0}>
+                    <Fragment key={show.eventId}>
+                      {index === 0 || worldResultsWeekLabel(show) !== worldResultsWeekLabel(visibleWorldShows[index - 1]!)
+                        ? <h3 className={styles.worldWeekHeading}>{worldResultsWeekLabel(show)}</h3> : null}
+                    <details className={`${styles.showCard} ${show.isPlayerPromotion ? styles.playerWorldShow : ""}`} open={index === 0}>
                       <summary className={styles.showSummary}>
                         <div>
                           <div className={styles.worldIdentity}>
                             <span className={styles.eyebrow}>{show.promotionName} · {show.type} SHOW</span>
                             {show.isPlayerPromotion ? <span className={styles.youBadge}>YOU</span> : null}
                           </div>
-                          <strong>Year {show.date.year}, Week {show.date.week} · {show.venueName}</strong>
-                          <span>{show.marketName} · {integer(show.attendance)} attendance ({decimal(show.attendancePercentOfCapacity)}%)</span>
+                          <strong>{show.venueName} · {DAY_NAMES[show.date.day] ?? `Day ${show.date.day}`}</strong>
+                          {showResultHighlights(show, 1)[0] ? (
+                            <span className={styles.worldSummaryHeadline}>
+                              {showResultHighlights(show, 1)[0]!.headline}
+                            </span>
+                          ) : <span>{show.marketName} · completed show</span>}
+                          <span>{integer(show.attendance)} in attendance · {show.marketName}</span>
                         </div>
                         <div className={styles.worldRating}><span>BEST</span><strong>★ {decimal(show.bestMatchRating)}</strong></div>
                       </summary>
@@ -819,6 +863,7 @@ export default function ResultsClient(): React.JSX.Element {
                         </div>
                       </div>
                     </details>
+                    </Fragment>
                   ))}
                 </section>
               )}
