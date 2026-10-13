@@ -60,14 +60,14 @@ function angleVerdict(segment: PlayerShowSegmentView, tone: ReviewTone): string 
 
 function matchOpening(match: PlayerShowMatchView): string {
   switch (match.intent) {
-    case "TECHNICAL": return pick(["The mat work was the selling point here.", "An old-school technical contest — no shortcuts on the booking sheet.", "A wrestling-first approach, with the emphasis firmly on technique."], match.matchId, 10);
-    case "HIGH_RISK": return pick(["They went for a high-risk approach. Not a card for the faint-hearted.", "The brief was to push the limits, and expectations came with it.", "Big risks were the order of the day."], match.matchId, 11);
-    case "EPIC": return pick(["This one was booked like a major event, and the pressure was on.", "An epic was the ambition. The execution would tell the story.", "The biggest possible stage was the aim."], match.matchId, 12);
-    case "STORY": return pick(["This was a story-led bout, not just a contest over a win.", "There was a rivalry to consider as well as the bell.", "The storyline carried as much weight as the result."], match.matchId, 13);
-    case "PROTECTIVE": return pick(["An awkward balancing act: somebody had to win without everyone else looking foolish.", "The finish needed to mind a few reputations.", "The booker had more than a simple win to think about."], match.matchId, 14);
-    case "DOMINANT": return pick(["A statement was the idea. Whether it landed was another matter.", "This was booked to put someone over emphatically.", "The aim was to make a serious impression."], match.matchId, 15);
-    case "SHOWCASE": return pick(["Time in the spotlight — and a chance to justify it.", "A showcase with an audience ready to judge.", "An opportunity to make a name between the ropes."], match.matchId, 16);
-    default: return pick(["A straight contest, with bragging rights on the line.", "No complicated premise needed: just get in there and wrestle.", "Two sides, one result. Time to find out who goes over."], match.matchId, 17);
+    case "TECHNICAL": return pick(["The mat work was the selling point here.", "An old-school technical contest. The grappling took centre stage.", "A wrestling-first contest, with the emphasis firmly on technique."], match.matchId, 10);
+    case "HIGH_RISK": return pick(["An ambitious, high-risk contest. Not for the faint-hearted.", "The wrestlers chased spectacle, for better or worse.", "A contest with an appetite for risk."], match.matchId, 11);
+    case "EPIC": return pick(["Big-match expectations hung over this one.", "This had the atmosphere of a match with something to prove.", "An epic was the ambition — no small task under those lights."], match.matchId, 12);
+    case "STORY": return pick(["There was more emotion to this contest than a simple win and loss.", "The personalities mattered as much as the holds.", "The drama was as important as the wrestling."], match.matchId, 13);
+    case "PROTECTIVE": return pick(["A carefully judged contest with reputations at stake.", "There was a delicate balance between winning and saving face.", "Neither side could afford to look foolish here."], match.matchId, 14);
+    case "DOMINANT": return pick(["A contest with one clear ambition: make a statement.", "The atmosphere suggested somebody wanted to prove a point.", "An emphatic impression was the aim here."], match.matchId, 15);
+    case "SHOWCASE": return pick(["Time in the spotlight — and a chance to justify it.", "The stage was theirs, and the audience was ready to judge.", "An opportunity to make a name between the ropes."], match.matchId, 16);
+    default: return pick(["A straight contest, with bragging rights on the line.", "No elaborate premise. Just two sides settling it between the ropes.", "The simplest question in wrestling: who came out on top?"], match.matchId, 17);
   }
 }
 function finishSentence(match: PlayerShowMatchView): string {
@@ -113,9 +113,9 @@ export function reviewPlayerMatch(match: PlayerShowMatchView): SlotReview {
   }
   if (match.injuries.length && finish !== "INJURY_STOPPAGE") after += " " + match.injuries.map((x) => x.personName).join(" and ") + " also suffered an injury.";
   const performance = match.styleResult?.delivery === "MISSED"
-    ? "The planned style was a stretch too far on the night."
+    ? "The ambitious approach never quite came together."
     : match.styleResult?.delivery === "STRETCHED"
-      ? "The demanding brief exposed a few rough edges."
+      ? "The demanding pace exposed a few rough edges."
       : "";
   const recap = [matchOpening(match), finishSentence(match) + after, crowdSentence(match.crowdResponse, match.matchId), performance].filter(Boolean).join(" ");
   const opinion = Number.isFinite(match.crowdResponse) && match.crowdResponse < 46 && match.criticalRatingStars >= 3.5
@@ -123,7 +123,7 @@ export function reviewPlayerMatch(match: PlayerShowMatchView): SlotReview {
     : Number.isFinite(match.crowdResponse) && match.crowdResponse >= 78 && match.criticalRatingStars < 2.5
       ? pick(["The fans loved this more than the wrestling justified. That's showbusiness.", "Not exactly a technical classic, but the audience had other ideas."], match.matchId, 42)
       : match.styleResult?.delivery === "MISSED"
-        ? pick(["Big ideas, shaky delivery. Time to rethink the brief.", "The ambition was there; the execution wasn't."], match.matchId, 43)
+        ? pick(["Big ideas, shaky delivery. Back to the drawing board.", "The ambition was there; the execution wasn't."], match.matchId, 43)
         : verdict(tone, match.matchId);
   return { headline, recap, verdict: opinion, tone };
 }
