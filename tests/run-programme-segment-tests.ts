@@ -1018,6 +1018,141 @@ test("promo repetition is modest, scoped to a completed same-message speech by t
   }
 });
 
+test("INTERVIEW freezes the booked topic, format and scripted walkout without creating a confrontation", () => {
+  const setup = fixture(91610);
+  const subject = setup.rosterIds[2]!;
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    draftId: "interview-show",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null,
+    venueId: null,
+    ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [],
+    championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "interview-guest",
+      type: "INTERVIEW",
+      participantIds: [subject],
+      programmeId: null,
+      plannedLengthMinutes: 6,
+      interviewFormat: "SIT_DOWN",
+      interviewTopic: "CAREER_STORY",
+      interviewResponse: "WALKOUT",
+    }],
+    runningOrder: [{ kind: "SEGMENT", refId: "interview-guest" }],
+  });
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "interview not completed");
+  const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(frozen.type === "INTERVIEW" && frozen.interviewTopic === "CAREER_STORY", "interview lost its topic");
+  ok(frozen.interviewFormat === "SIT_DOWN" && frozen.interviewResponse === "WALKOUT",
+    "World Lock rewrote the promoter's interview format or answer");
+  ok(frozen.participantIds.length === 1 && frozen.participantIds[0] === subject,
+    "interview invented a second wrestler or neutral host as a booked talent");
+  ok(frozen.targetPersonId === null && frozen.challengeResponse === null && frozen.attackerPersonId === null,
+    "interview generated a feud confrontation, challenge or attack");
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 0, "interview duplicated under retry");
+});
+
+test("INTERVIEW rejects unsupported and partially specified responses, without changing existing bookings", () => {
+  const setup = fixture(91611);
+  const draft = {
+    draftId: "invalid-interview",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null,
+    venueId: null,
+    ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [],
+    championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "interview-guest",
+      type: "INTERVIEW" as const,
+      participantIds: [setup.rosterIds[2]!],
+      programmeId: null,
+      plannedLengthMinutes: 5,
+      interviewFormat: "BACKSTAGE" as const,
+      interviewTopic: "RECENT_FORM" as const,
+      interviewResponse: "CANDID" as const,
+    }],
+  };
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, draft);
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 1, {
+    ...draft,
+    segments: [{ ...draft.segments[0]!, interviewResponse: "RANDOM_BRAWL" as "CANDID" }],
+  }), "supported format, topic");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 1, {
+    ...draft,
+    segments: [{ ...draft.segments[0]!, interviewResponse: null }],
+  }), "interview requires all three");
+  ok(setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!.interviewResponse === "CANDID",
+    "invalid interview attempt altered the stored scripted outcome");
+});
+
+test("INTERVIEW repetition counts only same-wrestler same-question and answer in completed recent promotion history", () => {
+  function outcomeWithHistory(kind: "NONE" | "REPEAT" | "NEW_ANSWER" | "NEW_TOPIC" | "OTHER_GUEST" | "OTHER_PROMOTION" | "OLD" | "UNRESOLVED") {
+    const setup = fixture(91612);
+    setup.state.world.currentDate = { year: 1, week: 8, day: 1 };
+    setup.targetDate = { year: 1, week: 8, day: 6 };
+    const subject = setup.rosterIds[2]!;
+    if (kind !== "NONE" && kind !== "UNRESOLVED") {
+      setup.state.ledger.push({
+        id: "prior-frozen-interview",
+        worldId: setup.state.world.id,
+        date: { year: 1, week: kind === "OLD" ? 1 : 7, day: 6 },
+        order: 11020,
+        type: "SHOW_SEGMENT_COMPLETED",
+        significanceAtTime: "ROUTINE",
+        historicalSignificance: "ROUTINE",
+        entityIds: [setup.promotion.id, subject],
+        payload: {
+          promotionId: kind === "OTHER_PROMOTION" ? "rival-promotion" : setup.promotion.id,
+          segmentType: "INTERVIEW",
+          interviewTopic: kind === "NEW_TOPIC" ? "RECENT_FORM" : "CAREER_STORY",
+          interviewResponse: kind === "NEW_ANSWER" ? "WALKOUT" : "CANDID",
+          participantIds: kind === "OTHER_GUEST" ? setup.rosterIds[1]! : subject,
+        },
+      });
+    }
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      draftId: "tested-interview",
+      promotionId: setup.promotion.id,
+      targetDate: setup.targetDate,
+      marketId: null,
+      venueId: null,
+      ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4),
+      matches: [],
+      championshipAssignments: [],
+      segments: [{
+        draftSegmentId: "tested-interview",
+        type: "INTERVIEW",
+        interviewFormat: "SIT_DOWN",
+        interviewTopic: "CAREER_STORY",
+        interviewResponse: "CANDID",
+        participantIds: [subject],
+        programmeId: null,
+        plannedLengthMinutes: 5,
+      }],
+    });
+    setup.state.events.push(completedEvent(setup));
+    recordResolvedShowSegments(setup.state, setup.planning);
+    return resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  }
+  const fresh = outcomeWithHistory("NONE");
+  const repeated = outcomeWithHistory("REPEAT");
+  ok(repeated.angleFitModifier < fresh.angleFitModifier, "repeated interview had no audience fatigue");
+  ok(repeated.crowdResponse! < fresh.crowdResponse!, "repeating an identical interview did not affect crowd reception");
+  for (const variant of ["NEW_ANSWER", "NEW_TOPIC", "OTHER_GUEST", "OTHER_PROMOTION", "OLD", "UNRESOLVED"] as const) {
+    const current = outcomeWithHistory(variant);
+    ok(current.angleFitModifier === fresh.angleFitModifier,
+      `${variant} falsely counted as a repeat of the same interview`);
+  }
+});
+
 test("standalone segments become factual show history without inventing Programme activity", () => {
   const setup = fixture(9151);
   upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
