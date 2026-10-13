@@ -19,8 +19,8 @@ import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
 import { setActualMatchFinish } from "../packages/sim-core/src/match-finishes.js";
 import { hotSegmentHeadline, showResultHighlights } from "../packages/web-adapter/src/results-highlights.js";
-import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShow } from "../packages/web-adapter/src/results-review.js";
-import type { PlayerShowMatchView, PlayerShowSegmentView } from "../packages/application/src/results-view.js";
+import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShow, reviewPlayerShowChapters } from "../packages/web-adapter/src/results-review.js";
+import type { PlayerShowMatchView, PlayerShowSegmentView, PlayerShowResultView } from "../packages/application/src/results-view.js";
 import { discoverWorldResults, worldResultsWeekLabel, worldShowHasSpotlight } from "../packages/web-adapter/src/world-results-discovery.js";
 
 let passed = 0;
@@ -1344,6 +1344,55 @@ test("specific booked angle details appear in recaps without inventing a result"
   ok(interview.recap.includes("pressure of their rivalry") && interview.recap.includes("answered defiantly"),
     "interview context or scripted answer was omitted");
   ok(!interview.recap.includes("blindsided"), "interview inherited unrelated attack text");
+});
+
+
+test("player show chapter breaks trace actual running order without invented moments", () => {
+  function match(order: number, props: Record<string, unknown> = {}) {
+    return { kind: "MATCH" as const, order, match: {
+      matchId: "chapter-match-" + order, order,
+      type: "SINGLES", criticalRatingStars: 3, winnerNames: ["Winner " + order],
+      actualFinish: "CLEAN_PIN", titleOutcomes: [], injuries: [], ...props,
+    } as PlayerShowMatchView };
+  }
+  function segment(order: number, props: Record<string, unknown> = {}) {
+    return { kind: "SEGMENT" as const, order, segment: {
+      segmentId: "chapter-segment-" + order, type: "PROMO",
+      participants: [], videoReveal: null, ...props,
+    } as PlayerShowSegmentView };
+  }
+  const show = { eventId: "chapters-eight", runningOrder: [
+    match(1),
+    match(2, { titleOutcomes: [{ titleChanged: true,
+      championshipName: "World Title", winnerHolderName: "New Champion" }] }),
+    match(3, { injuries: [{ injuryId: "broken", personName: "Injured Star", weeksOut: 3 }] }),
+    segment(4, { type: "TURN", participants: [{ personId: "turner", name: "Turner" }],
+      turnPersonId: "turner", turnTargetAlignment: "HEEL" }),
+    match(5),
+    match(6, { actualFinish: "FOREIGN_OBJECT" }),
+    segment(7, { type: "VIDEO_PACKAGE", videoReveal: "CRYPTIC", videoSubjectName: "Secret Identity" }),
+    match(8),
+  ] } as unknown as Pick<PlayerShowResultView, "eventId" | "runningOrder">;
+  const baseline = JSON.stringify(show);
+  const chapters = reviewPlayerShowChapters(show);
+  ok(chapters.length === 3 && chapters.map((c) => c.startOrder).join(",") === "1,3,6",
+    "chapter breaks did not follow actual 8-slot running order");
+  ok(chapters[0]!.recap.includes("New Champion") && chapters[0]!.recap.includes("World Title"),
+    "title change did not lead its own chapter");
+  ok(chapters[1]!.recap.includes("Injured Star"),
+    "an actual injury did not shape the middle chapter");
+  ok(chapters[2]!.recap.includes("foreign object"),
+    "actual dirty finish was ignored for the final stretch");
+  ok(!JSON.stringify(chapters).includes("Secret Identity"),
+    "a cryptic video subject leaked into the editorial chapter recap");
+  ok(JSON.stringify(reviewPlayerShowChapters(structuredClone(show))) === JSON.stringify(chapters),
+    "chapters varied between reloads");
+  ok(JSON.stringify(show) === baseline, "chapter narration changed the completed-show source");
+  ok(reviewPlayerShowChapters({ eventId: "tiny", runningOrder: show.runningOrder.slice(0, 3) }).length === 0,
+    "short shows received artificial multi-act padding");
+  const twoPart = reviewPlayerShowChapters({ eventId: "medium", runningOrder: show.runningOrder.slice(0, 5) });
+  ok(twoPart.length === 2 && twoPart[0]!.startOrder === 1 && twoPart[1]!.startOrder === 3,
+    "medium-size shows did not get sensible opening and closing chapters");
 });
 
 console.log(`\nApplication results-view tests: ${passed} passed, ${failed} failed`);
