@@ -1091,7 +1091,7 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
       return;
     }
     if ((wrestler.scheduledRenewals?.length ?? 0) > 0) {
-      const card = document.getElementById(`signed-contract-\${wrestler.personId}`);
+      const card = document.getElementById(`signed-contract-${wrestler.personId}`);
       card?.scrollIntoView({ block: "center" });
       card?.focus({ preventScroll: true });
     }
