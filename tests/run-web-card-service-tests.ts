@@ -578,6 +578,96 @@ await test("Card keeps a chosen face-off ending and rejects unscripted brawls", 
     "invalid booking mutated the persisted face-off");
 });
 
+await test("Show Card keeps a scripted failed rescue and refuses a fabricated rescue response", async () => {
+  const f = await reservedShowFixture(61025);
+  const before = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  const matches = singlesCard(f.participantIds);
+  const [attacker, victim, rescuer] = f.participantIds;
+  const segment: AlphaCardSegmentView = {
+    draftSegmentId: "authored-rescue", type: "RESCUE",
+    participantIds: [attacker!, victim!, rescuer!],
+    attackerPersonId: attacker!, victimPersonId: victim!, rescuerPersonId: rescuer!,
+    rescueOutcome: "RESCUE_OVERWHELMED",
+    programmeId: null, plannedLengthMinutes: 5,
+  };
+  const saved = await saveAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player", {
+    requestId: "rescue-overwhelmed-saved",
+    expectedRevision: before.world.revision, expectedPlanVersion: before.workspaceVersion,
+    matches, segments: [segment],
+    runningOrder: [{ kind: "SEGMENT", refId: segment.draftSegmentId },
+      ...matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId }))],
+    championshipAssignments: [],
+  });
+  ok(saved.segments[0]?.rescueOutcome === "RESCUE_OVERWHELMED", "server overrode the scripted failed save");
+  const reloaded = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  ok(reloaded.segments[0]?.rescueOutcome === "RESCUE_OVERWHELMED",
+    "Card reload replaced a failed rescue with an automatic success");
+  let rejected = false;
+  try {
+    await saveAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player", {
+      requestId: "rescue-invalid-ending",
+      expectedRevision: reloaded.world.revision, expectedPlanVersion: reloaded.workspaceVersion,
+      matches, segments: [{ ...segment, rescueOutcome: "AUTO_WIN" as "RESCUE_OVERWHELMED" }],
+      runningOrder: reloaded.runningOrder, championshipAssignments: [],
+    });
+  } catch (error) { rejected = error instanceof Error && error.message.includes("RESCUE"); }
+  ok(rejected, "an unrecognised rescue ending bypassed server validation");
+  const intact = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  ok(intact.segments[0]?.rescueOutcome === "RESCUE_OVERWHELMED",
+    "rejected rescue overwrote the original script");
+});
+
+await test("Show Card stores full postmatch script without changing the source match", async () => {
+  const f = await reservedShowFixture(61026);
+  const before = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  const matches = singlesCard(f.participantIds);
+  const [victim,, aggressor] = f.participantIds;
+  const segment: AlphaCardSegmentView = {
+    draftSegmentId: "authored-postmatch", type: "POST_MATCH_ASSAULT",
+    participantIds: [aggressor!, victim!],
+    attackerPersonId: aggressor!, victimPersonId: victim!,
+    sourceDraftMatchId: matches[0]!.draftMatchId,
+    attackPresentation: "BEATDOWN", attackObjective: "ESCALATE_RIVALRY",
+    postMatchAssaultEnding: "VICTIM_FIGHTS_BACK",
+    programmeId: null, plannedLengthMinutes: 5,
+  };
+  const slots = [
+    { kind: "MATCH" as const, refId: matches[0]!.draftMatchId },
+    { kind: "SEGMENT" as const, refId: segment.draftSegmentId },
+    ...matches.slice(1).map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+  ];
+  const saved = await saveAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player", {
+    requestId: "postmatch-fightback-saved",
+    expectedRevision: before.world.revision, expectedPlanVersion: before.workspaceVersion,
+    matches, segments: [segment], runningOrder: slots, championshipAssignments: [],
+  });
+  ok(saved.segments[0]?.attackPresentation === "BEATDOWN"
+    && saved.segments[0]?.attackObjective === "ESCALATE_RIVALRY"
+    && saved.segments[0]?.postMatchAssaultEnding === "VICTIM_FIGHTS_BACK",
+    "Card save stripped or changed the authored post-match attack script");
+  const reloaded = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  ok(reloaded.segments[0]?.postMatchAssaultEnding === "VICTIM_FIGHTS_BACK"
+    && reloaded.segments[0]?.attackPresentation === "BEATDOWN"
+    && reloaded.segments[0]?.attackObjective === "ESCALATE_RIVALRY",
+    "Card reload lost the actual post-match format, motive or outcome");
+  ok(reloaded.matches[0]?.intendedWinnerSide === matches[0]?.intendedWinnerSide,
+    "saving an aftermath changed the originally scripted winner");
+  let rejected = false;
+  try {
+    await saveAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player", {
+      requestId: "postmatch-incomplete-script",
+      expectedRevision: reloaded.world.revision, expectedPlanVersion: reloaded.workspaceVersion,
+      matches, segments: [{ ...segment, attackObjective: null }],
+      runningOrder: reloaded.runningOrder, championshipAssignments: [],
+    });
+  } catch (error) { rejected = error instanceof Error && error.message.includes("POST_MATCH_ASSAULT"); }
+  ok(rejected, "Card allowed a half-scripted physical aftermath");
+  const intact = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  ok(intact.segments[0]?.attackObjective === "ESCALATE_RIVALRY"
+    && intact.segments[0]?.postMatchAssaultEnding === "VICTIM_FIGHTS_BACK",
+    "rejected assault rewrite corrupted an existing booked segment");
+});
+
 await test("Show Builder persists an interleaved Programme segment with wrestlers who also work matches", async () => {
   const fixture = await reservedShowFixture(61021);
   const beforeProgramme = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
