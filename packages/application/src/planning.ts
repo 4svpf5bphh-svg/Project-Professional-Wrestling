@@ -101,6 +101,12 @@ export type CelebrationEnding = (typeof CELEBRATION_ENDINGS)[number];
 
 export type AttackPresentation = "BLINDSIDE" | "BEATDOWN" | "PULL_APART_BRAWL";
 export type AttackObjective = "GENERATE_HEAT" | "BUILD_SYMPATHY" | "ESCALATE_RIVALRY";
+/** A rescue can be thwarted; who survives the on-screen exchange is authored. */
+export const RESCUE_OUTCOMES = ["RESCUER_STANDS_TALL", "ATTACKER_ESCAPES", "RESCUE_OVERWHELMED"] as const;
+export type RescueOutcome = (typeof RESCUE_OUTCOMES)[number];
+/** Booked physical closing beat after the match; never changes the match finish. */
+export const POST_MATCH_ASSAULT_ENDINGS = ["ATTACKER_STANDS_TALL", "VICTIM_FIGHTS_BACK", "OFFICIALS_SEPARATE"] as const;
+export type PostMatchAssaultEnding = (typeof POST_MATCH_ASSAULT_ENDINGS)[number];
 export type TurnPresentation = "REVEAL" | "BETRAYAL";
 export type SigningOutcome = "SIGNED" | "REJECTED" | "WALKOUT" | "BRAWL";
 export type ChallengeResponse = "ACCEPTED" | "REFUSED" | "LEFT_OPEN";
@@ -143,6 +149,10 @@ export interface DetailedShowSegmentDraft {
   victimPersonId?: Id | null;
   // RESCUE is an attack interrupted by a third, explicitly identified wrestler.
   rescuerPersonId?: Id | null;
+  /** Null preserves unscripted legacy rescue history. */
+  rescueOutcome?: RescueOutcome | null;
+  /** Null preserves legacy aftermath. Format/objective reuse ATTACK mechanics. */
+  postMatchAssaultEnding?: PostMatchAssaultEnding | null;
   // POST_MATCH_ASSAULT must follow its referenced match in the same show.
   sourceDraftMatchId?: string | null;
   // CHALLENGE/CONFRONTATION direction is authored, never inferred from participant order.
@@ -555,6 +565,14 @@ function validateShowSegmentDraft(
     !rescuerPersonId || rescuerPersonId === attackerPersonId || rescuerPersonId === victimPersonId
     || !draft.participantIds.includes(rescuerPersonId)
   )) throw new Error("RESCUE requires a distinct rescuer among segment participants");
+  const rescueOutcome = draft.type === "RESCUE" ? (draft.rescueOutcome ?? null) : null;
+  if (rescueOutcome !== null && !RESCUE_OUTCOMES.includes(rescueOutcome)) {
+    throw new Error("RESCUE has an unsupported scripted rescue outcome");
+  }
+  const postMatchAssaultEnding = draft.type === "POST_MATCH_ASSAULT" ? (draft.postMatchAssaultEnding ?? null) : null;
+  if (postMatchAssaultEnding !== null && !POST_MATCH_ASSAULT_ENDINGS.includes(postMatchAssaultEnding)) {
+    throw new Error("POST_MATCH_ASSAULT has an unsupported scripted ending");
+  }
   const isDirected = draft.type === "CHALLENGE" || draft.type === "CONFRONTATION" || draft.type === "INTERRUPTION" || draft.type === "CONTRACT_SIGNING" || draft.type === "STABLE_INVITATION" || draft.type === "STABLE_EXIT" || draft.type === "STABLE_RECONCILIATION";
   const initiatorPersonId = isDirected && draft.initiatorPersonId != null
     ? normalizedId(draft.initiatorPersonId, "initiatorPersonId") : null;
@@ -635,9 +653,10 @@ function validateShowSegmentDraft(
     !initiatorPersonId || !targetPersonId
     || !["SIGNED", "REJECTED", "WALKOUT", "BRAWL"].includes(signingOutcome!)
   )) throw new Error("CONTRACT_SIGNING needs proposer, responder and a scripted outcome");
-  const attackPresentation = draft.type === "ATTACK" ? (draft.attackPresentation ?? "BLINDSIDE") : null;
-  const attackObjective = draft.type === "ATTACK" ? (draft.attackObjective ?? "GENERATE_HEAT") : null;
-  if (draft.type === "ATTACK" && (
+  const hasAttackChoices = draft.type === "ATTACK" || draft.type === "POST_MATCH_ASSAULT";
+  const attackPresentation = hasAttackChoices ? (draft.attackPresentation ?? (draft.type === "ATTACK" ? "BLINDSIDE" : null)) : null;
+  const attackObjective = hasAttackChoices ? (draft.attackObjective ?? (draft.type === "ATTACK" ? "GENERATE_HEAT" : null)) : null;
+  if (hasAttackChoices && (
     !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(attackPresentation!)
     || !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(attackObjective!)
   )) throw new Error("ATTACK segment has an unsupported presentation or objective");
@@ -700,8 +719,9 @@ function validateShowSegmentDraft(
     ...(draft.type === "INTERRUPTION" ? { interruptionOutcome } : {}),
     ...(draft.type === "CONFRONTATION" ? { confrontationEnding } : {}),
     ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
-    ...(draft.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
-    ...(draft.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),
+    ...(draft.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId, rescueOutcome } : {}),
+    ...(draft.type === "POST_MATCH_ASSAULT"
+      ? { attackerPersonId, victimPersonId, sourceDraftMatchId, attackPresentation, attackObjective, postMatchAssaultEnding } : {}),
     ...(draft.type === "TURN" ? { turnPersonId, turnTargetAlignment, turnPresentation, betrayedPersonId } : {}),
   };
 }
