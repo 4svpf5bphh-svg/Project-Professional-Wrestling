@@ -371,6 +371,52 @@ await test("Alpha browser card booking persists a complete card, title assignmen
   ok((recent?.winnerPersonIds.length ?? 0) > 0, "recent opponent context did not expose the prior winning side");
 });
 
+await test("Card saves a chosen promo message, reloads it and rejects invented purposes", async () => {
+  const fixture = await reservedShowFixture(61020);
+  const initial = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  const card = singlesCard(fixture.participantIds);
+  const segment: AlphaCardSegmentView = {
+    draftSegmentId: "authored-promo-message",
+    type: "PROMO",
+    promoPurpose: "AIR_GRIEVANCE",
+    participantIds: [fixture.participantIds[0]!],
+    programmeId: null,
+    plannedLengthMinutes: 6,
+  };
+  const saved = await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+    requestId: "promo-purpose-saved",
+    expectedRevision: initial.world.revision,
+    expectedPlanVersion: initial.workspaceVersion,
+    matches: card,
+    segments: [segment],
+    runningOrder: [
+      { kind: "SEGMENT", refId: segment.draftSegmentId },
+      ...card.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ],
+    championshipAssignments: [],
+  });
+  ok(saved.segments[0]?.promoPurpose === "AIR_GRIEVANCE", "Card save changed the promo message");
+  const reload = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(reload.segments[0]?.promoPurpose === "AIR_GRIEVANCE", "private Card reload lost the message");
+  let refused = false;
+  try {
+    await saveAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player", {
+      requestId: "promo-purpose-invalid",
+      expectedRevision: reload.world.revision,
+      expectedPlanVersion: reload.workspaceVersion,
+      matches: card,
+      segments: [{ ...segment, promoPurpose: "INVALID_SCRIPTED_BEAT" as "BOAST" }],
+      runningOrder: reload.runningOrder,
+      championshipAssignments: [],
+    });
+  } catch (error) {
+    refused = error instanceof Error && error.message.includes("promo purpose");
+  }
+  ok(refused, "server accepted an invented promo choice");
+  const intact = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
+  ok(intact.segments[0]?.promoPurpose === "AIR_GRIEVANCE", "rejected promo changed the stored script");
+});
+
 await test("Show Builder persists an interleaved Programme segment with wrestlers who also work matches", async () => {
   const fixture = await reservedShowFixture(61021);
   const beforeProgramme = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
