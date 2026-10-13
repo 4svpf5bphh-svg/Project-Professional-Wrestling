@@ -34,6 +34,8 @@ import {
   type VideoPackageReveal,
   type LiveAppearanceKind,
   type LiveAppearanceObjective,
+  type PromoPurpose,
+  PROMO_PURPOSES,
   type AttackPresentation,
   type AttackObjective,
   type TurnPresentation,
@@ -141,6 +143,7 @@ export interface AlphaCardSegmentView {
   videoReveal?: VideoPackageReveal | null;
   liveAppearanceKind?: LiveAppearanceKind | null;
   liveAppearanceObjective?: LiveAppearanceObjective | null;
+  promoPurpose?: PromoPurpose | null;
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
   rescuerPersonId?: Id | null;
@@ -550,6 +553,10 @@ function normalizeSegments(
     const videoReveal = segment.type === "VIDEO_PACKAGE" ? (segment.videoReveal ?? null) : null;
     const liveAppearanceKind = segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceKind ?? null) : null;
     const liveAppearanceObjective = segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceObjective ?? null) : null;
+    const promoPurpose = segment.type === "PROMO" ? (segment.promoPurpose ?? null) : null;
+    if (promoPurpose !== null && !PROMO_PURPOSES.includes(promoPurpose)) {
+      throw new Error("promo purpose must be a supported scripted story beat");
+    }
     if (segment.type === "LIVE_APPEARANCE") {
       if (!["DEBUT", "RETURN", "SURPRISE_REVEAL", "INTRODUCTION"].includes(liveAppearanceKind ?? "")
         || !["ESTABLISH_STAR", "BUILD_EXCITEMENT", "CREATE_MYSTERY", "UNSETTLE_RIVAL", "REIGNITE_PROGRAMME"].includes(liveAppearanceObjective ?? "")) {
@@ -720,6 +727,7 @@ function normalizeSegments(
       plannedLengthMinutes: segment.plannedLengthMinutes,
       ...(segment.type === "VIDEO_PACKAGE" ? { videoSubjectPersonId, videoKind, videoObjective, videoReveal } : {}),
       ...(segment.type === "LIVE_APPEARANCE" ? { liveAppearanceKind, liveAppearanceObjective } : {}),
+      ...(segment.type === "PROMO" ? { promoPurpose } : {}),
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
       ...(segment.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
@@ -1179,6 +1187,7 @@ export async function loadAlphaShowCard(
       videoReveal: segment.type === "VIDEO_PACKAGE" ? (segment.videoReveal ?? null) : null,
       liveAppearanceKind: segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceKind ?? null) : null,
       liveAppearanceObjective: segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceObjective ?? null) : null,
+      promoPurpose: segment.type === "PROMO" ? (segment.promoPurpose ?? null) : null,
       attackerPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
