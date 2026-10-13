@@ -19,7 +19,7 @@ import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
 import { setActualMatchFinish } from "../packages/sim-core/src/match-finishes.js";
 import { hotSegmentHeadline, showResultHighlights, showOpeningHighlights } from "../packages/web-adapter/src/results-highlights.js";
-import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShow, reviewPlayerShowChapters, reviewPlayerShowFinalBell, reviewPlayerShowRunningOrder } from "../packages/web-adapter/src/results-review.js";
+import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShow, reviewPlayerShowNarrative, reviewPlayerShowChapters, reviewPlayerShowFinalBell, reviewPlayerShowRunningOrder } from "../packages/web-adapter/src/results-review.js";
 import type { PlayerShowMatchView, PlayerShowSegmentView, PlayerShowResultView } from "../packages/application/src/results-view.js";
 import { discoverWorldResults, worldResultsWeekLabel, worldShowHasSpotlight } from "../packages/web-adapter/src/world-results-discovery.js";
 
@@ -1549,5 +1549,73 @@ test("player match prose does not expose booking diagnostics as wrestling commen
     && !stoppage.recap.includes("planned finish"),
     "injury stoppage narration exposed the abandoned booking instruction");
 });
+
+
+test("player event copy connects real match trends with recorded major moments", () => {
+  function bout(order: number, rating: number, more: Record<string, unknown> = {}) {
+    return { kind: "MATCH" as const, order, match: {
+      matchId: "event-bout-" + order, order,
+      type: "SINGLES", intent: "COMPETITIVE",
+      winnerNames: ["Winner " + order], criticalRatingStars: rating,
+      participants: [{ personId: "w" + order, name: "Winner " + order, side: "A" }],
+      titleOutcomes: [], injuries: [], ...more,
+    } as unknown as PlayerShowMatchView };
+  }
+  function angle(order: number, more: Record<string, unknown> = {}) {
+    return { kind: "SEGMENT" as const, order, segment: {
+      segmentId: "event-angle-" + order,
+      type: "PROMO", participants: [{ personId: "speaker", name: "The Speaker" }],
+      outcomeBand: "MIXED", crowdResponse: 65,
+      ...more,
+    } as unknown as PlayerShowSegmentView };
+  }
+  const seed = {
+    eventId: "opening-story", crowdResponse: 76, averageMatchRating: 3.3,
+    titleChangeCount: 0, injuryCount: 0, matchCount: 4, segmentCount: 1,
+    runningOrder: [bout(1, 2.1), angle(2), bout(3, 3.0), bout(4, 3.8), bout(5, 4.4)],
+  };
+  const saved = JSON.stringify(seed);
+  const lateSurge = reviewPlayerShowNarrative(seed);
+  ok(lateSurge.recap.includes("Winner 5"), "best recorded bout did not shape the show narrative");
+  ok(/improved|closing stretch/.test(lateSurge.recap),
+    "clearly improving card was not treated as a full-show arc");
+  ok(JSON.stringify(reviewPlayerShowNarrative(structuredClone(seed))) === JSON.stringify(lateSurge),
+    "full-show storytelling changed between historical reloads");
+  ok(JSON.stringify(seed) === saved, "player-show narrative changed immutable recorded data");
+  const fading = reviewPlayerShowNarrative({
+    ...seed, runningOrder: [bout(1, 4.7), bout(2, 3.5), bout(3, 2.2)],
+  });
+  ok(/early matches|started stronger/.test(fading.recap),
+    "falling match ratings were misreported as a late show recovery");
+  const crowned = reviewPlayerShowNarrative({
+    ...seed, titleChangeCount: 1, injuryCount: 1,
+    runningOrder: [
+      bout(1, 3.2, { injuries: [{ injuryId: "i", personName: "Injured Star", weeksOut: 2 }] }),
+      bout(2, 3.8, { titleOutcomes: [{
+        titleChanged: true, championshipName: "World Championship",
+        winnerHolderName: "New Champion",
+      }] }),
+      angle(3, { type: "VIDEO_PACKAGE", videoReveal: "CRYPTIC",
+        participants: [{ personId: "secret", name: "Secret Name" }],
+        videoSubjectName: "Secret Name" }),
+    ],
+  });
+  ok(crowned.headline.includes("New Champion") && crowned.recap.includes("World Championship"),
+    "real title change did not become a headline");
+  ok(crowned.recap.includes("injury"), "recorded injury disappeared under title coverage");
+  ok(!JSON.stringify(crowned).includes("Secret Name"),
+    "cryptic video identity leaked into the show front page");
+  const noWrestling = reviewPlayerShowNarrative({
+    ...seed, matchCount: 0, segmentCount: 1,
+    runningOrder: [angle(1, { type: "VIDEO_PACKAGE", videoReveal: "CRYPTIC",
+      participants: [{ personId: "secret", name: "Secret Name" }],
+      videoSubjectName: "Secret Name", outcomeBand: "HOT", crowdResponse: 89 })],
+  });
+  ok(!JSON.stringify(noWrestling).includes("Secret Name"),
+    "angle-only cryptic show revealed a private wrestler");
+  ok(!/match of the night|won a highly rated contest/i.test(noWrestling.recap),
+    "angle-only show invented wrestling matches");
+});
+
 console.log(`\nApplication results-view tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
