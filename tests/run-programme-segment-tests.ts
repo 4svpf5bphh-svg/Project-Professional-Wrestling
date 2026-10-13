@@ -752,7 +752,7 @@ test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the
 });
 
 test("post-match assault repetition needs same actual completed roles, format, objective and scripted aftermath", () => {
-  function run(prior: "NONE" | "IDENTICAL" | "DIFFERENT_ENDING" | "DIFFERENT_FORMAT" | "OTHER_PROMOTION" | "FUTURE") {
+  function run(prior: "NONE" | "IDENTICAL" | "DIFFERENT_ENDING" | "DIFFERENT_FORMAT" | "OTHER_PROMOTION" | "FUTURE" | "PREVIOUS_STANDALONE_ATTACK") {
     const setup = fixture(91903);
     setup.state.world.currentDate = { year: 1, week: 8, day: 1 };
     setup.targetDate = { year: 1, week: 8, day: 6 };
@@ -770,7 +770,7 @@ test("post-match assault repetition needs same actual completed roles, format, o
       entityIds: [setup.promotion.id, aggressor, victim],
       payload: {
         promotionId: prior === "OTHER_PROMOTION" ? "not-our-promotion" : setup.promotion.id,
-        segmentType: "POST_MATCH_ASSAULT",
+        segmentType: prior === "PREVIOUS_STANDALONE_ATTACK" ? "ATTACK" : "POST_MATCH_ASSAULT",
         attackerPersonId: aggressor, victimPersonId: victim,
         attackPresentation: prior === "DIFFERENT_FORMAT" ? "BLINDSIDE" : "BEATDOWN",
         attackObjective: "GENERATE_HEAT",
@@ -825,6 +825,10 @@ test("post-match assault repetition needs same actual completed roles, format, o
   const fresh = run("NONE");
   ok(run("IDENTICAL").angleFitModifier < fresh.angleFitModifier,
     "repeated completed assault with the same script did not lose novelty");
+  const crossContext = run("PREVIOUS_STANDALONE_ATTACK");
+  ok(crossContext.angleFitModifier < fresh.angleFitModifier
+    && crossContext.angleFitModifier > run("IDENTICAL").angleFitModifier,
+    "a post-match assault should recognise previous identical standalone attacks without conflating the contexts");
   for (const reason of ["DIFFERENT_ENDING", "DIFFERENT_FORMAT", "OTHER_PROMOTION", "FUTURE"] as const) {
     ok(run(reason).angleFitModifier === fresh.angleFitModifier,
       `${reason} wrongly penalised a new post-match script`);
