@@ -84,6 +84,16 @@ const CONFRONTATION_ENDING_OPTIONS = [
 ] as const;
 const ATTACK_FORMATS = ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"] as const;
 const ATTACK_OBJECTIVES = ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"] as const;
+const RESCUE_OUTCOME_OPTIONS = [
+  ["RESCUER_STANDS_TALL", "Rescuer drives attacker away"],
+  ["ATTACKER_ESCAPES", "Attacker flees the save"],
+  ["RESCUE_OVERWHELMED", "Rescue fails — attacker overpowers them"],
+] as const;
+const POST_MATCH_ENDING_OPTIONS = [
+  ["ATTACKER_STANDS_TALL", "Aggressor stands tall"],
+  ["VICTIM_FIGHTS_BACK", "Victim fights back"],
+  ["OFFICIALS_SEPARATE", "Officials separate them"],
+] as const;
 const VIDEO_KINDS = [
   ["DEBUT_TEASER", "Coming soon"], ["RETURN_TEASER", "Return teaser"],
   ["CHARACTER_SPOTLIGHT", "Character spotlight"], ["RIVALRY_RECAP", "Rivalry recap"],
@@ -646,6 +656,8 @@ export default function CardClient(): React.JSX.Element {
       attackerPersonId: null,
       victimPersonId: null,
       rescuerPersonId: null,
+      rescueOutcome: type === "RESCUE" ? "RESCUER_STANDS_TALL" : null,
+      postMatchAssaultEnding: type === "POST_MATCH_ASSAULT" ? "ATTACKER_STANDS_TALL" : null,
       sourceDraftMatchId: type === "POST_MATCH_ASSAULT"
         ? ([...runningOrder].reverse().find((slot) => slot.kind === "MATCH")?.refId ?? null) : null,
       initiatorPersonId: null,
@@ -658,8 +670,8 @@ export default function CardClient(): React.JSX.Element {
       interruptionOutcome: type === "INTERRUPTION" ? "VERBAL_EXCHANGE" : null,
       confrontationEnding: type === "CONFRONTATION" ? "STAREDOWN" : null,
       challengeResponse: type === "CHALLENGE" ? "LEFT_OPEN" : null,
-      attackPresentation: type === "ATTACK" ? "BLINDSIDE" : null,
-      attackObjective: type === "ATTACK" ? "GENERATE_HEAT" : null,
+      attackPresentation: type === "ATTACK" || type === "POST_MATCH_ASSAULT" ? "BLINDSIDE" : null,
+      attackObjective: type === "ATTACK" || type === "POST_MATCH_ASSAULT" ? "GENERATE_HEAT" : null,
       turnPersonId: null,
       turnTargetAlignment: null,
       turnPresentation: type === "TURN" ? "REVEAL" : null,
@@ -870,6 +882,10 @@ export default function CardClient(): React.JSX.Element {
       sourceDraftMatchId,
       rescuerPersonId: type === "RESCUE" && type === segment.type && participantIds[2] === segment.rescuerPersonId
         ? (segment.rescuerPersonId ?? null) : null,
+      rescueOutcome: type === "RESCUE"
+        ? (segment.type === type ? (segment.rescueOutcome ?? "RESCUER_STANDS_TALL") : "RESCUER_STANDS_TALL") : null,
+      postMatchAssaultEnding: type === "POST_MATCH_ASSAULT"
+        ? (segment.type === type ? (segment.postMatchAssaultEnding ?? "ATTACKER_STANDS_TALL") : "ATTACKER_STANDS_TALL") : null,
       initiatorPersonId: isDirectedSegment(type) && type === segment.type && participantIds.includes(segment.initiatorPersonId ?? "")
         ? (segment.initiatorPersonId ?? null) : null,
       targetPersonId: isDirectedSegment(type) && type === segment.type && participantIds.includes(segment.targetPersonId ?? "")
@@ -884,8 +900,10 @@ export default function CardClient(): React.JSX.Element {
         ? (segment.type === type ? (segment.confrontationEnding ?? "STAREDOWN") : "STAREDOWN") : null,
       challengeResponse: type === "CHALLENGE"
         ? (segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : "LEFT_OPEN") : null,
-      attackPresentation: type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
-      attackObjective: type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null,
+      attackPresentation: type === "ATTACK" || type === "POST_MATCH_ASSAULT"
+        ? (segment.type === type ? (segment.attackPresentation ?? "BLINDSIDE") : "BLINDSIDE") : null,
+      attackObjective: type === "ATTACK" || type === "POST_MATCH_ASSAULT"
+        ? (segment.type === type ? (segment.attackObjective ?? "GENERATE_HEAT") : "GENERATE_HEAT") : null,
       turnPersonId: type === "TURN"
         ? (segment.turnPersonId && participantIds.includes(segment.turnPersonId) ? segment.turnPersonId : participantIds.find(Boolean) ?? null)
         : null,
@@ -1237,13 +1255,16 @@ export default function CardClient(): React.JSX.Element {
       const attacker = segment.attackerPersonId ? personName(segment.attackerPersonId) : "Choose aggressor";
       const victim = segment.victimPersonId ? personName(segment.victimPersonId) : "Choose victim";
       const match = matches.find((candidate) => candidate.draftMatchId === segment.sourceDraftMatchId);
-      return `Post-match assault · ${attacker} attacks ${victim} · After ${match ? match.sideAIds.map(personName).join(" & ") + " vs " + match.sideBIds.map(personName).join(" & ") : "choose match"}`;
+      const aftermath = segment.postMatchAssaultEnding ? pretty(segment.postMatchAssaultEnding) : "Unrecorded aftermath";
+      return `Post-match assault · ${attacker} vs ${victim} · ${aftermath} · After ${match ? match.sideAIds.map(personName).join(" & ") + " vs " + match.sideBIds.map(personName).join(" & ") : "choose match"}`;
     }
     if (segment.type === "RESCUE") {
       const rescuer = segment.rescuerPersonId ? personName(segment.rescuerPersonId) : "Choose rescuer";
       const victim = segment.victimPersonId ? personName(segment.victimPersonId) : "Choose victim";
       const aggressor = segment.attackerPersonId ? personName(segment.attackerPersonId) : "Choose aggressor";
-      return `Rescue · ${rescuer} saves ${victim} from ${aggressor} · ${segment.plannedLengthMinutes} min`;
+      const outcome = segment.rescueOutcome === "RESCUE_OVERWHELMED" ? "rescue fails"
+        : segment.rescueOutcome === "ATTACKER_ESCAPES" ? "attacker escapes" : "rescuer stands tall";
+      return `Rescue attempt · ${rescuer} helps ${victim} against ${aggressor} · ${outcome} · ${segment.plannedLengthMinutes} min`;
     }
     if (segment.type === "ATTACK") {
       const attacker = segment.attackerPersonId ? personName(segment.attackerPersonId) : "Choose attacker";
@@ -2045,6 +2066,24 @@ export default function CardClient(): React.JSX.Element {
                   </div>
                 ) : null}
 
+                {segment.type === "RESCUE" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>How does the rescue play out?</span>
+                      <small>The wrestlers and on-screen result are scripted by you. Audience reaction is simulated.</small>
+                    </div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Rescue scripted result">
+                      {RESCUE_OUTCOME_OPTIONS.map(([outcome, caption]) => (
+                        <button key={outcome} type="button" disabled={!view.canEdit}
+                          aria-pressed={(segment.rescueOutcome ?? "RESCUER_STANDS_TALL") === outcome}
+                          className={(segment.rescueOutcome ?? "RESCUER_STANDS_TALL") === outcome ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { rescueOutcome: outcome })}>{caption}</button>
+                      ))}
+                    </div>
+                    <small className={styles.sideLabel}>A failed rescue remains a failed attempt, not an invented successful save. No injury or backstage relationship change is automatic.</small>
+                  </div>
+                ) : null}
+
                 {segment.type === "POST_MATCH_ASSAULT" ? (
                   <div className={styles.controls}>
                     <div className={styles.control}>
@@ -2060,6 +2099,46 @@ export default function CardClient(): React.JSX.Element {
                       </select>
                       <small className={styles.sideLabel}>Automatically places this assault immediately after the match. The victim must have competed in it; the aggressor may be an outsider.</small>
                     </div>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>How does the attacker strike?</span>
+                      <small>Reuse the same physical formats as an Attack — this angle happens after an actual match.</small>
+                    </div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Post-match assault format">
+                      {ATTACK_FORMATS.map((format) => (
+                        <button key={format} type="button" disabled={!view.canEdit}
+                          aria-pressed={(segment.attackPresentation ?? "BLINDSIDE") === format}
+                          className={(segment.attackPresentation ?? "BLINDSIDE") === format ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { attackPresentation: format })}>{pretty(format)}</button>
+                      ))}
+                    </div>
+                    {bookingMode === "ADVANCED" ? (
+                      <>
+                        <div className={styles.segmentPeopleHeader}>
+                          <span>What is the attack meant to achieve?</span>
+                        </div>
+                        <div className={styles.slotTypeRow} role="group" aria-label="Post-match assault objective">
+                          {ATTACK_OBJECTIVES.map((objective) => (
+                            <button key={objective} type="button" disabled={!view.canEdit}
+                              aria-pressed={(segment.attackObjective ?? "GENERATE_HEAT") === objective}
+                              className={(segment.attackObjective ?? "GENERATE_HEAT") === objective ? styles.typeActive : styles.secondaryButton}
+                              onClick={() => updateSegment(segment.draftSegmentId, { attackObjective: objective })}>{pretty(objective)}</button>
+                          ))}
+                        </div>
+                      </>
+                    ) : null}
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>Who stands tall after the bell?</span>
+                      <small>Script the aftermath; the already-completed match winner never changes.</small>
+                    </div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Post-match assault ending">
+                      {POST_MATCH_ENDING_OPTIONS.map(([ending, caption]) => (
+                        <button key={ending} type="button" disabled={!view.canEdit}
+                          aria-pressed={(segment.postMatchAssaultEnding ?? "ATTACKER_STANDS_TALL") === ending}
+                          className={(segment.postMatchAssaultEnding ?? "ATTACKER_STANDS_TALL") === ending ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { postMatchAssaultEnding: ending })}>{caption}</button>
+                      ))}
+                    </div>
+                    <small className={styles.sideLabel}>No automatic injury, disqualification, result reversal or hidden substitution occurs because of this booked assault.</small>
                   </div>
                 ) : null}
 
