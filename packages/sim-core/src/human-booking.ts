@@ -14,6 +14,7 @@ import { requireSameWrestlerDivision } from "./wrestler-division.js";
 import {
   defaultPlannedFinishForIntent,
   isBookableMatchFinish,
+  resolveBookedFinishCheater,
   setPlannedMatchFinish,
   type MatchFinish,
 } from "./match-finishes.js";
@@ -27,6 +28,7 @@ export interface HumanMatchPlan {
   style?: MatchStyleProfile;
   plannedLengthMinutes: number;
   plannedFinish?: MatchFinish;
+  finishCheaterPersonId?: string | null;
   interfererPersonId?: string | null;
   interferenceSide?: MatchSide | null;
   interferenceOutcome?: "SUCCESS" | "THWARTED" | null;
@@ -106,6 +108,10 @@ export function prepareHumanMatchCard(
       throw new Error("planned match finish must be clean, submission, flash, protected, DQ or foreign-object");
     }
     if (plan.style !== undefined) normalizeMatchStyle(plan.style);
+    resolveBookedFinishCheater(
+      plan.plannedFinish ?? defaultPlannedFinishForIntent(plan.intent),
+      plan.intendedWinnerSide, plan.sideAIds, plan.sideBIds, plan.finishCheaterPersonId,
+    );
     const ids = [...plan.sideAIds, ...plan.sideBIds];
     const interfererId = plan.interfererPersonId ?? null;
     const aidedSide = plan.interferenceSide ?? null;
@@ -156,6 +162,10 @@ export function prepareHumanMatchCard(
   const matches: Match[] = [];
   for (let index = 0; index < plans.length; index += 1) {
     const plan = plans[index]!;
+    const cheater = resolveBookedFinishCheater(
+      plan.plannedFinish ?? defaultPlannedFinishForIntent(plan.intent),
+      plan.intendedWinnerSide, plan.sideAIds, plan.sideBIds, plan.finishCheaterPersonId,
+    );
     const match: Match = {
       id: nextEntityId(state, "match"),
       worldId: state.world.id,
@@ -171,6 +181,7 @@ export function prepareHumanMatchCard(
       intendedWinnerSide: plan.intendedWinnerSide,
       actualWinnerSide: null,
       finishChangedDueToInjury: false,
+      ...(cheater ? { finishCheaterPersonId: cheater } : {}),
       ...(plan.interfererPersonId && plan.interferenceSide
         ? { interference: { personId: plan.interfererPersonId, aidedSide: plan.interferenceSide,
             plannedOutcome: plan.interferenceOutcome ?? "SUCCESS", outcome: null } } : {}),

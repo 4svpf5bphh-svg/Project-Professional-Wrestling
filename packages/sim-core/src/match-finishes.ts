@@ -33,6 +33,27 @@ export function isBookableMatchFinish(value: unknown): value is MatchFinish {
   return typeof value === "string" && BOOKABLE_MATCH_FINISH_SET.has(value as MatchFinish);
 }
 
+/** DQ: losing side cheats; foreign-object win: winning side cheats. */
+export function finishCheaterSide(finish: MatchFinish, winner: "A" | "B"): "A" | "B" | null {
+  if (finish === "FOREIGN_OBJECT") return winner;
+  if (finish === "DISQUALIFICATION") return winner === "A" ? "B" : "A";
+  return null;
+}
+
+/** Never guess a tag culprit; auto-select the sole singles wrestler. */
+export function resolveBookedFinishCheater(
+  finish: MatchFinish, winner: "A" | "B",
+  sideA: readonly string[], sideB: readonly string[], selected?: string | null,
+): string | null {
+  const side = finishCheaterSide(finish, winner);
+  if (!side) return null;
+  const eligible = side === "A" ? sideA : sideB;
+  if (selected && !eligible.includes(selected)) throw new Error("cheating wrestler is on the wrong match side");
+  if (eligible.length === 1) return eligible[0] ?? null;
+  if (!selected) throw new Error("choose which wrestler cheats in this tag-team finish");
+  return selected;
+}
+
 export function defaultPlannedFinishForIntent(intent: MatchIntent): MatchFinish {
   if (intent === "TECHNICAL") return "SUBMISSION";
   if (intent === "STORY" || intent === "PROTECTIVE") return "PROTECTED_FINISH";

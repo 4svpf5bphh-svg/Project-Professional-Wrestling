@@ -406,6 +406,8 @@ export interface Match {
   intendedWinnerSide: MatchSide;
   actualWinnerSide: MatchSide | null;
   finishChangedDueToInjury: boolean;
+  /** Booked culprit. Only an actual culprit if the cheating finish really happens. */
+  finishCheaterPersonId?: Id | null;
   interference?: MatchInterference;
   executionQuality: number;
   criticalRatingStars: number;
