@@ -27,3 +27,5 @@
 
 ## Verification gate
 Full CI on exact branch head: tests, Programme/Show Flow regressions, web build, HTTP, PostgreSQL, long simulations. Leave as draft stacked on #77, no release.
+
+**Verification trigger:** The PR briefly targets main solely to launch the existing full GitHub CI; restore stacked parent #77 after the check starts. No merging or deployment.
