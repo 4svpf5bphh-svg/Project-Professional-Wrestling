@@ -172,7 +172,8 @@ function FinaleMoment({ moment, eventId, style }: {
 }
 
 /** Read-only closing credits for player-owned shows. No extra match actions. */
-export function ShowFinalBell({ show }: { show: BroadcastShow }): React.JSX.Element {
+export function ShowFinalBell({ show }: { show: Pick<PlayerShowResultView,
+  "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating"> }): React.JSX.Element {
   const finale = reviewPlayerShowFinalBell(show);
   return (
     <section className={styles.finale} aria-label="The final word on this show">
