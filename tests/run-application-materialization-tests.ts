@@ -473,6 +473,26 @@ test("an earlier committed physical show pre-empts a second same-week promotion 
     "chronology check rewrote the scripted segment");
 });
 
+test("a rival promotion's earlier booking does not erase a first appearance here", () => {
+  const { f, draft, subject, event } = bookedLiveArrivalFixture(16166, "rival-booking-debut");
+  const rival = f.state.promotions.find((entry) => entry.id !== f.promotionId)!;
+  const rivalEventId = "other-promotion-show-16166";
+  f.state.events.push({
+    ...structuredClone(event), id: rivalEventId,
+    promotionId: rival.id, date: { ...draft.targetDate, day: 2 },
+    status: "SCHEDULED",
+  });
+  const source = f.state.scheduledAppearances.find((entry) =>
+    entry.eventId === event.id && entry.personId === subject)!;
+  f.state.scheduledAppearances.push({
+    ...structuredClone(source), id: "other-promotion-appearance-16166",
+    eventId: rivalEventId, promotionId: rival.id,
+    date: { ...draft.targetDate, day: 2 }, status: "COMMITTED",
+  });
+  ok(materializedLiveArrivalConflicts(f.state, f.planning).length === 0,
+    "other promotions' physical bookings invalidated a promotion-relative debut");
+});
+
 asyncTest("already-materialized stale debut blocks manual advance but scheduled lock preserves the rest of the show", async () => {
   const { f, draft, subject, segmentId, event } = bookedLiveArrivalFixture(16165, "locked-live-debut");
   const earlierId = "completed-earlier-live-angle-16165";
