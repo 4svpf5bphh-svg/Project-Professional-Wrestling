@@ -91,6 +91,7 @@ import {
 import {
   defaultPlannedFinishForIntent,
   isBookableMatchFinish,
+  resolveBookedFinishCheater,
   type MatchFinish,
 } from "../../sim-core/src/match-finishes.js";
 
@@ -145,6 +146,7 @@ export interface AlphaCardMatchView {
   readiness?: AlphaCardMatchReadinessView;
   plannedLengthMinutes: number;
   plannedFinish?: MatchFinish;
+  finishCheaterPersonId?: Id | null;
   interfererPersonId?: Id | null;
   interferenceSide?: MatchSide | null;
   interferenceOutcome?: "SUCCESS" | "THWARTED" | null;
@@ -382,7 +384,7 @@ function normalizeCompleteCard(
     if (!MATCH_INTENTS.has(match.intent)) throw new Error(`unsupported match intent ${String(match.intent)}`);
     const plannedFinish = match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent);
     const style = match.style === undefined ? undefined : normalizeMatchStyle(match.style);
-    if (!isBookableMatchFinish(plannedFinish)) throw new Error("planned match finish must be clean, submission, flash or protected");
+    if (!isBookableMatchFinish(plannedFinish)) throw new Error("planned match finish must be a bookable finish");
     if (!Number.isInteger(match.plannedLengthMinutes) || match.plannedLengthMinutes < 3 || match.plannedLengthMinutes > 60) {
       throw new Error("planned match length must be an integer from 3 to 60 minutes");
     }
@@ -392,6 +394,10 @@ function normalizeCompleteCard(
       throw new Error(`${match.type.toLowerCase()} match requires ${expectedSideSize} wrestler(s) per side`);
     }
 
+    const finishCheaterPersonId = resolveBookedFinishCheater(
+      plannedFinish, match.intendedWinnerSide, match.sideAIds, match.sideBIds,
+      match.finishCheaterPersonId,
+    );
     const ids = [...match.sideAIds, ...match.sideBIds];
     const interfererPersonId = match.interfererPersonId ?? null;
     const interferenceSide = match.interferenceSide ?? null;
@@ -429,6 +435,7 @@ function normalizeCompleteCard(
       ...(style === undefined ? {} : { style }),
       plannedLengthMinutes: match.plannedLengthMinutes,
       plannedFinish,
+      ...(finishCheaterPersonId ? { finishCheaterPersonId } : {}),
       ...(interfererPersonId ? { interfererPersonId, interferenceSide, interferenceOutcome } : {}),
     } satisfies DetailedMatchDraft;
   });
@@ -983,6 +990,7 @@ function replaceMaterializedEventCard(
       ...(match.style === undefined ? {} : { style: { ...match.style } }),
       plannedLengthMinutes: match.plannedLengthMinutes,
       plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
+      finishCheaterPersonId: match.finishCheaterPersonId ?? null,
       ...(match.interfererPersonId && match.interferenceSide
         ? { interfererPersonId: match.interfererPersonId, interferenceSide: match.interferenceSide,
           interferenceOutcome: match.interferenceOutcome ?? "SUCCESS" } : {}),
@@ -1389,6 +1397,7 @@ export async function loadAlphaShowCard(
           }),
           plannedLengthMinutes: match.plannedLengthMinutes,
           plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
+          finishCheaterPersonId: match.finishCheaterPersonId ?? null,
           interfererPersonId: match.interfererPersonId ?? null,
           interferenceSide: match.interferenceSide ?? null,
           interferenceOutcome: match.interferenceOutcome ?? (match.interfererPersonId ? "SUCCESS" : null),

@@ -429,6 +429,7 @@ function completeCardPlans(
       ...(match.style === undefined ? {} : { style: { ...match.style } }),
       plannedLengthMinutes: match.plannedLengthMinutes,
       plannedFinish: match.plannedFinish ?? defaultPlannedFinishForIntent(match.intent),
+      finishCheaterPersonId: match.finishCheaterPersonId ?? null,
       ...(match.interfererPersonId && match.interferenceSide
         ? { interfererPersonId: match.interfererPersonId, interferenceSide: match.interferenceSide,
           interferenceOutcome: match.interferenceOutcome ?? "SUCCESS" } : {}),

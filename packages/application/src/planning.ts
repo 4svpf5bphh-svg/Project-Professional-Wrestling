@@ -12,7 +12,7 @@ import type {
   WorldState,
 } from "../../domain/src/types.js";
 import { isWrestlerAlignment, wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
-import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
+import { resolveBookedFinishCheater, type MatchFinish } from "../../sim-core/src/match-finishes.js";
 import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
 import { comparePpwDates } from "../../sim-core/src/clock.js";
 import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
@@ -36,6 +36,7 @@ export interface DetailedMatchDraft {
   style?: MatchStyleProfile;
   plannedLengthMinutes: number | null;
   plannedFinish?: MatchFinish;
+  finishCheaterPersonId?: Id | null;
   interfererPersonId?: Id | null;
   interferenceSide?: MatchSide | null;
   interferenceOutcome?: "SUCCESS" | "THWARTED" | null;
@@ -361,6 +362,11 @@ function validateMatchDraft(
   if (draft.plannedFinish !== undefined && !BOOKABLE_MATCH_FINISHES.has(draft.plannedFinish)) {
     throw new Error("draft planned match finish must be clean, submission, flash, protected, DQ or foreign-object");
   }
+  const finishCheaterPersonId = draft.intendedWinnerSide && draft.plannedFinish
+    ? resolveBookedFinishCheater(
+      draft.plannedFinish, draft.intendedWinnerSide, draft.sideAIds, draft.sideBIds,
+      draft.finishCheaterPersonId,
+    ) : null;
   const style = draft.style === undefined ? undefined : normalizeMatchStyle(draft.style);
   const interfererPersonId = draft.interfererPersonId == null ? null : normalizedId(draft.interfererPersonId, "interfererPersonId");
   // A successful run-in currently resolves to a protected finish. Prevent it
@@ -399,6 +405,7 @@ function validateMatchDraft(
     ...(style === undefined ? {} : { style }),
     plannedLengthMinutes: draft.plannedLengthMinutes,
     ...(draft.plannedFinish === undefined ? {} : { plannedFinish: draft.plannedFinish }),
+    ...(finishCheaterPersonId ? { finishCheaterPersonId } : {}),
     ...(interfererPersonId === null ? {} : { interfererPersonId, interferenceSide, interferenceOutcome }),
   };
 }

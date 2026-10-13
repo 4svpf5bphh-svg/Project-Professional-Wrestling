@@ -650,6 +650,8 @@ function resolveMatch(state: WorldState, planned: PlannedMatch, event: Wrestling
         interferencePlannedOutcome: match.interference.plannedOutcome,
       } : {}),
       finishChangedDueToInjury: match.finishChangedDueToInjury,
+      ...((actualFinish === "DISQUALIFICATION" || actualFinish === "FOREIGN_OBJECT")
+        && match.finishCheaterPersonId ? { finishCheaterPersonId: match.finishCheaterPersonId } : {}),
       ...(styleEvaluation === null ? {} : {
         styleResolver: "DIMENSIONAL",
         styleCompetitiveness: match.style!.competitiveness,
