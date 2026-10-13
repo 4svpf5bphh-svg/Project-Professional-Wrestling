@@ -246,9 +246,9 @@ export default function ResultsClient(): React.JSX.Element {
                       <strong>Year {show.date.year}, Week {show.date.week} · {show.venueName}</strong>
                       <span>{show.marketName} · {integer(show.attendance)} attendance ({decimal(show.attendancePercentOfCapacity)}%)</span>
                     </div>
-                    <div className={styles.worldRating}>
-                      <span>SHOW CROWD</span>
-                      <strong>{decimal(show.crowdResponse)}</strong>
+                    <div className={styles.playerEventMarker}>
+                      <span>SHOW REVIEW</span>
+                      <strong>READ THE SHOW →</strong>
                     </div>
                   </summary>
 
@@ -337,7 +337,7 @@ export default function ResultsClient(): React.JSX.Element {
                       </section>
                     ) : null}
 
-                    <div className={styles.matches}>
+                    <div className={styles.matches} id={`show-${show.eventId}-card`}>
                       {show.runningOrder.map((slot) => {
                         const chapter = chapterByOrder.get(slot.order);
                         if (slot.kind === "SEGMENT") {
@@ -514,39 +514,11 @@ export default function ResultsClient(): React.JSX.Element {
                               <b>vs</b>
                               <div>{sideB.map((participant) => <span className={participant.won ? styles.winner : undefined} key={participant.personId}>{participant.name}{participant.won ? " ✓" : ""}</span>)}</div>
                             </div>
-                            <div className={styles.winnerRibbon} aria-label="Recorded match result">
-                              <span>{match.winnerNames.length > 0 ? "WINNERS" : "WINNER NOT RECORDED"}</span>
-                              <strong>{match.winnerNames.length > 0 ? match.winnerNames.join(" & ") : "No winner recorded"}</strong>
+                            <div className={styles.matchOutcomeLine} aria-label="Recorded match result">
+                              <span>RESULT</span>
+                              <strong>{match.winnerNames.length > 0 ? match.winnerNames.join(" & ") + " wins" : "No winner recorded"}</strong>
                             </div>
                             <EditorialReview review={review} />
-                            {match.followUpProgrammeId ? (
-                              <div className={styles.followUpPlanner}>
-                                <strong>WHAT'S NEXT FOR THIS PROGRAMME?</strong>
-                                <small>Optional planning note, not an automatic rematch or segment. You can decide later.</small>
-                                <select aria-label="Next Programme direction"
-                                  disabled={!canChooseFollowUp || followUpSaving === match.matchId}
-                                  value={followUpDrafts[match.matchId] ?? match.followUpChoice ?? ""}
-                                  onChange={(event) => setFollowUpDrafts((current) => ({
-                                    ...current, [match.matchId]: event.target.value as "PURSUE_REMATCH" | "PLAN_RETALIATION" | "LET_STAND",
-                                  }))}>
-                                  <option value="">Choose direction…</option>
-                                  <option value="PURSUE_REMATCH">Pursue a rematch</option>
-                                  <option value="PLAN_RETALIATION">Plan retaliation</option>
-                                  <option value="LET_STAND">Let the result stand</option>
-                                </select>
-                                <button type="button"
-                                  disabled={!canChooseFollowUp || Boolean(followUpSaving)
-                                    || !followUpDrafts[match.matchId]
-                                    || followUpDrafts[match.matchId] === match.followUpChoice}
-                                  onClick={() => void saveFollowUp(show.eventId, match.matchId, match.followUpProgrammeId!,
-                                    followUpDrafts[match.matchId]!)}>
-                                  {followUpSaving === match.matchId ? "Saving…" : "Save direction"}
-                                </button>
-                                <a href="/programmes">Open Programmes →</a>
-                                {match.followUpChoice ? <small>Saved: {label(match.followUpChoice)}</small> : null}
-                                {!canChooseFollowUp ? <small>Available when the World is open for planning.</small> : null}
-                              </div>
-                            ) : null}
                             <details className={styles.matchAnalysis}>
                               <summary>Booker breakdown · Crowd {decimal(match.crowdResponse)} · {match.actualLengthMinutes} min</summary>
                               <div className={styles.matchAnalysisBody}>
@@ -599,6 +571,39 @@ export default function ResultsClient(): React.JSX.Element {
                             ) : null}
                               </div>
                             </details>
+                            {match.followUpProgrammeId ? (
+                              <details className={styles.matchAnalysis}>
+                                <summary>Booker's next move · plan a programme follow-up</summary>
+                                <div className={styles.matchAnalysisBody}>
+                                  <div className={styles.followUpPlanner}>
+                                    <strong>WHAT'S NEXT FOR THIS PROGRAMME?</strong>
+                                    <small>Optional planning note. No automatic rematch or segment is created.</small>
+                                    <select aria-label="Next Programme direction"
+                                      disabled={!canChooseFollowUp || followUpSaving === match.matchId}
+                                      value={followUpDrafts[match.matchId] ?? match.followUpChoice ?? ""}
+                                      onChange={(event) => setFollowUpDrafts((current) => ({
+                                        ...current, [match.matchId]: event.target.value as "PURSUE_REMATCH" | "PLAN_RETALIATION" | "LET_STAND",
+                                      }))}>
+                                      <option value="">Choose direction…</option>
+                                      <option value="PURSUE_REMATCH">Pursue a rematch</option>
+                                      <option value="PLAN_RETALIATION">Plan retaliation</option>
+                                      <option value="LET_STAND">Let the result stand</option>
+                                    </select>
+                                    <button type="button"
+                                      disabled={!canChooseFollowUp || Boolean(followUpSaving)
+                                        || !followUpDrafts[match.matchId]
+                                        || followUpDrafts[match.matchId] === match.followUpChoice}
+                                      onClick={() => void saveFollowUp(show.eventId, match.matchId, match.followUpProgrammeId!,
+                                        followUpDrafts[match.matchId]!)}>
+                                      {followUpSaving === match.matchId ? "Saving…" : "Save direction"}
+                                    </button>
+                                    <a href="/programmes">Open Programmes →</a>
+                                    {match.followUpChoice ? <small>Saved: {label(match.followUpChoice)}</small> : null}
+                                    {!canChooseFollowUp ? <small>Available when the World is open for planning.</small> : null}
+                                  </div>
+                                </div>
+                              </details>
+                            ) : null}
                             {match.titleOutcomes.map((title) => (
                               <div className={`${styles.consequence} ${title.titleChanged ? styles.titleChangeMoment : ""}`} key={title.championshipId}>
                                 <strong>{title.championshipName}</strong>
@@ -617,7 +622,9 @@ export default function ResultsClient(): React.JSX.Element {
                         );
                       })}
                     </div>
-                    <ShowFinalBell show={show} />
+                    <div id={`show-${show.eventId}-finale`} className={styles.finaleAnchor}>
+                      <ShowFinalBell show={show} />
+                    </div>
                   </div>
                 </details>
                 );
