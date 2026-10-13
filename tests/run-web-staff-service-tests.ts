@@ -129,7 +129,7 @@ await test("delegate requires an employed manager and preserves exact money, rol
   });
   const attention = buildPlayerAttention(await repo.load(worldId), "player-a");
   const outcome = attention.find(item => item.attentionId === `contract-offer-result:${submitted.offerId}`);
-  ok(outcome?.deepLink === "/staff" && outcome.title.includes("Talent Manager"),
+  ok(outcome?.deepLink === `/talent/contracts?personId=${encodeURIComponent(source.personId)}` && outcome.title.includes("Talent Manager"),
     "manager refusal did not return to staff context");
   ok(outcome?.summary.includes("negotiate different terms manually"),
     "manager rejection hid the need for player negotiation");
