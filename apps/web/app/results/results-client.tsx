@@ -348,11 +348,14 @@ export default function ResultsClient(): React.JSX.Element {
                               {slot.segment.type === "POST_MATCH_ASSAULT" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.sourceMatchId ? (
                                 <div className={styles.matchMeta}>
                                   <span>{slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "Aggressor"} attacked {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} after the match ({slot.segment.victimMatchOutcome === "WON" ? "victim won" : slot.segment.victimMatchOutcome === "LOST" ? "victim lost" : "match drawn"})</span>
+                                  {slot.segment.postMatchAssaultEnding ? (
+                                    <span>{slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : "Assault"} · {slot.segment.attackObjective ? label(slot.segment.attackObjective) : "Unspecified motive"} · {slot.segment.postMatchAssaultEnding === "ATTACKER_STANDS_TALL" ? "Aggressor stands tall" : slot.segment.postMatchAssaultEnding === "VICTIM_FIGHTS_BACK" ? "Victim fights back" : "Officials separate the wrestlers"}</span>
+                                  ) : null}
                                 </div>
                               ) : null}
                               {slot.segment.type === "RESCUE" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.rescuerPersonId ? (
                                 <div className={styles.matchMeta}>
-                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.rescuerPersonId)?.name ?? "Rescuer"} saved {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} from {slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "aggressor"}</span>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.rescuerPersonId)?.name ?? "Rescuer"} attempted to save {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} from {slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "aggressor"}{slot.segment.rescueOutcome === "RESCUER_STANDS_TALL" ? " · rescuer drives off the attacker" : slot.segment.rescueOutcome === "ATTACKER_ESCAPES" ? " · attacker escapes the save" : slot.segment.rescueOutcome === "RESCUE_OVERWHELMED" ? " · rescue fails; attacker overwhelms them" : " · outcome not recorded in legacy booking"}</span>
                                 </div>
                               ) : null}
                               {slot.segment.type === "ATTACK" && slot.segment.attackerPersonId && slot.segment.victimPersonId ? (
@@ -632,11 +635,14 @@ export default function ResultsClient(): React.JSX.Element {
                               {slot.segment.type === "POST_MATCH_ASSAULT" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.sourceMatchId ? (
                                 <div className={styles.matchMeta}>
                                   <span>{slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "Aggressor"} attacked {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} after the match ({slot.segment.victimMatchOutcome === "WON" ? "victim won" : slot.segment.victimMatchOutcome === "LOST" ? "victim lost" : "match drawn"})</span>
+                                  {slot.segment.postMatchAssaultEnding ? (
+                                    <span>{slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : "Assault"} · {slot.segment.attackObjective ? label(slot.segment.attackObjective) : "Unspecified motive"} · {slot.segment.postMatchAssaultEnding === "ATTACKER_STANDS_TALL" ? "Aggressor stands tall" : slot.segment.postMatchAssaultEnding === "VICTIM_FIGHTS_BACK" ? "Victim fights back" : "Officials separate the wrestlers"}</span>
+                                  ) : null}
                                 </div>
                               ) : null}
                               {slot.segment.type === "RESCUE" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.rescuerPersonId ? (
                                 <div className={styles.matchMeta}>
-                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.rescuerPersonId)?.name ?? "Rescuer"} saved {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} from {slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "aggressor"}</span>
+                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.rescuerPersonId)?.name ?? "Rescuer"} attempted to save {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} from {slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "aggressor"}{slot.segment.rescueOutcome === "RESCUER_STANDS_TALL" ? " · rescuer drives off the attacker" : slot.segment.rescueOutcome === "ATTACKER_ESCAPES" ? " · attacker escapes the save" : slot.segment.rescueOutcome === "RESCUE_OVERWHELMED" ? " · rescue fails; attacker overwhelms them" : " · outcome not recorded in legacy booking"}</span>
                                 </div>
                               ) : null}
                               {slot.segment.type === "ATTACK" && slot.segment.attackerPersonId && slot.segment.victimPersonId ? (
