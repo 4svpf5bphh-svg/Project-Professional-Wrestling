@@ -333,8 +333,8 @@ test("only a performed debut can headline the reel, never an unperformed arrival
       sourceDraftId: "performed-debut-draft",
       draftSegmentId: "performed-debut",
       slotOrder: 1, segmentType: "LIVE_APPEARANCE",
-      participantIds: person, liveAppearanceKind: "DEBUT",
-      liveAppearanceObjective: "ESTABLISH_STAR",
+      participantIds: person, programmeId: null,
+      liveAppearanceKind: "DEBUT", liveAppearanceObjective: "ESTABLISH_STAR",
       plannedLengthMinutes: 5,
     },
   });
