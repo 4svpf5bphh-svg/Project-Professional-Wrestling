@@ -45,7 +45,7 @@ export function showResultHighlights(show: ShowSource, limit = 3): ShowResultHig
           id: `finish:${match.matchId}`, category: "FINISH",
           priority: disqualified ? 91 : 90, slotOrder: slot.order,
           headline: disqualified ? "Disqualification decides the bout" : "Foreign object decides the bout",
-          detail: `${match.winnerNames.length ? match.winnerNames.join(" & ") : "Winner not recorded"} · ${disqualified ? "Opponents disqualified for cheating" : "Foreign object went unseen"}`,
+          detail: `${match.winnerNames.length ? match.winnerNames.join(" & ") : "Winner not recorded"} · ${match.finishCheater?.name ? `${match.finishCheater.name} ${disqualified ? "caught cheating" : "used a foreign object"}` : disqualified ? "Opponents disqualified for cheating" : "Foreign object went unseen"}`,
         });
       }
       const rating = Number.isFinite(match.criticalRatingStars) ? match.criticalRatingStars : 0;

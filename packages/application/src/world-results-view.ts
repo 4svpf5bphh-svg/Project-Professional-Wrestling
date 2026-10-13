@@ -1,6 +1,6 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
-import { recordedMatchFinish } from "./match-finish-projection.js";
+import { recordedFinishCheaterId, recordedMatchFinish } from "./match-finish-projection.js";
 import type {
   Id,
   InjurySeverity,
@@ -57,6 +57,7 @@ export interface PlayerWorldResultMatchView {
   participants: PlayerWorldResultParticipantView[];
   winnerNames: string[];
   actualFinish: MatchFinish | null;
+  finishCheater: { personId: Id; name: string } | null;
   interference: { personId: Id; name: string; aidedSide: "A" | "B"; outcome: "SUCCESS" | "THWARTED" | "ABORTED" | null } | null;
   titleOutcomes: PlayerWorldResultTitleOutcomeView[];
   injuries: PlayerWorldResultInjuryView[];
@@ -312,6 +313,14 @@ export function buildPlayerWorldResultsView(
           participants,
           winnerNames: participants.filter((participant) => participant.won).map((participant) => participant.name),
           actualFinish: recordedMatchFinish(match, completedMatchLedger.get(match.id)?.payload.actualFinish),
+          finishCheater: (() => {
+            const personId = recordedFinishCheaterId(
+              match, recordedMatchFinish(match, completedMatchLedger.get(match.id)?.payload.actualFinish),
+              participants, completedMatchLedger.get(match.id)?.payload.finishCheaterPersonId,
+            );
+            const person = participants.find((participant) => participant.personId === personId);
+            return person ? { personId: person.personId, name: person.name } : null;
+          })(),
           interference: match.interference ? {
             personId: match.interference.personId,
             name: peopleById.get(match.interference.personId)?.name ?? "Unknown wrestler",
