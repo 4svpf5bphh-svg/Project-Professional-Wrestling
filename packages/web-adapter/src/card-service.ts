@@ -12,6 +12,8 @@ import type {
 } from "../../domain/src/types.js";
 import {
   activePromotionControlForPlayer,
+  buildPlayerStableRosterView,
+  type PlayerStableStoryFollowThroughView,
   alphaCurrentWeekShowDraftId,
   maxShowParticipantsForEventType,
   playerShowPlanningStatus,
@@ -289,6 +291,8 @@ export interface AlphaCurrentWeekCardView {
   videoSubjects: { personId: Id; name: string }[];
   availableTeams: AlphaCardTeamView[];
   availableStables: AlphaCardStableView[];
+  /** Completed, owner-only stable storylines awaiting an explicit roster choice. Read-only. */
+  stableStoryFollowThrough: PlayerStableStoryFollowThroughView[];
   matches: AlphaCardMatchView[];
   segments: AlphaCardSegmentView[];
   runningOrder: AlphaCardSlotView[];
@@ -1368,6 +1372,7 @@ export async function loadAlphaShowCard(
     videoSubjects,
     availableTeams,
     availableStables,
+    stableStoryFollowThrough: buildPlayerStableRosterView(aggregate, playerId).storyFollowThrough,
     matches: draft.matches.flatMap((match) => (
       match.intendedWinnerSide !== null && match.intent !== null && match.plannedLengthMinutes !== null
         ? [{
