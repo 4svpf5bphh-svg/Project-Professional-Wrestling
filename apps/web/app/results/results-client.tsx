@@ -5,6 +5,7 @@ import type { PlayerShowHistoryView } from "../../../../dist/packages/applicatio
 import type { PlayerWorldResultsView } from "../../../../dist/packages/application/src/world-results-view.js";
 import ShowBroadcast, { MatchFinishReplay, segmentResultIcon } from "./show-broadcast";
 import { showResultHighlights } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
+import { reviewPlayerMatch, reviewPlayerSegment, type SlotReview } from "../../../../dist/packages/web-adapter/src/results-review.js";
 import {
   discoverWorldResults, worldResultsWeekLabel, WORLD_RESULTS_SPOTLIGHTS,
   type WorldResultsSpotlight,
@@ -50,6 +51,17 @@ function signedDecimal(value: number): string {
 
 function label(value: string): string {
   return value.replaceAll("_", " ").toLowerCase();
+}
+
+function EditorialReview({ review }: { review: SlotReview }): React.JSX.Element {
+  return (
+    <div className={`${styles.editorialReview} ${review.tone === "GREAT" ? styles.editorialGreat : review.tone === "ROUGH" ? styles.editorialRough : ""}`}>
+      <span className={styles.editorialKicker}>AT RINGSIDE · THE REVIEW</span>
+      <strong className={styles.editorialHeadline}>{review.headline}</strong>
+      <p>{review.recap}</p>
+      <div className={styles.editorialVerdict}><b>THE VERDICT</b> {review.verdict}</div>
+    </div>
+  );
 }
 
 function crowdStoryTitle(tone: "POSITIVE" | "NEUTRAL" | "NEGATIVE"): string {
@@ -314,6 +326,7 @@ export default function ResultsClient(): React.JSX.Element {
                     <div className={styles.matches}>
                       {show.runningOrder.map((slot) => {
                         if (slot.kind === "SEGMENT") {
+                          const review = reviewPlayerSegment(slot.segment);
                           return (
                             <article id={`show-${show.eventId}-slot-${slot.order}`}
                               className={`${styles.matchCard} ${styles.segmentResultCard} ${slot.segment.outcomeBand === "HOT" ? styles.hotAngleResult : ""}`} key={slot.segment.segmentId}>
@@ -330,6 +343,10 @@ export default function ResultsClient(): React.JSX.Element {
                                   <span key={participant.personId}>{participant.name}</span>
                                 ))}
                               </div>
+                              <EditorialReview review={review} />
+                              <details className={styles.matchAnalysis}>
+                                <summary>Booker breakdown · segment context &amp; recorded details</summary>
+                                <div className={styles.matchAnalysisBody}>
                               {slot.segment.type === "LIVE_APPEARANCE" && slot.segment.liveAppearanceKind ? (
 
                                 <div className={styles.matchMeta}>
@@ -457,10 +474,13 @@ export default function ResultsClient(): React.JSX.Element {
                                   </div>
                                 </div>
                               ) : null}
+                                </div>
+                              </details>
                             </article>
                           );
                         }
                         const match = slot.match;
+                        const review = reviewPlayerMatch(match);
                         const sideA = match.participants.filter((participant) => participant.side === "A");
                         const sideB = match.participants.filter((participant) => participant.side === "B");
                         return (
@@ -478,7 +498,7 @@ export default function ResultsClient(): React.JSX.Element {
                               <span>{match.winnerNames.length > 0 ? "WINNERS" : "WINNER NOT RECORDED"}</span>
                               <strong>{match.winnerNames.length > 0 ? match.winnerNames.join(" & ") : "No winner recorded"}</strong>
                             </div>
-                            <MatchFinishReplay match={match} />
+                            <EditorialReview review={review} />
                             {match.followUpProgrammeId ? (
                               <div className={styles.followUpPlanner}>
                                 <strong>WHAT'S NEXT FOR THIS PROGRAMME?</strong>
@@ -508,8 +528,9 @@ export default function ResultsClient(): React.JSX.Element {
                               </div>
                             ) : null}
                             <details className={styles.matchAnalysis}>
-                              <summary>Match breakdown · Crowd {decimal(match.crowdResponse)} · {match.actualLengthMinutes} min</summary>
+                              <summary>Booker breakdown · Crowd {decimal(match.crowdResponse)} · {match.actualLengthMinutes} min</summary>
                               <div className={styles.matchAnalysisBody}>
+                            <MatchFinishReplay match={match} />
                             <div className={styles.matchMeta}>
                               <span>{match.styleResult ? "Dimensional style" : `${label(match.intent)} intent`}</span>
                               <span>{match.actualLengthMinutes} min{match.actualLengthMinutes !== match.plannedLengthMinutes ? ` / ${match.plannedLengthMinutes} planned` : ""}</span>
