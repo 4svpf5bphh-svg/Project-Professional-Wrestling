@@ -19,7 +19,7 @@ import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
 import { setActualMatchFinish } from "../packages/sim-core/src/match-finishes.js";
 import { hotSegmentHeadline, showResultHighlights } from "../packages/web-adapter/src/results-highlights.js";
-import { reviewPlayerMatch, reviewPlayerSegment } from "../packages/web-adapter/src/results-review.js";
+import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShow } from "../packages/web-adapter/src/results-review.js";
 import type { PlayerShowMatchView, PlayerShowSegmentView } from "../packages/application/src/results-view.js";
 import { discoverWorldResults, worldResultsWeekLabel, worldShowHasSpotlight } from "../packages/web-adapter/src/world-results-discovery.js";
 
@@ -1217,6 +1217,35 @@ test("editorial segment recaps respect scripted endings and cryptic reveal priva
   const earlier = JSON.stringify(rescue);
   ok(JSON.stringify(reviewPlayerSegment(rescue)) === JSON.stringify(unsuccessful)
     && JSON.stringify(rescue) === earlier, "segment editorial changed between reloads or mutated the ledger projection");
+});
+
+
+test("player show review headlines track actual crowd, wrestling quality and consequences", () => {
+  const base = {
+    eventId: "editorial-show-1",
+    averageMatchRating: 4.25, crowdResponse: 87,
+    titleChangeCount: 1, injuryCount: 0, matchCount: 3, segmentCount: 2,
+  };
+  const copy = structuredClone(base);
+  const hit = reviewPlayerShow(base);
+  ok(hit.tone === "GREAT", "strong show did not receive a strong editorial verdict");
+  ok(hit.recap.includes("championship") && !hit.recap.includes("injur"),
+    "title-changing show review missed actual gold or invented an injury");
+  ok(JSON.stringify(reviewPlayerShow(structuredClone(base))) === JSON.stringify(hit),
+    "a resolved show review changed between reloads");
+  ok(JSON.stringify(base) === JSON.stringify(copy), "read-only show review mutated its source");
+  const disaster = reviewPlayerShow({
+    ...base, crowdResponse: 24, averageMatchRating: 1.7,
+    titleChangeCount: 0, injuryCount: 0,
+  });
+  ok(disaster.tone === "ROUGH", "a poor show got an undeserved glowing review");
+  ok(!disaster.recap.includes("championship") && !disaster.recap.includes("injur"),
+    "poor-show recap invented an unrecorded title change or injury");
+  const ordinary = reviewPlayerShow({
+    ...base, crowdResponse: 69, averageMatchRating: 3.1,
+    titleChangeCount: 0, injuryCount: 0,
+  });
+  ok(ordinary.tone === "GOOD", "good-but-unexceptional card received wrong verdict");
 });
 
 console.log(`\nApplication results-view tests: ${passed} passed, ${failed} failed`);
