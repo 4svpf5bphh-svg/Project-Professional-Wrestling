@@ -371,7 +371,7 @@ export default function ResultsClient(): React.JSX.Element {
 
                                   <span>{slot.segment.participants[0]?.name ?? "Wrestler"} · {slot.segment.liveAppearanceKind === "DEBUT" ? "First live appearance for this promotion" : slot.segment.liveAppearanceKind === "RETURN" ? "Returns after time away" : slot.segment.liveAppearanceKind === "SURPRISE_REVEAL" ? "Surprise arrival" : "In-person introduction"}</span>
 
-                                  <span>Booking objective: {slot.segment.liveAppearanceObjective ? label(slot.segment.liveAppearanceObjective) : "Establish a star"}</span>\n
+                                  <span>Booking objective: {slot.segment.liveAppearanceObjective ? label(slot.segment.liveAppearanceObjective) : "Establish a star"}</span>
 
                                 </div>
 
