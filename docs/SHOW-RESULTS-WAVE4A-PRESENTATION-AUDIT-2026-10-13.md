@@ -30,3 +30,5 @@ Existing owner/public fact parity, title/finish/injury/arrival rules, show histo
 - A true filmed show review or dynamic vernacular commentary, only if factual data supports it and repetition can be controlled.
 - More varied on-screen snapshots and subtle effects after controlled mobile visual playtesting (avoiding excessive popups or tap fatigue).
 - World timeline deeper filters/roundup; no new stateful UI service introduced in this pass.
+
+**CI invocation:** briefly retarget the draft PR to `main` to trigger existing GitHub Actions PR workflow, then restore the original stacked parent #78. No merge, no deployment.
