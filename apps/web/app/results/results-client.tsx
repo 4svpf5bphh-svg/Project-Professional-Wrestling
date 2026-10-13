@@ -5,7 +5,7 @@ import type { PlayerShowHistoryView } from "../../../../dist/packages/applicatio
 import type { PlayerWorldResultsView } from "../../../../dist/packages/application/src/world-results-view.js";
 import ShowBroadcast, { MatchFinishReplay, MatchStarRating, ShowFinalBell, segmentResultIcon } from "./show-broadcast";
 import { showResultHighlights } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
-import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShowChapters, type SlotReview, type ShowReviewChapter } from "../../../../dist/packages/web-adapter/src/results-review.js";
+import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShowChapters, reviewPlayerShowRunningOrder, type SlotReview, type ShowReviewChapter } from "../../../../dist/packages/web-adapter/src/results-review.js";
 import {
   discoverWorldResults, worldResultsWeekLabel, WORLD_RESULTS_SPOTLIGHTS,
   type WorldResultsSpotlight,
@@ -238,6 +238,7 @@ export default function ResultsClient(): React.JSX.Element {
               {promotionView.shows.map((show, index) => {
                 const chapters = reviewPlayerShowChapters(show);
                 const chapterByOrder = new Map(chapters.map((chapter) => [chapter.startOrder, chapter]));
+                const reviewsByOrder = new Map(reviewPlayerShowRunningOrder(show).map((entry) => [entry.order, entry.review]));
                 return (
                 <details className={styles.showCard} key={show.eventId} open={index === 0}>
                   <summary className={styles.showSummary}>
@@ -341,7 +342,7 @@ export default function ResultsClient(): React.JSX.Element {
                       {show.runningOrder.map((slot) => {
                         const chapter = chapterByOrder.get(slot.order);
                         if (slot.kind === "SEGMENT") {
-                          const review = reviewPlayerSegment(slot.segment);
+                          const review = reviewsByOrder.get(slot.order) ?? reviewPlayerSegment(slot.segment);
                           return (
                             <Fragment key={slot.segment.segmentId}>
                               {chapter ? <ShowChapterIntro chapter={chapter} /> : null}
@@ -498,7 +499,7 @@ export default function ResultsClient(): React.JSX.Element {
                           );
                         }
                         const match = slot.match;
-                        const review = reviewPlayerMatch(match);
+                        const review = reviewsByOrder.get(slot.order) ?? reviewPlayerMatch(match);
                         const sideA = match.participants.filter((participant) => participant.side === "A");
                         const sideB = match.participants.filter((participant) => participant.side === "B");
                         return (
