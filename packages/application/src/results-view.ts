@@ -1,5 +1,7 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
+import { eligiblePostShowProgrammeIds } from "./post-show-followups.js";
+import type { PostShowFollowUpChoice } from "./planning.js";
 import { recordedFinishCheaterId, recordedFinishFallout, recordedMatchFinish, type RecordedFinishFallout } from "./match-finish-projection.js";
 import type {
   Id,
@@ -118,6 +120,8 @@ export interface PlayerShowMatchView {
   actualFinish: MatchFinish | null;
   finishCheater: { personId: Id; name: string } | null;
   finishFallout: RecordedFinishFallout | null;
+  followUpProgrammeId: Id | null;
+  followUpChoice: PostShowFollowUpChoice | null;
   participants: PlayerShowParticipantView[];
   winnerNames: string[];
   interference: { personId: Id; name: string; aidedSide: "A" | "B"; outcome: "SUCCESS" | "THWARTED" | "ABORTED" | null } | null;
@@ -636,6 +640,12 @@ export function buildPlayerShowHistory(
             return person ? { personId: person.personId, name: person.name } : null;
           })(),
           finishFallout: recordedFinishFallout(matchLedgerByMatch.get(match.id)),
+          followUpProgrammeId: (() => {
+            const eligible = eligiblePostShowProgrammeIds(aggregate.state, promotion.id, event.id, match.id);
+            return eligible.length === 1 ? eligible[0]! : null;
+          })(),
+          followUpChoice: aggregate.planning.postShowFollowUps?.find((note) =>
+            note.promotionId === promotion.id && note.matchId === match.id)?.choice ?? null,
           participants,
           winnerNames: participants.filter((participant) => participant.won).map((participant) => participant.name),
           interference: match.interference ? {

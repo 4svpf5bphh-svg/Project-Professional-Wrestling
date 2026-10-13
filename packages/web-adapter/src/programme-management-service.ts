@@ -3,6 +3,7 @@ import type { ProgrammeParticipantRef } from "../../domain/src/programmes.js";
 import {
   activePromotionControlForPlayer,
   startProgrammeCommand,
+  type PostShowFollowUpChoice,
   type ApplicationWorldRepository,
 } from "../../application/src/index.js";
 import { wrestlerAlignmentForPromotion } from "../../sim-core/src/alignment.js";
@@ -39,6 +40,7 @@ export interface AlphaManagedProgrammeView {
   activityCount: number;
   matchCount: number;
   segmentCount: number;
+  latestFollowUp: { matchId: Id; choice: PostShowFollowUpChoice; year: number; week: number } | null;
 }
 
 export interface AlphaProgrammeManagementView {
@@ -174,6 +176,15 @@ export async function loadAlphaProgrammeManagement(
         activityCount: programme.activityCount,
         matchCount: programme.matchCount,
         segmentCount: programme.segmentCount,
+        latestFollowUp: (() => {
+          const note = (aggregate.planning.postShowFollowUps ?? [])
+            .filter((entry) => entry.programmeId === programme.id && entry.promotionId === promotion.id)
+            .sort((a, b) => b.chosenAt.year - a.chosenAt.year
+              || b.chosenAt.week - a.chosenAt.week || b.chosenAt.day - a.chosenAt.day)[0];
+          return note
+            ? { matchId: note.matchId, choice: note.choice, year: note.chosenAt.year, week: note.chosenAt.week }
+            : null;
+        })(),
       } satisfies AlphaManagedProgrammeView;
     })
     .sort((left, right) => left.startedYear - right.startedYear || left.startedWeek - right.startedWeek || left.programmeId.localeCompare(right.programmeId));
