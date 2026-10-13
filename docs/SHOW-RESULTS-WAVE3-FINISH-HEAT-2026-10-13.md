@@ -24,3 +24,5 @@
 
 ## Next Wave 3 work, not silently added
 Richer programme-specific consequence choices for the player after a show (e.g. choose retaliation, demand rematch or move on) only after auditing booking opportunities and asynchronous World Lock fairness. Do not override match or segment outcomes.
+
+**CI trigger note:** temporarily target `main` solely for existing PR CI; restore the stacked base immediately after verification, without merging.
