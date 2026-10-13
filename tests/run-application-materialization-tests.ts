@@ -315,6 +315,77 @@ test("broken wrestler availability classifies a due reservation as at risk witho
   ok(f.planning.showReservations.length === 1, "at-risk reservation was removed before lock");
 });
 
+test("an intervening completed live appearance makes a reserved debut unsafe without rewriting the booking", () => {
+  const f = fixture(16154);
+  const full = completeSinglesCard(f, baseDraft(f));
+  const subject = full.participantIds[0]!;
+  const debutSlot = "future-live-debut";
+  const draft: DetailedShowDraft = {
+    ...full,
+    segments: [{
+      draftSegmentId: debutSlot,
+      type: "LIVE_APPEARANCE",
+      participantIds: [subject],
+      programmeId: null,
+      plannedLengthMinutes: 4,
+      liveAppearanceKind: "DEBUT",
+      liveAppearanceObjective: "ESTABLISH_STAR",
+    }],
+    runningOrder: [
+      { kind: "SEGMENT", refId: debutSlot },
+      ...full.matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ],
+  };
+  const reservation = saveAndReserve(f, draft);
+  const before = assessDetailedShowReservation(f.state, f.planning, reservation);
+  ok(!before.reasons.includes("LIVE_APPEARANCE_HISTORY_CHANGED"),
+    "newly reserved genuine debut was incorrectly flagged as historically impossible");
+
+  // An earlier live angle actually completes AFTER the future card was saved.
+  // Its date is earlier than the booked show, without occupying the same slot.
+  const priorDate = { ...draft.targetDate, day: 2 };
+  const eventId = "completed-prior-appearance-16154";
+  f.state.events.push({
+    id: eventId,
+    worldId: f.state.world.id,
+    promotionId: f.promotionId,
+    marketId: draft.marketId!,
+    venueId: draft.venueId!,
+    date: priorDate,
+    type: "MAJOR",
+    status: "COMPLETED",
+    ticketStrategy: "STANDARD",
+    expectedDemand: 100, attendance: 100, ticketYield: 20,
+    gateRevenue: 2000, totalCost: 1500, netResult: 500,
+    eventImportance: 30, matchCount: 0, averageMatchRating: 0,
+    bestMatchRating: 0, crowdResponse: 55,
+  });
+  f.state.ledger.push({
+    id: "completed-prior-angle-16154",
+    worldId: f.state.world.id,
+    date: priorDate,
+    order: f.state.ledger.length + 1,
+    type: "SHOW_SEGMENT_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: [eventId],
+    payload: { eventId, promotionId: f.promotionId,
+      segmentType: "PROMO", participantIds: subject },
+  });
+
+  const after = assessDetailedShowReservation(f.state, f.planning, reservation);
+  ok(after.status === "AT_RISK", "invalidated debut reservation was not marked at risk");
+  ok(after.reasons.includes("LIVE_APPEARANCE_HISTORY_CHANGED"),
+    "due reservation did not explain the historical arrival conflict");
+  const pass = materializeCurrentWeekReservations(f.state, f.planning);
+  ok(pass.materialized.length === 0 && pass.atRisk.length === 1,
+    "stale authored debut was materialized as a false first appearance");
+  ok(f.planning.showReservations.length === 1,
+    "history conflict silently removed the reservation before the commitment lock");
+  ok(f.planning.workspaces[0]?.detailedShowDrafts[0]?.segments?.[0]?.liveAppearanceKind === "DEBUT",
+    "history conflict silently rewrote the promoter's scripted debut");
+});
+
 asyncTest("standalone persisted materialization commits event and advances World revision", async () => {
   const f = fixture(16105);
   saveAndReserve(f, baseDraft(f));
