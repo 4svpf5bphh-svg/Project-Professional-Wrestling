@@ -44,3 +44,9 @@
   .sides { grid-template-columns: 1fr; }
   .signals { grid-template-columns: repeat(2,minmax(0,1fr)); }
 }
+
+.followUpNote { margin-top: 12px; padding: 12px; display: grid; gap: 4px; border: 1px solid rgba(235, 188, 122, .26); border-radius: 12px; background: rgba(85, 55, 22, .18); }
+.followUpNote strong { font-size: 11px; letter-spacing: .09em; color: #ffcc8a; }
+.followUpNote span { font-weight: 650; }
+.followUpNote small { opacity: .78; line-height: 1.4; }
+.followUpNote a { color: #9ce6d7; font-size: 12px; }

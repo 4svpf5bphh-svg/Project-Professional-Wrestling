@@ -203,6 +203,16 @@ export default function ProgrammesClient(): React.JSX.Element {
                       <div><span>Matches</span><strong>{programme.matchCount}</strong></div>
                       <div><span>Segments</span><strong>{programme.segmentCount}</strong></div>
                     </div>
+                    {programme.latestFollowUp ? (
+                      <div className={styles.followUpNote}>
+                        <strong>POST-SHOW DIRECTION</strong>
+                        <span>{programme.latestFollowUp.choice === "PURSUE_REMATCH" ? "Pursue a rematch"
+                          : programme.latestFollowUp.choice === "PLAN_RETALIATION" ? "Plan retaliation"
+                          : "Let the result stand"} · chosen Year {programme.latestFollowUp.year}, Week {programme.latestFollowUp.week}</span>
+                        <small>This is a planning reminder, not an auto-booked match or segment.</small>
+                        <a href="/results">Review match results →</a>
+                      </div>
+                    ) : null}
                   </article>
                 ))}
               </div>

@@ -157,6 +157,7 @@ export default function ResultsClient(): React.JSX.Element {
         <div>
           <div className={styles.eyebrow}>RESULTS & HISTORY</div>
           <h1>Results & history</h1>
+          {followUpError ? <p className={styles.followUpError} role="alert">{followUpError} <button type="button" onClick={() => void refreshResults()}>Refresh</button></p> : null}
           <p>{activeWorld?.name} · Year {activeWorld?.currentDate.year}, Week {activeWorld?.currentDate.week}</p>
         </div>
         <button
