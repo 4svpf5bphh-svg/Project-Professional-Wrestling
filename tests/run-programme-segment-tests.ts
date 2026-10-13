@@ -751,6 +751,86 @@ test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the
     "assault altered a completed match finish");
 });
 
+test("post-match assault repetition needs same actual completed roles, format, objective and scripted aftermath", () => {
+  function run(prior: "NONE" | "IDENTICAL" | "DIFFERENT_ENDING" | "DIFFERENT_FORMAT" | "OTHER_PROMOTION" | "FUTURE") {
+    const setup = fixture(91903);
+    setup.state.world.currentDate = { year: 1, week: 8, day: 1 };
+    setup.targetDate = { year: 1, week: 8, day: 6 };
+    const victim = setup.rosterIds[0]!;
+    const division = setup.state.people.find((person) => person.id === victim)?.division ?? "MEN";
+    const opponent = setup.rosterIds.slice(1).find((id) =>
+      (setup.state.people.find((person) => person.id === id)?.division ?? "MEN") === division);
+    if (!opponent) throw new Error("postmatch repeat fixture requires same-division opponents");
+    const aggressor = setup.rosterIds.find((id) => id !== victim && id !== opponent)!;
+    if (prior !== "NONE") setup.state.ledger.push({
+      id: "previous-postmatch", worldId: setup.state.world.id,
+      date: { year: 1, week: prior === "FUTURE" ? 9 : 7, day: 6 },
+      order: 9899, type: "SHOW_SEGMENT_COMPLETED",
+      significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+      entityIds: [setup.promotion.id, aggressor, victim],
+      payload: {
+        promotionId: prior === "OTHER_PROMOTION" ? "not-our-promotion" : setup.promotion.id,
+        segmentType: "POST_MATCH_ASSAULT",
+        attackerPersonId: aggressor, victimPersonId: victim,
+        attackPresentation: prior === "DIFFERENT_FORMAT" ? "BLINDSIDE" : "BEATDOWN",
+        attackObjective: "GENERATE_HEAT",
+        postMatchAssaultEnding: prior === "DIFFERENT_ENDING" ? "OFFICIALS_SEPARATE" : "VICTIM_FIGHTS_BACK",
+      },
+    });
+    const match = {
+      draftMatchId: "recently-finished-bout", type: "SINGLES" as const,
+      sideAIds: [victim], sideBIds: [opponent],
+      intendedWinnerSide: "A" as const, intent: "COMPETITIVE" as const, plannedLengthMinutes: 12,
+    };
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      draftId: "postmatch-repeat-show",
+      promotionId: setup.promotion.id, targetDate: setup.targetDate,
+      marketId: null, venueId: null, ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4),
+      matches: [match], championshipAssignments: [],
+      segments: [{
+        draftSegmentId: "postmatch-fightback", type: "POST_MATCH_ASSAULT",
+        participantIds: [aggressor, victim], attackerPersonId: aggressor,
+        victimPersonId: victim, sourceDraftMatchId: match.draftMatchId,
+        attackPresentation: "BEATDOWN", attackObjective: "GENERATE_HEAT",
+        postMatchAssaultEnding: "VICTIM_FIGHTS_BACK",
+        programmeId: null, plannedLengthMinutes: 4,
+      }],
+      runningOrder: [
+        { kind: "MATCH", refId: match.draftMatchId },
+        { kind: "SEGMENT", refId: "postmatch-fightback" },
+      ],
+    });
+    const event = completedEvent(setup);
+    setup.state.events.push(event);
+    const matchId = "real-finished-bout";
+    setup.state.matches.push({
+      id: matchId, worldId: setup.state.world.id, eventId: event.id,
+      promotionId: setup.promotion.id, order: 1, type: "SINGLES",
+      status: "COMPLETED", intent: "COMPETITIVE",
+      plannedLengthMinutes: 12, actualLengthMinutes: 12,
+      intendedWinnerSide: "A", actualWinnerSide: "A", finishChangedDueToInjury: false,
+      executionQuality: 60, criticalRatingStars: 3, crowdResponse: 60,
+    });
+    setup.state.matchParticipants.push({
+      id: "test-match-victim", worldId: setup.state.world.id, eventId: event.id,
+      matchId, personId: victim, side: "A", won: true,
+    }, {
+      id: "test-match-opponent", worldId: setup.state.world.id, eventId: event.id,
+      matchId, personId: opponent, side: "B", won: false,
+    });
+    ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "valid complete postmatch angle did not resolve");
+    return resolvedShowSegmentsForEvent(setup.state, event.id)[0]!;
+  }
+  const fresh = run("NONE");
+  ok(run("IDENTICAL").angleFitModifier < fresh.angleFitModifier,
+    "repeated completed assault with the same script did not lose novelty");
+  for (const reason of ["DIFFERENT_ENDING", "DIFFERENT_FORMAT", "OTHER_PROMOTION", "FUTURE"] as const) {
+    ok(run(reason).angleFitModifier === fresh.angleFitModifier,
+      `${reason} wrongly penalised a new post-match script`);
+  }
+});
+
 for (const [outcome, seed] of [["RECONCILED", 9187], ["REBUFFED", 9188]] as const) {
   test(`STABLE_RECONCILIATION freezes scripted ${outcome} without restoring old membership`, () => {
     const setup = fixture(seed);
