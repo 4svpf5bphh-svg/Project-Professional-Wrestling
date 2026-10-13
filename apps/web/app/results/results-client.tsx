@@ -188,6 +188,27 @@ export default function ResultsClient(): React.JSX.Element {
                       <div><span>Consequences</span><strong>{show.titleChangeCount} title · {show.injuryCount} inj.</strong></div>
                     </div>
 
+                    {show.cancelledArrivals.length > 0 ? (
+                      <section className={styles.unperformedArrivals} aria-label="Unperformed live arrivals">
+                        <div className={styles.unperformedArrivalsHeading}>
+                          <span aria-hidden="true">⚠</span>
+                          <div>
+                            <strong>Unperformed live {show.cancelledArrivals.length === 1 ? "arrival" : "arrivals"}</strong>
+                            <p>These segments could not take place as booked. The rest of your show ran normally.</p>
+                          </div>
+                        </div>
+                        {show.cancelledArrivals.map((arrival) => (
+                          <div className={styles.unperformedArrival} key={arrival.draftSegmentId}>
+                            <strong>{arrival.wrestlerName} · {label(arrival.authoredKind)}</strong>
+                            <span>{arrival.reason === "EARLIER_COMMITTED_APPEARANCE"
+                              ? "An earlier committed appearance in this promotion made this introduction invalid."
+                              : "A previous completed appearance changed this wrestler's debut or return eligibility."}</span>
+                          </div>
+                        ))}
+                        <p className={styles.unperformedArrivalsFootnote}>No in-ring segment or crowd response was recorded for these cancelled arrivals.</p>
+                      </section>
+                    ) : null}
+
                     {show.crowdStory ? (
                       <section className={`${styles.crowdStory} ${show.crowdStory.tone === "POSITIVE" ? styles.crowdStoryPositive : show.crowdStory.tone === "NEGATIVE" ? styles.crowdStoryNegative : ""}`}>
                         <div className={styles.crowdStoryTop}>
