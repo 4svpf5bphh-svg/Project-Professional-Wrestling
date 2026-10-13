@@ -25,6 +25,7 @@ import {
   storyGoalForSegment,
   typesForStoryGoal,
 } from "../../../../dist/packages/web-adapter/src/segment-story-goals.js";
+import { stableStoryContinuityWarnings } from "../../../../dist/packages/web-adapter/src/stable-story-continuity.js";
 import styles from "./card.module.css";
 
 type ErrorPayload = { error?: string };
@@ -1785,6 +1786,9 @@ export default function CardClient(): React.JSX.Element {
             if (!segment) return null;
             const slotKey = `SEGMENT:${slot.refId}`;
             const expanded = expandedSlotKey === slotKey;
+            const stableContinuity = stableStoryContinuityWarnings(
+              segment, view.stableStoryFollowThrough, segments,
+            );
             const usedProgrammeElsewhere = new Set(
               segments
                 .filter((candidate) => candidate.draftSegmentId !== segment.draftSegmentId && candidate.programmeId)
@@ -2202,6 +2206,14 @@ export default function CardClient(): React.JSX.Element {
                       </select>
                     </div>
                   </div>
+                ) : null}
+
+                {stableContinuity.length > 0 ? (
+                  <aside className={styles.continuityNote} aria-label="Stable storyline continuity">
+                    <strong><span aria-hidden="true">ⓘ</span> Story continuity</strong>
+                    {stableContinuity.map((note) => <p key={note}>{note}</p>)}
+                    <small>Advisory only. Your scripted story and the World roster remain entirely under your control.</small>
+                  </aside>
                 ) : null}
 
                 {segment.type === "STABLE_RECONCILIATION" ? (
