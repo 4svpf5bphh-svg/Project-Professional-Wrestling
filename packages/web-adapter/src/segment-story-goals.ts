@@ -69,7 +69,7 @@ export function segmentDirectionHint(type: DetailedShowSegmentType): string {
     case "CONFRONTATION": return "Two wrestlers face off. Script who backs down, a tense staredown or a reluctant handshake; no attack or challenge is invented.";
     case "INTERRUPTION": return "Choose who interrupts, whose time they steal and who wins the scripted exchange.";
     case "ATTACK": return "Script the aggressor and victim, then choose the assault format and what it is meant to achieve.";
-    case "RESCUE": return "Book an aggressor, victim and rescuer. The rescue's reception depends on established character roles.";
+    case "RESCUE": return "Book the aggressor, victim and would-be rescuer. Script whether the save succeeds, the attacker escapes or the rescue fails.";
     case "CHALLENGE": return "Have one wrestler challenge another, then script whether the challenge is accepted, refused or left unanswered.";
     case "CONTRACT_SIGNING": return "Write the televised signing's response. This is a storyline segment, not a real employment contract.";
     case "STABLE_INVITATION": return "Stage a real stable's invitation and choose how the proposed recruit responds on screen.";
@@ -78,6 +78,6 @@ export function segmentDirectionHint(type: DetailedShowSegmentType): string {
     case "TURN": return "Choose whose alignment changes, who is betrayed if relevant, and how the reveal happens.";
     case "LIVE_APPEARANCE": return "Bring one contracted wrestler to the show for a scripted debut, return, surprise reveal or introduction. Live appearances use real booking dates.";
     case "VIDEO_PACKAGE": return "Choose whose footage airs, what it teases and how much is revealed. Pre-recorded video is not a live wrestler appearance.";
-    case "POST_MATCH_ASSAULT": return "Book the attack immediately after its source match, without changing that match's result.";
+    case "POST_MATCH_ASSAULT": return "After an actual match, script the attack format, objective and who stands tall. Never changes the match result.";
   }
 }
