@@ -675,3 +675,124 @@ export function reviewPlayerShowRunningOrder(
     return { order: slot.order, kind: slot.kind, review: result };
   });
 }
+
+
+/** Cover-story copy is grounded in the *entire performed show*, not just its
+ * average score. A small number of facts make each event distinctive without
+ * replacing the longer individual reviews or revealing private World data. */
+export function reviewPlayerShowNarrative(
+  show: Pick<PlayerShowResultView,
+    "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating" |
+    "titleChangeCount" | "injuryCount" | "matchCount" | "segmentCount">,
+): SlotReview {
+  const overall = reviewPlayerShow(show);
+  const matches = show.runningOrder
+    .filter((slot): slot is Extract<PlayerShowResultView["runningOrder"][number], { kind: "MATCH" }> =>
+      slot.kind === "MATCH");
+  const segments = show.runningOrder
+    .filter((slot): slot is Extract<PlayerShowResultView["runningOrder"][number], { kind: "SEGMENT" }> =>
+      slot.kind === "SEGMENT");
+  const titleMatch = matches.find((slot) => slot.match.titleOutcomes.some((outcome) => outcome.titleChanged));
+  const gold = titleMatch?.match.titleOutcomes.find((outcome) => outcome.titleChanged);
+  const injuryMatch = matches.find((slot) => slot.match.injuries.length > 0);
+  const injured = injuryMatch?.match.injuries[0];
+  const turn = segments.find((slot) => slot.segment.type === "TURN"
+    && slot.segment.turnTargetAlignment !== null);
+  const arrival = segments.find((slot) => slot.segment.type === "LIVE_APPEARANCE"
+    && ["DEBUT", "RETURN", "SURPRISE_REVEAL"].includes(slot.segment.liveAppearanceKind ?? ""));
+  const strongAngle = segments
+    .filter((slot) => slot.segment.outcomeBand === "HOT"
+      && typeof slot.segment.crowdResponse === "number"
+      && Number.isFinite(slot.segment.crowdResponse))
+    .sort((a, b) => (b.segment.crowdResponse ?? 0) - (a.segment.crowdResponse ?? 0)
+      || a.order - b.order)[0];
+  const ranked = matches.filter((slot) => Number.isFinite(slot.match.criticalRatingStars))
+    .sort((a, b) => b.match.criticalRatingStars - a.match.criticalRatingStars || a.order - b.order);
+  const best = ranked[0];
+  const bestMatch = best?.match;
+  const worst = ranked.length > 1 ? ranked[ranked.length - 1] : null;
+
+  let headline = overall.headline;
+  let lead = "";
+  if (gold) {
+    headline = gold.winnerHolderName + " claims the gold!";
+    lead = gold.winnerHolderName + " won the " + gold.championshipName
+      + ". The rest of the card had some catching up to do.";
+  } else if (injured) {
+    headline = "An injury overshadows the show";
+    lead = injured.personName + " was injured during the card. That is one result nobody wanted.";
+  } else if (turn) {
+    const wrestler = turn.segment.participants.find((entry) =>
+      entry.personId === turn.segment.turnPersonId)?.name
+      ?? turn.segment.participants[0]?.name ?? null;
+    headline = wrestler ? wrestler + " changes sides!" : "A change of allegiance!";
+    lead = (wrestler ?? "A wrestler") + " turned " + turn.segment.turnTargetAlignment!.toLowerCase()
+      + " on screen. The show has a new talking point.";
+  } else if (arrival) {
+    const wrestler = arrival.segment.participants[0]?.name ?? null;
+    const returning = arrival.segment.liveAppearanceKind === "RETURN";
+    headline = wrestler
+      ? wrestler + (returning ? " is back!" : " has arrived!")
+      : returning ? "A surprise return!" : "A new arrival!";
+    lead = (wrestler ?? "A wrestler") + (returning
+      ? " returned before the crowd." : " appeared live for the promotion.");
+  } else if (bestMatch && bestMatch.criticalRatingStars >= 4) {
+    const winners = bestMatch.winnerNames.join(" & ");
+    headline = pick(["The wrestling steals the show", "One bout rises above the rest",
+      "The match everyone will be discussing"], show.eventId, 111);
+    lead = winners
+      ? winners + " took the decision in the night's best-rated contest."
+      : "One highly rated match gave the show a real talking point.";
+  } else if (strongAngle) {
+    const participants = strongAngle.segment.participants
+      .filter((entry) => !(strongAngle.segment.type === "VIDEO_PACKAGE"
+        && strongAngle.segment.videoReveal === "CRYPTIC"))
+      .map((entry) => entry.name);
+    lead = participants.length
+      ? participants[0] + " featured in a well-received " +
+        strongAngle.segment.type.toLowerCase().replaceAll("_", " ") + "."
+      : "An angle got a particularly strong reaction from the audience.";
+  }
+
+  // An undercard rescue or implosion changes the shape of a show. Compare
+  // only actual scored contests, with meaningful differences; never invent
+  // momentum swings or spots inside those matches.
+  const chronological = [...matches].filter((slot) => Number.isFinite(slot.match.criticalRatingStars))
+    .sort((a, b) => a.order - b.order);
+  const early = chronological[0]?.match;
+  const late = chronological[chronological.length - 1]?.match;
+  let arc = "";
+  if (chronological.length >= 3 && early && late) {
+    if (late.criticalRatingStars - early.criticalRatingStars >= 0.9) {
+      arc = pick(["The wrestling improved as the card went on.",
+        "A shaky start gave way to a much stronger closing stretch."], show.eventId, 112);
+    } else if (early.criticalRatingStars - late.criticalRatingStars >= 0.9) {
+      arc = pick(["The early matches set a standard the closing stretch couldn't match.",
+        "The card started stronger than it finished."], show.eventId, 113);
+    }
+  }
+  const contrast = !arc && bestMatch && worst
+    && bestMatch.criticalRatingStars - worst.match.criticalRatingStars >= 1.7
+    ? "The in-ring quality swung dramatically between the best and weakest matches."
+    : "";
+
+  const audience = show.crowdResponse >= 77
+    ? "The crowd was on board."
+    : show.crowdResponse < 44 ? "The room was a tough sell."
+      : show.crowdResponse < 58 ? "The audience never fully warmed to it."
+        : "The crowd had its moments.";
+  // Don't repeat the very same title/arrival/turn/injury in both sentences.
+  const secondary = !gold && injured
+    ? "An injury added a sour note."
+    : gold && injured
+      ? "An injury added a painful footnote."
+      : !gold && !injured && !turn && strongAngle && lead === ""
+        ? "An angle earned a strong reaction."
+        : "";
+
+  const recap = [lead, arc || contrast, secondary, audience].filter(Boolean).join(" ");
+  return {
+    ...overall, headline,
+    recap: recap || overall.recap,
+  };
+}
