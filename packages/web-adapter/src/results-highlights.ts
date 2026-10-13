@@ -81,16 +81,12 @@ export function showResultHighlights(show: ShowSource, limit = 3): ShowResultHig
     }
   }
   if (topMatch) candidates.push(topMatch);
-  // Stable tie-breaking: importance, then the chronology of the performed show.
-  // Avoid highlighting the same physical slot twice unless there are genuinely
-  // different championship consequences on that one match.
-  const chosen: Candidate[] = [];
-  for (const item of candidates.sort((a, b) =>
-    b.priority - a.priority || a.slotOrder - b.slotOrder || a.id.localeCompare(b.id))) {
-    if (chosen.length >= Math.max(0, Math.floor(limit))) break;
-    if (chosen.some((previous) => previous.slotOrder === item.slotOrder
-      && previous.category !== "CHAMPIONSHIP" && item.category !== "CHAMPIONSHIP")) continue;
-    chosen.push(item);
-  }
-  return chosen.map(({ priority: _priority, ...item }) => item);
+  // A single match may have several independently factual consequences (e.g.
+  // a title change, an injury and the night's best rating). Preserve them
+  // instead of hiding the consequence because they jump to the same bout.
+  return candidates
+    .sort((a, b) =>
+      b.priority - a.priority || a.slotOrder - b.slotOrder || a.id.localeCompare(b.id))
+    .slice(0, Math.max(0, Math.floor(Number.isFinite(limit) ? limit : 3)))
+    .map(({ priority: _priority, ...item }) => item);
 }
