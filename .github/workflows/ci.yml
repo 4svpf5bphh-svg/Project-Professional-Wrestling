@@ -6,7 +6,6 @@ on:
       - main
       - "sim-*"
       - "alpha-*"
-      - "work/live-arrival-materialized-world-lock" # isolated CI-only audit branch
   pull_request:
     branches:
       - main
