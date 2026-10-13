@@ -76,6 +76,12 @@ const CELEBRATION_ENDING_OPTIONS = [
   ["TAUNT_RIVALS", "Taunt your rivals"],
   ["WALK_OFF", "Walk away"],
 ] as const;
+const CONFRONTATION_ENDING_OPTIONS = [
+  ["STAREDOWN", "Neither backs down"],
+  ["INITIATOR_BACKS_DOWN", "Instigator backs down"],
+  ["TARGET_BACKS_DOWN", "Target backs down"],
+  ["RELUCTANT_HANDSHAKE", "Reluctant handshake"],
+] as const;
 const ATTACK_FORMATS = ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"] as const;
 const ATTACK_OBJECTIVES = ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"] as const;
 const VIDEO_KINDS = [
@@ -650,6 +656,7 @@ export default function CardClient(): React.JSX.Element {
       stableExitOutcome: type === "STABLE_EXIT" ? "EXPELLED" : null,
       stableReconciliationOutcome: type === "STABLE_RECONCILIATION" ? "RECONCILED" : null,
       interruptionOutcome: type === "INTERRUPTION" ? "VERBAL_EXCHANGE" : null,
+      confrontationEnding: type === "CONFRONTATION" ? "STAREDOWN" : null,
       challengeResponse: type === "CHALLENGE" ? "LEFT_OPEN" : null,
       attackPresentation: type === "ATTACK" ? "BLINDSIDE" : null,
       attackObjective: type === "ATTACK" ? "GENERATE_HEAT" : null,
@@ -873,6 +880,8 @@ export default function CardClient(): React.JSX.Element {
       stableExitOutcome: type === "STABLE_EXIT" ? (segment.stableExitOutcome ?? "EXPELLED") : null,
       stableReconciliationOutcome: type === "STABLE_RECONCILIATION" ? (segment.stableReconciliationOutcome ?? "RECONCILED") : null,
       interruptionOutcome: type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null,
+      confrontationEnding: type === "CONFRONTATION"
+        ? (segment.type === type ? (segment.confrontationEnding ?? "STAREDOWN") : "STAREDOWN") : null,
       challengeResponse: type === "CHALLENGE"
         ? (segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : "LEFT_OPEN") : null,
       attackPresentation: type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
@@ -1190,6 +1199,10 @@ export default function CardClient(): React.JSX.Element {
     if (isDirectedSegment(segment.type)) {
       const initiator = segment.initiatorPersonId ? personName(segment.initiatorPersonId) : "Choose initiator";
       const target = segment.targetPersonId ? personName(segment.targetPersonId) : "Choose target";
+      if (segment.type === "CONFRONTATION") {
+        const ending = segment.confrontationEnding ? pretty(segment.confrontationEnding) : "Unrecorded stand-off";
+        return `Confrontation · ${initiator} faces ${target} · ${ending} · ${segment.plannedLengthMinutes} min`;
+      }
       if (segment.type === "INTERRUPTION") {
         const beat = segment.interruptionOutcome === "INTERRUPTER_PREVAILS" ? "interrupter prevails"
           : segment.interruptionOutcome === "SPEAKER_PREVAILS" ? "speaker prevails"
@@ -2047,6 +2060,26 @@ export default function CardClient(): React.JSX.Element {
                       </select>
                       <small className={styles.sideLabel}>Automatically places this assault immediately after the match. The victim must have competed in it; the aggressor may be an outsider.</small>
                     </div>
+                  </div>
+                ) : null}
+
+                {segment.type === "CONFRONTATION" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>How does the face-off end?</span>
+                      <small>You decide whether someone backs down or both leave the tension unresolved. No match challenge or physical attack is created.</small>
+                    </div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Confrontation scripted ending">
+                      {CONFRONTATION_ENDING_OPTIONS.map(([ending, caption]) => (
+                        <button key={ending} type="button" disabled={!view.canEdit}
+                          aria-pressed={(segment.confrontationEnding ?? "STAREDOWN") === ending}
+                          className={(segment.confrontationEnding ?? "STAREDOWN") === ending ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { confrontationEnding: ending })}>
+                          {caption}
+                        </button>
+                      ))}
+                    </div>
+                    <small className={styles.sideLabel}>A handshake is an on-screen gesture, not automatic friendship. Repeating the same face-off between the same pair can wear thin.</small>
                   </div>
                 ) : null}
 
