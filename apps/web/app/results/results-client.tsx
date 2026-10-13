@@ -5,7 +5,7 @@ import type { PlayerShowHistoryView } from "../../../../dist/packages/applicatio
 import type { PlayerWorldResultsView } from "../../../../dist/packages/application/src/world-results-view.js";
 import ShowBroadcast, { MatchFinishReplay, MatchStarRating, segmentResultIcon } from "./show-broadcast";
 import { showResultHighlights } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
-import { reviewPlayerMatch, reviewPlayerSegment, type SlotReview } from "../../../../dist/packages/web-adapter/src/results-review.js";
+import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShowChapters, type SlotReview, type ShowReviewChapter } from "../../../../dist/packages/web-adapter/src/results-review.js";
 import {
   discoverWorldResults, worldResultsWeekLabel, WORLD_RESULTS_SPOTLIGHTS,
   type WorldResultsSpotlight,
@@ -61,6 +61,17 @@ function EditorialReview({ review }: { review: SlotReview }): React.JSX.Element 
       <p>{review.recap}</p>
       <div className={styles.editorialVerdict}><b>THE VERDICT</b> {review.verdict}</div>
     </div>
+  );
+}
+
+function ShowChapterIntro({ chapter }: { chapter: ShowReviewChapter }): React.JSX.Element {
+  return (
+    <section className={styles.showChapter} aria-label={chapter.chapter + ": " + chapter.headline}>
+      <div className={styles.chapterRule} aria-hidden="true"><span /></div>
+      <span className={styles.chapterKicker}>{chapter.chapter}</span>
+      <h3>{chapter.headline}</h3>
+      <p>{chapter.recap}</p>
+    </section>
   );
 }
 
@@ -224,7 +235,10 @@ export default function ResultsClient(): React.JSX.Element {
                 <div><span className={styles.eyebrow}>YOUR RECORD</span><strong>{promotionView.promotion.name}</strong></div>
                 <span>{promotionView.shows.length} recent completed show{promotionView.shows.length === 1 ? "" : "s"}</span>
               </div>
-              {promotionView.shows.map((show, index) => (
+              {promotionView.shows.map((show, index) => {
+                const chapters = reviewPlayerShowChapters(show);
+                const chapterByOrder = new Map(chapters.map((chapter) => [chapter.startOrder, chapter]));
+                return (
                 <details className={styles.showCard} key={show.eventId} open={index === 0}>
                   <summary className={styles.showSummary}>
                     <div>
@@ -325,9 +339,12 @@ export default function ResultsClient(): React.JSX.Element {
 
                     <div className={styles.matches}>
                       {show.runningOrder.map((slot) => {
+                        const chapter = chapterByOrder.get(slot.order);
                         if (slot.kind === "SEGMENT") {
                           const review = reviewPlayerSegment(slot.segment);
                           return (
+                            <Fragment key={slot.segment.segmentId}>
+                              {chapter ? <ShowChapterIntro chapter={chapter} /> : null}
                             <article id={`show-${show.eventId}-slot-${slot.order}`}
                               className={`${styles.matchCard} ${styles.segmentResultCard} ${slot.segment.outcomeBand === "HOT" ? styles.hotAngleResult : ""}`} key={slot.segment.segmentId}>
                               <div className={styles.matchTop}>
@@ -477,6 +494,7 @@ export default function ResultsClient(): React.JSX.Element {
                                 </div>
                               </details>
                             </article>
+                            </Fragment>
                           );
                         }
                         const match = slot.match;
@@ -484,6 +502,8 @@ export default function ResultsClient(): React.JSX.Element {
                         const sideA = match.participants.filter((participant) => participant.side === "A");
                         const sideB = match.participants.filter((participant) => participant.side === "B");
                         return (
+                          <Fragment key={match.matchId}>
+                            {chapter ? <ShowChapterIntro chapter={chapter} /> : null}
                           <article id={`show-${show.eventId}-slot-${slot.order}`} className={`${styles.matchCard} ${styles.matchResultCard} ${match.isMainEvent ? styles.mainEventResult : ""}`} key={match.matchId}>
                             <div className={styles.matchTop}>
                               <span>SLOT {slot.order} · {match.isMainEvent ? "MAIN EVENT" : "MATCH"} · {label(match.type)}</span>
@@ -593,12 +613,14 @@ export default function ResultsClient(): React.JSX.Element {
                             ))}
                             {match.finishChangedDueToInjury ? <div className={styles.warning}>Finish changed because of injury</div> : null}
                           </article>
+                          </Fragment>
                         );
                       })}
                     </div>
                   </div>
                 </details>
-              ))}
+                );
+              })}
             </section>
           )}
         </>
