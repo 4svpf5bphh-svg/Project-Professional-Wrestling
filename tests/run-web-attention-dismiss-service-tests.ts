@@ -56,19 +56,23 @@ await test("Alpha Attention dismissal persists, retries safely and cannot hide A
 
   const before = await loadAlphaPlayerSession(repository, worldId, "alpha-player");
   const dismissible = before.attention.find((item) => (
-    item.attentionId.startsWith("contract-expiry:") && item.dismissible
+    item.attentionId.startsWith("contract-expiry:") && item.dismissible && item.category !== "ACTION_REQUIRED"
   ));
-  const required = before.attention.find((item) => (
-    item.attentionId.startsWith("contract-expiry:") && !item.dismissible
+  const urgent = before.attention.find((item) => (
+    item.attentionId.startsWith("contract-expiry:") && item.category === "ACTION_REQUIRED"
   ));
+  const required = before.attention.find((item) =>
+    item.category === "ACTION_REQUIRED" && !item.dismissible);
   ok(dismissible, "fixture did not expose a dismissible renewal-window item");
-  ok(required?.category === "ACTION_REQUIRED", "fixture did not expose a non-dismissible urgent contract item");
+  ok(urgent?.dismissible === true, "urgent contract news must be dismissible");
+  ok(required, "fixture did not expose a protected show/roster Action Required item");
 
   const after = await dismissAlphaAttention(repository, worldId, "alpha-player", {
     attentionId: dismissible!.attentionId,
   });
   ok(!after.attention.some((item) => item.attentionId === dismissible!.attentionId), "dismissed item remained visible");
-  ok(after.attention.some((item) => item.attentionId === required!.attentionId), "dismissing one item removed Action Required attention");
+  ok(after.attention.some((item) => item.attentionId === urgent!.attentionId), "dismissing one contract removed other urgent contract news");
+  ok(after.attention.some((item) => item.attentionId === required!.attentionId), "dismissing contract news removed a mandatory show/roster requirement");
 
   const persisted = await repository.load(worldId);
   const dismissals = persisted.engagement?.attentionDismissals.filter((record) => (
@@ -94,7 +98,10 @@ await test("Alpha Attention dismissal persists, retries safely and cannot hide A
   } catch (error) {
     protectedRejected = error instanceof Error && error.message.includes("cannot be dismissed");
   }
-  ok(protectedRejected, "service allowed Action Required attention to be dismissed");
+  ok(protectedRejected, "service allowed a mandatory non-dismissible game requirement to be dismissed");
+  const dismissedUrgent = await dismissAlphaAttention(repository, worldId, "alpha-player", { attentionId: urgent!.attentionId });
+  ok(!dismissedUrgent.attention.some((item) => item.attentionId === urgent!.attentionId),
+    "urgent contract news ignored the player's Dismiss choice");
 });
 
 console.log(`\nWeb Attention-dismissal tests: ${passed} passed, ${failed} failed`);

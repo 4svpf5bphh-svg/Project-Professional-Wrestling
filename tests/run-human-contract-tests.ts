@@ -636,5 +636,43 @@ test("accepted future renewal changes creative rights only when the new term beg
     "future Full Approval is not operative when its signed term starts");
 });
 
+test("authoritative human offers cannot stack another signed future renewal on the same promotion", () => {
+  const { state, promotionId } = fixture(11998);
+  const source = activeContractsForPromotion(state, promotionId).find((candidate) =>
+    candidate.status === "SIGNED" && candidate.family === "LIMITED_NON_EXCLUSIVE"
+    && activeContractsForPerson(state, candidate.personId).length === 1);
+  if (!source) throw new Error("duplicate-renewal fixture needs own signed limited contract");
+  source.endDate = addPpwWeeks(state.world.currentDate, 1, state.ruleset.weeksPerYear);
+  const futureStart = addPpwWeeks(source.endDate, 1, state.ruleset.weeksPerYear);
+  const futureEnd = addPpwWeeks(futureStart, 12, state.ruleset.weeksPerYear);
+  state.contracts.push({
+    ...structuredClone(source),
+    id: "fixture-accepted-future-terms",
+    startDate: futureStart,
+    endDate: futureEnd,
+    signedDate: { ...state.world.currentDate },
+    dateEntitlement: 9,
+    datesUsed: 0,
+  });
+  const contractsBefore = state.contracts.length;
+  const offersBefore = state.contractOffers.length;
+  let refused = false;
+  try {
+    submitHumanContractOffer(state, {
+      promotionId, personId: source.personId, sourceContractId: source.id,
+      family: "LIMITED_NON_EXCLUSIVE", exclusivity: "NON_EXCLUSIVE",
+      roleExpectation: source.roleExpectation,
+      startDate: futureStart, endDate: futureEnd,
+      dateEntitlement: 5, weeklyGuarantee: source.weeklyGuarantee,
+      appearanceFee: source.appearanceFee, signingBonus: 0,
+    });
+  } catch (error) {
+    refused = error instanceof Error && error.message.includes("already has a signed overlapping");
+  }
+  ok(refused, "human contract command accepted duplicate terms despite a signed future renewal");
+  ok(state.contracts.length === contractsBefore && state.contractOffers.length === offersBefore,
+    "rejected duplicate terms changed signed contract or offer ledger");
+});
+
 console.log(`\nHuman contract tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;

@@ -220,7 +220,7 @@ await test("player recruits, books real card, delegates renewal, then World reso
     "manager authorisation was duplicated through the World Tick");
   const attention = buildPlayerAttention(after, playerId);
   ok(attention.some(item => item.attentionId === `contract-offer-result:${delegated.offerId}`
-    && item.deepLink === "/staff"),
+    && item.deepLink === `/talent/contracts?personId=${encodeURIComponent(source.personId)}`),
     "manager's resolution result not exposed through the correct attention deep link");
   ok(validateWorldInvariants(after.state).length === 0,
     "World broken after booking, recruitment and delegated renewal resolved");

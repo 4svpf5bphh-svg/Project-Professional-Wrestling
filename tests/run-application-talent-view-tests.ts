@@ -160,6 +160,50 @@ test("same-terms renewal copies recurring rights and fees, never the old signing
     "one-off appearance should not be staff-repeatable as a routine multiweek renewal");
 });
 
+test("signed future renewals remain visible before activation and never permit another renewal", () => {
+  const { aggregate, promotionAId } = fixture(73991);
+  const source = activeContractsForPromotion(aggregate.state, promotionAId)
+    .find((contract) => contract.family !== "ONE_OFF");
+  if (!source) throw new Error("fixture has no multweek source contract");
+  source.family = "LIMITED_NON_EXCLUSIVE";
+  source.exclusivity = "NON_EXCLUSIVE";
+  source.endDate = addPpwWeeks(aggregate.state.world.currentDate, 1, aggregate.state.ruleset.weeksPerYear);
+  source.dateEntitlement = 3;
+  source.datesUsed = 3;
+  const start = addPpwWeeks(source.endDate, 1, aggregate.state.ruleset.weeksPerYear);
+  const first = {
+    ...structuredClone(source),
+    id: "signed-renewal-1",
+    startDate: start,
+    endDate: addPpwWeeks(start, 12, aggregate.state.ruleset.weeksPerYear),
+    signedDate: { ...aggregate.state.world.currentDate },
+    dateEntitlement: 9,
+    datesUsed: 0,
+  };
+  aggregate.state.contracts.push(first);
+  const current = buildPlayerTalentManagementView(aggregate, "player-a");
+  const entry = current.roster.find((candidate) => candidate.personId === source.personId);
+  ok(entry?.contractId === source.id, "old contract should remain the active deal");
+  ok(entry?.contract.datesRemaining === 0, "future dates were incorrectly credited to the old contract");
+  ok(entry?.scheduledRenewals?.length === 1 && entry.scheduledRenewals[0]?.dateEntitlement === 9,
+    "accepted nine-date future renewal was invisible on the current roster");
+  ok(entry?.contract.renewalWindowOpen === false && entry?.contract.renewalReason === null,
+    "roster still invited another renewal after signed future terms");
+
+  aggregate.state.contracts.push({
+    ...structuredClone(first), id: "signed-renewal-2", dateEntitlement: 5,
+  });
+  const duplicate = buildPlayerTalentManagementView(aggregate, "player-a").roster
+    .find((candidate) => candidate.personId === source.personId);
+  ok(duplicate?.scheduledRenewals?.length === 2,
+    "legacy duplicate accepted future contracts must be shown, not concealed");
+  aggregate.state.world.currentDate = { ...start };
+  const activated = buildPlayerTalentManagementView(aggregate, "player-a").roster
+    .filter((candidate) => candidate.personId === source.personId);
+  ok(activated.length === 1 && activated[0]?.concurrentContractCount === 2,
+    "future overlapping renewals generated duplicate roster cards after activation");
+});
+
 test("talent market can expose non-exclusive availability without leaking rival contract terms", () => {
   const { aggregate, promotionAId, promotionBId } = fixture(73002);
   const ownPeople = new Set(activeContractsForPromotion(aggregate.state, promotionAId).map((contract) => contract.personId));
