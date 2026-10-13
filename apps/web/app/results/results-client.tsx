@@ -265,7 +265,7 @@ export default function ResultsClient(): React.JSX.Element {
                               className={`${styles.matchCard} ${styles.segmentResultCard} ${slot.segment.outcomeBand === "HOT" ? styles.hotAngleResult : ""}`} key={slot.segment.segmentId}>
                               <div className={styles.matchTop}>
                                 <span><b className={styles.slotGlyph} aria-hidden="true">{segmentResultIcon(slot.segment.type)}</b> SLOT {slot.order} · SEGMENT · {slot.segment.type === "LIVE_APPEARANCE" && slot.segment.liveAppearanceKind ? `live · ${label(slot.segment.liveAppearanceKind)}` : slot.segment.type === "VIDEO_PACKAGE" && slot.segment.videoKind ? `video · ${label(slot.segment.videoKind)}` : slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : slot.segment.type === "PROMO" && slot.segment.promoPurpose ? `promo · ${label(slot.segment.promoPurpose)}` : slot.segment.type === "INTERVIEW" && slot.segment.interviewTopic && slot.segment.interviewResponse ? `interview · ${label(slot.segment.interviewTopic)} · ${label(slot.segment.interviewResponse)}` : slot.segment.type === "CELEBRATION" && slot.segment.celebrationOccasion && slot.segment.celebrationEnding ? `celebration · ${label(slot.segment.celebrationOccasion)}` : slot.segment.type === "CONFRONTATION" && slot.segment.confrontationEnding ? `face-off · ${label(slot.segment.confrontationEnding)}` : label(slot.segment.type)}</span>
-                                <strong>
+                                <strong className={slot.segment.outcomeBand === "HOT" ? styles.angleHot : slot.segment.outcomeBand === "POOR" ? styles.anglePoor : styles.angleImpact}>
                                   {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
                                     ? `${slot.segment.plannedLengthMinutes} min`
                                     : `${label(slot.segment.outcomeBand)} · Crowd ${decimal(slot.segment.crowdResponse)}`}
@@ -420,6 +420,10 @@ export default function ResultsClient(): React.JSX.Element {
                               <b>vs</b>
                               <div>{sideB.map((participant) => <span className={participant.won ? styles.winner : undefined} key={participant.personId}>{participant.name}{participant.won ? " ✓" : ""}</span>)}</div>
                             </div>
+                            <div className={styles.winnerRibbon} aria-label="Recorded match result">
+                              <span>{match.winnerNames.length > 0 ? "WINNERS" : "WINNER NOT RECORDED"}</span>
+                              <strong>{match.winnerNames.length > 0 ? match.winnerNames.join(" & ") : "No winner recorded"}</strong>
+                            </div>
                             <div className={styles.matchMeta}>
                               <span>{match.styleResult ? "Dimensional style" : `${label(match.intent)} intent`}</span>
                               <span>{match.actualLengthMinutes} min{match.actualLengthMinutes !== match.plannedLengthMinutes ? ` / ${match.plannedLengthMinutes} planned` : ""}</span>
@@ -561,7 +565,7 @@ export default function ResultsClient(): React.JSX.Element {
                               className={`${styles.matchCard} ${styles.segmentResultCard} ${slot.segment.outcomeBand === "HOT" ? styles.hotAngleResult : ""}`} key={slot.segment.segmentId}>
                                   <div className={styles.matchTop}>
                                     <span><b className={styles.slotGlyph} aria-hidden="true">{segmentResultIcon(slot.segment.type)}</b> SLOT {slot.order} · SEGMENT · {slot.segment.type === "LIVE_APPEARANCE" && slot.segment.liveAppearanceKind ? `live · ${label(slot.segment.liveAppearanceKind)}` : slot.segment.type === "VIDEO_PACKAGE" && slot.segment.videoKind ? `video · ${label(slot.segment.videoKind)}` : slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : slot.segment.type === "PROMO" && slot.segment.promoPurpose ? `promo · ${label(slot.segment.promoPurpose)}` : slot.segment.type === "INTERVIEW" && slot.segment.interviewTopic && slot.segment.interviewResponse ? `interview · ${label(slot.segment.interviewTopic)} · ${label(slot.segment.interviewResponse)}` : slot.segment.type === "CELEBRATION" && slot.segment.celebrationOccasion && slot.segment.celebrationEnding ? `celebration · ${label(slot.segment.celebrationOccasion)}` : slot.segment.type === "CONFRONTATION" && slot.segment.confrontationEnding ? `face-off · ${label(slot.segment.confrontationEnding)}` : label(slot.segment.type)}</span>
-                                    <strong>
+                                    <strong className={slot.segment.outcomeBand === "HOT" ? styles.angleHot : slot.segment.outcomeBand === "POOR" ? styles.anglePoor : styles.angleImpact}>
                                       {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
                                         ? "SEGMENT"
                                         : `${label(slot.segment.outcomeBand)} · Crowd ${decimal(slot.segment.crowdResponse)}`}
@@ -697,6 +701,10 @@ export default function ResultsClient(): React.JSX.Element {
                                       {participant.name}{participant.won ? " ✓" : ""}
                                     </a>
                                   ))}</div>
+                                </div>
+                                <div className={styles.winnerRibbon} aria-label="Recorded match result">
+                                  <span>{match.winnerNames.length > 0 ? "WINNERS" : "WINNER NOT RECORDED"}</span>
+                                  <strong>{match.winnerNames.length > 0 ? match.winnerNames.join(" & ") : "No winner recorded"}</strong>
                                 </div>
                                 <div className={styles.matchMeta}>
                                   <span>{match.actualLengthMinutes} min</span>
