@@ -170,6 +170,14 @@ export interface PlayerShowSegmentView {
   factors: PlayerShowSegmentFactorView[];
 }
 
+export interface PlayerShowCancelledArrivalView {
+  draftSegmentId: string;
+  wrestlerId: Id;
+  wrestlerName: string;
+  authoredKind: "DEBUT" | "RETURN";
+  reason: "COMPLETED_HISTORY_CHANGED" | "EARLIER_COMMITTED_APPEARANCE";
+}
+
 export type PlayerShowRunningOrderView =
   | { kind: "MATCH"; order: number; match: PlayerShowMatchView }
   | { kind: "SEGMENT"; order: number; segment: PlayerShowSegmentView };
@@ -196,6 +204,8 @@ export interface PlayerShowResultView {
   crowdStory: PlayerShowCrowdStoryView | null;
   matches: PlayerShowMatchView[];
   segments: PlayerShowSegmentView[];
+  /** Private, ledger-backed explanation for an unperformed scripted arrival. */
+  cancelledArrivals: PlayerShowCancelledArrivalView[];
   runningOrder: PlayerShowRunningOrderView[];
 }
 
@@ -520,11 +530,31 @@ export function buildPlayerShowHistory(
   }
   const eventLedgerByEvent = new Map<Id, LedgerEntry>();
   const matchLedgerByMatch = new Map<Id, LedgerEntry>();
+  const cancelledArrivalsByEvent = new Map<Id, PlayerShowCancelledArrivalView[]>();
   for (const entry of aggregate.state.ledger) {
     const primaryId = entry.entityIds[0];
     if (!primaryId) continue;
     if (entry.type === "EVENT_COMPLETED") eventLedgerByEvent.set(primaryId, entry);
     if (entry.type === "MATCH_COMPLETED") matchLedgerByMatch.set(primaryId, entry);
+    if (entry.type !== "PLANNED_LIVE_ARRIVAL_CANCELLED_AT_LOCK") continue;
+    const payload = entry.payload;
+    if (typeof payload.eventId !== "string" || typeof payload.draftSegmentId !== "string"
+      || typeof payload.personId !== "string" || payload.promotionId !== promotion.id) continue;
+    if (payload.liveAppearanceKind !== "DEBUT" && payload.liveAppearanceKind !== "RETURN") continue;
+    if (payload.reason !== "COMPLETED_HISTORY_CHANGED"
+      && payload.reason !== "EARLIER_COMMITTED_APPEARANCE") continue;
+    const existing = cancelledArrivalsByEvent.get(payload.eventId) ?? [];
+    // A repeated idempotent lock or historical duplicate must not generate
+    // multiple player-visible cancellation notices for the same segment.
+    if (existing.some((notice) => notice.draftSegmentId === payload.draftSegmentId)) continue;
+    existing.push({
+      draftSegmentId: payload.draftSegmentId,
+      wrestlerId: payload.personId,
+      wrestlerName: peopleById.get(payload.personId)?.name ?? "Unknown wrestler",
+      authoredKind: payload.liveAppearanceKind,
+      reason: payload.reason,
+    });
+    cancelledArrivalsByEvent.set(payload.eventId, existing);
   }
 
   const shows = aggregate.state.events
@@ -663,6 +693,7 @@ export function buildPlayerShowHistory(
         crowdStory: frozenCrowdStory(eventLedgerByEvent.get(event.id), matches),
         matches,
         segments,
+        cancelledArrivals: cancelledArrivalsByEvent.get(event.id) ?? [],
         runningOrder,
       };
     });
