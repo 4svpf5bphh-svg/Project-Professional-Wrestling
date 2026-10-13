@@ -19,7 +19,7 @@ import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
 import { setActualMatchFinish } from "../packages/sim-core/src/match-finishes.js";
 import { hotSegmentHeadline, showResultHighlights } from "../packages/web-adapter/src/results-highlights.js";
-import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShow, reviewPlayerShowChapters } from "../packages/web-adapter/src/results-review.js";
+import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShow, reviewPlayerShowChapters, reviewPlayerShowFinalBell } from "../packages/web-adapter/src/results-review.js";
 import type { PlayerShowMatchView, PlayerShowSegmentView, PlayerShowResultView } from "../packages/application/src/results-view.js";
 import { discoverWorldResults, worldResultsWeekLabel, worldShowHasSpotlight } from "../packages/web-adapter/src/world-results-discovery.js";
 
@@ -1393,6 +1393,87 @@ test("player show chapter breaks trace actual running order without invented mom
   const twoPart = reviewPlayerShowChapters({ eventId: "medium", runningOrder: show.runningOrder.slice(0, 5) });
   ok(twoPart.length === 2 && twoPart[0]!.startOrder === 1 && twoPart[1]!.startOrder === 3,
     "medium-size shows did not get sensible opening and closing chapters");
+});
+
+
+
+test("final bell chooses an earned standout and poor performance without fabricating fallout", () => {
+  function bout(order: number, rating: number, details: Record<string, unknown> = {}) {
+    return { kind: "MATCH" as const, order, match: {
+      matchId: "final-match-" + order, order,
+      criticalRatingStars: rating, winnerNames: ["Winner " + order],
+      participants: [{ personId: "a" + order, name: "Winner " + order, side: "A" },
+        { personId: "b" + order, name: "Opponent " + order, side: "B" }],
+      titleOutcomes: [], injuries: [], ...details,
+    } as unknown as PlayerShowMatchView };
+  }
+  const show = {
+    eventId: "final-event", crowdResponse: 74, averageMatchRating: 3.0,
+    runningOrder: [
+      bout(1, 1.8),
+      bout(2, 4.7, { titleOutcomes: [{
+        titleChanged: false, championshipName: "World Title", winnerHolderName: "Winner 2",
+      }] }),
+      bout(3, 3.1),
+    ],
+  } as Pick<PlayerShowResultView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating">;
+  const original = JSON.stringify(show);
+  const finale = reviewPlayerShowFinalBell(show);
+  ok(finale.standout?.slotOrder === 2 && finale.standout.detail.includes("★ 4.7"),
+    "final review didn't spotlight actual highest-rated match");
+  ok(finale.disappointment?.slotOrder === 1
+    && finale.disappointment.detail.includes("★ 1.8"),
+    "final review failed to call out an actual poor match");
+  ok(finale.consequence === null, "retaining a championship created an invented title change");
+  ok(JSON.stringify(reviewPlayerShowFinalBell(structuredClone(show))) === JSON.stringify(finale),
+    "final bell review changed across reloads");
+  ok(JSON.stringify(show) === original, "the review mutated immutable completed results");
+  const goodCard = reviewPlayerShowFinalBell({
+    ...show, runningOrder: [bout(1, 3.1), bout(2, 4.4)],
+  });
+  ok(goodCard.disappointment === null,
+    "a good card was given a fabricated disappointing match");
+});
+
+test("final bell respects real title changes, injuries, scripted turns and historical blank cards", () => {
+  function bout(order: number, titleChanged: boolean, injured = false) {
+    return { kind: "MATCH" as const, order, match: {
+      matchId: "fallout-match-" + order, criticalRatingStars: 3.4,
+      winnerNames: ["Champion"], participants: [],
+      titleOutcomes: [{ titleChanged, championshipName: "World Title", winnerHolderName: "Champion" }],
+      injuries: injured ? [{ injuryId: "inj", personName: "Injured Wrestler", weeksOut: 2 }] : [],
+    } as unknown as PlayerShowMatchView };
+  }
+  const angle = {
+    kind: "SEGMENT" as const, order: 3, segment: {
+      segmentId: "turn-angle", type: "TURN",
+      participants: [{ personId: "bad", name: "The Betrayer" }],
+      turnPersonId: "bad", turnTargetAlignment: "HEEL", outcomeBand: "HOT", crowdResponse: 81,
+    } as unknown as PlayerShowSegmentView,
+  };
+  const seed = {
+    eventId: "fallout-event", crowdResponse: 70, averageMatchRating: 3.4,
+    runningOrder: [bout(1, true, true), bout(2, false), angle],
+  };
+  const result = reviewPlayerShowFinalBell(seed);
+  ok(result.consequence?.headline === "We have a new champion!"
+    && result.consequence.detail.includes("World Title"), "real title change did not lead fallouts");
+  const injury = reviewPlayerShowFinalBell({ ...seed, runningOrder: [bout(1, false, true), angle] });
+  ok(injury.consequence?.headline.includes("Injured Wrestler")
+    && injury.consequence.detail.includes("2 PPW weeks"), "injury fallout was not faithfully reported");
+  const turned = reviewPlayerShowFinalBell({ ...seed, runningOrder: [bout(1, false), angle] });
+  ok(turned.consequence?.headline.includes("The Betrayer")
+    && turned.consequence.detail.includes("heel"), "recorded heel turn was lost");
+  const old = reviewPlayerShowFinalBell({
+    ...seed, runningOrder: [{ kind: "SEGMENT" as const, order: 1, segment: {
+      segmentId: "cryptic-old", type: "VIDEO_PACKAGE",
+      participants: [], videoReveal: "CRYPTIC", videoSubjectName: "Hidden Name",
+      crowdResponse: null, outcomeBand: null,
+    } as unknown as PlayerShowSegmentView }],
+  });
+  ok(old.standout === null && old.disappointment === null && old.consequence === null,
+    "incomplete historical card produced fictional positives, negatives or consequences");
+  ok(!JSON.stringify(old).includes("Hidden Name"), "cryptic talent was leaked by final bell");
 });
 
 console.log(`\nApplication results-view tests: ${passed} passed, ${failed} failed`);
