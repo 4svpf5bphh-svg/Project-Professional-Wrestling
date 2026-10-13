@@ -77,14 +77,14 @@ function finishSentence(match: PlayerShowMatchView): string {
     case "CLEAN_PIN": return winners ? winners + " won cleanly by pinfall." : "The referee counted three.";
     case "SUBMISSION": return winners ? winners + " forced the submission victory." : "The contest ended by submission.";
     case "FLASH_PIN": return winners ? winners + " caught the opposition with a sudden pin." : "A flash pin decided it.";
-    case "PROTECTED_FINISH": return winners ? winners + " got the decision in a protected ending; the exact details weren't recorded." : "The finish was designed to protect the participants, but its details weren't recorded.";
+    case "PROTECTED_FINISH": return winners ? winners + " got the decision, but the finish left a few questions unanswered." : "The official result left questions unanswered, and the exact ending was not recorded.";
     case "DISQUALIFICATION": return actor
       ? actor + " was caught cheating and disqualified. " + (winners || "The opposing side") + " won by DQ."
       : "The losing side was disqualified" + (winners ? ", handing " + winners + " the victory." : ".");
     case "FOREIGN_OBJECT": return actor
       ? actor + " used a foreign object outside the referee's sight" + (winners ? ", and " + winners + " stole the decision." : ".")
       : "A foreign object decided the bout behind the referee's back" + (winners ? ", with " + winners + " victorious." : ".");
-    case "INJURY_STOPPAGE": return "The referee stopped the match after an injury. The planned finish was abandoned.";
+    case "INJURY_STOPPAGE": return "The referee stopped the match after an injury. Nobody wanted the contest to end this way.";
     default: return winners ? winners + " emerged victorious; the exact finish wasn't recorded." : "The precise finish was not recorded.";
   }
 }
@@ -257,7 +257,7 @@ export function reviewPlayerSegment(segment: PlayerShowSegmentView): SlotReview 
     : segment.outcomeBand === "POOR" ? "ROUGH"
     : segment.crowdResponse !== null && segment.crowdResponse >= 70 ? "GOOD" : "MIXED";
   const commentary = segment.outcomeBand === null && segment.crowdResponse === null
-    ? "The crowd's verdict wasn't preserved with this result."
+    ? "The old show record doesn't tell us how the crowd reacted."
     : angleVerdict(segment, tone);
   return { headline, recap, verdict: commentary, tone };
 }
@@ -303,7 +303,7 @@ export function reviewPlayerShow(show: Pick<PlayerShowResultView,
       ? show.injuryCount === 1 ? "An injury cast a shadow over the night." : "Injuries added to the fallout."
       : "",
   ].filter(Boolean).join(" ");
-  const verdict = tone === "GREAT" ? "A show that reminds you why you booked the card in the first place."
+  const verdict = tone === "GREAT" ? "A night that reminds you why this business is addictive."
     : tone === "GOOD" ? "Plenty here to build on next week."
     : tone === "ROUGH" ? "The booker has some explaining to do."
     : "The next card has a chance to put the pieces together.";
