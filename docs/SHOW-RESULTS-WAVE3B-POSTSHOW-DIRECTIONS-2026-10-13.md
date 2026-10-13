@@ -18,3 +18,5 @@
 
 ## Release gate
 Full application tests (including owner/public boundary and persistence), web build, HTTP and PostgreSQL integration and long-running World simulations. No automatic Vercel deployment, merge or reset.
+
+**CI procedure:** Temporary PR-to-main base to run normal GitHub Actions; restore stacked #76 base once check starts; this never merges the PR.
