@@ -403,8 +403,9 @@ function segmentOutcome(
         || entry.payload.interviewResponse !== segment.interviewResponse
         || typeof entry.payload.participantIds !== "string") return false;
       const weeksAgo = thisWeek - ppwDateToWeekIndex(entry.date, state.ruleset.weeksPerYear);
+      const priorGuests = entry.payload.participantIds;
       return weeksAgo >= 1 && weeksAgo <= 6
-        && segment.participantIds.some((id) => entry.payload.participantIds.split(",").includes(id));
+        && segment.participantIds.some((id) => priorGuests.split(",").includes(id));
     }).length;
     angleFitModifier = round1(clamp(
       topicFit + formatFit + responseFit - Math.min(3.5, repeated * 1.25), -5, 5,
