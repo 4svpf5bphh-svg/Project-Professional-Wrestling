@@ -28,7 +28,7 @@ import {
 } from "../../../../dist/packages/web-adapter/src/segment-story-goals.js";
 import { stableStoryContinuityWarnings } from "../../../../dist/packages/web-adapter/src/stable-story-continuity.js";
 import { postShowDirectionHint } from "../../../../dist/packages/web-adapter/src/programme-postshow-guidance.js";
-import { lockCardBackgroundScroll } from "./card-background-scroll-lock.js";
+import { lockCardBackgroundScroll } from "./card-background-scroll-lock";
 import styles from "./card.module.css";
 
 function ProgrammePostShowHint({ programme, slot }: {
