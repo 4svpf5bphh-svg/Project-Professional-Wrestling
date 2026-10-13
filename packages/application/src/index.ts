@@ -16,6 +16,7 @@ export * from "./opportunity-actions.js";
 export * from "./opportunity-generation.js";
 export * from "./ownership.js";
 export * from "./planning.js";
+export * from "./celebration-evidence.js";
 export * from "./planning-commands.js";
 export * from "./planning-materialization.js";
 export * from "./planning-reservations.js";
