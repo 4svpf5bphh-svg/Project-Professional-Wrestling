@@ -80,6 +80,16 @@ export type LiveAppearanceObjective = "ESTABLISH_STAR" | "BUILD_EXCITEMENT" | "C
 export const PROMO_PURPOSES = ["STATEMENT_OF_INTENT", "BOAST", "RALLY_FANS", "AIR_GRIEVANCE", "ISSUE_WARNING"] as const;
 export type PromoPurpose = (typeof PROMO_PURPOSES)[number];
 
+/** Unlike a monologue promo, an interview has a host asking about a topic and
+ * the promoter scripts how their wrestler answers. Host is neutral production
+ * staff, never an implied extra booked wrestler. */
+export const INTERVIEW_FORMATS = ["BACKSTAGE", "SIT_DOWN", "IN_RING"] as const;
+export type InterviewFormat = (typeof INTERVIEW_FORMATS)[number];
+export const INTERVIEW_TOPICS = ["CAREER_STORY", "RIVALRY_PRESSURE", "RECENT_FORM", "NEXT_STEPS"] as const;
+export type InterviewTopic = (typeof INTERVIEW_TOPICS)[number];
+export const INTERVIEW_RESPONSES = ["CANDID", "EVASIVE", "DEFIANT", "WALKOUT"] as const;
+export type InterviewResponse = (typeof INTERVIEW_RESPONSES)[number];
+
 export type AttackPresentation = "BLINDSIDE" | "BEATDOWN" | "PULL_APART_BRAWL";
 export type AttackObjective = "GENERATE_HEAT" | "BUILD_SYMPATHY" | "ESCALATE_RIVALRY";
 export type TurnPresentation = "REVEAL" | "BETRAYAL";
@@ -106,6 +116,10 @@ export interface DetailedShowSegmentDraft {
   liveAppearanceObjective?: LiveAppearanceObjective | null;
   /** Absent in legacy bookings, preserving their original generic promo. */
   promoPurpose?: PromoPurpose | null;
+  /** All null for legacy generic interviews; do not retrofit fictional answers. */
+  interviewFormat?: InterviewFormat | null;
+  interviewTopic?: InterviewTopic | null;
+  interviewResponse?: InterviewResponse | null;
   // Roles are authored intent; participants alone must not invent attack direction.
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
@@ -441,6 +455,19 @@ function validateShowSegmentDraft(
   if (promoPurpose !== null && !PROMO_PURPOSES.includes(promoPurpose)) {
     throw new Error("promo purpose must be a supported scripted story beat");
   }
+  const interviewFormat = draft.type === "INTERVIEW" ? (draft.interviewFormat ?? null) : null;
+  const interviewTopic = draft.type === "INTERVIEW" ? (draft.interviewTopic ?? null) : null;
+  const interviewResponse = draft.type === "INTERVIEW" ? (draft.interviewResponse ?? null) : null;
+  if ((interviewFormat !== null && !INTERVIEW_FORMATS.includes(interviewFormat))
+    || (interviewTopic !== null && !INTERVIEW_TOPICS.includes(interviewTopic))
+    || (interviewResponse !== null && !INTERVIEW_RESPONSES.includes(interviewResponse))) {
+    throw new Error("interview must use a supported format, topic and scripted response");
+  }
+  if (draft.type === "INTERVIEW"
+    && [interviewFormat, interviewTopic, interviewResponse].some((value) => value !== null)
+    && [interviewFormat, interviewTopic, interviewResponse].some((value) => value === null)) {
+    throw new Error("interview requires all three authored choices, or no choices for a legacy interview");
+  }
   if (draft.type === "LIVE_APPEARANCE") {
     if (!["DEBUT", "RETURN", "SURPRISE_REVEAL", "INTRODUCTION"].includes(liveAppearanceKind ?? "")
       || !["ESTABLISH_STAR", "BUILD_EXCITEMENT", "CREATE_MYSTERY", "UNSETTLE_RIVAL", "REIGNITE_PROGRAMME"].includes(liveAppearanceObjective ?? "")) {
@@ -625,6 +652,7 @@ function validateShowSegmentDraft(
     ...(draft.type === "VIDEO_PACKAGE" ? { videoSubjectPersonId, videoKind, videoObjective, videoReveal } : {}),
     ...(draft.type === "LIVE_APPEARANCE" ? { liveAppearanceKind, liveAppearanceObjective } : {}),
     ...(draft.type === "PROMO" ? { promoPurpose } : {}),
+    ...(draft.type === "INTERVIEW" ? { interviewFormat, interviewTopic, interviewResponse } : {}),
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
     ...(draft.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
