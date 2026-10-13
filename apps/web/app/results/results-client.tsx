@@ -10,6 +10,8 @@ type ErrorPayload = { error?: string };
 type ResultsOverviewPayload = {
   promotion: PlayerShowHistoryView;
   world: PlayerWorldResultsView;
+  revision: number;
+  canChooseFollowUp: boolean;
 };
 type ResultsTab = "PROMOTION" | "WORLD";
 
@@ -58,6 +60,11 @@ export default function ResultsClient(): React.JSX.Element {
   const [worldError, setWorldError] = useState<string | null>(null);
   const [tab, setTab] = useState<ResultsTab>("PROMOTION");
   const [worldPromotionId, setWorldPromotionId] = useState("ALL");
+  const [worldRevision, setWorldRevision] = useState(0);
+  const [canChooseFollowUp, setCanChooseFollowUp] = useState(false);
+  const [followUpDrafts, setFollowUpDrafts] = useState<Record<string, "PURSUE_REMATCH" | "PLAN_RETALIATION" | "LET_STAND">>({});
+  const [followUpSaving, setFollowUpSaving] = useState<string | null>(null);
+  const [followUpError, setFollowUpError] = useState<string | null>(null);
 
   async function refreshResults(): Promise<void> {
     setPromotionError(null);
@@ -69,6 +76,37 @@ export default function ResultsClient(): React.JSX.Element {
     }
     setPromotionView(payload.promotion);
     setWorldView(payload.world);
+    setWorldRevision(payload.revision);
+    setCanChooseFollowUp(payload.canChooseFollowUp);
+  }
+
+  async function saveFollowUp(eventId: string, matchId: string, programmeId: string, choice: "PURSUE_REMATCH" | "PLAN_RETALIATION" | "LET_STAND"): Promise<void> {
+    const promotionId = promotionView?.player.promotionId;
+    if (!promotionId || !canChooseFollowUp || followUpSaving) return;
+    setFollowUpSaving(matchId);
+    setFollowUpError(null);
+    try {
+      const response = await fetch("/api/results-follow-up", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requestId: crypto.randomUUID(), expectedRevision: worldRevision,
+          promotionId, eventId, matchId, programmeId, choice,
+        }),
+      });
+      const payload = await response.json() as ResultsOverviewPayload | ErrorPayload;
+      if (!response.ok || isErrorPayload(payload)) {
+        throw new Error(isErrorPayload(payload) ? payload.error ?? "Unable to save follow-up" : "Unable to save follow-up");
+      }
+      setPromotionView(payload.promotion);
+      setWorldView(payload.world);
+      setWorldRevision(payload.revision);
+      setCanChooseFollowUp(payload.canChooseFollowUp);
+      setFollowUpDrafts((current) => { const next = { ...current }; delete next[matchId]; return next; });
+    } catch (error) {
+      setFollowUpError(error instanceof Error ? error.message : "Unable to save follow-up");
+    } finally {
+      setFollowUpSaving(null);
+    }
   }
 
   useEffect(() => {
@@ -425,6 +463,34 @@ export default function ResultsClient(): React.JSX.Element {
                               <strong>{match.winnerNames.length > 0 ? match.winnerNames.join(" & ") : "No winner recorded"}</strong>
                             </div>
                             <MatchFinishReplay match={match} />
+                            {match.followUpProgrammeId ? (
+                              <div className={styles.followUpPlanner}>
+                                <strong>WHAT'S NEXT FOR THIS PROGRAMME?</strong>
+                                <small>Optional planning note, not an automatic rematch or segment. You can decide later.</small>
+                                <select aria-label="Next Programme direction"
+                                  disabled={!canChooseFollowUp || followUpSaving === match.matchId}
+                                  value={followUpDrafts[match.matchId] ?? match.followUpChoice ?? ""}
+                                  onChange={(event) => setFollowUpDrafts((current) => ({
+                                    ...current, [match.matchId]: event.target.value as "PURSUE_REMATCH" | "PLAN_RETALIATION" | "LET_STAND",
+                                  }))}>
+                                  <option value="">Choose direction…</option>
+                                  <option value="PURSUE_REMATCH">Pursue a rematch</option>
+                                  <option value="PLAN_RETALIATION">Plan retaliation</option>
+                                  <option value="LET_STAND">Let the result stand</option>
+                                </select>
+                                <button type="button"
+                                  disabled={!canChooseFollowUp || Boolean(followUpSaving)
+                                    || !followUpDrafts[match.matchId]
+                                    || followUpDrafts[match.matchId] === match.followUpChoice}
+                                  onClick={() => void saveFollowUp(show.eventId, match.matchId, match.followUpProgrammeId!,
+                                    followUpDrafts[match.matchId]!)}>
+                                  {followUpSaving === match.matchId ? "Saving…" : "Save direction"}
+                                </button>
+                                <a href="/programmes">Open Programmes →</a>
+                                {match.followUpChoice ? <small>Saved: {label(match.followUpChoice)}</small> : null}
+                                {!canChooseFollowUp ? <small>Available when the World is open for planning.</small> : null}
+                              </div>
+                            ) : null}
                             <div className={styles.matchMeta}>
                               <span>{match.styleResult ? "Dimensional style" : `${label(match.intent)} intent`}</span>
                               <span>{match.actualLengthMinutes} min{match.actualLengthMinutes !== match.plannedLengthMinutes ? ` / ${match.plannedLengthMinutes} planned` : ""}</span>
