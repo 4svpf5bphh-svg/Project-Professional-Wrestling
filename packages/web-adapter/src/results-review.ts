@@ -28,16 +28,46 @@ function verdict(tone: ReviewTone, id: string): string {
   if (tone === "MIXED") return pick(["Passable rather than memorable.", "Some things clicked, others did not.", "It did its job. Just."], id, 7);
   return pick(["A rough night at the office.", "One to forget.", "The fans deserved a little better.", "That was a clunker."], id, 8);
 }
+
+/** An angle is not a match: never describe a promo or debut as a 'bout'. */
+function angleVerdict(segment: PlayerShowSegmentView, tone: ReviewTone): string {
+  const id = segment.segmentId;
+  const microphone = segment.type === "PROMO" || segment.type === "INTERVIEW";
+  const physical = ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type);
+  const arrival = segment.type === "LIVE_APPEARANCE" || segment.type === "VIDEO_PACKAGE";
+  if (tone === "GREAT") {
+    if (microphone) return pick(["The mic work landed. That is how you hold a crowd.", "They got the audience listening. Job done.", "That was a promo people won't be forgetting immediately."], id, 31);
+    if (physical) return pick(["Now that is how you get some heat.", "The angle landed — and the fans reacted accordingly.", "That's the kind of chaos a wrestling crowd turns up for."], id, 32);
+    if (arrival) return pick(["A reveal worth the build-up.", "The audience bought right into the presentation.", "There was real excitement for this moment."], id, 33);
+    return pick(["That got people talking.", "A strong bit of business for the show.", "The audience was hooked."], id, 34);
+  }
+  if (tone === "ROUGH") {
+    if (microphone) return pick(["That promo died a death out there.", "Tough room — they couldn't get the audience onside.", "Somebody find a better hook for the next microphone segment."], id, 35);
+    if (physical) return pick(["Plenty of commotion, not much crowd response.", "The angle fell flat. Hard to get heat from a cold room.", "An attack that failed to catch fire with the fans."], id, 36);
+    if (arrival) return pick(["The build-up promised more than the reaction delivered.", "Not quite the big arrival the booker had in mind.", "The crowd gave the reveal a cold shoulder."], id, 37);
+    return pick(["This one fell flat.", "The segment went over like a lead balloon.", "The audience was unmoved."], id, 38);
+  }
+  if (tone === "GOOD") return pick([
+    "The segment moved the show along nicely.", "A worthwhile beat, well received.",
+    "Good crowd response. Worth following up on.", "A useful piece of business on the card.",
+  ], id, 39);
+  return pick([
+    "A serviceable angle, if not one for the history books.",
+    "A quieter moment on the card.", "It got through without setting the world on fire.",
+    "Not every segment can steal the show.", 
+  ], id, 40);
+}
+
 function matchOpening(match: PlayerShowMatchView): string {
   switch (match.intent) {
-    case "TECHNICAL": return pick(["A technical contest that put the craft front and centre.", "The focus was firmly on wrestling technique."], match.matchId, 10);
-    case "HIGH_RISK": return "A high-risk contest with plenty of ambition.";
-    case "EPIC": return "A big-match approach with plenty of expectation riding on it.";
-    case "STORY": return "A rivalry-driven encounter where the result mattered.";
-    case "PROTECTIVE": return "A contest with reputations to protect.";
-    case "DOMINANT": return "This bout set out to make a statement.";
-    case "SHOWCASE": return "An opportunity to put the talent in the spotlight.";
-    default: return "A straight wrestling contest with pride at stake.";
+    case "TECHNICAL": return pick(["The mat work was the selling point here.", "An old-school technical contest — no shortcuts on the booking sheet.", "A wrestling-first approach, with the emphasis firmly on technique."], match.matchId, 10);
+    case "HIGH_RISK": return pick(["They went for a high-risk approach. Not a card for the faint-hearted.", "The brief was to push the limits, and expectations came with it.", "Big risks were the order of the day."], match.matchId, 11);
+    case "EPIC": return pick(["This one was booked like a major event, and the pressure was on.", "An epic was the ambition. The execution would tell the story.", "The biggest possible stage was the aim."], match.matchId, 12);
+    case "STORY": return pick(["This was a story-led bout, not just a contest over a win.", "There was a rivalry to consider as well as the bell.", "The storyline carried as much weight as the result."], match.matchId, 13);
+    case "PROTECTIVE": return pick(["An awkward balancing act: somebody had to win without everyone else looking foolish.", "The finish needed to mind a few reputations.", "The booker had more than a simple win to think about."], match.matchId, 14);
+    case "DOMINANT": return pick(["A statement was the idea. Whether it landed was another matter.", "This was booked to put someone over emphatically.", "The aim was to make a serious impression."], match.matchId, 15);
+    case "SHOWCASE": return pick(["Time in the spotlight — and a chance to justify it.", "A showcase with an audience ready to judge.", "An opportunity to make a name between the ropes."], match.matchId, 16);
+    default: return pick(["A straight contest, with bragging rights on the line.", "No complicated premise needed: just get in there and wrestle.", "Two sides, one result. Time to find out who goes over."], match.matchId, 17);
   }
 }
 function finishSentence(match: PlayerShowMatchView): string {
@@ -47,7 +77,7 @@ function finishSentence(match: PlayerShowMatchView): string {
     case "CLEAN_PIN": return winners ? winners + " won cleanly by pinfall." : "The referee counted three.";
     case "SUBMISSION": return winners ? winners + " forced the submission victory." : "The contest ended by submission.";
     case "FLASH_PIN": return winners ? winners + " caught the opposition with a sudden pin." : "A flash pin decided it.";
-    case "PROTECTED_FINISH": return winners ? winners + " took the decision in a protected finish." : "A protected finish decided matters; its exact mechanism was not recorded.";
+    case "PROTECTED_FINISH": return winners ? winners + " got the decision in a protected ending; the exact details weren't recorded." : "The finish was designed to protect the participants, but its details weren't recorded.";
     case "DISQUALIFICATION": return actor
       ? actor + " was caught cheating and disqualified. " + (winners || "The opposing side") + " won by DQ."
       : "The losing side was disqualified" + (winners ? ", handing " + winners + " the victory." : ".");
@@ -69,7 +99,7 @@ export function reviewPlayerMatch(match: PlayerShowMatchView): SlotReview {
   else if (finish === "FOREIGN_OBJECT") headline = pick(["Stolen! A dirty finish decides it", "A victory with a very large asterisk"], match.matchId, 20);
   else if (finish === "DISQUALIFICATION") headline = "The referee has seen enough!";
   else if (match.interference?.outcome === "SUCCESS") headline = "Outside help tips the scales";
-  else if (tone === "GREAT") headline = pick(["They tore the house down", "Now THAT was wrestling", "The night's standout bout"], match.matchId, 21);
+  else if (tone === "GREAT") headline = pick(["They tore the house down", "Now THAT was wrestling", "This one earned its applause", "A performance to remember"], match.matchId, 21);
   else if (tone === "ROUGH") headline = pick(["One to forget", "The wheels came off", "Not their finest hour"], match.matchId, 22);
 
   let after = "";
@@ -77,9 +107,25 @@ export function reviewPlayerMatch(match: PlayerShowMatchView): SlotReview {
   if (match.interference?.outcome === "THWARTED") after += " An attempted run-in by " + match.interference.name + " was thwarted.";
   if (match.interference?.outcome === "ABORTED") after += " A planned run-in by " + match.interference.name + " never materialised.";
   if (title) after += " The " + title.championshipName + " changed hands.";
+  else if (match.titleOutcomes.length) {
+    const retained = match.titleOutcomes.filter((entry) => !entry.titleChanged);
+    if (retained.length === 1) after += " " + retained[0]!.winnerHolderName + " retained the " + retained[0]!.championshipName + ".";
+  }
   if (match.injuries.length && finish !== "INJURY_STOPPAGE") after += " " + match.injuries.map((x) => x.personName).join(" and ") + " also suffered an injury.";
-  const recap = [matchOpening(match), finishSentence(match) + after, crowdSentence(match.crowdResponse, match.matchId)].filter(Boolean).join(" ");
-  return { headline, recap, verdict: verdict(tone, match.matchId), tone };
+  const performance = match.styleResult?.delivery === "MISSED"
+    ? "The planned style was a stretch too far on the night."
+    : match.styleResult?.delivery === "STRETCHED"
+      ? "The demanding brief exposed a few rough edges."
+      : "";
+  const recap = [matchOpening(match), finishSentence(match) + after, crowdSentence(match.crowdResponse, match.matchId), performance].filter(Boolean).join(" ");
+  const opinion = Number.isFinite(match.crowdResponse) && match.crowdResponse < 46 && match.criticalRatingStars >= 3.5
+    ? pick(["Good wrestling met a stubbornly cold crowd.", "Technically strong, but the room wasn't buying it."], match.matchId, 41)
+    : Number.isFinite(match.crowdResponse) && match.crowdResponse >= 78 && match.criticalRatingStars < 2.5
+      ? pick(["The fans loved this more than the wrestling justified. That's showbusiness.", "Not exactly a technical classic, but the audience had other ideas."], match.matchId, 42)
+      : match.styleResult?.delivery === "MISSED"
+        ? pick(["Big ideas, shaky delivery. Time to rethink the brief.", "The ambition was there; the execution wasn't."], match.matchId, 43)
+        : verdict(tone, match.matchId);
+  return { headline, recap, verdict: opinion, tone };
 }
 
 function person(segment: PlayerShowSegmentView, id: string | null): string | null {
@@ -112,7 +158,8 @@ export function reviewPlayerSegment(segment: PlayerShowSegmentView): SlotReview 
       headline = from + " calls out " + to;
       recap = segment.challengeResponse === "ACCEPTED" ? to + " accepted the challenge."
         : segment.challengeResponse === "REFUSED" ? to + " refused to take the challenge."
-        : "The challenge was left unanswered."; break;
+        : segment.challengeResponse === "LEFT_OPEN" ? "The challenge remains open. Plenty to settle."
+        : "The challenge was made, but no answer was recorded."; break;
     case "CONFRONTATION":
       headline = from + " faces " + to;
       recap = segment.confrontationEnding === "STAREDOWN" ? "Neither wrestler backed down."
@@ -140,7 +187,7 @@ export function reviewPlayerSegment(segment: PlayerShowSegmentView): SlotReview 
       if (segment.rescueOutcome === "RESCUE_OVERWHELMED") recap += " The rescue failed."; break;
     case "TURN": {
       const turning = person(segment, segment.turnPersonId) ?? who;
-      headline = turning + " turns " + (segment.turnTargetAlignment?.toLowerCase() ?? "on the crowd") + "!";
+      headline = turning + (segment.turnTargetAlignment ? " turns " + segment.turnTargetAlignment.toLowerCase() : " changes course") + "!";
       recap = segment.turnPresentation === "BETRAYAL"
         ? turning + " betrayed " + (person(segment, segment.betrayedPersonId) ?? "an ally") + "."
         : turning + " revealed a new allegiance."; break;
@@ -174,15 +221,20 @@ export function reviewPlayerSegment(segment: PlayerShowSegmentView): SlotReview 
         : "The signing segment took place."; break;
     case "STABLE_INVITATION": case "STABLE_EXIT": case "STABLE_RECONCILIATION":
       headline = (segment.stableName ?? "The stable") + ": trouble in the ranks";
-      recap = segment.type === "STABLE_INVITATION" ? from + " invited " + to + " to join. " + (segment.stableInvitationOutcome === "ACCEPTED" ? "Accepted." : "Refused.")
-        : segment.type === "STABLE_EXIT" ? to + (segment.stableExitOutcome === "EXPELLED" ? " was expelled." : " walked out.")
-        : segment.stableReconciliationOutcome === "RECONCILED" ? from + " and " + to + " reconciled on screen."
-        : to + " rebuffed the reconciliation attempt."; break;
+      recap = segment.type === "STABLE_INVITATION"
+        ? from + " invited " + to + " to join. " + (segment.stableInvitationOutcome === "ACCEPTED" ? "The offer was accepted on screen." : segment.stableInvitationOutcome === "REFUSED" ? "The offer was refused on screen." : "The response was not recorded.")
+        : segment.type === "STABLE_EXIT"
+          ? to + (segment.stableExitOutcome === "EXPELLED" ? " was expelled on screen." : segment.stableExitOutcome === "WALKED_OUT" ? " walked out on screen." : " appeared in the stable story; the departure wasn't recorded.")
+          : segment.stableReconciliationOutcome === "RECONCILED" ? from + " and " + to + " reconciled on screen."
+          : segment.stableReconciliationOutcome === "REBUFFED" ? to + " rebuffed the reconciliation attempt." : "A reunion was discussed, but no outcome was recorded."; break;
   }
   const tone: ReviewTone = segment.outcomeBand === "HOT" ? "GREAT"
     : segment.outcomeBand === "POOR" ? "ROUGH"
     : segment.crowdResponse !== null && segment.crowdResponse >= 70 ? "GOOD" : "MIXED";
-  return { headline, recap, verdict: verdict(tone, segment.segmentId), tone };
+  const commentary = segment.outcomeBand === null && segment.crowdResponse === null
+    ? "The crowd's verdict wasn't preserved with this result."
+    : angleVerdict(segment, tone);
+  return { headline, recap, verdict: commentary, tone };
 }
 
 
