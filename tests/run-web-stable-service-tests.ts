@@ -116,6 +116,135 @@ await test("Stable commands create historical World membership, permit edits and
     "stable state did not survive persistence");
 });
 
+await test("Completed stable story creates an owner-only follow-through choice; membership changes only on explicit command", async () => {
+  const { repository, worldId, view } = await fixture(73343);
+  const wrestlers = view.roster.slice(0, 5).map((person) => person.personId);
+  const created = await mutateAlphaStable(repository, worldId, "player-a", {
+    action: "CREATE", requestId: "story-stable-formed",
+    expectedRevision: view.world.revision, name: "The Spotlight",
+    personIds: wrestlers.slice(0, 3),
+  });
+  const stable = created.stables.find((entry) => entry.name === "The Spotlight")!;
+  const proposed = wrestlers[3]!;
+  const invitationEvent = "story-show-completed";
+  await repository.transact(worldId, null, (aggregate) => {
+    const state = aggregate.state;
+    const market = state.markets.find((entry) => entry.id === state.promotions.find(
+      (entry) => entry.id === created.player.promotionId)?.homeMarketId) ?? state.markets[0]!;
+    const venue = state.venues.find((entry) => entry.marketId === market.id) ?? state.venues[0]!;
+    state.events.push({
+      id: invitationEvent, worldId: state.world.id,
+      promotionId: created.player.promotionId!, marketId: market.id, venueId: venue.id,
+      date: { ...state.world.currentDate }, type: "REGULAR", status: "COMPLETED",
+      ticketStrategy: "STANDARD", expectedDemand: 100, attendance: 100,
+      ticketYield: 25, gateRevenue: 2500, totalCost: 2000, netResult: 500,
+      eventImportance: 60, matchCount: 0, averageMatchRating: 0, bestMatchRating: 0,
+      crowdResponse: 65,
+    });
+    state.ledger.push({
+      id: "completed-stable-invitation", worldId: state.world.id, date: { ...state.world.currentDate },
+      order: 16001, type: "SHOW_SEGMENT_COMPLETED",
+      significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+      entityIds: [invitationEvent, stable.stableId, proposed],
+      payload: {
+        eventId: invitationEvent, promotionId: created.player.promotionId!,
+        stableId: stable.stableId, targetPersonId: proposed,
+        segmentType: "STABLE_INVITATION", stableInvitationOutcome: "ACCEPTED",
+      },
+    });
+  });
+  const pending = await loadAlphaStableRoster(repository, worldId, "player-a");
+  ok(pending.storyFollowThrough.length === 1, "completed accepted invitation was not surfaced to its owner");
+  ok(pending.storyFollowThrough[0]?.action === "ADD"
+    && pending.storyFollowThrough[0]?.status === "READY"
+    && pending.storyFollowThrough[0]?.personId === proposed,
+    "follow-through did not identify the correct wrestler or canonical action");
+  ok(pending.stables.find((entry) => entry.stableId === stable.stableId)?.currentMembers.length === 3,
+    "the scripted acceptance silently created actual stable membership");
+  const accepted = await mutateAlphaStable(repository, worldId, "player-a", {
+    action: "ADD", stableId: stable.stableId, personId: proposed,
+    requestId: "player-confirms-televised-invitation", expectedRevision: pending.world.revision,
+  });
+  ok(accepted.storyFollowThrough.length === 0, "confirmed membership still appeared as an unresolved story");
+  ok(accepted.stables.find((entry) => entry.stableId === stable.stableId)?.currentMembers.length === 4,
+    "explicit confirmation didn't add the real wrestler");
+
+  await repository.transact(worldId, null, (aggregate) => {
+    aggregate.state.ledger.push({
+      id: "completed-stable-exit", worldId: aggregate.state.world.id,
+      date: { ...aggregate.state.world.currentDate }, order: 16002,
+      type: "SHOW_SEGMENT_COMPLETED",
+      significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+      entityIds: [invitationEvent, stable.stableId, proposed],
+      payload: {
+        eventId: invitationEvent, promotionId: created.player.promotionId!,
+        stableId: stable.stableId, targetPersonId: proposed,
+        segmentType: "STABLE_EXIT", stableExitOutcome: "EXPELLED",
+      },
+    });
+  });
+  const exit = await loadAlphaStableRoster(repository, worldId, "player-a");
+  ok(exit.storyFollowThrough.length === 1
+    && exit.storyFollowThrough[0]?.action === "REMOVE"
+    && exit.storyFollowThrough[0]?.sourceSegmentId === "completed-stable-exit",
+    "latest completed expulsion didn't supersede the prior membership story");
+  ok(exit.roster.find((person) => person.personId === proposed)?.stableId === stable.stableId,
+    "scripted expulsion removed a real roster member before player confirmation");
+  const removed = await mutateAlphaStable(repository, worldId, "player-a", {
+    action: "REMOVE", stableId: stable.stableId, personId: proposed,
+    requestId: "player-confirms-televised-exit", expectedRevision: exit.world.revision,
+  });
+  ok(removed.storyFollowThrough.length === 0
+    && removed.roster.find((person) => person.personId === proposed)?.stableId === null,
+    "explicit departure left roster and storyline inconsistent");
+  ok(removed.stables[0]!.memberHistory.find((entry) => entry.personId === proposed)?.leftDate !== null,
+    "explicit departure did not create permanent historical membership evidence");
+});
+
+await test("A later refusal cancels the earlier story task; drafts and unperformed events do not create follow-through", async () => {
+  const { repository, worldId, view } = await fixture(73344);
+  const members = view.roster.slice(0, 3).map((person) => person.personId);
+  const recruit = view.roster[3]!.personId;
+  const made = await mutateAlphaStable(repository, worldId, "player-a", {
+    action: "CREATE", requestId: "cancel-stable-formed",
+    expectedRevision: view.world.revision, name: "The Reversal",
+    personIds: members,
+  });
+  const stableId = made.stables[0]!.stableId;
+  await repository.transact(worldId, null, (aggregate) => {
+    const state = aggregate.state;
+    const market = state.markets[0]!;
+    const venue = state.venues.find((entry) => entry.marketId === market.id) ?? state.venues[0]!;
+    state.events.push({
+      id: "refusal-show", worldId, promotionId: made.player.promotionId!,
+      marketId: market.id, venueId: venue.id, date: { ...state.world.currentDate },
+      type: "REGULAR", status: "COMPLETED", ticketStrategy: "STANDARD",
+      expectedDemand: 100, attendance: 100, ticketYield: 25,
+      gateRevenue: 2500, totalCost: 2000, netResult: 500,
+      eventImportance: 60, matchCount: 0, averageMatchRating: 0, bestMatchRating: 0, crowdResponse: 65,
+    });
+    for (const [id, order, outcome, eventId] of [
+      ["accepted-then-superseded", 10001, "ACCEPTED", "refusal-show"],
+      ["latest-refusal", 10002, "REFUSED", "refusal-show"],
+      ["unperformed-offer", 10003, "ACCEPTED", "not-an-actual-show"],
+    ] as const) state.ledger.push({
+      id, worldId, date: { ...state.world.currentDate },
+      order, type: "SHOW_SEGMENT_COMPLETED",
+      significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+      entityIds: [stableId, recruit],
+      payload: {
+        eventId, promotionId: made.player.promotionId!, stableId, targetPersonId: recruit,
+        segmentType: "STABLE_INVITATION", stableInvitationOutcome: outcome,
+      },
+    });
+  });
+  const projection = await loadAlphaStableRoster(repository, worldId, "player-a");
+  ok(projection.storyFollowThrough.length === 0,
+    "unperformed or subsequently refused invitation created a pending membership task");
+  ok(projection.roster.find((person) => person.personId === recruit)?.stableId === null,
+    "fictional acceptance mutated real membership");
+});
+
 await test("World Lock rejects stable membership changes, even by the controlling booker", async () => {
   const { repository, worldId, view } = await fixture(73342);
   await repository.transact(worldId, null, (aggregate) => { aggregate.runtime.phase = "LOCKING"; });
