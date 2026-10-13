@@ -13,7 +13,10 @@ import {
 } from "../../sim-core/src/alignment.js";
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
-import { PROMO_PURPOSES, INTERVIEW_FORMATS, INTERVIEW_TOPICS, INTERVIEW_RESPONSES } from "./planning.js";
+import {
+  PROMO_PURPOSES, INTERVIEW_FORMATS, INTERVIEW_TOPICS, INTERVIEW_RESPONSES,
+  CELEBRATION_OCCASIONS, CELEBRATION_ENDINGS,
+} from "./planning.js";
 import type {
   DetailedProgrammeSegmentDraft,
   DetailedShowDraft,
@@ -23,6 +26,8 @@ import type {
   InterviewFormat,
   InterviewTopic,
   InterviewResponse,
+  CelebrationOccasion,
+  CelebrationEnding,
   VideoPackageKind,
   VideoPackageObjective,
   VideoPackageReveal,
@@ -83,6 +88,8 @@ export interface ResolvedShowSegment {
   interviewFormat: InterviewFormat | null;
   interviewTopic: InterviewTopic | null;
   interviewResponse: InterviewResponse | null;
+  celebrationOccasion: CelebrationOccasion | null;
+  celebrationEnding: CelebrationEnding | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
@@ -132,6 +139,8 @@ interface NormalizedDraftSegment {
   interviewFormat: InterviewFormat | null;
   interviewTopic: InterviewTopic | null;
   interviewResponse: InterviewResponse | null;
+  celebrationOccasion: CelebrationOccasion | null;
+  celebrationEnding: CelebrationEnding | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
@@ -221,6 +230,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     interviewFormat: segment.type === "INTERVIEW" ? (segment.interviewFormat ?? null) : null,
     interviewTopic: segment.type === "INTERVIEW" ? (segment.interviewTopic ?? null) : null,
     interviewResponse: segment.type === "INTERVIEW" ? (segment.interviewResponse ?? null) : null,
+    celebrationOccasion: segment.type === "CELEBRATION" ? (segment.celebrationOccasion ?? null) : null,
+    celebrationEnding: segment.type === "CELEBRATION" ? (segment.celebrationEnding ?? null) : null,
     attackerPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
       ? (segment.attackerPersonId ?? null) : null,
     victimPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
@@ -255,6 +266,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       interviewFormat: null,
       interviewTopic: null,
       interviewResponse: null,
+      celebrationOccasion: null,
+      celebrationEnding: null,
       participantIds: [...segment.participantIds],
       programmeId: segment.programmeId,
       plannedLengthMinutes: 6,
@@ -410,6 +423,35 @@ function segmentOutcome(
     angleFitModifier = round1(clamp(
       topicFit + formatFit + responseFit - Math.min(3.5, repeated * 1.25), -5, 5,
     ));
+  }
+  if (segment.type === "CELEBRATION" && segment.celebrationOccasion && segment.celebrationEnding) {
+    const character = segment.participantIds.length === 1
+      ? wrestlerAlignmentForPromotion(state, event.promotionId, segment.participantIds[0]!) : "TWEENER";
+    const occasion = segment.celebrationOccasion === "VICTORY_LAP" ? 1.3
+      : segment.celebrationOccasion === "FAN_APPRECIATION" ? (character === "FACE" ? 1.2 : -0.3)
+      : segment.celebrationOccasion === "SELF_CORONATION" ? (character === "HEEL" ? 1.25 : -0.45)
+      : programme ? 1.2 : -1.15;
+    const ending = segment.celebrationEnding === "SALUTE_CROWD"
+      ? (character === "FACE" ? 0.8 : 0.1)
+      : segment.celebrationEnding === "TAUNT_RIVALS"
+        ? (character === "HEEL" ? 0.8 : programme ? 0.4 : -0.2)
+        : segment.celebrationEnding === "POSE" ? 0.3 : 0.15;
+    // A repeated celebration means the same people, occasion and scripted
+    // ending were actually performed, never that another promoter planned it.
+    const thisWeek = ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear);
+    const repeated = state.ledger.filter((entry) => {
+      if (entry.type !== RESOLVED_SEGMENT_LEDGER_TYPE
+        || entry.payload.promotionId !== event.promotionId
+        || entry.payload.segmentType !== "CELEBRATION"
+        || entry.payload.celebrationOccasion !== segment.celebrationOccasion
+        || entry.payload.celebrationEnding !== segment.celebrationEnding
+        || typeof entry.payload.participantIds !== "string") return false;
+      const weeksAgo = thisWeek - ppwDateToWeekIndex(entry.date, state.ruleset.weeksPerYear);
+      const priorParticipants = entry.payload.participantIds;
+      return weeksAgo >= 1 && weeksAgo <= 6
+        && segment.participantIds.some((id) => priorParticipants.split(",").includes(id));
+    }).length;
+    angleFitModifier = round1(clamp(occasion + ending - Math.min(3.5, repeated * 1.25), -5, 5));
   }
   if (segment.type === "LIVE_APPEARANCE") {
     const introductionFit = segment.liveAppearanceKind === "DEBUT"
@@ -595,6 +637,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const interviewFormat = entry.payload.interviewFormat ?? null;
   const interviewTopic = entry.payload.interviewTopic ?? null;
   const interviewResponse = entry.payload.interviewResponse ?? null;
+  const celebrationOccasion = entry.payload.celebrationOccasion ?? null;
+  const celebrationEnding = entry.payload.celebrationEnding ?? null;
   const attackerPersonId = entry.payload.attackerPersonId ?? null;
   const victimPersonId = entry.payload.victimPersonId ?? null;
   const rescuerPersonId = entry.payload.rescuerPersonId ?? null;
@@ -651,6 +695,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || (interviewFormat !== null && !INTERVIEW_FORMATS.includes(interviewFormat as InterviewFormat))
     || (interviewTopic !== null && !INTERVIEW_TOPICS.includes(interviewTopic as InterviewTopic))
     || (interviewResponse !== null && !INTERVIEW_RESPONSES.includes(interviewResponse as InterviewResponse))
+    || (celebrationOccasion !== null && !CELEBRATION_OCCASIONS.includes(celebrationOccasion as CelebrationOccasion))
+    || (celebrationEnding !== null && !CELEBRATION_ENDINGS.includes(celebrationEnding as CelebrationEnding))
     || typeof plannedLengthMinutes !== "number"
     || !Number.isInteger(plannedLengthMinutes)
     || (attackerPersonId !== null && typeof attackerPersonId !== "string")
@@ -699,6 +745,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     interviewFormat: interviewFormat as InterviewFormat | null,
     interviewTopic: interviewTopic as InterviewTopic | null,
     interviewResponse: interviewResponse as InterviewResponse | null,
+    celebrationOccasion: celebrationOccasion as CelebrationOccasion | null,
+    celebrationEnding: celebrationEnding as CelebrationEnding | null,
     attackerPersonId: attackerPersonId as Id | null,
     victimPersonId: victimPersonId as Id | null,
     rescuerPersonId: rescuerPersonId as Id | null,
@@ -841,6 +889,8 @@ export function recordResolvedShowSegments(
             interviewFormat: segment.interviewFormat,
             interviewTopic: segment.interviewTopic,
             interviewResponse: segment.interviewResponse,
+            celebrationOccasion: segment.celebrationOccasion,
+            celebrationEnding: segment.celebrationEnding,
             attackerPersonId: segment.attackerPersonId,
             victimPersonId: segment.victimPersonId,
             rescuerPersonId: segment.rescuerPersonId,
