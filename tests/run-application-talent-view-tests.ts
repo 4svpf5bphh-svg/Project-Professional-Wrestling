@@ -188,8 +188,10 @@ test("signed future renewals remain visible before activation and never permit a
   ok(entry?.contract.datesRemaining === 0, "future dates were incorrectly credited to the old contract");
   ok(entry?.scheduledRenewals?.length === 1 && entry.scheduledRenewals[0]?.dateEntitlement === 9,
     "accepted nine-date future renewal was invisible on the current roster");
-  ok(entry?.contract.renewalWindowOpen === false && entry?.contract.renewalReason === null,
-    "roster still invited another renewal after signed future terms");
+  ok(entry?.contract.renewalWindowOpen === true && entry?.contract.renewalReason === "DATES_EXHAUSTED",
+    "an already signed future renewal must still allow buying extra dates for the exhausted current contract");
+  ok(entry?.contract.sameTermsRenewal === null,
+    "roster still invited another full renewal after signed future terms");
 
   aggregate.state.contracts.push({
     ...structuredClone(first), id: "signed-renewal-2", dateEntitlement: 5,

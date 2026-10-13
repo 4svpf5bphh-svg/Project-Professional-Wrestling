@@ -485,7 +485,7 @@ function RosterCard({
             : rosterSort.startsWith("FEE_")
               ? `${money(contract.appearanceFee)}/show`
               : `POP ${Math.round(wrestler.popularity)}`}</b>
-          <small>{pending ? "Offer pending · " : contract.renewalWindowOpen && !(wrestler.scheduledRenewals?.length) ? "Contract action needed · " : ""}{contract.unlimitedAppearances ? "Unlimited dates" : `${contract.datesRemaining}/${contract.dateEntitlement} dates`} · {contract.weeksToExpiry}w left</small>
+          <small>{pending ? "Offer pending · " : contract.renewalReason === "DATES_EXHAUSTED" ? "Current dates exhausted · " : contract.renewalWindowOpen && !(wrestler.scheduledRenewals?.length) ? "Contract action needed · " : ""}{contract.unlimitedAppearances ? "Unlimited dates" : `${contract.datesRemaining}/${contract.dateEntitlement} dates`} · {contract.weeksToExpiry}w left</small>
           {(wrestler.scheduledRenewals?.length ?? 0) > 0 ? (
             <small>✓ Renewal signed · starts {ppwDate(wrestler.scheduledRenewals![0]!.startDate)}</small>
           ) : null}
@@ -504,8 +504,11 @@ function RosterCard({
           <div>
             <span>{label(contract.exclusivity)} · expires {ppwDate(contract.endDate)}</span>
             <strong>
-              {(wrestler.scheduledRenewals?.length ?? 0) > 0
-                ? "Renewal accepted and signed — current contract remains active until the new term begins"
+              {contract.renewalReason === "DATES_EXHAUSTED"
+                  && (wrestler.scheduledRenewals?.length ?? 0) > 0
+                ? "Current dates exhausted — negotiate more dates for appearances before the signed renewal begins"
+                : (wrestler.scheduledRenewals?.length ?? 0) > 0
+                  ? "Renewal accepted and signed — current contract remains active until the new term begins"
                 : contract.renewalReason === "DATES_EXHAUSTED"
                   ? "All purchased dates used · renegotiation open"
                   : contract.renewalWindowOpen

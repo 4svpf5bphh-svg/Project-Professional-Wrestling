@@ -468,8 +468,8 @@ export function buildPlayerTalentManagementView(
           appearanceFee: contract.appearanceFee,
           signingBonus: contract.signingBonus,
           sameTermsRenewal: scheduledRenewals.length > 0 ? null : sameTermsRenewalTemplate(aggregate.state, contract),
-          renewalWindowOpen: scheduledRenewals.length === 0 && (datesExhausted || expiryWindowOpen),
-          renewalReason: scheduledRenewals.length > 0 ? null : datesExhausted ? "DATES_EXHAUSTED" : expiryWindowOpen ? "EXPIRY_WINDOW" : null,
+          renewalWindowOpen: datesExhausted || (scheduledRenewals.length === 0 && expiryWindowOpen),
+          renewalReason: datesExhausted ? "DATES_EXHAUSTED" : scheduledRenewals.length > 0 ? null : expiryWindowOpen ? "EXPIRY_WINDOW" : null,
         },
       };
     })
