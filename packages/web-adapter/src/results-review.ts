@@ -1,4 +1,4 @@
-import type { PlayerShowMatchView, PlayerShowSegmentView } from "../../application/src/results-view.js";
+import type { PlayerShowMatchView, PlayerShowSegmentView, PlayerShowResultView } from "../../application/src/results-view.js";
 
 /** Editorial voice for player-booked results, not a new simulation or invented move log.
  * Output is deterministic from the immutable resolved event, so old shows stay readable. */
@@ -183,4 +183,52 @@ export function reviewPlayerSegment(segment: PlayerShowSegmentView): SlotReview 
     : segment.outcomeBand === "POOR" ? "ROUGH"
     : segment.crowdResponse !== null && segment.crowdResponse >= 70 ? "GOOD" : "MIXED";
   return { headline, recap, verdict: verdict(tone, segment.segmentId), tone };
+}
+
+
+/** Full editorial verdict is intentionally private to the player's own show.
+ * AI-owned public results stay as a compact factual scoreboard. */
+export function reviewPlayerShow(show: Pick<PlayerShowResultView,
+  "eventId" | "averageMatchRating" | "crowdResponse" | "titleChangeCount" |
+  "injuryCount" | "matchCount" | "segmentCount">): SlotReview {
+  const crowd = Number.isFinite(show.crowdResponse) ? show.crowdResponse : 50;
+  const average = Number.isFinite(show.averageMatchRating) ? show.averageMatchRating : 2.5;
+  const tone: ReviewTone = crowd >= 76 && average >= 3.5 ? "GREAT"
+    : crowd >= 62 && average >= 2.9 ? "GOOD"
+    : crowd < 46 || average < 2.15 ? "ROUGH" : "MIXED";
+  const headline = tone === "GREAT" ? pick([
+    "A night they won't forget", "The promotion delivers the goods",
+    "The crowd got its money's worth", "A proper night of professional wrestling",
+  ], show.eventId, 101) : tone === "GOOD" ? pick([
+    "A show with plenty to cheer", "A solid night between the ropes",
+    "The good comfortably outweighed the bad",
+  ], show.eventId, 102) : tone === "ROUGH" ? pick([
+    "Back to the drawing board", "A tough night under the lights",
+    "Well, that didn't go to plan", "Not one for the highlight reel",
+  ], show.eventId, 103) : pick([
+    "Some cheers, some groans", "A mixed bag under the lights",
+    "A show of two halves", "Plenty happened. Not all of it worked.",
+  ], show.eventId, 104);
+  const audience = crowd >= 78 ? "The crowd responded in a big way."
+    : crowd >= 62 ? "The audience gave the show a solid reception."
+    : crowd < 43 ? "The crowd struggled to get behind the card."
+    : crowd < 57 ? "The room was a difficult one to win over."
+    : "The show drew a mixed reaction.";
+  const matches = average >= 4 ? "The wrestling itself provided a genuine standout performance."
+    : average >= 3.4 ? "The in-ring work gave the audience plenty to enjoy."
+    : average < 2.3 ? "The matches never really found their footing."
+    : "There were bright spots and bouts that will need another look.";
+  const consequences = [
+    show.titleChangeCount > 0
+      ? show.titleChangeCount === 1 ? "There was a championship change." : "Multiple championships changed hands."
+      : "",
+    show.injuryCount > 0
+      ? show.injuryCount === 1 ? "An injury cast a shadow over the night." : "Injuries added to the fallout."
+      : "",
+  ].filter(Boolean).join(" ");
+  const verdict = tone === "GREAT" ? "A show that reminds you why you booked the card in the first place."
+    : tone === "GOOD" ? "Plenty here to build on next week."
+    : tone === "ROUGH" ? "The booker has some explaining to do."
+    : "The next card has a chance to put the pieces together.";
+  return { headline, recap: [audience, matches, consequences].filter(Boolean).join(" "), verdict, tone };
 }
