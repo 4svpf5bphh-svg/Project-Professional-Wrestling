@@ -95,7 +95,7 @@ test("resolved player contract offers surface accepted and rejected Attention wi
   ok(accepted?.category === "IMPORTANT", "accepted contract result was not surfaced as Important");
   ok(accepted?.title.includes(acceptedPerson.name), "accepted contract result lost the wrestler name");
   ok(accepted?.title.includes("accepted"), "accepted contract result did not state the decision");
-  ok(accepted?.deepLink === "/business", "accepted contract result did not link to Business");
+  ok(accepted?.deepLink === "/talent", "accepted contract result did not link to Talent");
   ok(accepted?.dismissible === true, "accepted contract result should be dismissible");
 
   ok(rejected?.category === "IMPORTANT", "rejected contract result was not surfaced as Important");
