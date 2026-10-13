@@ -159,6 +159,7 @@ export interface PlayerShowSegmentView {
   signingOutcome: "SIGNED" | "REJECTED" | "WALKOUT" | "BRAWL" | null;
   challengeResponse: "ACCEPTED" | "REFUSED" | "LEFT_OPEN" | null;
   interruptionOutcome: "VERBAL_EXCHANGE" | "INTERRUPTER_PREVAILS" | "SPEAKER_PREVAILS" | "BRAWL" | null;
+  confrontationEnding: "STAREDOWN" | "INITIATOR_BACKS_DOWN" | "TARGET_BACKS_DOWN" | "RELUCTANT_HANDSHAKE" | null;
   stableId: Id | null;
   stableName: string | null;
   stableInvitationOutcome: "ACCEPTED" | "REFUSED" | null;
@@ -659,6 +660,7 @@ export function buildPlayerShowHistory(
         signingOutcome: segment.signingOutcome,
         challengeResponse: segment.challengeResponse,
         interruptionOutcome: segment.interruptionOutcome,
+        confrontationEnding: segment.confrontationEnding,
         stableId: segment.stableId,
         stableName: segment.stableName,
         stableInvitationOutcome: segment.stableInvitationOutcome,
