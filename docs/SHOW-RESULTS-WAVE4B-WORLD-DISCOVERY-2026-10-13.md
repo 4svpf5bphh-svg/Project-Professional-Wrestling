@@ -30,3 +30,5 @@
 
 ## Deferred
 True all-history search requires API pagination/indexing, not a silent claim against the latest 30.
+
+**Workflow trigger:** The PR is temporarily based on main only to start standard full Actions CI; restore the draft's stacked PR #79 base once scheduled. This never merges or deploys.
