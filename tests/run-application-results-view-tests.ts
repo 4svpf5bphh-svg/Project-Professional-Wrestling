@@ -1615,6 +1615,10 @@ test("player event copy connects real match trends with recorded major moments",
     "angle-only cryptic show revealed a private wrestler");
   ok(!/match of the night|won a highly rated contest/i.test(noWrestling.recap),
     "angle-only show invented wrestling matches");
+  ok(noWrestling.headline === "The angles do the talking",
+    "an angle-only show was given a misleading match-centric cover story");
+  ok(crowned.recap.split("An injury").length === 2,
+    "title-and-injury show repeated the same medical fallout twice");
 });
 
 console.log(`\nApplication results-view tests: ${passed} passed, ${failed} failed`);
