@@ -63,7 +63,7 @@ export function firstSegmentForGoal(goal: SegmentStoryGoal): DetailedShowSegment
 /** Direction only, not a promised outcome or a score guide. */
 export function segmentDirectionHint(type: DetailedShowSegmentType): string {
   switch (type) {
-    case "PROMO": return "Give a wrestler the microphone. Their presentation and the crowd's investment determine how well it lands.";
+    case "PROMO": return "Choose the message: boast, rally fans, air a grievance, issue a warning or state an intention. Repeating the same speech wears thin.";
     case "INTERVIEW": return "Put a wrestler on the spot. Use the conversation to reveal personality or advance an existing story.";
     case "CELEBRATION": return "Let the audience react to a victory or milestone. The character and timing change the reception.";
     case "CONFRONTATION": return "Bring two wrestlers face to face. Choose who instigates the encounter and who is targeted.";
