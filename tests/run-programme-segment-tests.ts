@@ -376,6 +376,128 @@ for (const [kind, seed] of [["CHALLENGE", 9156], ["CONFRONTATION", 9157]] as con
   });
 }
 
+test("a scripted confrontation preserves its exact ending without inventing an attack, challenge or relationship", () => {
+  const setup = fixture(91640);
+  const [instigator, target] = setup.rosterIds;
+  const draft = {
+    draftId: "stand-off-show",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [], championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "reluctant-face-off",
+      type: "CONFRONTATION" as const,
+      participantIds: [instigator!, target!],
+      programmeId: setup.programme.id,
+      plannedLengthMinutes: 5,
+      initiatorPersonId: instigator!,
+      targetPersonId: target!,
+      confrontationEnding: "RELUCTANT_HANDSHAKE" as const,
+    }],
+    runningOrder: [{ kind: "SEGMENT" as const, refId: "reluctant-face-off" }],
+  };
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, draft);
+  const beforeMatches = setup.state.matches.length;
+  const beforeRelationships = setup.state.wrestlerRelationships?.length ?? 0;
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "face-off failed to resolve");
+  const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(frozen.type === "CONFRONTATION" && frozen.confrontationEnding === "RELUCTANT_HANDSHAKE",
+    "completed face-off rewrote its scripted handshake");
+  ok(frozen.initiatorPersonId === instigator && frozen.targetPersonId === target,
+    "resolved face-off reversed its player-authored roles");
+  ok(frozen.attackerPersonId === null && frozen.challengeResponse === null
+    && frozen.interruptionOutcome === null,
+    "a face-to-face standoff became an attack, match challenge or interruption");
+  ok(setup.state.matches.length === beforeMatches
+    && (setup.state.wrestlerRelationships?.length ?? 0) === beforeRelationships,
+    "handshake automatically booked a match or rewrote backstage relationships");
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
+    "World Lock replay duplicated the confrontation");
+
+  const rejected = { ...draft, segments: [{
+    ...draft.segments[0]!, confrontationEnding: "BRAWL" as "STAREDOWN",
+  }] };
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 1, rejected),
+    "unsupported scripted stand-off ending");
+  ok(setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!.confrontationEnding === "RELUCTANT_HANDSHAKE",
+    "rejected ending rewrote an existing authored face-off");
+});
+
+test("legacy face-offs remain factual without inventing a scripted ending", () => {
+  const setup = fixture(91641);
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    draftId: "old-faceoff", promotionId: setup.promotion.id,
+    targetDate: setup.targetDate, marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [], championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "legacy-faceoff", type: "CONFRONTATION",
+      participantIds: setup.rosterIds.slice(0, 2),
+      programmeId: null, plannedLengthMinutes: 5,
+    }],
+  });
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "historic stand-off no longer resolves");
+  ok(resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!.confrontationEnding === null,
+    "an old generic confrontation was retroactively scripted");
+});
+
+test("confrontation repetition is bounded to completed same-pair same-ending promotion history", () => {
+  function run(history: "NONE" | "SAME" | "OTHER_ENDING" | "SWAPPED_ROLES" | "OTHER_PAIR" | "OTHER_PROMOTION" | "OLD" | "UNPERFORMED") {
+    const setup = fixture(91642);
+    setup.state.world.currentDate = { year: 1, week: 8, day: 1 };
+    setup.targetDate = { year: 1, week: 8, day: 6 };
+    const [initiator, target, another] = setup.rosterIds;
+    if (history !== "NONE" && history !== "UNPERFORMED") {
+      setup.state.ledger.push({
+        id: "earlier-face-off",
+        worldId: setup.state.world.id,
+        date: { year: 1, week: history === "OLD" ? 1 : 7, day: 6 },
+        order: 9751, type: "SHOW_SEGMENT_COMPLETED",
+        significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+        entityIds: [setup.promotion.id, initiator!, target!],
+        payload: {
+          promotionId: history === "OTHER_PROMOTION" ? "other-promotion" : setup.promotion.id,
+          segmentType: "CONFRONTATION",
+          initiatorPersonId: history === "SWAPPED_ROLES" ? target : initiator,
+          targetPersonId: history === "SWAPPED_ROLES" ? initiator : history === "OTHER_PAIR" ? another : target,
+          confrontationEnding: history === "OTHER_ENDING" ? "RELUCTANT_HANDSHAKE" : "STAREDOWN",
+        },
+      });
+    }
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      draftId: "test-standoff", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+      marketId: null, venueId: null, ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4),
+      matches: [], championshipAssignments: [],
+      segments: [{
+        draftSegmentId: "test-standoff-segment",
+        type: "CONFRONTATION",
+        participantIds: [initiator!, target!],
+        programmeId: null, plannedLengthMinutes: 5,
+        initiatorPersonId: initiator!,
+        targetPersonId: target!,
+        confrontationEnding: "STAREDOWN",
+      }],
+    });
+    setup.state.events.push(completedEvent(setup));
+    recordResolvedShowSegments(setup.state, setup.planning);
+    return resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  }
+  const original = run("NONE");
+  const repeated = run("SAME");
+  ok(repeated.angleFitModifier < original.angleFitModifier
+    && repeated.crowdResponse! < original.crowdResponse!,
+    "same-pair same-ending standoffs never become stale");
+  for (const variant of ["OTHER_ENDING", "SWAPPED_ROLES", "OTHER_PAIR", "OTHER_PROMOTION", "OLD", "UNPERFORMED"] as const) {
+    ok(run(variant).angleFitModifier === original.angleFitModifier,
+      `${variant} incorrectly counted as an identical completed stand-off`);
+  }
+});
+
 test("RESCUE freezes the aggressor, victim and rescuer as distinct characters", () => {
   const setup = fixture(9167);
   const [aggressor, victim, rescuer] = setup.rosterIds;
