@@ -504,7 +504,7 @@ export function reviewPlayerShowFinalBell(
     detail: x.weeksOut + " PPW week" + (x.weeksOut === 1 ? "" : "s") + " out.",
   })))[0];
   const turn = angles.find((slot) =>
-    slot.segment.type === "TURN" && slot.segment.turnTargetAlignment !== null);
+    slot.segment.type === "TURN" && Boolean(slot.segment.turnTargetAlignment));
   const turnMoment = turn ? {
     slotOrder: turn.order, kind: "SEGMENT" as const, label: "THE BIGGEST FALLOUT",
     headline: (turn.segment.participants.find((person) =>
@@ -530,7 +530,9 @@ export function reviewPlayerShowFinalBell(
   const crowd = Number.isFinite(show.crowdResponse) ? show.crowdResponse : 50;
   const average = Number.isFinite(show.averageMatchRating) ? show.averageMatchRating : 2.5;
   const lastWord = standout === null
-    ? "No completed matches were recorded. What happened on the show is preserved above."
+    ? angles.length > 0
+      ? "No bouts this time — the angles were the story of the night."
+      : "No completed matches or angles were recorded for this show."
     : disappointment && consequence
       ? pick([
         "The highs mattered, the lows stung, and the fallout gives next week's show something to work with.",
@@ -697,7 +699,7 @@ export function reviewPlayerShowNarrative(
   const injuryMatch = matches.find((slot) => slot.match.injuries.length > 0);
   const injured = injuryMatch?.match.injuries[0];
   const turn = segments.find((slot) => slot.segment.type === "TURN"
-    && slot.segment.turnTargetAlignment !== null);
+    && Boolean(slot.segment.turnTargetAlignment));
   const arrival = segments.find((slot) => slot.segment.type === "LIVE_APPEARANCE"
     && ["DEBUT", "RETURN", "SURPRISE_REVEAL"].includes(slot.segment.liveAppearanceKind ?? ""));
   const strongAngle = segments

@@ -1621,5 +1621,28 @@ test("player event copy connects real match trends with recorded major moments",
     "title-and-injury show repeated the same medical fallout twice");
 });
 
+
+
+test("archived turns with no alignment cannot become fictional headline or fallout", () => {
+  const orphanTurn = {
+    kind: "SEGMENT" as const, order: 1, segment: {
+      segmentId: "archived-no-alignment",
+      type: "TURN", participants: [{ personId: "star", name: "The Star" }],
+      turnPersonId: "star", turnTargetAlignment: undefined,
+      outcomeBand: null, crowdResponse: null,
+    } as unknown as PlayerShowSegmentView,
+  };
+  const show = {
+    eventId: "archived-turn-no-value", runningOrder: [orphanTurn],
+    crowdResponse: 50, averageMatchRating: 0,
+    titleChangeCount: 0, injuryCount: 0, matchCount: 0, segmentCount: 1,
+  };
+  const opening = reviewPlayerShowNarrative(show);
+  ok(!opening.headline.includes("The Star") && !opening.recap.includes("turned"),
+    "unresolved old turn became a front-page heel/face change");
+  const end = reviewPlayerShowFinalBell(show);
+  ok(end.consequence === null && end.lastWord.includes("angles"),
+    "an incomplete historic turn became real fallout or generated a match-only signoff");
+});
 console.log(`\nApplication results-view tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
