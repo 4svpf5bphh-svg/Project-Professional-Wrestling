@@ -15,6 +15,7 @@ import {
   evaluateShowFlow,
   setPromotionWrestlerAlignment,
   setWrestlerAlignment,
+  setActualMatchFinish,
   wrestlerAlignment,
 } from "../packages/sim-core/src/index.js";
 
@@ -457,5 +458,89 @@ test("weekly show-flow freezes exact historical evidence and remains retry-safe"
   ok(JSON.stringify(state.matches) === beforeMatches, "show-flow application mutated resolved match facts");
 });
 
-console.log(`\nShow-flow tests: ${passed} passed, ${failed} failed`);
+
+test("a heel cheating a babyface creates useful crowd heat without rewriting match quality", () => {
+  const { state, event, personIds } = fixture(84221);
+  const match = completedMatch(state, event, "heel-dirty-finish", 1, "STORY", 63);
+  attachSinglesParticipants(state, event, match, personIds[0]!, personIds[1]!);
+  setWrestlerAlignment(state.people.find((person) => person.id === personIds[0])!, "HEEL");
+  setWrestlerAlignment(state.people.find((person) => person.id === personIds[1])!, "FACE");
+  match.finishCheaterPersonId = personIds[0]!;
+  setActualMatchFinish(match, "FOREIGN_OBJECT");
+  const dirty = evaluateShowFlow(state, event, [match]);
+  ok(dirty.matches[0]?.finishModifier === 1.8, "fresh heel foreign-object win was not good heat");
+  ok(dirty.matches[0]?.finishReason === "HEEL_CHEATING_HEAT", "heel crowd context was not explained");
+  const quality = match.criticalRatingStars;
+  const base = match.crowdResponse;
+  setActualMatchFinish(match, "INJURY_STOPPAGE");
+  const stopped = evaluateShowFlow(state, event, [match]);
+  ok(stopped.matches[0]?.finishModifier === 0 && stopped.matches[0]?.finishReason === null,
+    "an injury stoppage retained nonexistent cheating heat");
+  ok(dirty.crowdResponse > stopped.crowdResponse, "heel cheating had no crowd-flow effect");
+  ok(match.criticalRatingStars === quality && match.crowdResponse === base,
+    "show-flow reaction overwrote the underlying performance and crowd score");
+});
+
+test("babyface cheating hurts the response even if the booked side wins", () => {
+  const { state, event, personIds } = fixture(84222);
+  const match = completedMatch(state, event, "face-dirty-win", 1, "STORY");
+  attachSinglesParticipants(state, event, match, personIds[0]!, personIds[1]!);
+  setWrestlerAlignment(state.people.find((person) => person.id === personIds[0])!, "FACE");
+  setWrestlerAlignment(state.people.find((person) => person.id === personIds[1])!, "HEEL");
+  match.finishCheaterPersonId = personIds[0]!;
+  setActualMatchFinish(match, "FOREIGN_OBJECT");
+  const dirty = evaluateShowFlow(state, event, [match]);
+  ok(dirty.matches[0]?.finishModifier === -1.3, "babyface cheating created an unearned crowd bonus");
+  ok(dirty.matches[0]?.finishReason === "FACE_CHEATING_BACKLASH", "face confusion was not explained");
+  match.finishCheaterPersonId = personIds[1]!;
+  ok(evaluateShowFlow(state, event, [match]).matches[0]?.finishModifier === 0,
+    "wrong-side wrestler generated an invented crowd response");
+});
+
+test("repeating the identical dirty finish against the same opponent only erodes its extra lift", () => {
+  const { state, event, personIds } = fixture(84223);
+  event.date = { year: 1, week: 4, day: 6 };
+  const current = completedMatch(state, event, "repeat-current", 1, "STORY", 67);
+  attachSinglesParticipants(state, event, current, personIds[0]!, personIds[1]!);
+  setWrestlerAlignment(state.people.find((person) => person.id === personIds[0])!, "HEEL");
+  setWrestlerAlignment(state.people.find((person) => person.id === personIds[1])!, "FACE");
+  current.finishCheaterPersonId = personIds[0]!;
+  setActualMatchFinish(current, "FOREIGN_OBJECT");
+  const fresh = evaluateShowFlow(state, event, [current]);
+  for (let prior = 0; prior < 2; prior += 1) {
+    const oldEvent = { ...event, id: `repeat-prior-event-${prior}`, date: { year: 1, week: prior + 2, day: 6 } };
+    const match = completedMatch(state, oldEvent, `repeat-prior-${prior}`, 1, "STORY", 67);
+    match.finishCheaterPersonId = personIds[0]!;
+    setActualMatchFinish(match, "FOREIGN_OBJECT");
+    state.events.push(oldEvent);
+    state.matches.push(match);
+    attachSinglesParticipants(state, oldEvent, match, personIds[0]!, personIds[1]!);
+  }
+  const familiar = evaluateShowFlow(state, event, [current]);
+  ok(fresh.matches[0]?.finishModifier === 1.8, "fresh dirty finish lost its intended heel response");
+  ok(familiar.matches[0]?.finishRepeatCount === 2, "same completed finish wasn't counted in history");
+  ok(familiar.matches[0]?.finishModifier === 0 && familiar.matches[0]?.finishReason === "DIRTY_FINISH_FAMILIAR",
+    "repeated cheating generated a second negative repetition penalty");
+  ok(familiar.matches[0]?.programmeModifier === fresh.matches[0]?.programmeModifier,
+    "finish repetition interfered with the separate Programme repetition system");
+  ok(evaluateShowFlow(state, event, [current]).crowdResponse === familiar.crowdResponse,
+    "recalculating finish response changed its outcome");
+});
+
+test("a DQ credits the losing cheater, not the innocent winner", () => {
+  const { state, event, personIds } = fixture(84224);
+  const match = completedMatch(state, event, "dq-caught", 1, "STORY");
+  attachSinglesParticipants(state, event, match, personIds[0]!, personIds[1]!);
+  setWrestlerAlignment(state.people.find((person) => person.id === personIds[0])!, "FACE");
+  setWrestlerAlignment(state.people.find((person) => person.id === personIds[1])!, "HEEL");
+  match.finishCheaterPersonId = personIds[1]!;
+  setActualMatchFinish(match, "DISQUALIFICATION");
+  ok(evaluateShowFlow(state, event, [match]).matches[0]?.finishModifier === 1.2,
+    "the caught heel didn't generate a modest DQ story reaction");
+  match.finishCheaterPersonId = personIds[0]!;
+  ok(evaluateShowFlow(state, event, [match]).matches[0]?.finishModifier === 0,
+    "the winner was incorrectly blamed for the DQ");
+});
+
+console.log(`\\nShow-flow tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
