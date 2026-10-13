@@ -223,6 +223,57 @@
   font-size: 14px;
 }
 
+.unperformedArrivals {
+  margin-bottom: 14px;
+  border: 1px solid rgba(240, 181, 96, .35);
+  border-radius: 14px;
+  background: rgba(71, 49, 25, .24);
+  padding: 13px;
+}
+
+.unperformedArrivalsHeading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.unperformedArrivalsHeading > span {
+  font-size: 18px;
+  color: #f0b560;
+}
+
+.unperformedArrivalsHeading strong {
+  color: #f2cc91;
+  font-size: 14px;
+}
+
+.unperformedArrivalsHeading p,
+.unperformedArrivalsFootnote {
+  color: #c1b6a5;
+  font-size: 12px;
+  margin: 4px 0 0;
+}
+
+.unperformedArrival {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  margin-top: 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .04);
+}
+
+.unperformedArrival strong {
+  color: #f2d7b0;
+  font-size: 13px;
+}
+
+.unperformedArrival span {
+  color: #c1b6a5;
+  font-size: 12px;
+}
+
 .crowdStory {
   margin-bottom: 14px;
   border: 1px solid rgba(129, 187, 181, .18);
