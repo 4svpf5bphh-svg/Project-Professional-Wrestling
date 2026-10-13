@@ -1128,7 +1128,7 @@ for (const [segmentType, seed] of [
   ["ATTACK", 91930], ["INTERRUPTION", 91931], ["CHALLENGE", 91932], ["VIDEO_PACKAGE", 91933],
 ] as const) {
   test(`${segmentType} variety counts only an actually performed matching authored story beat`, () => {
-    function run(prior: "NONE" | "IDENTICAL" | "NEW_CHOICE" | "OTHER_WRESTLER" | "OTHER_PROMOTION" | "FUTURE" | "OLD" | "OTHER_CONTEXT") {
+    function run(prior: "NONE" | "IDENTICAL" | "NEW_CHOICE" | "OTHER_WRESTLER" | "OTHER_PROMOTION" | "SAME_WEEK" | "FUTURE" | "OLD" | "OTHER_CONTEXT") {
       const setup = fixture(seed);
       setup.state.world.currentDate = { year: 1, week: 8, day: 1 };
       setup.targetDate = { year: 1, week: 8, day: 6 };
@@ -1136,7 +1136,7 @@ for (const [segmentType, seed] of [
       if (prior !== "NONE") {
         setup.state.ledger.push({
           id: "older-completed-beat", worldId: setup.state.world.id,
-          date: { year: 1, week: prior === "FUTURE" ? 9 : prior === "OLD" ? 1 : 7, day: 6 },
+          date: { year: 1, week: prior === "FUTURE" ? 9 : prior === "SAME_WEEK" ? 8 : prior === "OLD" ? 1 : 7, day: 6 },
           order: 9891, type: "SHOW_SEGMENT_COMPLETED",
           significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
           entityIds: [setup.promotion.id, first!, second!],
@@ -1194,7 +1194,7 @@ for (const [segmentType, seed] of [
     ok(same.angleFitModifier < fresh.angleFitModifier
       && same.crowdResponse! < fresh.crowdResponse!,
       "replaying a completed identical segment had no novelty consequence");
-    for (const variant of ["NEW_CHOICE", "OTHER_WRESTLER", "OTHER_PROMOTION", "FUTURE", "OLD"] as const) {
+    for (const variant of ["NEW_CHOICE", "OTHER_WRESTLER", "OTHER_PROMOTION", "SAME_WEEK", "FUTURE", "OLD"] as const) {
       ok(run(variant).angleFitModifier === fresh.angleFitModifier,
         `${variant} was wrongly counted as the same performed story beat`);
     }
