@@ -338,10 +338,14 @@ export function buildPlayerWorldResultsView(
         segmentId: segment.ledgerId,
         order: segment.slotOrder,
         type: segment.type,
-        participants: segment.participantIds.map((personId) => ({
-          personId,
-          name: peopleById.get(personId)?.name ?? "Unknown wrestler",
-        })),
+        // A cryptic clip is an on-screen mystery. Its participant IDs are not
+        // public reveal evidence, even if a legacy ledger includes the subject.
+        participants: segment.type === "VIDEO_PACKAGE" && segment.videoReveal === "CRYPTIC"
+          ? []
+          : segment.participantIds.map((personId) => ({
+            personId,
+            name: peopleById.get(personId)?.name ?? "Unknown wrestler",
+          })),
         videoSubjectName: segment.videoSubjectPersonId && segment.videoReveal !== "CRYPTIC"
           ? (peopleById.get(segment.videoSubjectPersonId)?.name ?? null) : null,
         videoKind: segment.videoKind,
