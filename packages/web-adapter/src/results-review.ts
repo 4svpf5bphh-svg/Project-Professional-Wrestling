@@ -147,13 +147,22 @@ export function reviewPlayerSegment(segment: PlayerShowSegmentView): SlotReview 
         AIR_GRIEVANCE: who + " aired their grievances.", ISSUE_WARNING: who + " issued a warning.",
         STATEMENT_OF_INTENT: who + " laid out their intentions." } as Record<string, string>)[segment.promoPurpose ?? ""]
         ?? who + " addressed the audience."; break;
-    case "INTERVIEW":
+    case "INTERVIEW": {
       headline = who + " faces the questions";
-      recap = segment.interviewResponse === "WALKOUT" ? who + " walked out of the interview. Message received."
-        : segment.interviewResponse === "EVASIVE" ? who + " dodged the question."
+      const topic = ({
+        CAREER_STORY: "their career",
+        RIVALRY_PRESSURE: "the pressure of their rivalry",
+        RECENT_FORM: "their recent form",
+        NEXT_STEPS: "what comes next",
+      } as Record<string, string>)[segment.interviewTopic ?? ""] ?? "the situation";
+      const answer = segment.interviewResponse === "WALKOUT" ? who + " walked out. Message received."
+        : segment.interviewResponse === "EVASIVE" ? who + " gave very little away."
         : segment.interviewResponse === "DEFIANT" ? who + " answered defiantly."
         : segment.interviewResponse === "CANDID" ? who + " gave a candid answer."
-        : who + " was interviewed."; break;
+        : "The response wasn't recorded.";
+      recap = "Asked about " + topic + ", " + answer.charAt(0).toLowerCase() + answer.slice(1);
+      break;
+    }
     case "CHALLENGE":
       headline = from + " calls out " + to;
       recap = segment.challengeResponse === "ACCEPTED" ? to + " accepted the challenge."
@@ -173,18 +182,27 @@ export function reviewPlayerSegment(segment: PlayerShowSegmentView): SlotReview 
         : segment.interruptionOutcome === "INTERRUPTER_PREVAILS" ? from + " got the better of the exchange."
         : segment.interruptionOutcome === "SPEAKER_PREVAILS" ? to + " turned the interruption back on its instigator."
         : "An exchange of words followed."; break;
-    case "ATTACK": case "POST_MATCH_ASSAULT":
+    case "ATTACK": case "POST_MATCH_ASSAULT": {
       headline = attacker + " goes after " + victim + "!";
-      recap = attacker + " attacked " + victim + (segment.type === "POST_MATCH_ASSAULT" ? " after the match." : ".");
-      if (segment.postMatchAssaultEnding === "ATTACKER_STANDS_TALL") recap += " The attacker was left standing.";
-      if (segment.postMatchAssaultEnding === "VICTIM_FIGHTS_BACK") recap += " The victim fought back.";
-      if (segment.postMatchAssaultEnding === "OFFICIALS_SEPARATE") recap += " Officials separated the wrestlers."; break;
+      const format = segment.attackPresentation === "BLINDSIDE"
+        ? attacker + " blindsided " + victim + "."
+        : segment.attackPresentation === "BEATDOWN"
+          ? attacker + " laid a beatdown on " + victim + "."
+          : segment.attackPresentation === "PULL_APART_BRAWL"
+            ? attacker + " and " + victim + " were involved in a pull-apart brawl."
+            : attacker + " attacked " + victim + ".";
+      recap = (segment.type === "POST_MATCH_ASSAULT" ? "After the bell, " + format.charAt(0).toLowerCase() + format.slice(1) : format);
+      if (segment.postMatchAssaultEnding === "ATTACKER_STANDS_TALL") recap += " " + attacker + " was left standing.";
+      if (segment.postMatchAssaultEnding === "VICTIM_FIGHTS_BACK") recap += " " + victim + " fought back.";
+      if (segment.postMatchAssaultEnding === "OFFICIALS_SEPARATE") recap += " Officials separated the wrestlers.";
+      break;
+    }
     case "RESCUE":
       headline = rescuer + " to the rescue!";
       recap = rescuer + " intervened as " + attacker + " attacked " + victim + ".";
-      if (segment.rescueOutcome === "RESCUER_STANDS_TALL") recap += " The rescue succeeded.";
-      if (segment.rescueOutcome === "ATTACKER_ESCAPES") recap += " The attacker escaped.";
-      if (segment.rescueOutcome === "RESCUE_OVERWHELMED") recap += " The rescue failed."; break;
+      if (segment.rescueOutcome === "RESCUER_STANDS_TALL") recap += " " + rescuer + " fought the attacker off and stood tall.";
+      if (segment.rescueOutcome === "ATTACKER_ESCAPES") recap += " " + attacker + " escaped the attempted save.";
+      if (segment.rescueOutcome === "RESCUE_OVERWHELMED") recap += " The rescue failed; the attacker overwhelmed them."; break;
     case "TURN": {
       const turning = person(segment, segment.turnPersonId) ?? who;
       headline = turning + (segment.turnTargetAlignment ? " turns " + segment.turnTargetAlignment.toLowerCase() : " changes course") + "!";
@@ -205,12 +223,19 @@ export function reviewPlayerSegment(segment: PlayerShowSegmentView): SlotReview 
         : segment.liveAppearanceKind === "RETURN" ? who + " returned in person."
         : segment.liveAppearanceKind === "SURPRISE_REVEAL" ? who + " was revealed in a surprise appearance."
         : who + " was introduced in person."; break;
-    case "CELEBRATION":
+    case "CELEBRATION": {
       headline = who + " celebrates";
       recap = segment.celebrationOccasion === "SELF_CORONATION" ? who + " crowned themselves. All bravado, no official title change."
         : segment.celebrationOccasion === "RIVALRY_TAUNT" ? who + " taunted a rival."
         : segment.celebrationOccasion === "VICTORY_LAP" ? who + " celebrated a recent win."
-        : who + " thanked the fans."; break;
+        : segment.celebrationOccasion === "FAN_APPRECIATION" ? who + " thanked the fans."
+        : who + " had a celebration in the ring.";
+      if (segment.celebrationEnding === "SALUTE_CROWD") recap += " A salute to the crowd closed it out.";
+      if (segment.celebrationEnding === "POSE") recap += " " + who + " struck a pose to finish.";
+      if (segment.celebrationEnding === "TAUNT_RIVALS") recap += " One last taunt was aimed at the opposition.";
+      if (segment.celebrationEnding === "WALK_OFF") recap += " Then " + who + " walked off.";
+      break;
+    }
     case "CONTRACT_SIGNING":
       headline = segment.signingOutcome === "BRAWL" ? "The signing erupts!"
         : segment.signingOutcome === "WALKOUT" ? "Someone walks away from the table" : "A deal on the line";
