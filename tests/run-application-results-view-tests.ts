@@ -18,7 +18,9 @@ import {
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
 import { setActualMatchFinish } from "../packages/sim-core/src/match-finishes.js";
-import { hotSegmentHeadline, showResultHighlights } from "../packages/web-adapter/src/results-highlights.js";
+import { hotSegmentHeadline, showResultHighlights, showOpeningHighlights } from "../packages/web-adapter/src/results-highlights.js";
+import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShow, reviewPlayerShowNarrative, reviewPlayerShowChapters, reviewPlayerShowFinalBell, reviewPlayerShowRunningOrder, reviewSegmentVisibleNames } from "../packages/web-adapter/src/results-review.js";
+import type { PlayerShowMatchView, PlayerShowSegmentView, PlayerShowResultView } from "../packages/application/src/results-view.js";
 import { discoverWorldResults, worldResultsWeekLabel, worldShowHasSpotlight } from "../packages/web-adapter/src/world-results-discovery.js";
 
 let passed = 0;
@@ -340,6 +342,14 @@ test("completed-show highlight reel is truthful in owner and World Results and n
     (show) => show.eventId === privateShow.eventId)!;
   const owned = showResultHighlights(privateShow);
   const publicMoments = showResultHighlights(publicShow);
+  const opening = showOpeningHighlights(privateShow);
+  ok(opening.length <= 2 && new Set(opening.map((moment) => moment.slotOrder)).size === opening.length,
+    "player show opening repeated the same slot or crowded the iPhone");
+  ok(opening[0]?.category === "CHAMPIONSHIP" && opening[0].slotOrder === owned[0]?.slotOrder,
+    "cover-story curation discarded the genuinely most important moment");
+  ok(JSON.stringify(showOpeningHighlights(structuredClone(privateShow))) === JSON.stringify(opening),
+    "cover-story selection changed across reloads");
+
   ok(owned.length === 3 && owned[0]?.category === "CHAMPIONSHIP"
     && owned[1]?.category === "INJURY" && owned[2]?.category === "MAIN_EVENT",
     "show replay did not rank real title, injury and best match consequences");
@@ -1143,5 +1153,540 @@ test("non-members cannot read World show history", () => {
   ok(rejected, "non-member could read show history");
 });
 
+
+test("editorial match reviews are deterministic, factual and read-only", () => {
+  const match = {
+    matchId: "editorial-foreign-object",
+    intent: "TECHNICAL",
+    winnerNames: ["Megan Bayne"],
+    criticalRatingStars: 3.6,
+    crowdResponse: 76,
+    actualFinish: "FOREIGN_OBJECT",
+    finishCheater: { personId: "bayne", name: "Megan Bayne" },
+    interference: null,
+    titleOutcomes: [],
+    injuries: [],
+  } as unknown as PlayerShowMatchView;
+  const original = JSON.stringify(match);
+  const first = reviewPlayerMatch(match);
+  ok(first.headline.length > 10 && first.recap.includes("Megan Bayne"), "match recap lacked an identifiable wrestler");
+  ok(first.recap.includes("foreign object") && first.recap.includes("referee"), "dirty match finish was invented or lost");
+  ok(!first.recap.includes("injur") && !first.recap.includes("title changed"),
+    "editorial match recap invented an injury or title change");
+  ok(JSON.stringify(reviewPlayerMatch(structuredClone(match))) === JSON.stringify(first),
+    "same resolved match produced different text after reload");
+  ok(JSON.stringify(match) === original, "read-only editorial renderer mutated the simulated match");
+  const stopped = reviewPlayerMatch({
+    ...match, actualFinish: "INJURY_STOPPAGE", finishCheater: null, injuries: [
+      { injuryId: "inj", personId: "bayne", personName: "Megan Bayne", severity: "MINOR", weeksOut: 1 },
+    ],
+  } as PlayerShowMatchView);
+  ok(stopped.recap.includes("stopped") && !stopped.recap.includes("foreign object"),
+    "injury stoppage was falsely described as planned cheating");
+  const unknown = reviewPlayerMatch({ ...match, actualFinish: null, finishCheater: null } as PlayerShowMatchView);
+  ok(unknown.recap.includes("wasn't recorded") && !unknown.recap.includes("pinfall"),
+    "historic unknown finish was made up");
+});
+
+test("editorial segment recaps respect scripted endings and cryptic reveal privacy", () => {
+  const seed = {
+    segmentId: "cryptic-clip",
+    type: "VIDEO_PACKAGE",
+    participants: [],
+    videoSubjectName: "Secret Superstar",
+    videoReveal: "CRYPTIC",
+    videoKind: "DEBUT_TEASER",
+    outcomeBand: "HOT",
+    crowdResponse: 82,
+  } as unknown as PlayerShowSegmentView;
+  const cryptic = reviewPlayerSegment(seed);
+  ok(!JSON.stringify(cryptic).includes("Secret Superstar"),
+    "cryptic video spoiled its secret identity");
+  const revealed = reviewPlayerSegment({ ...seed, videoReveal: "NAMED" } as PlayerShowSegmentView);
+  ok(revealed.recap.includes("Secret Superstar"), "named video hid its officially revealed wrestler");
+  const rescue = {
+    segmentId: "rescue-stopped",
+    type: "RESCUE",
+    participants: [
+      { personId: "a", name: "Attacker" },
+      { personId: "b", name: "Victim" },
+      { personId: "r", name: "Rescuer" },
+    ],
+    attackerPersonId: "a", victimPersonId: "b", rescuerPersonId: "r",
+    rescueOutcome: "RESCUE_OVERWHELMED",
+    outcomeBand: "POOR",
+    crowdResponse: 24,
+  } as unknown as PlayerShowSegmentView;
+  const unsuccessful = reviewPlayerSegment(rescue);
+  ok(unsuccessful.recap.includes("rescue failed") && unsuccessful.tone === "ROUGH",
+    "editorial recap turned a failed rescue into a scripted success");
+  ok(!unsuccessful.recap.includes("rescuer drove off"),
+    "editorial recap invented a successful rescue outcome");
+  const earlier = JSON.stringify(rescue);
+  ok(JSON.stringify(reviewPlayerSegment(rescue)) === JSON.stringify(unsuccessful)
+    && JSON.stringify(rescue) === earlier, "segment editorial changed between reloads or mutated the ledger projection");
+});
+
+
+test("player show review headlines track actual crowd, wrestling quality and consequences", () => {
+  const base = {
+    eventId: "editorial-show-1",
+    averageMatchRating: 4.25, crowdResponse: 87,
+    titleChangeCount: 1, injuryCount: 0, matchCount: 3, segmentCount: 2,
+  };
+  const copy = structuredClone(base);
+  const hit = reviewPlayerShow(base);
+  ok(hit.tone === "GREAT", "strong show did not receive a strong editorial verdict");
+  ok(hit.recap.includes("championship") && !hit.recap.includes("injur"),
+    "title-changing show review missed actual gold or invented an injury");
+  ok(JSON.stringify(reviewPlayerShow(structuredClone(base))) === JSON.stringify(hit),
+    "a resolved show review changed between reloads");
+  ok(JSON.stringify(base) === JSON.stringify(copy), "read-only show review mutated its source");
+  const disaster = reviewPlayerShow({
+    ...base, crowdResponse: 24, averageMatchRating: 1.7,
+    titleChangeCount: 0, injuryCount: 0,
+  });
+  ok(disaster.tone === "ROUGH", "a poor show got an undeserved glowing review");
+  ok(!disaster.recap.includes("championship") && !disaster.recap.includes("injur"),
+    "poor-show recap invented an unrecorded title change or injury");
+  const ordinary = reviewPlayerShow({
+    ...base, crowdResponse: 69, averageMatchRating: 3.1,
+    titleChangeCount: 0, injuryCount: 0,
+  });
+  ok(ordinary.tone === "GOOD", "good-but-unexceptional card received wrong verdict");
+});
+
+
+test("player recap separates quality from crowd approval and describes retained titles", () => {
+  const base = {
+    matchId: "editorial-reaction-gap", intent: "TECHNICAL",
+    winnerNames: ["Technical Ace"], criticalRatingStars: 4.6,
+    crowdResponse: 36, actualFinish: "CLEAN_PIN",
+    finishCheater: null, interference: null, injuries: [],
+    titleOutcomes: [{ titleChanged: false, championshipName: "World Championship", winnerHolderName: "Technical Ace" }],
+  } as unknown as PlayerShowMatchView;
+  const coldCrowd = reviewPlayerMatch(base);
+  ok(coldCrowd.tone === "GREAT" && /crowd|room/i.test(coldCrowd.verdict),
+    "strong wrestling / cold crowd wasn't recognised as a mixed reaction");
+  ok(coldCrowd.recap.includes("retained the World Championship"),
+    "existing champion lost the retention context in the recap");
+  const weakMatchHotCrowd = reviewPlayerMatch({
+    ...base, crowdResponse: 88, criticalRatingStars: 1.7, titleOutcomes: [],
+  });
+  ok(weakMatchHotCrowd.tone === "ROUGH" && /fans|audience/i.test(weakMatchHotCrowd.verdict),
+    "weak wrestling with hot crowd got an unrealistic critical verdict");
+  const missedBrief = reviewPlayerMatch({
+    ...base, crowdResponse: 66, criticalRatingStars: 2.4,
+    styleResult: { delivery: "MISSED" },
+  } as unknown as PlayerShowMatchView);
+  ok(missedBrief.recap.includes("ambitious approach never quite came together")
+    && /ambition|delivery/.test(missedBrief.verdict),
+    "style mismatch did not affect the report despite being in the result");
+});
+
+test("angle reviews use wrestling-language appropriate to segments and preserve unknown history", () => {
+  const promo = {
+    segmentId: "editorial-flat-promo", type: "PROMO",
+    participants: [{ personId: "speaker", name: "The Speaker" }],
+    promoPurpose: "AIR_GRIEVANCE", crowdResponse: 24,
+    outcomeBand: "POOR",
+  } as unknown as PlayerShowSegmentView;
+  const flat = reviewPlayerSegment(promo);
+  ok(flat.tone === "ROUGH" && /promo|audience|microphone|crowd|room/i.test(flat.verdict)
+    && !/bout|mat work|between the ropes/i.test(flat.verdict),
+    "a poor promo was reviewed like a wrestling match");
+  const hot = reviewPlayerSegment({ ...promo, outcomeBand: "HOT", crowdResponse: 91 });
+  ok(hot.tone === "GREAT" && !/bout|mat work|between the ropes/i.test(hot.verdict),
+    "a great promo got an irrelevant match verdict");
+  const oldInvite = reviewPlayerSegment({
+    ...promo, type: "STABLE_INVITATION", stableInvitationOutcome: null,
+    initiatorPersonId: "speaker", targetPersonId: "unknown",
+    outcomeBand: null, crowdResponse: null,
+  });
+  ok(oldInvite.recap.includes("not recorded") && !oldInvite.recap.includes("refused"),
+    "unknown historic invitation outcome was incorrectly rendered as a refusal");
+  ok(oldInvite.verdict.includes("doesn't tell us"),
+    "historical null crowd result was judged rather than disclosed as unknown");
+  const oldChallenge = reviewPlayerSegment({
+    ...promo, type: "CHALLENGE", challengeResponse: null,
+    initiatorPersonId: "speaker", targetPersonId: "unknown",
+  });
+  ok(oldChallenge.recap.includes("no answer was recorded"),
+    "historic challenge without an authored response became an implied refusal");
+  const variants = new Set(Array.from({ length: 40 }, (_, i) => (
+    reviewPlayerSegment({ ...promo, segmentId: "review-promo-" + i, outcomeBand: "POOR" }).verdict
+  )));
+  ok(variants.size >= 3, "editorial feedback was identical across many separate show angles");
+});
+
+
+test("specific booked angle details appear in recaps without inventing a result", () => {
+  const roster = [
+    { personId: "hero", name: "The Hero" },
+    { personId: "heel", name: "The Heel" },
+  ];
+  const assault = {
+    segmentId: "after-bell-attack",
+    type: "POST_MATCH_ASSAULT", participants: roster,
+    attackerPersonId: "heel", victimPersonId: "hero",
+    attackPresentation: "BLINDSIDE", postMatchAssaultEnding: "OFFICIALS_SEPARATE",
+    crowdResponse: 78, outcomeBand: "HOT",
+  } as unknown as PlayerShowSegmentView;
+  const recap = reviewPlayerSegment(assault);
+  ok(recap.recap.includes("After the bell:") && recap.recap.includes("The Heel blindsided The Hero"),
+    "after-match blindsiding lost the authored attack presentation");
+  ok(recap.recap.includes("Officials separated"),
+    "after-match assault forgot the specific closing beat");
+  const celebration = reviewPlayerSegment({
+    ...assault, type: "CELEBRATION",
+    celebrationOccasion: "SELF_CORONATION", celebrationEnding: "POSE",
+  });
+  ok(celebration.recap.includes("All bravado, no official title change"),
+    "scripted self-coronation was treated like a real championship win");
+  ok(celebration.recap.includes("struck a pose"),
+    "booked celebration ending was omitted");
+  const interview = reviewPlayerSegment({
+    ...assault, type: "INTERVIEW",
+    interviewTopic: "RIVALRY_PRESSURE", interviewResponse: "DEFIANT",
+  });
+  ok(interview.recap.includes("pressure of their rivalry") && interview.recap.includes("answered defiantly"),
+    "interview context or scripted answer was omitted");
+  ok(!interview.recap.includes("blindsided"), "interview inherited unrelated attack text");
+});
+
+
+test("player show chapter breaks trace actual running order without invented moments", () => {
+  function match(order: number, props: Record<string, unknown> = {}) {
+    return { kind: "MATCH" as const, order, match: {
+      matchId: "chapter-match-" + order, order,
+      type: "SINGLES", criticalRatingStars: 3, winnerNames: ["Winner " + order],
+      actualFinish: "CLEAN_PIN", titleOutcomes: [], injuries: [], ...props,
+    } as unknown as PlayerShowMatchView };
+  }
+  function segment(order: number, props: Record<string, unknown> = {}) {
+    return { kind: "SEGMENT" as const, order, segment: {
+      segmentId: "chapter-segment-" + order, type: "PROMO",
+      participants: [], videoReveal: null, ...props,
+    } as unknown as PlayerShowSegmentView };
+  }
+  const show = { eventId: "chapters-eight", runningOrder: [
+    match(1),
+    match(2, { titleOutcomes: [{ titleChanged: true,
+      championshipName: "World Title", winnerHolderName: "New Champion" }] }),
+    match(3, { injuries: [{ injuryId: "broken", personName: "Injured Star", weeksOut: 3 }] }),
+    segment(4, { type: "TURN", participants: [{ personId: "turner", name: "Turner" }],
+      turnPersonId: "turner", turnTargetAlignment: "HEEL" }),
+    match(5),
+    match(6, { actualFinish: "FOREIGN_OBJECT" }),
+    segment(7, { type: "VIDEO_PACKAGE", videoReveal: "CRYPTIC", videoSubjectName: "Secret Identity" }),
+    match(8),
+  ] } as unknown as Pick<PlayerShowResultView, "eventId" | "runningOrder">;
+  const baseline = JSON.stringify(show);
+  const chapters = reviewPlayerShowChapters(show);
+  ok(chapters.length === 3 && chapters.map((c) => c.startOrder).join(",") === "1,3,6",
+    "chapter breaks did not follow actual 8-slot running order");
+  ok(chapters[0]!.recap.includes("New Champion") && chapters[0]!.recap.includes("World Title"),
+    "title change did not lead its own chapter");
+  ok(chapters[1]!.recap.includes("Injured Star"),
+    "an actual injury did not shape the middle chapter");
+  ok(chapters[2]!.recap.includes("foreign object"),
+    "actual dirty finish was ignored for the final stretch");
+  ok(!JSON.stringify(chapters).includes("Secret Identity"),
+    "a cryptic video subject leaked into the editorial chapter recap");
+  ok(JSON.stringify(reviewPlayerShowChapters(structuredClone(show))) === JSON.stringify(chapters),
+    "chapters varied between reloads");
+  ok(JSON.stringify(show) === baseline, "chapter narration changed the completed-show source");
+  ok(reviewPlayerShowChapters({ eventId: "tiny", runningOrder: show.runningOrder.slice(0, 3) }).length === 0,
+    "short shows received artificial multi-act padding");
+  const twoPart = reviewPlayerShowChapters({ eventId: "medium", runningOrder: show.runningOrder.slice(0, 5) });
+  ok(twoPart.length === 2 && twoPart[0]!.startOrder === 1 && twoPart[1]!.startOrder === 3,
+    "medium-size shows did not get sensible opening and closing chapters");
+});
+
+
+
+test("final bell chooses an earned standout and poor performance without fabricating fallout", () => {
+  function bout(order: number, rating: number, details: Record<string, unknown> = {}) {
+    return { kind: "MATCH" as const, order, match: {
+      matchId: "final-match-" + order, order,
+      criticalRatingStars: rating, winnerNames: ["Winner " + order],
+      participants: [{ personId: "a" + order, name: "Winner " + order, side: "A" },
+        { personId: "b" + order, name: "Opponent " + order, side: "B" }],
+      titleOutcomes: [], injuries: [], ...details,
+    } as unknown as PlayerShowMatchView };
+  }
+  const show = {
+    eventId: "final-event", crowdResponse: 74, averageMatchRating: 3.0,
+    runningOrder: [
+      bout(1, 1.8),
+      bout(2, 4.7, { titleOutcomes: [{
+        titleChanged: false, championshipName: "World Title", winnerHolderName: "Winner 2",
+      }] }),
+      bout(3, 3.1),
+    ],
+  } as Pick<PlayerShowResultView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating">;
+  const original = JSON.stringify(show);
+  const finale = reviewPlayerShowFinalBell(show);
+  ok(finale.standout?.slotOrder === 2 && finale.standout.detail.includes("★ 4.7"),
+    "final review didn't spotlight actual highest-rated match");
+  ok(finale.disappointment?.slotOrder === 1
+    && finale.disappointment.detail.includes("★ 1.8"),
+    "final review failed to call out an actual poor match");
+  ok(finale.consequence === null, "retaining a championship created an invented title change");
+  ok(JSON.stringify(reviewPlayerShowFinalBell(structuredClone(show))) === JSON.stringify(finale),
+    "final bell review changed across reloads");
+  ok(JSON.stringify(show) === original, "the review mutated immutable completed results");
+  const goodCard = reviewPlayerShowFinalBell({
+    ...show, runningOrder: [bout(1, 3.1), bout(2, 4.4)],
+  });
+  ok(goodCard.disappointment === null,
+    "a good card was given a fabricated disappointing match");
+});
+
+test("final bell respects real title changes, injuries, scripted turns and historical blank cards", () => {
+  function bout(order: number, titleChanged: boolean, injured = false) {
+    return { kind: "MATCH" as const, order, match: {
+      matchId: "fallout-match-" + order, criticalRatingStars: 3.4,
+      winnerNames: ["Champion"], participants: [],
+      titleOutcomes: [{ titleChanged, championshipName: "World Title", winnerHolderName: "Champion" }],
+      injuries: injured ? [{ injuryId: "inj", personName: "Injured Wrestler", weeksOut: 2 }] : [],
+    } as unknown as PlayerShowMatchView };
+  }
+  const angle = {
+    kind: "SEGMENT" as const, order: 3, segment: {
+      segmentId: "turn-angle", type: "TURN",
+      participants: [{ personId: "bad", name: "The Betrayer" }],
+      turnPersonId: "bad", turnTargetAlignment: "HEEL", outcomeBand: "HOT", crowdResponse: 81,
+    } as unknown as PlayerShowSegmentView,
+  };
+  const seed = {
+    eventId: "fallout-event", crowdResponse: 70, averageMatchRating: 3.4,
+    runningOrder: [bout(1, true, true), bout(2, false), angle],
+  };
+  const result = reviewPlayerShowFinalBell(seed);
+  ok(result.consequence?.headline === "We have a new champion!"
+    && result.consequence.detail.includes("World Title"), "real title change did not lead fallouts");
+  const injury = reviewPlayerShowFinalBell({ ...seed, runningOrder: [bout(1, false, true), angle] });
+  ok(injury.consequence?.headline.includes("Injured Wrestler")
+    && injury.consequence.detail.includes("2 PPW weeks"), "injury fallout was not faithfully reported");
+  const turned = reviewPlayerShowFinalBell({ ...seed, runningOrder: [bout(1, false), angle] });
+  ok(turned.consequence?.headline.includes("The Betrayer")
+    && turned.consequence.detail.includes("heel"), "recorded heel turn was lost");
+  const old = reviewPlayerShowFinalBell({
+    ...seed, runningOrder: [{ kind: "SEGMENT" as const, order: 1, segment: {
+      segmentId: "cryptic-old", type: "VIDEO_PACKAGE",
+      participants: [], videoReveal: "CRYPTIC", videoSubjectName: "Hidden Name",
+      crowdResponse: null, outcomeBand: null,
+    } as unknown as PlayerShowSegmentView }],
+  });
+  ok(old.standout === null && old.disappointment === null && old.consequence === null,
+    "incomplete historical card produced fictional positives, negatives or consequences");
+  ok(!JSON.stringify(old).includes("Hidden Name"), "cryptic talent was leaked by final bell");
+});
+
+
+
+test("complete-show copy desk avoids repeated verdicts without rewriting match or angle facts", () => {
+  const runningOrder = Array.from({ length: 12 }, (_, index) => {
+    const order = index + 1;
+    if (order % 3 === 0) {
+      return { kind: "MATCH" as const, order, match: {
+        matchId: "long-card-match-" + order,
+        type: "SINGLES", intent: "TECHNICAL", criticalRatingStars: 3.5,
+        crowdResponse: 67, winnerNames: ["Winner " + order], actualFinish: "CLEAN_PIN",
+        titleOutcomes: [], injuries: [], interference: null, styleResult: null,
+      } as unknown as PlayerShowMatchView };
+    }
+    return { kind: "SEGMENT" as const, order, segment: {
+      segmentId: "long-card-angle-" + order,
+      type: "PROMO", participants: [{ personId: "speaker-" + order, name: "Speaker " + order }],
+      promoPurpose: "BOAST", outcomeBand: "HOT", crowdResponse: 87,
+    } as unknown as PlayerShowSegmentView };
+  });
+  const show = { eventId: "long-card-review", runningOrder };
+  const before = JSON.stringify(show);
+  const first = reviewPlayerShowRunningOrder(show);
+  ok(first.length === runningOrder.length, "whole-card editor lost a recorded running-order slot");
+  for (let i = 0; i < first.length; i += 1) {
+    const current = first[i]!;
+    ok(current.order === i + 1 && current.kind === runningOrder[i]!.kind,
+      "whole-card editor reordered or changed a performed segment");
+    const recent = first.slice(Math.max(0, i - 4), i).map((entry) => entry.review.verdict);
+    ok(!recent.includes(current.review.verdict),
+      "whole-card review repeated a stock verdict within four consecutive slots");
+    ok(current.review.recap === (current.kind === "MATCH"
+      ? reviewPlayerMatch((runningOrder[i] as Extract<typeof runningOrder[number], { kind: "MATCH" }>).match).recap
+      : reviewPlayerSegment((runningOrder[i] as Extract<typeof runningOrder[number], { kind: "SEGMENT" }>).segment).recap),
+      "copy edit overwrote a factual booked match or angle recap");
+  }
+  ok(JSON.stringify(show) === before, "editorial variation mutated immutable show history");
+  ok(JSON.stringify(reviewPlayerShowRunningOrder(structuredClone(show))) === JSON.stringify(first),
+    "complete-show reviews were inconsistent across sessions");
+});
+
+
+test("player match prose does not expose booking diagnostics as wrestling commentary", () => {
+  const styles = ["TECHNICAL", "HIGH_RISK", "EPIC", "STORY", "PROTECTIVE", "DOMINANT", "SHOWCASE", "COMPETITIVE"] as const;
+  const prohibited = /\bbooked (?:to|like)\b|\bbooking sheet\b|\bplanned style\b|\bstyle shortfall\b|\bcapability score\b|\bprogramme-linked\b|\bsimulation\b/i;
+  for (const intent of styles) {
+    for (let index = 0; index < 12; index += 1) {
+      const review = reviewPlayerMatch({
+        matchId: "kayfabe-" + intent + "-" + index, intent,
+        winnerNames: ["The Winner"], criticalRatingStars: 3.4,
+        crowdResponse: 65, actualFinish: "CLEAN_PIN",
+        finishCheater: null, titleOutcomes: [], injuries: [], interference: null, styleResult: null,
+      } as unknown as PlayerShowMatchView);
+      ok(!prohibited.test(review.recap), "wrestling review exposed booking internals for " + intent);
+    }
+  }
+  const stoppage = reviewPlayerMatch({
+    matchId: "kayfabe-injury", intent: "STORY", winnerNames: [],
+    criticalRatingStars: 2.4, crowdResponse: 47,
+    actualFinish: "INJURY_STOPPAGE", titleOutcomes: [], injuries: [],
+    interference: null, styleResult: null,
+  } as unknown as PlayerShowMatchView);
+  ok(stoppage.recap.includes("stopped the match after an injury")
+    && !stoppage.recap.includes("planned finish"),
+    "injury stoppage narration exposed the abandoned booking instruction");
+});
+
+
+test("player event copy connects real match trends with recorded major moments", () => {
+  function bout(order: number, rating: number, more: Record<string, unknown> = {}) {
+    return { kind: "MATCH" as const, order, match: {
+      matchId: "event-bout-" + order, order,
+      type: "SINGLES", intent: "COMPETITIVE",
+      winnerNames: ["Winner " + order], criticalRatingStars: rating,
+      participants: [{ personId: "w" + order, name: "Winner " + order, side: "A" }],
+      titleOutcomes: [], injuries: [], ...more,
+    } as unknown as PlayerShowMatchView };
+  }
+  function angle(order: number, more: Record<string, unknown> = {}) {
+    return { kind: "SEGMENT" as const, order, segment: {
+      segmentId: "event-angle-" + order,
+      type: "PROMO", participants: [{ personId: "speaker", name: "The Speaker" }],
+      outcomeBand: "MIXED", crowdResponse: 65,
+      ...more,
+    } as unknown as PlayerShowSegmentView };
+  }
+  const seed = {
+    eventId: "opening-story", crowdResponse: 76, averageMatchRating: 3.3,
+    titleChangeCount: 0, injuryCount: 0, matchCount: 4, segmentCount: 1,
+    runningOrder: [bout(1, 2.1), angle(2), bout(3, 3.0), bout(4, 3.8), bout(5, 4.4)],
+  };
+  const saved = JSON.stringify(seed);
+  const lateSurge = reviewPlayerShowNarrative(seed);
+  ok(lateSurge.recap.includes("Winner 5"), "best recorded bout did not shape the show narrative");
+  ok(/improved|closing stretch/.test(lateSurge.recap),
+    "clearly improving card was not treated as a full-show arc");
+  ok(JSON.stringify(reviewPlayerShowNarrative(structuredClone(seed))) === JSON.stringify(lateSurge),
+    "full-show storytelling changed between historical reloads");
+  ok(JSON.stringify(seed) === saved, "player-show narrative changed immutable recorded data");
+  const fading = reviewPlayerShowNarrative({
+    ...seed, runningOrder: [bout(1, 4.7), bout(2, 3.5), bout(3, 2.2)],
+  });
+  ok(/early matches|started stronger/.test(fading.recap),
+    "falling match ratings were misreported as a late show recovery");
+  const crowned = reviewPlayerShowNarrative({
+    ...seed, titleChangeCount: 1, injuryCount: 1,
+    runningOrder: [
+      bout(1, 3.2, { injuries: [{ injuryId: "i", personName: "Injured Star", weeksOut: 2 }] }),
+      bout(2, 3.8, { titleOutcomes: [{
+        titleChanged: true, championshipName: "World Championship",
+        winnerHolderName: "New Champion",
+      }] }),
+      angle(3, { type: "VIDEO_PACKAGE", videoReveal: "CRYPTIC",
+        participants: [{ personId: "secret", name: "Secret Name" }],
+        videoSubjectName: "Secret Name" }),
+    ],
+  });
+  ok(crowned.headline.includes("New Champion") && crowned.recap.includes("World Championship"),
+    "real title change did not become a headline");
+  ok(crowned.recap.includes("injury"), "recorded injury disappeared under title coverage");
+  ok(!JSON.stringify(crowned).includes("Secret Name"),
+    "cryptic video identity leaked into the show front page");
+  const noWrestling = reviewPlayerShowNarrative({
+    ...seed, matchCount: 0, segmentCount: 1,
+    runningOrder: [angle(1, { type: "VIDEO_PACKAGE", videoReveal: "CRYPTIC",
+      participants: [{ personId: "secret", name: "Secret Name" }],
+      videoSubjectName: "Secret Name", outcomeBand: "HOT", crowdResponse: 89 })],
+  });
+  ok(!JSON.stringify(noWrestling).includes("Secret Name"),
+    "angle-only cryptic show revealed a private wrestler");
+  ok(!/match of the night|won a highly rated contest/i.test(noWrestling.recap),
+    "angle-only show invented wrestling matches");
+  ok(noWrestling.headline === "The angles do the talking",
+    "an angle-only show was given a misleading match-centric cover story");
+  ok(crowned.recap.split("An injury").length === 2,
+    "title-and-injury show repeated the same medical fallout twice");
+});
+
+
+
+test("archived turns with no alignment cannot become fictional headline or fallout", () => {
+  const orphanTurn = {
+    kind: "SEGMENT" as const, order: 1, segment: {
+      segmentId: "archived-no-alignment",
+      type: "TURN", participants: [{ personId: "star", name: "The Star" }],
+      turnPersonId: "star", turnTargetAlignment: undefined,
+      outcomeBand: null, crowdResponse: null,
+    } as unknown as PlayerShowSegmentView,
+  };
+  const show = {
+    eventId: "archived-turn-no-value", runningOrder: [orphanTurn],
+    crowdResponse: 50, averageMatchRating: 0,
+    titleChangeCount: 0, injuryCount: 0, matchCount: 0, segmentCount: 1,
+  };
+  const opening = reviewPlayerShowNarrative(show);
+  ok(!opening.headline.includes("The Star") && !opening.recap.includes("turned"),
+    "unresolved old turn became a front-page heel/face change");
+  const end = reviewPlayerShowFinalBell(show);
+  ok(end.consequence === null && end.lastWord.includes("angles"),
+    "an incomplete historic turn became real fallout or generated a match-only signoff");
+});
+
+
+test("cryptic results participant strip conceals the unrevealed wrestler", () => {
+  const base = {
+    type: "VIDEO_PACKAGE" as const, videoReveal: "CRYPTIC" as const,
+    participants: [{ personId: "secret", name: "The Mystery Wrestler" }],
+    videoSubjectName: "The Mystery Wrestler",
+  };
+  const before = JSON.stringify(base);
+  const secret = reviewSegmentVisibleNames(base);
+  ok(secret.length === 1 && secret[0] === "Mystery footage",
+    "the public Results participant strip exposed a cryptic teaser's wrestler");
+  const revealed = reviewSegmentVisibleNames({ ...base, videoReveal: "NAMED" });
+  ok(revealed.includes("The Mystery Wrestler"),
+    "a deliberately named video failed to show its subject");
+  const old = reviewSegmentVisibleNames({ ...base, videoReveal: null });
+  ok(old.length === 1 && old[0] === "Mystery footage",
+    "archived unlabelled video exposed a subject that was never publicly identified");
+  const archived = {
+    type: "VIDEO_PACKAGE" as const, order: 1, segment: {
+      segmentId: "archival-video-unknown-reveal", type: "VIDEO_PACKAGE",
+      videoReveal: null, videoSubjectName: "The Mystery Wrestler",
+      participants: [{ personId: "secret", name: "The Mystery Wrestler" }],
+      outcomeBand: "HOT", crowdResponse: 84,
+    } as unknown as PlayerShowSegmentView,
+  };
+  const archivedShow = {
+    eventId: "archival-video-show", runningOrder: [archived],
+    crowdResponse: 74, averageMatchRating: 0,
+    titleChangeCount: 0, injuryCount: 0, matchCount: 0, segmentCount: 1,
+  };
+  ok(!JSON.stringify(reviewPlayerShowNarrative(archivedShow)).includes("The Mystery Wrestler"),
+    "archived video subject leaked into show narrative");
+  ok(!JSON.stringify(reviewPlayerSegment(archived.segment)).includes("The Mystery Wrestler"),
+    "archived video subject leaked into angle recap");
+  ok(!JSON.stringify(showResultHighlights(archivedShow)).includes("The Mystery Wrestler"),
+    "archived video subject leaked into event headlines");
+  const promo = reviewSegmentVisibleNames({
+    ...base, type: "PROMO", videoReveal: null,
+  });
+  ok(promo.includes("The Mystery Wrestler"), "ordinary angle participants were unnecessarily hidden");
+  ok(JSON.stringify(base) === before,
+    "display-only participant filtering modified the saved authored angle");
+});
 console.log(`\nApplication results-view tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
