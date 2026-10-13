@@ -14,6 +14,27 @@ type ShowSource = Pick<PlayerShowResultView, "runningOrder"> |
   Pick<PlayerWorldResultShowView, "runningOrder">;
 type Candidate = ShowResultHighlight & { priority: number };
 
+/** A brief headline follows the actual performed segment type. No generated
+ * unrecorded action, no gambling on who wins a confrontation, no cryptic reveal. */
+export function hotSegmentHeadline(type: string, subject: string): string {
+  switch (type) {
+    case "PROMO": return `${subject} has the crowd buzzing`;
+    case "INTERVIEW": return `${subject} draws a huge reaction`;
+    case "ATTACK":
+    case "POST_MATCH_ASSAULT": return "A heated assault electrifies the crowd";
+    case "RESCUE": return "The attempted rescue draws a huge reaction";
+    case "CONFRONTATION": return "A confrontation brings the crowd alive";
+    case "CHALLENGE": return "The challenge gets everyone talking";
+    case "INTERRUPTION": return "An interruption jolts the building";
+    case "VIDEO_PACKAGE": return "The video package sparks excitement";
+    case "LIVE_APPEARANCE": return "A live appearance sends the crowd wild";
+    case "CELEBRATION": return "The celebration brings the crowd to its feet";
+    case "TURN": return "An alignment change draws a huge reaction";
+    default: return "An on-screen moment makes an impact";
+  }
+}
+
+
 export function showResultHighlights(show: ShowSource, limit = 3): ShowResultHighlight[] {
   const candidates: Candidate[] = [];
   let topMatch: Candidate | null = null;
@@ -80,11 +101,17 @@ export function showResultHighlights(show: ShowSource, limit = 3): ShowResultHig
           detail: segment.turnPresentation === "BETRAYAL" ? "Betrayal on screen" : "Alignment change",
         });
       }
-      if (segment.outcomeBand === "HOT") {
+      // An actual debut or turn already has its own more informative moment.
+      // The same slot should not also receive a generic "hot angle" headline.
+      const alreadyFeatured = (segment.type === "LIVE_APPEARANCE"
+        && ["DEBUT", "RETURN", "SURPRISE_REVEAL"].includes(segment.liveAppearanceKind ?? ""))
+        || (segment.type === "TURN" && Boolean(segment.turnTargetAlignment));
+      if (segment.outcomeBand === "HOT" && !alreadyFeatured) {
         candidates.push({
           id: `hot:${segment.segmentId}`, category: "ANGLE", priority: 64,
-          slotOrder: slot.order, headline: `${segment.type.toLowerCase().replaceAll("_", " ")} caught fire`,
-          detail: `${wrestler} · crowd ${segment.crowdResponse === null ? "not recorded" : segment.crowdResponse.toFixed(1)}`,
+          slotOrder: slot.order,
+          headline: hotSegmentHeadline(segment.type, segment.type === "VIDEO_PACKAGE" && segment.videoReveal === "CRYPTIC" ? "Mystery footage" : wrestler),
+          detail: `${segment.type === "VIDEO_PACKAGE" && segment.videoReveal === "CRYPTIC" ? "Mystery footage" : wrestler} · crowd ${segment.crowdResponse === null ? "not recorded" : segment.crowdResponse.toFixed(1)}`,
         });
       }
     }
