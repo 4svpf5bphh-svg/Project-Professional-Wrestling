@@ -363,6 +363,12 @@ function validateMatchDraft(
   }
   const style = draft.style === undefined ? undefined : normalizeMatchStyle(draft.style);
   const interfererPersonId = draft.interfererPersonId == null ? null : normalizedId(draft.interfererPersonId, "interfererPersonId");
+  // A successful run-in currently resolves to a protected finish. Prevent it
+  // silently overriding a separately authored DQ or foreign-object ending.
+  if (draft.interfererPersonId && (draft.interferenceOutcome ?? "SUCCESS") === "SUCCESS"
+      && (draft.plannedFinish === "DISQUALIFICATION" || draft.plannedFinish === "FOREIGN_OBJECT")) {
+    throw new Error("DQ and foreign-object finishes cannot also book a successful run-in");
+  }
   const interferenceSide = draft.interferenceSide ?? null;
   const interferenceOutcome = interfererPersonId ? (draft.interferenceOutcome ?? "SUCCESS") : null;
   if ((interfererPersonId === null) !== (interferenceSide === null)

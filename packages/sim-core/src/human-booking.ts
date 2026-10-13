@@ -110,6 +110,10 @@ export function prepareHumanMatchCard(
     const interfererId = plan.interfererPersonId ?? null;
     const aidedSide = plan.interferenceSide ?? null;
     const scriptedOutcome = interfererId ? (plan.interferenceOutcome ?? "SUCCESS") : null;
+    if (scriptedOutcome === "SUCCESS"
+        && (plan.plannedFinish === "DISQUALIFICATION" || plan.plannedFinish === "FOREIGN_OBJECT")) {
+      throw new Error("DQ and foreign-object finishes cannot also book a successful run-in");
+    }
     if ((interfererId === null) !== (aidedSide === null) || (aidedSide !== null && aidedSide !== "A" && aidedSide !== "B")) {
       throw new Error("run-in requires an outside wrestler and an aided side");
     }

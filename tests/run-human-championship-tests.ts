@@ -12,6 +12,7 @@ import {
   prepareHumanMatchCard,
   prepareHumanShow,
   resolveWorldWeek,
+  setPlannedMatchFinish,
   unbookHumanChampionshipMatch,
 } from "../packages/sim-core/src/index.js";
 
@@ -122,6 +123,59 @@ test("human promoter can explicitly crown singles and tag champions from the boo
     JSON.stringify(activeTeamMemberIds(state, tagContest!.winnerHolderId).sort()) === JSON.stringify(tagWinnerIds),
     "tag title lineage ignored the actual winning team",
   );
+});
+
+test("DQ on a vacant title cannot crown a champion, while an unseen foreign object can", () => {
+  const dq = fixture(11221);
+  setPlannedMatchFinish(dq.matches[2]!, "DISQUALIFICATION");
+  bookHumanChampionshipMatch(dq.state, dq.event.id, dq.matches[2]!.id, dq.singles.id);
+  resolveWorldWeek(dq.state);
+  ok(dq.matches[2]!.actualWinnerSide !== null, "DQ removed the actual match winner");
+  if (!dq.matches[2]!.finishChangedDueToInjury) {
+    ok(dq.singles.currentReignId === null, "vacant championship was awarded on a DQ");
+    ok(!dq.state.championshipContests?.some((contest) => contest.matchId === dq.matches[2]!.id),
+      "vacant championship produced a fraudulent contest winner");
+  }
+
+  const dirty = fixture(11222);
+  setPlannedMatchFinish(dirty.matches[2]!, "FOREIGN_OBJECT");
+  bookHumanChampionshipMatch(dirty.state, dirty.event.id, dirty.matches[2]!.id, dirty.singles.id);
+  resolveWorldWeek(dirty.state);
+  ok(Boolean(dirty.singles.currentReignId), "a completed pin with an illegal object failed to crown a winner");
+});
+
+test("DQ can win the match without taking an existing championship", () => {
+  const first = fixture(11223);
+  bookHumanChampionshipMatch(first.state, first.event.id, first.matches[2]!.id, first.singles.id);
+  resolveWorldWeek(first.state);
+  const oldReignId = first.singles.currentReignId;
+  const championId = first.state.championshipReigns!.find((reign) => reign.id === oldReignId)!.holderId;
+  resolveWorldWeek(first.state);
+  const available = [...new Set(activeContractsForPromotion(first.state, first.promotion.id)
+    .map((contract) => contract.personId)
+    .filter((id) => first.state.people.some((person) => person.id === id && person.status === "ACTIVE")))];
+  const nextIds = [championId, ...available.filter((id) => id !== championId)].slice(0, 10);
+  ok(nextIds.length === 10, "cannot book champion's follow-up defense");
+  const venues = first.state.venues.filter((venue) => venue.marketId === first.promotion.homeMarketId)
+    .sort((a, b) => a.capacity - b.capacity);
+  const nextEvent = prepareHumanShow(first.state, {
+    promotionId: first.promotion.id, marketId: first.promotion.homeMarketId,
+    venueId: venues[1]?.id ?? venues[0]!.id, day: 5,
+    ticketStrategy: "STANDARD", participantIds: nextIds,
+  });
+  const nextPlans = card(nextIds).map((match, index) => index === 0
+    ? { ...match, intendedWinnerSide: "B" as const, plannedFinish: "DISQUALIFICATION" as const }
+    : match);
+  const nextMatches = prepareHumanMatchCard(first.state, nextEvent.id, nextPlans);
+  bookHumanChampionshipMatch(first.state, nextEvent.id, nextMatches[0]!.id, first.singles.id);
+  resolveWorldWeek(first.state);
+  if (!nextMatches[0]!.finishChangedDueToInjury) {
+    ok(nextMatches[0]!.actualWinnerSide === "B", "referee wrongly gave DQ victory to cheaters");
+    ok(first.singles.currentReignId === oldReignId, "challenger took title despite only winning by DQ");
+    const contest = first.state.championshipContests!.find((candidate) => candidate.matchId === nextMatches[0]!.id);
+    ok(contest?.titleChanged === false && contest.winnerHolderId === championId,
+      "championship history falsely recorded a DQ title change");
+  }
 });
 
 test("human promotion receives no automatic title match without explicit designation", () => {
