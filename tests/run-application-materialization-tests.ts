@@ -22,6 +22,7 @@ import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import { comparePpwDates } from "../packages/sim-core/src/clock.js";
 import { LedgerWriter } from "../packages/sim-core/src/ledger.js";
+import { loadAlphaShowCard } from "../packages/web-adapter/src/card-service.js";
 import { humanWeekReadiness } from "../packages/sim-core/src/human-routine.js";
 import { createWorld, ensureWorldChampionships } from "../packages/sim-core/src/index.js";
 
@@ -492,6 +493,8 @@ asyncTest("already-materialized stale debut blocks manual advance but scheduled 
     "materialized stale arrival escaped historical validation");
   const repo = new InMemoryApplicationWorldRepository();
   await repo.initialize(f);
+  const card = await loadAlphaShowCard(repo, f.state.world.id, f.playerId, draft.draftId);
+  ok(card.liveArrivalNeedsReview, "show Card did not warn the promoter of the stale debut");
   let refused = false;
   try {
     await lockPersistedWorldForResolution(repo, f.state.world.id, f.runtime.revision, null, f.promotionId);
