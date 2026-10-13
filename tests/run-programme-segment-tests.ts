@@ -1,6 +1,7 @@
 declare const process: { exitCode?: number };
 
 import { createWorldPlanningState, upsertDetailedShowDraft } from "../packages/application/src/planning.js";
+import { recentCompletedVictoryForCelebration } from "../packages/application/src/celebration-evidence.js";
 import { buildPlayerWorldResultsView, createWorldOwnershipState, createWorldCommandState, createWorldRuntimeState, joinPlayerToWorld } from "../packages/application/src/index.js";
 import {
   applyResolvedShowTurns,
@@ -1150,6 +1151,177 @@ test("INTERVIEW repetition counts only same-wrestler same-question and answer in
     const current = outcomeWithHistory(variant);
     ok(current.angleFitModifier === fresh.angleFitModifier,
       `${variant} falsely counted as a repeat of the same interview`);
+  }
+});
+
+test("victory laps require a verified prior completed win, never a scheduled finish or a defeat", () => {
+  const setup = fixture(91620);
+  setup.state.world.currentDate = { year: 1, week: 8, day: 1 };
+  setup.targetDate = { year: 1, week: 8, day: 6 };
+  const winner = setup.rosterIds[0]!;
+  const opponent = setup.rosterIds[1]!;
+  const draft = {
+    draftId: "truthful-celebration",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [],
+    championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "victory-lap",
+      type: "CELEBRATION" as const,
+      participantIds: [winner],
+      programmeId: null,
+      plannedLengthMinutes: 5,
+      celebrationOccasion: "VICTORY_LAP" as const,
+      celebrationEnding: "POSE" as const,
+    }],
+  };
+  throwsContaining(
+    () => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, draft),
+    "actual completed win",
+  );
+  const earlier = completedEvent(setup);
+  earlier.id = "real-earlier-victory";
+  earlier.date = { year: 1, week: 7, day: 6 };
+  earlier.status = "SCHEDULED";
+  setup.state.events.push(earlier);
+  const matchId = "completed-match-claim";
+  setup.state.matches.push({
+    id: matchId, worldId: setup.state.world.id, eventId: earlier.id, promotionId: setup.promotion.id,
+    order: 1, type: "SINGLES", status: "SCHEDULED", intent: "COMPETITIVE",
+    plannedLengthMinutes: 12, actualLengthMinutes: 0, intendedWinnerSide: "A",
+    actualWinnerSide: null, finishChangedDueToInjury: false,
+    executionQuality: 0, criticalRatingStars: 0, crowdResponse: 0,
+  });
+  setup.state.matchParticipants.push({
+    id: "victory-lap-winner", worldId: setup.state.world.id,
+    eventId: earlier.id, matchId, personId: winner, side: "A", won: true,
+  }, {
+    id: "victory-lap-loser", worldId: setup.state.world.id,
+    eventId: earlier.id, matchId, personId: opponent, side: "B", won: false,
+  });
+  ok(!recentCompletedVictoryForCelebration(setup.state, setup.promotion.id, [winner], setup.targetDate),
+    "an unfinished match with planned winner was treated as a real achievement");
+  const match = setup.state.matches.find((entry) => entry.id === matchId)!;
+  match.status = "COMPLETED";
+  match.actualWinnerSide = "A";
+  ok(!recentCompletedVictoryForCelebration(setup.state, setup.promotion.id, [winner], setup.targetDate),
+    "a completed match on a scheduled show became factual history");
+  earlier.status = "COMPLETED";
+  ok(recentCompletedVictoryForCelebration(setup.state, setup.promotion.id, [winner], setup.targetDate),
+    "a genuinely completed win wasn't recognised");
+  ok(!recentCompletedVictoryForCelebration(setup.state, setup.promotion.id, [opponent], setup.targetDate),
+    "defeated wrestler could celebrate a nonexistent victory");
+  ok(!recentCompletedVictoryForCelebration(setup.state, setup.promotion.id, [winner, opponent], setup.targetDate),
+    "two wrestlers on opposite sides were misrepresented as joint victors");
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, draft);
+  ok(setup.planning.workspaces[0]?.detailedShowDrafts[0]?.segments?.[0]?.celebrationOccasion === "VICTORY_LAP",
+    "validated factual celebration was not saved");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 1, {
+    ...draft, segments: [{ ...draft.segments[0]!, participantIds: [opponent] }],
+  }), "actual completed win");
+  ok(!recentCompletedVictoryForCelebration(setup.state, "different-promotion", [winner], setup.targetDate),
+    "another promotion could claim this victory");
+  ok(recentCompletedVictoryForCelebration(setup.state, setup.promotion.id, [winner],
+    { year: 1, week: 13, day: 6 }), "the six-week boundary incorrectly excluded a real victory");
+  ok(!recentCompletedVictoryForCelebration(setup.state, setup.promotion.id, [winner],
+    { year: 1, week: 15, day: 6 }), "old wins were never allowed to age out");
+});
+
+test("scripted celebrations resolve exactly once, retain the original ending and never award a title", () => {
+  const setup = fixture(91621);
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    draftId: "kayfabe-celebration",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [], championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "fake-crown",
+      type: "CELEBRATION",
+      participantIds: [setup.rosterIds[2]!],
+      programmeId: null,
+      plannedLengthMinutes: 5,
+      celebrationOccasion: "SELF_CORONATION",
+      celebrationEnding: "TAUNT_RIVALS",
+    }],
+  });
+  const beforeReigns = setup.state.championshipReigns?.length ?? 0;
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "celebration didn't resolve");
+  const resolved = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(resolved.celebrationOccasion === "SELF_CORONATION" && resolved.celebrationEnding === "TAUNT_RIVALS",
+    "celebration changed the player's exact scripted story");
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 0, "celebration repeated on retry");
+  ok((setup.state.championshipReigns?.length ?? 0) === beforeReigns,
+    "kayfabe self-coronation illegally created an actual championship reign");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 1, {
+    draftId: "invalid-celebration",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [], championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "bad-celebration",
+      type: "CELEBRATION",
+      participantIds: [setup.rosterIds[2]!],
+      programmeId: null, plannedLengthMinutes: 5,
+      celebrationOccasion: "WON_WORLD_TITLE" as "SELF_CORONATION",
+      celebrationEnding: "POSE",
+    }],
+  }), "unsupported occasion");
+});
+
+test("completed celebrations repeat only when wrestler, occasion, ending and promotion all match", () => {
+  function run(prior: "NONE" | "SAME" | "OTHER_ENDING" | "OTHER_OCCASION" | "OTHER_WRESTLER" | "OTHER_PROMOTION" | "OLD" | "UNRESOLVED") {
+    const setup = fixture(91622);
+    setup.state.world.currentDate = { year: 1, week: 8, day: 1 };
+    setup.targetDate = { year: 1, week: 8, day: 6 };
+    const featured = setup.rosterIds[2]!;
+    if (prior !== "NONE" && prior !== "UNRESOLVED") {
+      setup.state.ledger.push({
+        id: "previous-celebration",
+        worldId: setup.state.world.id,
+        date: { year: 1, week: prior === "OLD" ? 1 : 7, day: 6 },
+        order: 9811,
+        type: "SHOW_SEGMENT_COMPLETED",
+        significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+        entityIds: [setup.promotion.id, featured],
+        payload: {
+          promotionId: prior === "OTHER_PROMOTION" ? "different-promotion" : setup.promotion.id,
+          segmentType: "CELEBRATION",
+          celebrationOccasion: prior === "OTHER_OCCASION" ? "SELF_CORONATION" : "FAN_APPRECIATION",
+          celebrationEnding: prior === "OTHER_ENDING" ? "WALK_OFF" : "SALUTE_CROWD",
+          participantIds: prior === "OTHER_WRESTLER" ? setup.rosterIds[1]! : featured,
+        },
+      });
+    }
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      draftId: "repeat-celebration", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+      marketId: null, venueId: null, ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4),
+      matches: [], championshipAssignments: [],
+      segments: [{
+        draftSegmentId: "repeat-beat",
+        type: "CELEBRATION", participantIds: [featured],
+        programmeId: null, plannedLengthMinutes: 5,
+        celebrationOccasion: "FAN_APPRECIATION", celebrationEnding: "SALUTE_CROWD",
+      }],
+    });
+    setup.state.events.push(completedEvent(setup));
+    recordResolvedShowSegments(setup.state, setup.planning);
+    return resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  }
+  const fresh = run("NONE");
+  const same = run("SAME");
+  ok(same.angleFitModifier < fresh.angleFitModifier && same.crowdResponse! < fresh.crowdResponse!,
+    "identical previous completed celebration did not wear thin");
+  for (const kind of ["OTHER_ENDING", "OTHER_OCCASION", "OTHER_WRESTLER", "OTHER_PROMOTION", "OLD", "UNRESOLVED"] as const) {
+    ok(run(kind).angleFitModifier === fresh.angleFitModifier, `${kind} falsely treated as repetition`);
   }
 });
 
