@@ -130,6 +130,41 @@ export default function StableRosterClient(): React.JSX.Element {
                 <div><span>Stable members</span><strong>{activeStables.reduce((sum, stable) => sum + stable.currentMembers.length, 0)}</strong></div>
                 <div><span>Unassigned roster</span><strong>{freeRoster.length}</strong></div>
               </section>
+              {view.storyFollowThrough.length > 0 ? (
+                <section className={styles.panel} aria-label="Stable story follow-through">
+                  <span className={styles.eyebrow}>FROM YOUR COMPLETED SHOWS</span>
+                  <h2>Stable story follow-through</h2>
+                  <p>These wrestlers made an on-screen decision that your roster has not reflected yet. You control whether to make the membership change. Nothing happens automatically.</p>
+                  <div className={styles.list}>
+                    {view.storyFollowThrough.map((task) => (
+                      <div key={task.sourceSegmentId} className={styles.card}>
+                        <div className={styles.nameLine}><strong>{task.personName}</strong><span>· {task.stableName}</span></div>
+                        <p>{task.storyType === "STABLE_EXIT" ? "Left or was expelled on television"
+                          : task.storyType === "STABLE_INVITATION" ? "Accepted an invitation on television"
+                          : "Reconciled with former stablemates on television"} · {ppwDate(task.storyDate)}</p>
+                        {task.status !== "READY" ? (
+                          <small className={styles.subtle}>
+                            {task.status === "NOT_ON_ROSTER" ? "Roster action unavailable: wrestler is not currently on your roster."
+                              : task.status === "OTHER_STABLE" ? "Roster action unavailable: wrestler currently belongs to another stable."
+                              : task.status === "STABLE_FULL" ? "Roster action unavailable: this stable has 12 members."
+                              : "Roster action unavailable: this stable is no longer active."}
+                          </small>
+                        ) : (
+                          <button className={styles.primaryButton} disabled={!view.canEdit || saving}
+                            onClick={() => {
+                              const change = task.action === "ADD" ? "add" : "remove";
+                              if (!window.confirm(`Confirm roster follow-through: ${change} ${task.personName} ${task.action === "ADD" ? "to" : "from"} ${task.stableName}? This changes real stable membership and writes World history.`)) return;
+                              void act({ action: task.action, stableId: task.stableId, personId: task.personId },
+                                `Roster membership updated for ${task.personName}. Storyline and roster now align.`);
+                            }}>
+                            {task.action === "ADD" ? "Confirm stable membership" : "Confirm stable departure"}
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
               <label className={styles.search}>
                 <span>Search your stables</span>
                 <input value={query} onChange={(event) => setQuery(event.target.value)}
