@@ -31,6 +31,7 @@ import { wrestlerAlignmentForPromotion } from "../packages/sim-core/src/alignmen
 import { loadAlphaStableRoster, mutateAlphaStable } from "../packages/web-adapter/src/stable-service.js";
 import { stableStoryContinuityWarnings } from "../packages/web-adapter/src/stable-story-continuity.js";
 import { startAlphaManagedProgramme } from "../packages/web-adapter/src/programme-management-service.js";
+import { postShowDirectionHint, programmePostShowDirection } from "../packages/web-adapter/src/programme-postshow-guidance.js";
 import {
   loadAlphaPlayerPlanner,
   saveAlphaPlannerShowPlan,
@@ -2544,5 +2545,54 @@ await test("Show Card persists an explicit Programme association and honours onl
   ok(unchanged.runtime.revision === unlinked.world.revision,
     "rejected fraudulent Programme match link mutated World revision");
 });
+await test("post-show Card guidance uses the latest owner Programme note without booking", async () => {
+  const notes = [
+    { promotionId: "promotion-a", programmeId: "rivalry-1", matchId: "match-old",
+      eventId: "show-old", choice: "PLAN_RETALIATION" as const,
+      chosenAt: { year: 1, week: 4, day: 3 } },
+    { promotionId: "promotion-a", programmeId: "rivalry-1", matchId: "match-new",
+      eventId: "show-new", choice: "PURSUE_REMATCH" as const,
+      chosenAt: { year: 1, week: 7, day: 3 } },
+    { promotionId: "promotion-b", programmeId: "rivalry-1", matchId: "private",
+      eventId: "show-other", choice: "LET_STAND" as const,
+      chosenAt: { year: 1, week: 9, day: 3 } },
+  ];
+  const before = JSON.stringify(notes);
+  const found = programmePostShowDirection(notes, [], "promotion-a", "rivalry-1", 52);
+  ok(found?.choice === "PURSUE_REMATCH" && found.sourceMatchId === "match-new",
+    "Card displayed obsolete or other-promotion direction");
+  ok(postShowDirectionHint(found, "MATCH").includes("Check the original opponents"),
+    "rematch booking hint no longer respects original opponent fit");
+  ok(postShowDirectionHint(found, "SEGMENT").includes("never books it automatically"),
+    "segment hint implied that challenge acceptance books a rematch");
+  ok(JSON.stringify(notes) === before, "read-only Card advice mutated saved planning choice");
+  ok(programmePostShowDirection(notes, [], "promotion-a", "unrelated-programme", 52) === null,
+    "unrelated Programme received a private planning note");
+  ok(programmePostShowDirection(notes, [], "promotion-c", "rivalry-1", 52) === null,
+    "other promotion was shown private post-show instruction");
+});
+
+await test("post-show Card advice becomes history after a later performed Programme beat, never automatically fulfils the intent", async () => {
+  const notes = [{
+    promotionId: "promotion-a", programmeId: "rivalry-1", matchId: "match-old",
+    eventId: "show-old", choice: "PLAN_RETALIATION" as const,
+    chosenAt: { year: 2, week: 2, day: 5 },
+  }];
+  const earlier = [{ promotionId: "promotion-a", programmeId: "rivalry-1",
+    kind: "MATCH" as const, date: { year: 2, week: 2, day: 5 } }];
+  const noNewBeat = programmePostShowDirection(notes, earlier as never, "promotion-a", "rivalry-1", 52);
+  ok(noNewBeat?.laterBeatRecorded === false, "same-day completed match incorrectly fulfilled future direction");
+  ok(postShowDirectionHint(noNewBeat!, "SEGMENT").includes("attack"),
+    "retaliation story hint is missing");
+  const later = [...earlier, { promotionId: "promotion-a", programmeId: "rivalry-1",
+    kind: "SEGMENT" as const, date: { year: 2, week: 3, day: 2 } }];
+  const after = programmePostShowDirection(notes, later as never, "promotion-a", "rivalry-1", 52);
+  ok(after?.laterBeatRecorded === true && postShowDirectionHint(after!, "SEGMENT").includes("review the rivalry"),
+    "old post-show direction remained a fresh instruction after a completed new beat");
+  ok(programmePostShowDirection([{ ...notes[0]!, choice: "LET_STAND" as const }], [],
+    "promotion-a", "rivalry-1", 52)?.choice === "LET_STAND",
+    "letting a result stand was treated as an automatic booking request");
+});
+
 console.log(`\nAlpha web card service tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
