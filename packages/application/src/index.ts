@@ -18,6 +18,7 @@ export * from "./ownership.js";
 export * from "./planning.js";
 export * from "./celebration-evidence.js";
 export * from "./planning-commands.js";
+export * from "./post-show-followups.js";
 export * from "./planning-materialization.js";
 export * from "./planning-reservations.js";
 export * from "./planning-status.js";

@@ -235,6 +235,17 @@ export interface PendingCreativeCardAmendment {
   committedConsents: CreativeConsentRecord[];
 }
 
+/** An optional post-show instruction, not a scheduled match or a Programme activity. */
+export type PostShowFollowUpChoice = "PURSUE_REMATCH" | "PLAN_RETALIATION" | "LET_STAND";
+export interface PostShowFollowUp {
+  promotionId: Id;
+  eventId: Id;
+  matchId: Id;
+  programmeId: Id;
+  choice: PostShowFollowUpChoice;
+  chosenAt: PpwDate;
+}
+
 export interface WorldPlanningState {
   worldId: Id;
   workspaces: PromotionPlanningWorkspace[];
@@ -245,6 +256,8 @@ export interface WorldPlanningState {
   standingProgrammeCreativeAgreements?: StandingProgrammeCreativeAgreement[];
   /** Optional for older World snapshots. One record per pending live amendment. */
   pendingCardAmendments?: PendingCreativeCardAmendment[];
+  /** Optional on legacy saves; one owner-authored intent per completed match. */
+  postShowFollowUps?: PostShowFollowUp[];
 }
 
 const TICKET_STRATEGIES = new Set<TicketStrategy>(["ACCESSIBLE", "STANDARD", "PREMIUM", "PRESTIGE"]);
@@ -785,7 +798,7 @@ export function detailedShowRunningOrder(draft: DetailedShowDraft): DetailedShow
 }
 
 export function createWorldPlanningState(worldId: Id): WorldPlanningState {
-  return { worldId, workspaces: [], showReservations: [], creativeConsents: [], standingProgrammeCreativeAgreements: [], pendingCardAmendments: [] };
+  return { worldId, workspaces: [], showReservations: [], creativeConsents: [], standingProgrammeCreativeAgreements: [], pendingCardAmendments: [], postShowFollowUps: [] };
 }
 
 export function promotionPlanningWorkspace(
@@ -806,6 +819,7 @@ export function normalizeWorldPlanningState(planning: WorldPlanningState): World
     standingProgrammeCreativeAgreements: Array.isArray(legacy.standingProgrammeCreativeAgreements)
       ? legacy.standingProgrammeCreativeAgreements : [],
     pendingCardAmendments: Array.isArray(legacy.pendingCardAmendments) ? legacy.pendingCardAmendments : [],
+    postShowFollowUps: Array.isArray(legacy.postShowFollowUps) ? legacy.postShowFollowUps : [],
   });
 }
 
@@ -822,6 +836,26 @@ export function validateWorldPlanningStateShape(state: WorldState, planning: Wor
   }
   if (planning.pendingCardAmendments !== undefined && !Array.isArray(planning.pendingCardAmendments)) {
     throw new Error("pending card amendments must be an array");
+  }
+  if (planning.postShowFollowUps !== undefined && !Array.isArray(planning.postShowFollowUps)) {
+    throw new Error("post-show follow-ups must be an array");
+  }
+  const seenFollowUps = new Set<string>();
+  for (const note of planning.postShowFollowUps ?? []) {
+    const key = JSON.stringify([note.promotionId, note.matchId]);
+    if (seenFollowUps.has(key)) throw new Error("post-show follow-up duplicated for match");
+    seenFollowUps.add(key);
+    const match = state.matches.find((candidate) => candidate.id === note.matchId
+      && candidate.eventId === note.eventId && candidate.promotionId === note.promotionId
+      && candidate.status === "COMPLETED");
+    if (!match) throw new Error("post-show follow-up references a missing completed match");
+    if (!(state.programmes ?? []).some((programme) => programme.id === note.programmeId
+      && programme.promotionId === note.promotionId)) throw new Error("post-show follow-up references an unrelated Programme");
+    if (!["PURSUE_REMATCH", "PLAN_RETALIATION", "LET_STAND"].includes(note.choice)) {
+      throw new Error("post-show follow-up choice is unsupported");
+    }
+    if (!Number.isSafeInteger(note.chosenAt.year) || !Number.isSafeInteger(note.chosenAt.week)
+      || !Number.isSafeInteger(note.chosenAt.day)) throw new Error("post-show follow-up date is invalid");
   }
   const promotionIds = new Set(state.promotions.map((promotion) => promotion.id));
   const seenPromotions = new Set<Id>();
