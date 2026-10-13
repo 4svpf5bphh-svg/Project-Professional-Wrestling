@@ -28,3 +28,5 @@
 ## Deliberately deferred
 
 We should not yet pretend to know which tag wrestler used a weapon, which particular item was used, or which finisher was hit. Future booked-level performer / weapon choice could support these details if captured immutably. Also defer double DQ, no-contest, ropes/feet-on-ropes and count-out pending rule review.
+
+**Playtest note:** select the winner first. DQ means the *other* side cheats and is caught; foreign-object victory means the booked winner cheats unseen. Neither option identifies an individual in tag matches yet.
