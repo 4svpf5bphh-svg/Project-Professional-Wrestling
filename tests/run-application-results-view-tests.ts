@@ -9,6 +9,10 @@ import {
   createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  setPostShowFollowUpCommand,
+  eligiblePostShowProgrammeIds,
+  normalizeWorldPlanningState,
+  validateWorldPlanningStateShape,
   type ApplicationWorldAggregate,
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
@@ -895,6 +899,103 @@ test("frozen cheating reaction projects identically to owner and public results"
     .find((show) => show.eventId === event.id)!.matches[0]!;
   ok(own.finishFallout?.sameTrickRepeats === 2 && rival.finishFallout?.crowdAdjustment === 0,
     "familiar finish was misread as a new popularity penalty");
+});
+
+test("post-show decision is owner-authored, persists into planning, and never books its own match", () => {
+  const { aggregate, promotionAId } = twoPlayerFixture(72281);
+  const state = aggregate.state;
+  const match = state.matches.find((item) => item.id === "results-match-a")!;
+  const event = state.events.find((item) => item.id === match.eventId)!;
+  state.world.currentDate = { ...event.date };
+  const participants = state.matchParticipants.filter((item) => item.matchId === match.id);
+  setActualMatchFinish(match, "FOREIGN_OBJECT");
+  match.finishCheaterPersonId = participants[0]!.personId;
+  const programmeId = "post-show-active-programme";
+  state.programmes ??= [];
+  state.programmeActivities ??= [];
+  state.programmes.push({
+    id: programmeId, worldId: state.world.id, promotionId: promotionAId,
+    status: "ACTIVE",
+    sideA: [{ kind: "PERSON", entityId: participants[0]!.personId }],
+    sideB: [{ kind: "PERSON", entityId: participants[1]!.personId }],
+    championshipId: null, startedDate: { ...event.date }, endedDate: null,
+    heat: 72, repetition: 0, activityCount: 1, matchCount: 1, segmentCount: 0,
+    sideAWins: 1, sideBWins: 0, draws: 0, lastActivityDate: { ...event.date },
+  });
+  state.programmeActivities.push({
+    id: "post-show-linked-match", worldId: state.world.id,
+    promotionId: promotionAId, programmeId, date: { ...event.date },
+    kind: "MATCH", participantEntityIds: participants.map((item) => item.personId),
+    eventId: event.id, matchId: match.id, winnerSide: "A",
+  });
+  ok(eligiblePostShowProgrammeIds(state, promotionAId, event.id, match.id)[0] === programmeId,
+    "real match/Programme history did not make follow-up eligible");
+  ok(buildPlayerShowHistory(aggregate, "player-a").shows[0]!.matches[0]!.followUpProgrammeId === programmeId,
+    "private Results omitted eligible Programme");
+  const beforeMatches = JSON.stringify(state.matches);
+  const beforeProgrammes = JSON.stringify(state.programmes);
+  const revision = aggregate.runtime.revision;
+  const envelope = {
+    requestId: "post-show-rematch-1", worldId: state.world.id, playerId: "player-a",
+    commandType: "SET_POST_SHOW_FOLLOW_UP" as const,
+    payload: { promotionId: promotionAId, eventId: event.id, matchId: match.id,
+      programmeId, choice: "PURSUE_REMATCH" as const },
+  };
+  const first = setPostShowFollowUpCommand(state, aggregate.ownership, aggregate.planning,
+    aggregate.commands, aggregate.runtime, envelope);
+  ok(first.choice === "PURSUE_REMATCH" && aggregate.runtime.revision === revision + 1,
+    "choice was not committed once");
+  const retry = setPostShowFollowUpCommand(state, aggregate.ownership, aggregate.planning,
+    aggregate.commands, aggregate.runtime, envelope);
+  ok(retry.matchId === first.matchId && aggregate.runtime.revision === revision + 1,
+    "idempotent retry committed a duplicate");
+  ok(buildPlayerShowHistory(aggregate, "player-a").shows[0]!.matches[0]!.followUpChoice === "PURSUE_REMATCH",
+    "saved next beat did not return in private Results");
+  ok(JSON.stringify(state.matches) === beforeMatches && JSON.stringify(state.programmes) === beforeProgrammes,
+    "recording a follow-up changed match facts or Programme simulation");
+  ok((aggregate.planning.postShowFollowUps ?? []).length === 1, "follow-up created duplicate notes");
+  const planning = normalizeWorldPlanningState(aggregate.planning);
+  validateWorldPlanningStateShape(state, planning);
+  ok(planning.postShowFollowUps?.[0]?.choice === "PURSUE_REMATCH",
+    "planning normalization lost follow-up from persisted snapshots");
+  let rejected = false;
+  try {
+    setPostShowFollowUpCommand(state, aggregate.ownership, aggregate.planning,
+      aggregate.commands, aggregate.runtime, {
+        ...envelope, requestId: "post-show-unauthorized", playerId: "player-b",
+      });
+  } catch { rejected = true; }
+  ok(rejected, "rival player could author another promotion's storyline");
+  rejected = false;
+  try {
+    setPostShowFollowUpCommand(state, aggregate.ownership, aggregate.planning,
+      aggregate.commands, aggregate.runtime, {
+        ...envelope, requestId: "post-show-false-programme",
+        payload: { ...envelope.payload, programmeId: "not-real" },
+      });
+  } catch { rejected = true; }
+  ok(rejected, "user could attach a match to an invented Programme");
+  setPostShowFollowUpCommand(state, aggregate.ownership, aggregate.planning,
+    aggregate.commands, aggregate.runtime, {
+      ...envelope, requestId: "post-show-let-stand",
+      payload: { ...envelope.payload, choice: "LET_STAND" },
+    });
+  ok(aggregate.planning.postShowFollowUps?.length === 1
+    && aggregate.planning.postShowFollowUps[0]?.choice === "LET_STAND",
+    "revised decision did not update original match note");
+});
+
+test("post-show decisions cannot be inferred from opponents or unperformed cheating", () => {
+  const { aggregate, promotionAId } = twoPlayerFixture(72282);
+  const match = aggregate.state.matches.find((candidate) => candidate.id === "results-match-a")!;
+  const event = aggregate.state.events.find((candidate) => candidate.id === match.eventId)!;
+  setActualMatchFinish(match, "FOREIGN_OBJECT");
+  aggregate.state.world.currentDate = { ...event.date };
+  ok(eligiblePostShowProgrammeIds(aggregate.state, promotionAId, event.id, match.id).length === 0,
+    "same opponents without explicit Programme match activity were treated as a rivalry");
+  setActualMatchFinish(match, "INJURY_STOPPAGE");
+  ok(eligiblePostShowProgrammeIds(aggregate.state, promotionAId, event.id, match.id).length === 0,
+    "unperformed cheating produced an actionable follow-up");
 });
 
 test("non-members cannot read World show history", () => {
