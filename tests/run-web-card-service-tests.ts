@@ -472,6 +472,59 @@ await test("Card round-trips a scripted interview while retaining wrestler appea
     "rejected update modified the actual persisted interview");
 });
 
+await test("Card preserves authored celebrations and refuses a fictional victory lap without changing the script", async () => {
+  const f = await reservedShowFixture(61023);
+  const before = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  const matches = singlesCard(f.participantIds);
+  const ceremony: AlphaCardSegmentView = {
+    draftSegmentId: "authored-celebration",
+    type: "CELEBRATION",
+    participantIds: [f.participantIds[0]!],
+    programmeId: null,
+    plannedLengthMinutes: 5,
+    celebrationOccasion: "SELF_CORONATION",
+    celebrationEnding: "TAUNT_RIVALS",
+  };
+  const saved = await saveAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player", {
+    requestId: "self-coronation-valid",
+    expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion,
+    matches,
+    segments: [ceremony],
+    runningOrder: [
+      { kind: "SEGMENT", refId: ceremony.draftSegmentId },
+      ...matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ],
+    championshipAssignments: [],
+  });
+  ok(saved.segments[0]?.celebrationOccasion === "SELF_CORONATION"
+    && saved.segments[0]?.celebrationEnding === "TAUNT_RIVALS",
+    "saved celebration was rewritten");
+  ok(saved.participants.length === f.participantIds.length,
+    "the ceremony booked a fictitious extra wrestler");
+  const reloaded = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  ok(reloaded.segments[0]?.celebrationEnding === "TAUNT_RIVALS", "Card reload lost scripted ending");
+  let denied = false;
+  try {
+    await saveAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player", {
+      requestId: "claim-imaginary-win",
+      expectedRevision: reloaded.world.revision,
+      expectedPlanVersion: reloaded.workspaceVersion,
+      matches,
+      segments: [{ ...ceremony, celebrationOccasion: "VICTORY_LAP" }],
+      runningOrder: reloaded.runningOrder,
+      championshipAssignments: [],
+    });
+  } catch (error) {
+    denied = error instanceof Error && error.message.includes("victory lap");
+  }
+  ok(denied, "server accepted a celebratory win that never happened");
+  const retained = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  ok(retained.segments[0]?.celebrationOccasion === "SELF_CORONATION"
+    && retained.segments[0]?.celebrationEnding === "TAUNT_RIVALS",
+    "rejected claim overwrote the original scripted ceremony");
+});
+
 await test("Show Builder persists an interleaved Programme segment with wrestlers who also work matches", async () => {
   const fixture = await reservedShowFixture(61021);
   const beforeProgramme = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
