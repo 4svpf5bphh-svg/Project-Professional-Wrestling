@@ -42,6 +42,11 @@ import {
   INTERVIEW_FORMATS,
   INTERVIEW_TOPICS,
   INTERVIEW_RESPONSES,
+  type CelebrationOccasion,
+  type CelebrationEnding,
+  CELEBRATION_OCCASIONS,
+  CELEBRATION_ENDINGS,
+  recentCompletedVictoryForCelebration,
   type AttackPresentation,
   type AttackObjective,
   type TurnPresentation,
@@ -153,6 +158,8 @@ export interface AlphaCardSegmentView {
   interviewFormat?: InterviewFormat | null;
   interviewTopic?: InterviewTopic | null;
   interviewResponse?: InterviewResponse | null;
+  celebrationOccasion?: CelebrationOccasion | null;
+  celebrationEnding?: CelebrationEnding | null;
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
   rescuerPersonId?: Id | null;
@@ -579,6 +586,19 @@ function normalizeSegments(
       && [interviewFormat, interviewTopic, interviewResponse].some((value) => value === null)) {
       throw new Error("interview requires a format, topic and scripted response together");
     }
+    const celebrationOccasion = segment.type === "CELEBRATION" ? (segment.celebrationOccasion ?? null) : null;
+    const celebrationEnding = segment.type === "CELEBRATION" ? (segment.celebrationEnding ?? null) : null;
+    if ((celebrationOccasion !== null && !CELEBRATION_OCCASIONS.includes(celebrationOccasion))
+      || (celebrationEnding !== null && !CELEBRATION_ENDINGS.includes(celebrationEnding))) {
+      throw new Error("celebration has an unsupported occasion or scripted ending");
+    }
+    if ((celebrationOccasion === null) !== (celebrationEnding === null)) {
+      throw new Error("celebration requires both an occasion and ending, or neither for a legacy celebration");
+    }
+    if (celebrationOccasion === "VICTORY_LAP"
+      && !recentCompletedVictoryForCelebration(state, promotionId, people, targetDate)) {
+      throw new Error("victory lap requires a real completed win for every wrestler in this promotion within six PPW weeks");
+    }
     if (segment.type === "LIVE_APPEARANCE") {
       if (!["DEBUT", "RETURN", "SURPRISE_REVEAL", "INTRODUCTION"].includes(liveAppearanceKind ?? "")
         || !["ESTABLISH_STAR", "BUILD_EXCITEMENT", "CREATE_MYSTERY", "UNSETTLE_RIVAL", "REIGNITE_PROGRAMME"].includes(liveAppearanceObjective ?? "")) {
@@ -751,6 +771,7 @@ function normalizeSegments(
       ...(segment.type === "LIVE_APPEARANCE" ? { liveAppearanceKind, liveAppearanceObjective } : {}),
       ...(segment.type === "PROMO" ? { promoPurpose } : {}),
       ...(segment.type === "INTERVIEW" ? { interviewFormat, interviewTopic, interviewResponse } : {}),
+      ...(segment.type === "CELEBRATION" ? { celebrationOccasion, celebrationEnding } : {}),
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
       ...(segment.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
@@ -1214,6 +1235,8 @@ export async function loadAlphaShowCard(
       interviewFormat: segment.type === "INTERVIEW" ? (segment.interviewFormat ?? null) : null,
       interviewTopic: segment.type === "INTERVIEW" ? (segment.interviewTopic ?? null) : null,
       interviewResponse: segment.type === "INTERVIEW" ? (segment.interviewResponse ?? null) : null,
+      celebrationOccasion: segment.type === "CELEBRATION" ? (segment.celebrationOccasion ?? null) : null,
+      celebrationEnding: segment.type === "CELEBRATION" ? (segment.celebrationEnding ?? null) : null,
       attackerPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
