@@ -103,7 +103,7 @@ export function prepareHumanMatchCard(
       throw new Error("planned match length must be an integer from 3 to 60 minutes");
     }
     if (plan.plannedFinish !== undefined && !isBookableMatchFinish(plan.plannedFinish)) {
-      throw new Error("planned match finish must be clean, submission, flash or protected");
+      throw new Error("planned match finish must be clean, submission, flash, protected, DQ or foreign-object");
     }
     if (plan.style !== undefined) normalizeMatchStyle(plan.style);
     const ids = [...plan.sideAIds, ...plan.sideBIds];

@@ -1,4 +1,6 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
+import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
+import { recordedMatchFinish } from "./match-finish-projection.js";
 import type {
   Id,
   InjurySeverity,
@@ -54,6 +56,7 @@ export interface PlayerWorldResultMatchView {
   crowdResponse: number;
   participants: PlayerWorldResultParticipantView[];
   winnerNames: string[];
+  actualFinish: MatchFinish | null;
   interference: { personId: Id; name: string; aidedSide: "A" | "B"; outcome: "SUCCESS" | "THWARTED" | "ABORTED" | null } | null;
   titleOutcomes: PlayerWorldResultTitleOutcomeView[];
   injuries: PlayerWorldResultInjuryView[];
@@ -251,6 +254,13 @@ export function buildPlayerWorldResultsView(
     injuriesByMatch.set(injury.matchId, injuries);
   }
 
+  const completedMatchLedger = new Map<Id, ApplicationWorldAggregate["state"]["ledger"][number]>();
+  for (const entry of aggregate.state.ledger) {
+    if (entry.type === "MATCH_COMPLETED" && entry.entityIds[0]) {
+      completedMatchLedger.set(entry.entityIds[0], entry);
+    }
+  }
+
   const shows = aggregate.state.events
     .filter((event) => event.status === "COMPLETED")
     .slice()
@@ -301,6 +311,7 @@ export function buildPlayerWorldResultsView(
           crowdResponse: match.crowdResponse,
           participants,
           winnerNames: participants.filter((participant) => participant.won).map((participant) => participant.name),
+          actualFinish: recordedMatchFinish(match, completedMatchLedger.get(match.id)?.payload.actualFinish),
           interference: match.interference ? {
             personId: match.interference.personId,
             name: peopleById.get(match.interference.personId)?.name ?? "Unknown wrestler",

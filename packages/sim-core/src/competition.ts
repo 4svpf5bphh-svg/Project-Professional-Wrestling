@@ -15,6 +15,7 @@ import type {
   WrestlingEvent,
 } from "../../domain/src/types.js";
 import { ppwDateToWeekIndex } from "./clock.js";
+import { actualMatchFinish } from "./match-finishes.js";
 import {
   indexNewTeamState,
   indexedActiveTeamForPair,
@@ -439,9 +440,15 @@ function recordChampionshipContest(
   participants: MatchParticipant[],
   event: WrestlingEvent,
 ): void {
-  const winner = holderFromWinningSide(state, championship, match, participants, event);
-  if (!winner) return;
   const previous = currentReign(state, championship);
+  // A match victory by DQ never transfers an existing title. An empty title
+  // cannot be awarded on a DQ either. Keep the referee's match winner intact.
+  const disqualification = actualMatchFinish(match) === "DISQUALIFICATION";
+  if (disqualification && !previous) return;
+  const winner = disqualification && previous
+    ? { holderType: previous.holderType, holderId: previous.holderId }
+    : holderFromWinningSide(state, championship, match, participants, event);
+  if (!winner) return;
   const previousHolderId = previous?.holderId ?? null;
   const titleChanged = previous !== null && previousHolderId !== winner.holderId;
   if (!previous) {

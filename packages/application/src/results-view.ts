@@ -1,4 +1,6 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
+import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
+import { recordedMatchFinish } from "./match-finish-projection.js";
 import type {
   Id,
   InjurySeverity,
@@ -110,6 +112,7 @@ export interface PlayerShowMatchView {
   crowdResponse: number;
   styleResult: PlayerShowMatchStyleView | null;
   finishChangedDueToInjury: boolean;
+  actualFinish: MatchFinish | null;
   participants: PlayerShowParticipantView[];
   winnerNames: string[];
   interference: { personId: Id; name: string; aidedSide: "A" | "B"; outcome: "SUCCESS" | "THWARTED" | "ABORTED" | null } | null;
@@ -614,6 +617,7 @@ export function buildPlayerShowHistory(
           crowdResponse: match.crowdResponse,
           styleResult: frozenStyleResult(matchLedgerByMatch.get(match.id), match.executionQuality),
           finishChangedDueToInjury: match.finishChangedDueToInjury,
+          actualFinish: recordedMatchFinish(match, matchLedgerByMatch.get(match.id)?.payload.actualFinish),
           participants,
           winnerNames: participants.filter((participant) => participant.won).map((participant) => participant.name),
           interference: match.interference ? {

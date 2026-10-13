@@ -264,6 +264,8 @@ const BOOKABLE_MATCH_FINISHES = new Set<MatchFinish>([
   "SUBMISSION",
   "FLASH_PIN",
   "PROTECTED_FINISH",
+  "DISQUALIFICATION",
+  "FOREIGN_OBJECT",
 ]);
 const SHOW_SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "PROMO",
@@ -357,7 +359,7 @@ function validateMatchDraft(
     throw new Error("draft planned match length must be an integer from 3 to 60 minutes or null");
   }
   if (draft.plannedFinish !== undefined && !BOOKABLE_MATCH_FINISHES.has(draft.plannedFinish)) {
-    throw new Error("draft planned match finish must be clean, submission, flash or protected");
+    throw new Error("draft planned match finish must be clean, submission, flash, protected, DQ or foreign-object");
   }
   const style = draft.style === undefined ? undefined : normalizeMatchStyle(draft.style);
   const interfererPersonId = draft.interfererPersonId == null ? null : normalizedId(draft.interfererPersonId, "interfererPersonId");

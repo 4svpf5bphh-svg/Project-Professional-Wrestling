@@ -133,6 +133,8 @@ function finishExecutionModifier(intent: MatchIntent, finish: MatchFinish): numb
     if (intent === "EPIC") return -1.2;
     return 0;
   }
+  if (finish === "DISQUALIFICATION") return intent === "STORY" || intent === "PROTECTIVE" ? -0.5 : -2.8;
+  if (finish === "FOREIGN_OBJECT") return intent === "STORY" || intent === "PROTECTIVE" ? 0.7 : -1.4;
   if (finish === "PROTECTED_FINISH") {
     if (intent === "PROTECTIVE" || intent === "STORY") return 1.8;
     if (intent === "HIGH_RISK") return 0.6;
@@ -149,6 +151,8 @@ function finishCrowdModifier(intent: MatchIntent, finish: MatchFinish): number {
   if (finish === "CLEAN_PIN") return intent === "DOMINANT" || intent === "SHOWCASE" ? 1 : 0.4;
   if (finish === "SUBMISSION") return intent === "TECHNICAL" ? 1.8 : intent === "EPIC" ? 1 : 0.2;
   if (finish === "FLASH_PIN") return intent === "STORY" || intent === "PROTECTIVE" ? 1.8 : 0.5;
+  if (finish === "DISQUALIFICATION") return intent === "STORY" || intent === "PROTECTIVE" ? 0.5 : -3.2;
+  if (finish === "FOREIGN_OBJECT") return intent === "STORY" || intent === "PROTECTIVE" ? 1.2 : -2.0;
   if (finish === "PROTECTED_FINISH") return intent === "STORY" || intent === "PROTECTIVE" ? 2 : -2.5;
   return -4;
 }
@@ -159,6 +163,8 @@ function winnerMomentumDelta(finish: MatchFinish): number {
     case "CLEAN_PIN": return 1.4;
     case "FLASH_PIN": return 0.95;
     case "PROTECTED_FINISH": return 0.7;
+    case "DISQUALIFICATION": return 0.55;
+    case "FOREIGN_OBJECT": return 0.95;
     case "INJURY_STOPPAGE": return 0.35;
   }
 }
@@ -170,6 +176,8 @@ function loserMomentumDelta(finish: MatchFinish, greatMatch: boolean): number {
     case "CLEAN_PIN": return -0.45;
     case "FLASH_PIN": return -0.15;
     case "PROTECTED_FINISH": return 0;
+    case "DISQUALIFICATION": return -0.05;
+    case "FOREIGN_OBJECT": return -0.2;
     case "INJURY_STOPPAGE": return -0.05;
   }
 }
@@ -180,6 +188,8 @@ function winnerPopularityGain(finish: MatchFinish): number {
     case "CLEAN_PIN": return 0.012;
     case "FLASH_PIN": return 0.009;
     case "PROTECTED_FINISH": return 0.006;
+    case "DISQUALIFICATION": return 0.004;
+    case "FOREIGN_OBJECT": return 0.007;
     case "INJURY_STOPPAGE": return 0.004;
   }
 }
@@ -373,6 +383,8 @@ function styledInjuryProbability(
 
 function styledFinishExecutionModifier(match: Match, finish: MatchFinish): number {
   const style = match.style!;
+  if (finish === "DISQUALIFICATION") return clamp((style.story - 50) * 0.024 - 1.6, -3.5, 1);
+  if (finish === "FOREIGN_OBJECT") return clamp((style.story - 50) * 0.03 - 0.4, -3, 2);
   if (finish === "CLEAN_PIN") {
     return clamp(((style.competitiveness + style.intensity) / 2 - 50) * 0.018, -2.5, 2.5);
   }
@@ -396,6 +408,8 @@ function styledFinishExecutionModifier(match: Match, finish: MatchFinish): numbe
 
 function styledFinishCrowdModifier(match: Match, finish: MatchFinish): number {
   const style = match.style!;
+  if (finish === "DISQUALIFICATION") return clamp((style.story - 50) * 0.024 - 2.2, -4, 0.9);
+  if (finish === "FOREIGN_OBJECT") return clamp((style.story - 50) * 0.032 - 0.8, -3.5, 1.8);
   if (finish === "CLEAN_PIN") {
     return clamp(((style.competitiveness + style.intensity + style.epic) / 3 - 45) * 0.018, -2, 2.5);
   }

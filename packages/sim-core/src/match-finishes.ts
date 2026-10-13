@@ -5,6 +5,8 @@ export type MatchFinish =
   | "SUBMISSION"
   | "FLASH_PIN"
   | "PROTECTED_FINISH"
+  | "DISQUALIFICATION"
+  | "FOREIGN_OBJECT"
   | "INJURY_STOPPAGE";
 
 export const BOOKABLE_MATCH_FINISHES = [
@@ -12,6 +14,8 @@ export const BOOKABLE_MATCH_FINISHES = [
   "SUBMISSION",
   "FLASH_PIN",
   "PROTECTED_FINISH",
+  "DISQUALIFICATION",
+  "FOREIGN_OBJECT",
 ] as const satisfies readonly MatchFinish[];
 
 const BOOKABLE_MATCH_FINISH_SET = new Set<MatchFinish>(BOOKABLE_MATCH_FINISHES);
@@ -20,6 +24,10 @@ type FinishAwareMatch = Match & {
   plannedFinish?: MatchFinish;
   actualFinish?: MatchFinish | null;
 };
+
+export function isRecordedMatchFinish(value: unknown): value is MatchFinish {
+  return value === "INJURY_STOPPAGE" || isBookableMatchFinish(value);
+}
 
 export function isBookableMatchFinish(value: unknown): value is MatchFinish {
   return typeof value === "string" && BOOKABLE_MATCH_FINISH_SET.has(value as MatchFinish);

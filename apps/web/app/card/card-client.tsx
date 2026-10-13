@@ -46,7 +46,7 @@ const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
   "COMPETITIVE", "SHOWCASE", "DOMINANT", "TECHNICAL",
   "HIGH_RISK", "STORY", "PROTECTIVE", "EPIC",
 ];
-const MATCH_FINISHES: BookableFinish[] = ["CLEAN_PIN", "SUBMISSION", "FLASH_PIN", "PROTECTED_FINISH"];
+const MATCH_FINISHES: BookableFinish[] = ["CLEAN_PIN", "SUBMISSION", "FLASH_PIN", "PROTECTED_FINISH", "DISQUALIFICATION", "FOREIGN_OBJECT"];
 const PROMO_PURPOSE_OPTIONS = [
   ["STATEMENT_OF_INTENT", "Statement of intent"],
   ["BOAST", "Brag / boast"],
@@ -152,6 +152,8 @@ function finishLabel(value: BookableFinish): string {
   if (value === "CLEAN_PIN") return "Clean pin";
   if (value === "SUBMISSION") return "Submission";
   if (value === "FLASH_PIN") return "Flash pin";
+  if (value === "DISQUALIFICATION") return "DQ · Opponent caught cheating";
+  if (value === "FOREIGN_OBJECT") return "Foreign object · Undetected dirty win";
   return "Protected / controversial";
 }
 
