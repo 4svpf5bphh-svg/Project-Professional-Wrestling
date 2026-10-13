@@ -1,5 +1,6 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { Match, MatchIntent, MatchParticipant, WorldState, WrestlingEvent } from "../../domain/src/types.js";
+import { actualMatchFinish, finishCheaterSide } from "./match-finishes.js";
 import {
   recentAlignmentVolatilityPenalty,
   wrestlerAlignmentForPromotion,
@@ -42,7 +43,10 @@ export type ShowFlowReasonCode =
   | "BREATHER"
   | "HIGH_INTENSITY_STREAK"
   | "FLAT_CLOSER"
-  | "BIG_CLOSER";
+  | "BIG_CLOSER"
+  | "HEEL_CHEATING_HEAT"
+  | "FACE_CHEATING_BACKLASH"
+  | "DIRTY_FINISH_FAMILIAR";
 
 interface ModifierEvaluation {
   modifier: number;
@@ -68,6 +72,10 @@ export interface ShowFlowMatchEvaluation {
   programmeReason: ShowFlowReasonCode | null;
   pacingModifier: number;
   pacingReason: ShowFlowReasonCode | null;
+  finishModifier: number;
+  finishReason: ShowFlowReasonCode | null;
+  finishRepeatCount: number;
+  finishProgrammeLinked: boolean;
   adjustedCrowdResponse: number;
   weight: number;
 }
@@ -161,6 +169,63 @@ function programmeModifierForMatch(state: WorldState, event: WrestlingEvent, mat
   else if (heatEffect <= -0.25) reason = "COOL_PROGRAMME";
   else if (repetitionPenalty >= 0.25) reason = "PROGRAMME_REPETITION";
   return { modifier, reason };
+}
+
+interface FinishReactionEvaluation extends ModifierEvaluation {
+  repeatCount: number;
+  programmeLinked: boolean;
+}
+
+/** Only completed, side-validated cheating gets an audience reaction.
+ * Programme heat/repetition already has its own modifier; replaying an identical
+ * cheat only erodes the *extra* finish lift, never stacks another repetition loss. */
+function finishReactionForMatch(state: WorldState, event: WrestlingEvent, match: Match): FinishReactionEvaluation {
+  const none: FinishReactionEvaluation = { modifier: 0, reason: null, repeatCount: 0, programmeLinked: false };
+  const actualFinish = actualMatchFinish(match);
+  if (actualFinish !== "DISQUALIFICATION" && actualFinish !== "FOREIGN_OBJECT") return none;
+  if (!match.actualWinnerSide || !match.finishCheaterPersonId) return none;
+  const participants = participantsForMatch(state, match.id);
+  const cheaterSide = finishCheaterSide(actualFinish, match.actualWinnerSide);
+  const culprit = participants.find((person) => person.personId === match.finishCheaterPersonId);
+  if (!culprit || culprit.side !== cheaterSide) return none;
+  const cheatedSide = cheaterSide === "A" ? "B" : "A";
+  const culpritAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, culprit.personId);
+  const opposition = sideAlignment(state, event.promotionId, participants, cheatedSide);
+  const linkedProgramme = programmeActivitiesForMatch(state, match.id)
+    .some((activity) => activity.kind === "MATCH" && activity.eventId === event.id);
+  const currentWeek = (event.date.year - 1) * state.ruleset.weeksPerYear + event.date.week - 1;
+  const currentParticipants = participants.map((person) => person.personId).sort().join("|");
+  // Search historical completed matches only. No same-show or future leakage.
+  const historicalEvents = new Map(state.events
+    .filter((candidate) => candidate.promotionId === event.promotionId)
+    .map((candidate) => [candidate.id, candidate]));
+  let repeatCount = 0;
+  for (const previous of state.matches) {
+    if (repeatCount >= 2) break;
+    if (previous.id === match.id || previous.status !== "COMPLETED"
+      || previous.promotionId !== match.promotionId
+      || previous.finishCheaterPersonId !== culprit.personId
+      || actualMatchFinish(previous) !== actualFinish) continue;
+    const pastEvent = historicalEvents.get(previous.eventId);
+    if (!pastEvent) continue;
+    const pastWeek = (pastEvent.date.year - 1) * state.ruleset.weeksPerYear + pastEvent.date.week - 1;
+    if (pastWeek >= currentWeek || pastWeek < currentWeek - 8) continue;
+    const pastIds = participantsForMatch(state, previous.id).map((person) => person.personId).sort().join("|");
+    if (pastIds === currentParticipants) repeatCount += 1;
+  }
+  if (culpritAlignment === "HEEL" && opposition === "FACE") {
+    const freshLift = actualFinish === "FOREIGN_OBJECT" ? 1.8 : 1.2;
+    const modifier = Math.max(0, freshLift - repeatCount * 0.9);
+    return {
+      modifier: round1(modifier),
+      reason: modifier >= 0.45 ? "HEEL_CHEATING_HEAT" : "DIRTY_FINISH_FAMILIAR",
+      repeatCount, programmeLinked: linkedProgramme,
+    };
+  }
+  if (culpritAlignment === "FACE") {
+    return { modifier: -1.3, reason: "FACE_CHEATING_BACKLASH", repeatCount, programmeLinked: linkedProgramme };
+  }
+  return { ...none, repeatCount, programmeLinked: linkedProgramme };
 }
 
 function styleIntensity(match: Match): number {
@@ -280,8 +345,9 @@ export function evaluateShowFlow(
     const alignment = alignmentModifierForMatch(state, match);
     const programme = programmeModifierForMatch(state, event, match);
     const pacing = pacingModifier(matches, index);
+    const finish = finishReactionForMatch(state, event, match);
     const adjustedCrowdResponse = round1(clamp(
-      match.crowdResponse + alignment.modifier + programme.modifier + pacing.modifier,
+      match.crowdResponse + alignment.modifier + programme.modifier + pacing.modifier + finish.modifier,
       0,
       100,
     ));
@@ -298,6 +364,10 @@ export function evaluateShowFlow(
       programmeReason: programme.reason,
       pacingModifier: round1(pacing.modifier),
       pacingReason: pacing.reason,
+      finishModifier: round1(finish.modifier),
+      finishReason: finish.reason,
+      finishRepeatCount: finish.repeatCount,
+      finishProgrammeLinked: finish.programmeLinked,
       adjustedCrowdResponse,
       weight: matchWeight(index, matches.length),
     };
@@ -390,6 +460,10 @@ export function applyCurrentWeekShowFlow(state: WorldState): number {
       matchLedger.payload.showFlowProgrammeReason = matchEvaluation.programmeReason;
       matchLedger.payload.showFlowPacingModifier = matchEvaluation.pacingModifier;
       matchLedger.payload.showFlowPacingReason = matchEvaluation.pacingReason;
+      matchLedger.payload.showFlowFinishModifier = matchEvaluation.finishModifier;
+      matchLedger.payload.showFlowFinishReason = matchEvaluation.finishReason;
+      matchLedger.payload.showFlowFinishRepeatCount = matchEvaluation.finishRepeatCount;
+      matchLedger.payload.showFlowFinishProgrammeLinked = matchEvaluation.finishProgrammeLinked;
       matchLedger.payload.showFlowAdjustedCrowd = matchEvaluation.adjustedCrowdResponse;
       matchLedger.payload.showFlowWeight = round1(matchEvaluation.weight);
     }
