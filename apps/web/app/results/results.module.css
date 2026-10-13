@@ -1317,3 +1317,68 @@
   .showSummary > div:first-child { min-width: 0; }
   .showSummary { gap: 12px; }
 }
+
+
+/* Editorial first, booker diagnostics second. Lightweight and mobile-first. */
+.editorialReview {
+  position: relative;
+  margin: 12px 0 13px;
+  padding: 15px 15px 14px;
+  border: 1px solid rgba(125, 188, 199, .28);
+  border-left: 4px solid #75d5ce;
+  border-radius: 12px;
+  background: linear-gradient(125deg, rgba(34, 69, 72, .42), rgba(8, 18, 27, .86));
+}
+.editorialGreat {
+  border-color: rgba(250, 191, 97, .38);
+  border-left-color: #ffcb78;
+  background: linear-gradient(125deg, rgba(111, 71, 22, .38), rgba(23, 21, 25, .9));
+}
+.editorialRough {
+  border-color: rgba(239, 126, 129, .32);
+  border-left-color: #f58d96;
+  background: linear-gradient(125deg, rgba(91, 35, 51, .35), rgba(23, 21, 27, .85));
+}
+.editorialKicker {
+  display: block;
+  margin-bottom: 7px;
+  color: #95d8d0;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+.editorialGreat .editorialKicker { color: #ffe0a8; }
+.editorialRough .editorialKicker { color: #ffb7c0; }
+.editorialHeadline {
+  display: block;
+  font-size: clamp(18px, 4vw, 23px);
+  line-height: 1.14;
+  font-weight: 900;
+  color: #f9fcff;
+  overflow-wrap: anywhere;
+}
+.editorialReview p {
+  margin: 10px 0;
+  color: #d9e6ed;
+  font-size: 14px;
+  line-height: 1.58;
+}
+.editorialVerdict {
+  padding-top: 9px;
+  border-top: 1px solid rgba(199, 221, 227, .15);
+  color: #d2e1e7;
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.45;
+}
+.editorialVerdict b {
+  margin-right: 7px;
+  color: #ffcf8d;
+  font-size: 10px;
+  letter-spacing: .08em;
+  font-style: normal;
+}
+@media (max-width: 440px) {
+  .editorialReview { margin: 11px 0; padding: 13px; }
+  .editorialReview p { font-size: 13px; }
+}
