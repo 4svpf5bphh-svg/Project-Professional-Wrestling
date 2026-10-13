@@ -1120,6 +1120,89 @@ for (const [signingOutcome, seed] of [
   });
 }
 
+for (const [segmentType, seed] of [
+  ["ATTACK", 91930], ["INTERRUPTION", 91931], ["CHALLENGE", 91932], ["VIDEO_PACKAGE", 91933],
+] as const) {
+  test(`${segmentType} variety counts only an actually performed matching authored story beat`, () => {
+    function run(prior: "NONE" | "IDENTICAL" | "NEW_CHOICE" | "OTHER_WRESTLER" | "OTHER_PROMOTION" | "FUTURE" | "OLD" | "OTHER_CONTEXT") {
+      const setup = fixture(seed);
+      setup.state.world.currentDate = { year: 1, week: 8, day: 1 };
+      setup.targetDate = { year: 1, week: 8, day: 6 };
+      const [first, second, other] = setup.rosterIds;
+      if (prior !== "NONE") {
+        setup.state.ledger.push({
+          id: "older-completed-beat", worldId: setup.state.world.id,
+          date: { year: 1, week: prior === "FUTURE" ? 9 : prior === "OLD" ? 1 : 7, day: 6 },
+          order: 9891, type: "SHOW_SEGMENT_COMPLETED",
+          significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+          entityIds: [setup.promotion.id, first!, second!],
+          payload: {
+            promotionId: prior === "OTHER_PROMOTION" ? "rival-promotion" : setup.promotion.id,
+            segmentType: prior === "OTHER_CONTEXT" && segmentType === "ATTACK"
+              ? "POST_MATCH_ASSAULT" : segmentType,
+            participantIds: [first!, second!].join(","),
+            attackerPersonId: first,
+            victimPersonId: prior === "OTHER_WRESTLER" ? other : second,
+            attackPresentation: prior === "NEW_CHOICE" ? "BEATDOWN" : "BLINDSIDE",
+            attackObjective: "GENERATE_HEAT",
+            initiatorPersonId: first,
+            targetPersonId: prior === "OTHER_WRESTLER" ? other : second,
+            interruptionOutcome: prior === "NEW_CHOICE" ? "BRAWL" : "VERBAL_EXCHANGE",
+            challengeResponse: prior === "NEW_CHOICE" ? "ACCEPTED" : "REFUSED",
+            videoSubjectPersonId: prior === "OTHER_WRESTLER" ? other : first,
+            videoKind: prior === "NEW_CHOICE" ? "RETURN_TEASER" : "CHARACTER_SPOTLIGHT",
+            videoObjective: "BUILD_ANTICIPATION",
+            videoReveal: "NAMED",
+          },
+        });
+      }
+      const common = { draftSegmentId: "new-beat", programmeId: null, plannedLengthMinutes: 5 };
+      const segment = segmentType === "ATTACK" ? {
+        ...common, type: "ATTACK" as const, participantIds: [first!, second!],
+        attackerPersonId: first!, victimPersonId: second!,
+        attackPresentation: "BLINDSIDE" as const, attackObjective: "GENERATE_HEAT" as const,
+      } : segmentType === "CHALLENGE" ? {
+        ...common, type: "CHALLENGE" as const, participantIds: [first!, second!],
+        initiatorPersonId: first!, targetPersonId: second!, challengeResponse: "REFUSED" as const,
+      } : segmentType === "INTERRUPTION" ? {
+        ...common, type: "INTERRUPTION" as const, participantIds: [first!, second!],
+        initiatorPersonId: first!, targetPersonId: second!, interruptionOutcome: "VERBAL_EXCHANGE" as const,
+      } : {
+        ...common, type: "VIDEO_PACKAGE" as const, participantIds: [],
+        videoSubjectPersonId: first!, videoKind: "CHARACTER_SPOTLIGHT" as const,
+        videoObjective: "BUILD_ANTICIPATION" as const, videoReveal: "NAMED" as const,
+      };
+      upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+        draftId: "variety-audit-show", promotionId: setup.promotion.id,
+        targetDate: setup.targetDate, marketId: null, venueId: null, ticketStrategy: null,
+        participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+        segments: [segment],
+      });
+      setup.state.events.push(completedEvent(setup));
+      ok(recordResolvedShowSegments(setup.state, setup.planning) === 1,
+        "variety audit segment did not complete");
+      const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+      ok(frozen.type === segmentType, "variety scoring changed the booker's authored segment type");
+      return frozen;
+    }
+    const fresh = run("NONE");
+    const same = run("IDENTICAL");
+    ok(same.angleFitModifier < fresh.angleFitModifier
+      && same.crowdResponse! < fresh.crowdResponse!,
+      "replaying a completed identical segment had no novelty consequence");
+    for (const variant of ["NEW_CHOICE", "OTHER_WRESTLER", "OTHER_PROMOTION", "FUTURE", "OLD"] as const) {
+      ok(run(variant).angleFitModifier === fresh.angleFitModifier,
+        `${variant} was wrongly counted as the same performed story beat`);
+    }
+    if (segmentType === "ATTACK") {
+      const otherContext = run("OTHER_CONTEXT");
+      ok(otherContext.angleFitModifier < fresh.angleFitModifier
+        && otherContext.angleFitModifier > same.angleFitModifier,
+        "reusing the same physical beat after a match should cost less than repeating the exact same attack");
+    }
+  });
+}
+
 test("ATTACK records explicit attacker and victim into immutable show history", () => {
   const setup = fixture(9158);
   const [attacker, victim] = setup.rosterIds;
