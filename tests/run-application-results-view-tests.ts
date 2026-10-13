@@ -18,7 +18,7 @@ import {
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
 import { setActualMatchFinish } from "../packages/sim-core/src/match-finishes.js";
-import { showResultHighlights } from "../packages/web-adapter/src/results-highlights.js";
+import { hotSegmentHeadline, showResultHighlights } from "../packages/web-adapter/src/results-highlights.js";
 
 let passed = 0;
 let failed = 0;
@@ -371,6 +371,41 @@ test("completed-show highlight reel is truthful in owner and World Results and n
     && noWinner[0]?.detail.includes("No winner recorded")
     && !noWinner[0]?.detail.includes("victorious"),
     "presentation fabricated a winner for a finished match without winner evidence");
+});
+
+test("Results headline variety uses performed segment facts and conceals cryptic footage", () => {
+  ok(hotSegmentHeadline("PROMO", "A Performer").includes("A Performer")
+    && hotSegmentHeadline("PROMO", "A Performer") !== hotSegmentHeadline("ATTACK", "A Performer")
+    && !hotSegmentHeadline("CONFRONTATION", "A Performer").includes("wins"),
+    "hot-segment recap is repetitive or invents an outcome");
+  const mystery = showResultHighlights({
+    runningOrder: [{
+      kind: "SEGMENT", order: 3,
+      segment: {
+        segmentId: "mystery-footage", type: "VIDEO_PACKAGE", videoReveal: "CRYPTIC",
+        participants: [{ personId: "hidden-talent", name: "HIDDEN WRESTLER" }],
+        outcomeBand: "HOT", crowdResponse: 84.5,
+      },
+    }],
+  } as unknown as Parameters<typeof showResultHighlights>[0]);
+  ok(mystery.length === 1 && mystery[0]?.category === "ANGLE"
+    && mystery[0]?.headline.includes("video package")
+    && mystery[0]?.detail.includes("84.5")
+    && !JSON.stringify(mystery).includes("HIDDEN WRESTLER"),
+    "cryptic video recap exposed the hidden name or invented an additional beat");
+  const arrival = showResultHighlights({
+    runningOrder: [{
+      kind: "SEGMENT", order: 2,
+      segment: {
+        segmentId: "real-debut", type: "LIVE_APPEARANCE", liveAppearanceKind: "DEBUT",
+        participants: [{ personId: "named-talent", name: "Debuting Wrestler" }],
+        outcomeBand: "HOT", crowdResponse: 89,
+      },
+    }],
+  } as unknown as Parameters<typeof showResultHighlights>[0]);
+  ok(arrival.length === 1 && arrival[0]?.category === "ARRIVAL"
+    && arrival[0]?.headline.includes("Debuting Wrestler"),
+    "one true debut produced repetitive arrival and hot-angle headline cards");
 });
 
 test("only a performed debut can headline the reel, never an unperformed arrival", () => {
