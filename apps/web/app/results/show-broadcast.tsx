@@ -2,7 +2,7 @@
 
 import type { PlayerShowResultView, PlayerShowMatchView } from "../../../../dist/packages/application/src/results-view.js";
 import type { PlayerWorldResultShowView, PlayerWorldResultMatchView } from "../../../../dist/packages/application/src/world-results-view.js";
-import { showResultHighlights, type ShowResultHighlight } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
+import { showOpeningHighlights, type ShowResultHighlight } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
 import { reviewPlayerShow, reviewPlayerShowFinalBell, type FinalBellMoment } from "../../../../dist/packages/web-adapter/src/results-review.js";
 import styles from "./results.module.css";
 
@@ -91,11 +91,7 @@ export function MatchFinishReplay({ match }: { match: ReplayMatch }): React.JSX.
 
 /** This is a presentation lens on already completed show records. */
 export default function ShowBroadcast({ show }: { show: BroadcastShow }): React.JSX.Element {
-  // No more than two distinct slots in the opening reel: the full review is below.
-  // Duplicate championship/injury stories about one bout belong to that bout's recap.
-  const moments = showResultHighlights(show, 12)
-    .filter((moment, index, all) => all.findIndex((other) => other.slotOrder === moment.slotOrder) === index)
-    .slice(0, 2);
+  const moments = showOpeningHighlights(show);
   const lead = moments[0] ?? null;
   const otherMoments = moments.slice(1);
   const editorial = reviewPlayerShow(show);
