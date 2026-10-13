@@ -1248,5 +1248,68 @@ test("player show review headlines track actual crowd, wrestling quality and con
   ok(ordinary.tone === "GOOD", "good-but-unexceptional card received wrong verdict");
 });
 
+
+test("player recap separates quality from crowd approval and describes retained titles", () => {
+  const base = {
+    matchId: "editorial-reaction-gap", intent: "TECHNICAL",
+    winnerNames: ["Technical Ace"], criticalRatingStars: 4.6,
+    crowdResponse: 36, actualFinish: "CLEAN_PIN",
+    finishCheater: null, interference: null, injuries: [],
+    titleOutcomes: [{ titleChanged: false, championshipName: "World Championship", winnerHolderName: "Technical Ace" }],
+  } as unknown as PlayerShowMatchView;
+  const coldCrowd = reviewPlayerMatch(base);
+  ok(coldCrowd.tone === "GREAT" && /crowd|room/i.test(coldCrowd.verdict),
+    "strong wrestling / cold crowd wasn't recognised as a mixed reaction");
+  ok(coldCrowd.recap.includes("retained the World Championship"),
+    "existing champion lost the retention context in the recap");
+  const weakMatchHotCrowd = reviewPlayerMatch({
+    ...base, crowdResponse: 88, criticalRatingStars: 1.7, titleOutcomes: [],
+  });
+  ok(weakMatchHotCrowd.tone === "ROUGH" && /fans|audience/i.test(weakMatchHotCrowd.verdict),
+    "weak wrestling with hot crowd got an unrealistic critical verdict");
+  const missedBrief = reviewPlayerMatch({
+    ...base, crowdResponse: 66, criticalRatingStars: 2.4,
+    styleResult: { delivery: "MISSED" },
+  } as unknown as PlayerShowMatchView);
+  ok(missedBrief.recap.includes("planned style was a stretch too far")
+    && /ambition|delivery/.test(missedBrief.verdict),
+    "style mismatch did not affect the report despite being in the result");
+});
+
+test("angle reviews use wrestling-language appropriate to segments and preserve unknown history", () => {
+  const promo = {
+    segmentId: "editorial-flat-promo", type: "PROMO",
+    participants: [{ personId: "speaker", name: "The Speaker" }],
+    promoPurpose: "AIR_GRIEVANCE", crowdResponse: 24,
+    outcomeBand: "POOR",
+  } as unknown as PlayerShowSegmentView;
+  const flat = reviewPlayerSegment(promo);
+  ok(flat.tone === "ROUGH" && /promo|audience|microphone|crowd|room/i.test(flat.verdict)
+    && !/bout|mat work|between the ropes/i.test(flat.verdict),
+    "a poor promo was reviewed like a wrestling match");
+  const hot = reviewPlayerSegment({ ...promo, outcomeBand: "HOT", crowdResponse: 91 });
+  ok(hot.tone === "GREAT" && !/bout|mat work|between the ropes/i.test(hot.verdict),
+    "a great promo got an irrelevant match verdict");
+  const oldInvite = reviewPlayerSegment({
+    ...promo, type: "STABLE_INVITATION", stableInvitationOutcome: null,
+    initiatorPersonId: "speaker", targetPersonId: "unknown",
+    outcomeBand: null, crowdResponse: null,
+  });
+  ok(oldInvite.recap.includes("not recorded") && !oldInvite.recap.includes("refused"),
+    "unknown historic invitation outcome was incorrectly rendered as a refusal");
+  ok(oldInvite.verdict.includes("wasn't preserved"),
+    "historical null crowd result was judged rather than disclosed as unknown");
+  const oldChallenge = reviewPlayerSegment({
+    ...promo, type: "CHALLENGE", challengeResponse: null,
+    initiatorPersonId: "speaker", targetPersonId: "unknown",
+  });
+  ok(oldChallenge.recap.includes("no answer was recorded"),
+    "historic challenge without an authored response became an implied refusal");
+  const variants = new Set(Array.from({ length: 40 }, (_, i) => (
+    reviewPlayerSegment({ ...promo, segmentId: "review-promo-" + i, outcomeBand: "POOR" }).verdict
+  )));
+  ok(variants.size >= 3, "editorial feedback was identical across many separate show angles");
+});
+
 console.log(`\nApplication results-view tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
