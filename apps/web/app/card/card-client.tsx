@@ -64,6 +64,18 @@ const INTERVIEW_RESPONSES = [
 const INTERVIEW_FORMATS = [
   ["BACKSTAGE", "Backstage"], ["SIT_DOWN", "Sit-down"], ["IN_RING", "In-ring"],
 ] as const;
+const CELEBRATION_OCCASION_OPTIONS = [
+  ["FAN_APPRECIATION", "Thank the fans"],
+  ["SELF_CORONATION", "Self-coronation (kayfabe boast)"],
+  ["RIVALRY_TAUNT", "Taunt a rival"],
+  ["VICTORY_LAP", "Celebrate a real recent win"],
+] as const;
+const CELEBRATION_ENDING_OPTIONS = [
+  ["SALUTE_CROWD", "Salute the crowd"],
+  ["POSE", "Strike a pose"],
+  ["TAUNT_RIVALS", "Taunt your rivals"],
+  ["WALK_OFF", "Walk away"],
+] as const;
 const ATTACK_FORMATS = ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"] as const;
 const ATTACK_OBJECTIVES = ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"] as const;
 const VIDEO_KINDS = [
@@ -623,6 +635,8 @@ export default function CardClient(): React.JSX.Element {
       interviewFormat: type === "INTERVIEW" ? "BACKSTAGE" : null,
       interviewTopic: type === "INTERVIEW" ? "CAREER_STORY" : null,
       interviewResponse: type === "INTERVIEW" ? "CANDID" : null,
+      celebrationOccasion: type === "CELEBRATION" ? "FAN_APPRECIATION" : null,
+      celebrationEnding: type === "CELEBRATION" ? "SALUTE_CROWD" : null,
       attackerPersonId: null,
       victimPersonId: null,
       rescuerPersonId: null,
@@ -840,6 +854,8 @@ export default function CardClient(): React.JSX.Element {
       interviewFormat: type === "INTERVIEW" ? (segment.type === type ? (segment.interviewFormat ?? "BACKSTAGE") : "BACKSTAGE") : null,
       interviewTopic: type === "INTERVIEW" ? (segment.type === type ? (segment.interviewTopic ?? "CAREER_STORY") : "CAREER_STORY") : null,
       interviewResponse: type === "INTERVIEW" ? (segment.type === type ? (segment.interviewResponse ?? "CANDID") : "CANDID") : null,
+      celebrationOccasion: type === "CELEBRATION" ? (segment.type === type ? (segment.celebrationOccasion ?? "FAN_APPRECIATION") : "FAN_APPRECIATION") : null,
+      celebrationEnding: type === "CELEBRATION" ? (segment.type === type ? (segment.celebrationEnding ?? "SALUTE_CROWD") : "SALUTE_CROWD") : null,
       attackerPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[0] === segment.attackerPersonId
         ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[1] === segment.victimPersonId
@@ -1153,6 +1169,10 @@ export default function CardClient(): React.JSX.Element {
     if (segment.type === "INTERVIEW") {
       const cast = segment.participantIds.map(personName).join(" & ") || "Choose guest";
       return `Interview · ${pretty(segment.interviewTopic ?? "CAREER_STORY")} · ${pretty(segment.interviewResponse ?? "CANDID")} · ${cast}`;
+    }
+    if (segment.type === "CELEBRATION") {
+      const cast = segment.participantIds.map(personName).join(" & ") || "Choose wrestler";
+      return `Celebration · ${pretty(segment.celebrationOccasion ?? "FAN_APPRECIATION")} · ${pretty(segment.celebrationEnding ?? "SALUTE_CROWD")} · ${cast}`;
     }
     if (segment.type === "VIDEO_PACKAGE") {
       const subject = view?.videoSubjects.find((person) => person.personId === segment.videoSubjectPersonId)?.name
@@ -1977,6 +1997,38 @@ export default function CardClient(): React.JSX.Element {
                       </>
                     ) : null}
                     <small className={styles.sideLabel}>An evasive answer or walkout is scripted, not randomly imposed. A question about feud pressure lands more naturally when an active Programme exists.</small>
+                  </div>
+                ) : null}
+
+                {segment.type === "CELEBRATION" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>What are they celebrating?</span>
+                      <small>A kayfabe self-coronation is a boast, not a real title win.</small>
+                    </div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Celebration occasion">
+                      {CELEBRATION_OCCASION_OPTIONS.map(([occasion, caption]) => (
+                        <button key={occasion} type="button" disabled={!view.canEdit}
+                          aria-pressed={(segment.celebrationOccasion ?? "FAN_APPRECIATION") === occasion}
+                          className={(segment.celebrationOccasion ?? "FAN_APPRECIATION") === occasion ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { celebrationOccasion: occasion })}>
+                          {caption}
+                        </button>
+                      ))}
+                    </div>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>How does the celebration end?</span>
+                      <small>The ending is booked by you, not randomly chosen by the simulation.</small>
+                    </div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Celebration ending">
+                      {CELEBRATION_ENDING_OPTIONS.map(([ending, caption]) => (
+                        <button key={ending} type="button" disabled={!view.canEdit}
+                          aria-pressed={(segment.celebrationEnding ?? "SALUTE_CROWD") === ending}
+                          className={(segment.celebrationEnding ?? "SALUTE_CROWD") === ending ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { celebrationEnding: ending })}>{caption}</button>
+                      ))}
+                    </div>
+                    <small className={styles.sideLabel}>A victory lap requires every featured wrestler to have actually won a completed match for your promotion within six PPW weeks. A match merely booked to be won does not count.</small>
                   </div>
                 ) : null}
 
