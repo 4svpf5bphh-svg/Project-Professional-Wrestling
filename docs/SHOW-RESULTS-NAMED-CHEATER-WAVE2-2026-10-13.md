@@ -19,3 +19,5 @@
 
 ## Verification
 Web Card end-to-end tests reject unnamed and wrong-side tag culprits; accept and persist the selected performer across World Lock; confirm no cheater in injury-stoppage ledger. Results tests cover owner/public parity and historical safety. Full CI required on this exact branch.
+
+**Release gate:** the normal PR-to-main GitHub workflow verifies this unmerged, stacked draft; restore its parent branch after completion.
