@@ -3,13 +3,27 @@
 import type { PlayerShowResultView, PlayerShowMatchView } from "../../../../dist/packages/application/src/results-view.js";
 import type { PlayerWorldResultShowView, PlayerWorldResultMatchView } from "../../../../dist/packages/application/src/world-results-view.js";
 import { showResultHighlights, type ShowResultHighlight } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
+import { reviewPlayerShow } from "../../../../dist/packages/web-adapter/src/results-review.js";
 import styles from "./results.module.css";
 
-type BroadcastShow = Pick<PlayerShowResultView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating" | "bestMatchRating"> |
-  Pick<PlayerWorldResultShowView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating" | "bestMatchRating">;
+type BroadcastShow = Pick<PlayerShowResultView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating" | "bestMatchRating" | "titleChangeCount" | "injuryCount" | "matchCount" | "segmentCount"> |
+  Pick<PlayerWorldResultShowView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating" | "bestMatchRating" | "titleChangeCount" | "injuryCount" | "matchCount" | "segmentCount">;
 
 function display(value: number): string {
   return new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(value);
+}
+
+export function MatchStarRating({ rating }: { rating: number }): React.JSX.Element {
+  const safe = Number.isFinite(rating) ? Math.max(0, Math.min(5, rating)) : 0;
+  return (
+    <span className={styles.visualStarRating} role="img" aria-label={`${display(safe)} of 5 stars`}>
+      <span className={styles.starGlyphs} aria-hidden="true">
+        <span>★★★★★</span>
+        <span className={styles.starFill} style={{ width: `${safe * 20}%` }}>★★★★★</span>
+      </span>
+      <strong>{display(safe)}</strong>
+    </span>
+  );
 }
 
 function iconFor(category: ShowResultHighlight["category"]): string {
@@ -81,11 +95,18 @@ export default function ShowBroadcast({ show }: { show: BroadcastShow }): React.
   const lead = moments[0] ?? null;
   const otherMoments = moments.slice(1);
   const crowd = Number.isFinite(show.crowdResponse) ? show.crowdResponse : 0;
+  const editorial = reviewPlayerShow(show);
   return (
     <section className={styles.broadcast} aria-label="Completed show highlights">
       <div className={styles.broadcastMasthead}>
-        <span><span aria-hidden="true">◉</span> PPW · SHOW REPLAY</span>
-        <span>THE NIGHT IN FOCUS</span>
+        <span><span aria-hidden="true">◉</span> PPW · THE FINAL BELL</span>
+        <span>THE SHOW REVIEW</span>
+      </div>
+      <div className={`${styles.broadcastEditorial} ${editorial.tone === "GREAT" ? styles.broadcastEditorialGreat : editorial.tone === "ROUGH" ? styles.broadcastEditorialRough : ""}`}>
+        <small>THE VERDICT · {editorial.tone === "GREAT" ? "MUST SEE" : editorial.tone === "ROUGH" ? "ROUGH NIGHT" : editorial.tone === "GOOD" ? "WORTH WATCHING" : "MIXED FORTUNES"}</small>
+        <h2>{editorial.headline}</h2>
+        <p>{editorial.recap}</p>
+        <em>{editorial.verdict}</em>
       </div>
       <div className={styles.broadcastNumbers}>
         <div className={styles.broadcastCrowd}>
@@ -99,7 +120,7 @@ export default function ShowBroadcast({ show }: { show: BroadcastShow }): React.
         </div>
         <div className={styles.broadcastBest}>
           <span>BEST BOUT</span>
-          <strong><span aria-hidden="true">★</span> {display(show.bestMatchRating)}</strong>
+          <MatchStarRating rating={show.bestMatchRating} />
           <small>Show average ★ {display(show.averageMatchRating)}</small>
         </div>
       </div>
