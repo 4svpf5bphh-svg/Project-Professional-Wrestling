@@ -407,3 +407,141 @@ export function reviewPlayerShowChapters(
     return { startOrder: opener.order, chapter, headline, recap };
   });
 }
+
+
+/** "Final Bell" is an editorial selection from actual completed show history.
+ * Its cards are recaps, never new incidents, wrestler ratings or World events. */
+export type FinalBellMoment = {
+  slotOrder: number;
+  label: string;
+  headline: string;
+  detail: string;
+  kind: "MATCH" | "SEGMENT";
+};
+export interface FinalBellReview {
+  standout: FinalBellMoment | null;
+  disappointment: FinalBellMoment | null;
+  consequence: FinalBellMoment | null;
+  lastWord: string;
+}
+
+export function reviewPlayerShowFinalBell(
+  show: Pick<PlayerShowResultView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating">,
+): FinalBellReview {
+  const matches = show.runningOrder.filter(
+    (slot): slot is Extract<PlayerShowResultView["runningOrder"][number], { kind: "MATCH" }> =>
+      slot.kind === "MATCH",
+  );
+  const angles = show.runningOrder.filter(
+    (slot): slot is Extract<PlayerShowResultView["runningOrder"][number], { kind: "SEGMENT" }> =>
+      slot.kind === "SEGMENT",
+  );
+  const rankedMatches = [...matches]
+    .filter((slot) => Number.isFinite(slot.match.criticalRatingStars))
+    .sort((a, b) => b.match.criticalRatingStars - a.match.criticalRatingStars || a.order - b.order);
+  const best = rankedMatches[0];
+  const standout = best ? {
+    slotOrder: best.order, kind: "MATCH" as const,
+    label: "MATCH OF THE NIGHT",
+    headline: best.match.winnerNames.length
+      ? best.match.winnerNames.join(" & ") + " leads the way"
+      : "The highest-rated contest",
+    detail: "★ " + best.match.criticalRatingStars.toFixed(1) + " · " +
+      (best.match.criticalRatingStars >= 4.2
+        ? pick(["The pick of the bunch — and then some.", "A performance that earned its applause."], best.match.matchId, 81)
+        : best.match.criticalRatingStars >= 3.3
+          ? "The evening's most convincing in-ring display."
+          : "The best available on this card, even if the show never found a classic."),
+  } : null;
+
+  // Never manufacture a "stinker" in a good show. An actually poor angle can
+  // be a worse disappointment than an average-quality match.
+  const poorMatch = [...matches]
+    .filter((slot) => Number.isFinite(slot.match.criticalRatingStars)
+      && slot.match.criticalRatingStars < 2.45)
+    .sort((a, b) => a.match.criticalRatingStars - b.match.criticalRatingStars || a.order - b.order)[0];
+  const poorAngle = angles.find((slot) => slot.segment.outcomeBand === "POOR");
+  let disappointment: FinalBellMoment | null = null;
+  if (poorAngle && (!poorMatch || (
+    poorAngle.segment.crowdResponse !== null && poorAngle.segment.crowdResponse < 42
+  ))) {
+    const first = poorAngle.segment.participants[0]?.name;
+    disappointment = {
+      slotOrder: poorAngle.order, kind: "SEGMENT",
+      label: "WHAT MISSED THE MARK",
+      headline: first ? first + "'s segment fell flat" : "An angle that didn't land",
+      detail: "The recorded segment response was poor. The booker might want a different approach next time.",
+    };
+  } else if (poorMatch) {
+    const names = poorMatch.match.participants.map((person) => person.name);
+    disappointment = {
+      slotOrder: poorMatch.order, kind: "MATCH",
+      label: "WHAT MISSED THE MARK",
+      headline: names.length >= 2
+        ? names[0] + " vs " + names[names.length - 1]
+        : "A match that missed its mark",
+      detail: "★ " + poorMatch.match.criticalRatingStars.toFixed(1)
+        + " · " + pick([
+          "The card's toughest watch. There's work to do.",
+          "Plenty of room for improvement, and that's putting it politely.",
+          "Not the performance the booker was hoping for.",
+        ], poorMatch.match.matchId, 82),
+    };
+  }
+
+  // This is an ordered shortlist of REAL fallout. Never generate a title
+  // change or debut merely because a slot has a high rating.
+  const title = matches.flatMap((slot) => slot.match.titleOutcomes
+    .filter((x) => x.titleChanged)
+    .map((x) => ({
+      slotOrder: slot.order, kind: "MATCH" as const, label: "THE BIGGEST FALLOUT",
+      headline: "We have a new champion!",
+      detail: x.winnerHolderName + " captured the " + x.championshipName + ".",
+    })))[0];
+  const injury = matches.flatMap((slot) => slot.match.injuries.map((x) => ({
+    slotOrder: slot.order, kind: "MATCH" as const, label: "THE BIGGEST FALLOUT",
+    headline: x.personName + " leaves with an injury",
+    detail: x.weeksOut + " PPW week" + (x.weeksOut === 1 ? "" : "s") + " out.",
+  })))[0];
+  const turn = angles.find((slot) =>
+    slot.segment.type === "TURN" && slot.segment.turnTargetAlignment !== null);
+  const turnMoment = turn ? {
+    slotOrder: turn.order, kind: "SEGMENT" as const, label: "THE BIGGEST FALLOUT",
+    headline: (turn.segment.participants.find((person) =>
+      person.personId === turn.segment.turnPersonId)?.name
+      ?? turn.segment.participants[0]?.name ?? "A wrestler") + " changes sides",
+    detail: "An on-screen turn to " + turn.segment.turnTargetAlignment!.toLowerCase()
+      + " gives the promotion a new story to tell.",
+  } : null;
+  const arrival = angles.find((slot) => slot.segment.type === "LIVE_APPEARANCE"
+    && ["DEBUT", "RETURN", "SURPRISE_REVEAL"].includes(slot.segment.liveAppearanceKind ?? ""));
+  const arrivalMoment = arrival ? {
+    slotOrder: arrival.order, kind: "SEGMENT" as const, label: "THE BIGGEST FALLOUT",
+    headline: (arrival.segment.participants[0]?.name ?? "A wrestler")
+      + (arrival.segment.liveAppearanceKind === "RETURN" ? " returns" : " arrives"),
+    detail: arrival.segment.liveAppearanceKind === "RETURN"
+      ? "A live return gave the audience something to talk about."
+      : arrival.segment.liveAppearanceKind === "DEBUT"
+        ? "A live promotion debut is now in the books."
+        : "A surprise appearance was revealed to the crowd.",
+  } : null;
+  const consequence: FinalBellMoment | null = title ?? injury ?? turnMoment ?? arrivalMoment ?? null;
+
+  const crowd = Number.isFinite(show.crowdResponse) ? show.crowdResponse : 50;
+  const average = Number.isFinite(show.averageMatchRating) ? show.averageMatchRating : 2.5;
+  const lastWord = standout === null
+    ? "No completed matches were recorded. What happened on the show is preserved above."
+    : disappointment && consequence
+      ? pick([
+        "The highs mattered, the lows stung, and the fallout gives next week's show something to work with.",
+        "Not every call worked, but the consequences are real. That's wrestling.",
+      ], show.eventId, 90)
+      : consequence
+        ? "The bell has rung. The results are settled, but that fallout will travel."
+        : disappointment
+          ? "There's a standout to build around — and at least one decision to revisit."
+          : crowd >= 76 && average >= 3.5
+            ? "A strong night in the books. Enjoy it — the next card still needs booking."
+            : "The final bell has sounded. The next show is another chance to win them over.";
+  return { standout, disappointment, consequence, lastWord };
+}
