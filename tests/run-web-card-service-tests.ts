@@ -525,6 +525,59 @@ await test("Card preserves authored celebrations and refuses a fictional victory
     "rejected claim overwrote the original scripted ceremony");
 });
 
+await test("Card keeps a chosen face-off ending and rejects unscripted brawls", async () => {
+  const f = await reservedShowFixture(61024);
+  const before = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  const matches = singlesCard(f.participantIds);
+  const faceoff: AlphaCardSegmentView = {
+    draftSegmentId: "scheduled-face-off",
+    type: "CONFRONTATION",
+    participantIds: [f.participantIds[0]!, f.participantIds[1]!],
+    programmeId: null,
+    plannedLengthMinutes: 5,
+    initiatorPersonId: f.participantIds[1]!,
+    targetPersonId: f.participantIds[0]!,
+    confrontationEnding: "TARGET_BACKS_DOWN",
+  };
+  const saved = await saveAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player", {
+    requestId: "scripted-faceoff-saved",
+    expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion,
+    matches,
+    segments: [faceoff],
+    runningOrder: [
+      { kind: "SEGMENT", refId: faceoff.draftSegmentId },
+      ...matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ],
+    championshipAssignments: [],
+  });
+  ok(saved.segments[0]?.confrontationEnding === "TARGET_BACKS_DOWN",
+    "server changed who backed down");
+  ok(saved.segments[0]?.initiatorPersonId === f.participantIds[1],
+    "server guessed the instigator from participant array order");
+  const reloaded = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  ok(reloaded.segments[0]?.confrontationEnding === "TARGET_BACKS_DOWN",
+    "Card reload lost the booked face-off ending");
+  let refused = false;
+  try {
+    await saveAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player", {
+      requestId: "scripted-faceoff-invalid",
+      expectedRevision: reloaded.world.revision,
+      expectedPlanVersion: reloaded.workspaceVersion,
+      matches,
+      segments: [{ ...faceoff, confrontationEnding: "BRAWL" as "STAREDOWN" }],
+      runningOrder: reloaded.runningOrder,
+      championshipAssignments: [],
+    });
+  } catch (error) {
+    refused = error instanceof Error && error.message.includes("CONFRONTATION");
+  }
+  ok(refused, "Card accepted an invalid confrontation ending");
+  const intact = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  ok(intact.segments[0]?.confrontationEnding === "TARGET_BACKS_DOWN",
+    "invalid booking mutated the persisted face-off");
+});
+
 await test("Show Builder persists an interleaved Programme segment with wrestlers who also work matches", async () => {
   const fixture = await reservedShowFixture(61021);
   const beforeProgramme = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
