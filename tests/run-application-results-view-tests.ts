@@ -1305,7 +1305,7 @@ test("angle reviews use wrestling-language appropriate to segments and preserve 
   });
   ok(oldInvite.recap.includes("not recorded") && !oldInvite.recap.includes("refused"),
     "unknown historic invitation outcome was incorrectly rendered as a refusal");
-  ok(oldInvite.verdict.includes("wasn't preserved"),
+  ok(oldInvite.verdict.includes("doesn't tell us"),
     "historical null crowd result was judged rather than disclosed as unknown");
   const oldChallenge = reviewPlayerSegment({
     ...promo, type: "CHALLENGE", challengeResponse: null,
@@ -1522,6 +1522,32 @@ test("complete-show copy desk avoids repeated verdicts without rewriting match o
   ok(JSON.stringify(show) === before, "editorial variation mutated immutable show history");
   ok(JSON.stringify(reviewPlayerShowRunningOrder(structuredClone(show))) === JSON.stringify(first),
     "complete-show reviews were inconsistent across sessions");
+});
+
+
+test("player match prose does not expose booking diagnostics as wrestling commentary", () => {
+  const styles = ["TECHNICAL", "HIGH_RISK", "EPIC", "STORY", "PROTECTIVE", "DOMINANT", "SHOWCASE", "COMPETITIVE"] as const;
+  const prohibited = /\bbooked (?:to|like)\b|\bbooking sheet\b|\bplanned style\b|\bstyle shortfall\b|\bcapability score\b|\bprogramme-linked\b|\bsimulation\b/i;
+  for (const intent of styles) {
+    for (let index = 0; index < 12; index += 1) {
+      const review = reviewPlayerMatch({
+        matchId: "kayfabe-" + intent + "-" + index, intent,
+        winnerNames: ["The Winner"], criticalRatingStars: 3.4,
+        crowdResponse: 65, actualFinish: "CLEAN_PIN",
+        finishCheater: null, titleOutcomes: [], injuries: [], interference: null, styleResult: null,
+      } as unknown as PlayerShowMatchView);
+      ok(!prohibited.test(review.recap), "wrestling review exposed booking internals for " + intent);
+    }
+  }
+  const stoppage = reviewPlayerMatch({
+    matchId: "kayfabe-injury", intent: "STORY", winnerNames: [],
+    criticalRatingStars: 2.4, crowdResponse: 47,
+    actualFinish: "INJURY_STOPPAGE", titleOutcomes: [], injuries: [],
+    interference: null, styleResult: null,
+  } as unknown as PlayerShowMatchView);
+  ok(stoppage.recap.includes("stopped the match after an injury")
+    && !stoppage.recap.includes("planned finish"),
+    "injury stoppage narration exposed the abandoned booking instruction");
 });
 console.log(`\nApplication results-view tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
