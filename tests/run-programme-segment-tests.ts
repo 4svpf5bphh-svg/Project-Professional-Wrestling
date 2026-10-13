@@ -1179,6 +1179,9 @@ test("standalone segments become factual show history without inventing Programm
   const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id);
   ok(recorded === 1 && frozen.length === 1, "standalone segment was not frozen as completed show history");
   ok(frozen[0]?.participantIds[0] === setup.rosterIds[2], "standalone segment lost its wrestler");
+  ok(frozen[0]?.interviewFormat === null && frozen[0]?.interviewTopic === null
+    && frozen[0]?.interviewResponse === null,
+    "historical generic interview was retroactively given an invented scripted answer");
   ok(programmeActivities(setup.state, setup.programme.id).length === 0, "standalone segment invented Programme activity");
 });
 
