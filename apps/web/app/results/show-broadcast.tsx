@@ -1,13 +1,12 @@
 "use client";
 
 import type { PlayerShowResultView, PlayerShowMatchView } from "../../../../dist/packages/application/src/results-view.js";
-import type { PlayerWorldResultShowView, PlayerWorldResultMatchView } from "../../../../dist/packages/application/src/world-results-view.js";
+import type { PlayerWorldResultMatchView } from "../../../../dist/packages/application/src/world-results-view.js";
 import { showOpeningHighlights, type ShowResultHighlight } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
-import { reviewPlayerShow, reviewPlayerShowFinalBell, type FinalBellMoment } from "../../../../dist/packages/web-adapter/src/results-review.js";
+import { reviewPlayerShowNarrative, reviewPlayerShowFinalBell, type FinalBellMoment } from "../../../../dist/packages/web-adapter/src/results-review.js";
 import styles from "./results.module.css";
 
-type BroadcastShow = Pick<PlayerShowResultView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating" | "bestMatchRating" | "titleChangeCount" | "injuryCount" | "matchCount" | "segmentCount"> |
-  Pick<PlayerWorldResultShowView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating" | "bestMatchRating" | "titleChangeCount" | "injuryCount" | "matchCount" | "segmentCount">;
+type BroadcastShow = Pick<PlayerShowResultView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating" | "bestMatchRating" | "titleChangeCount" | "injuryCount" | "matchCount" | "segmentCount">;
 
 function display(value: number): string {
   return new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(value);
@@ -94,7 +93,7 @@ export default function ShowBroadcast({ show }: { show: BroadcastShow }): React.
   const moments = showOpeningHighlights(show);
   const lead = moments[0] ?? null;
   const otherMoments = moments.slice(1);
-  const editorial = reviewPlayerShow(show);
+  const editorial = reviewPlayerShowNarrative(show);
   return (
     <section className={styles.broadcast} aria-label="Completed show highlights">
       <div className={styles.broadcastMasthead}>
