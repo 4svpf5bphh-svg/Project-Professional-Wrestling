@@ -13,6 +13,7 @@ import {
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
+import { showResultHighlights } from "../packages/web-adapter/src/results-highlights.js";
 
 let passed = 0;
 let failed = 0;
@@ -273,6 +274,99 @@ test("private Results explain a pre-empted return without inventing a public per
   const note = buildPlayerShowHistory(aggregate, "player-a").shows[0]!.cancelledArrivals[0]!;
   ok(note.authoredKind === "RETURN", "return was silently reclassified as an introduction");
   ok(note.reason === "EARLIER_COMMITTED_APPEARANCE", "return lost its chronology explanation");
+});
+
+test("completed-show highlight reel is truthful in owner and World Results and never guesses a winner", () => {
+  const { aggregate } = twoPlayerFixture(72111);
+  const privateShow = buildPlayerShowHistory(aggregate, "player-a").shows[0]!;
+  const publicShow = buildPlayerWorldResultsView(aggregate, "player-b").shows.find(
+    (show) => show.eventId === privateShow.eventId)!;
+  const owned = showResultHighlights(privateShow);
+  const publicMoments = showResultHighlights(publicShow);
+  ok(owned.length === 3 && owned[0]?.category === "CHAMPIONSHIP"
+    && owned[1]?.category === "INJURY" && owned[2]?.category === "MAIN_EVENT",
+    "show replay did not rank real title, injury and best match consequences");
+  ok(owned[0]?.headline.includes("Independent Championship") && owned[0]?.detail.includes("wins"),
+    "title-change replay lost the actual championship result");
+  ok(owned[1]?.detail.includes("2 PPW weeks out"),
+    "replay misstated the actual injury duration");
+  ok(owned[2]?.detail.includes("3.8") && owned[2]?.detail.includes("victorious"),
+    "highest-rated match replay lost the winner or displayed stars incorrectly");
+  ok(owned.map((item) => item.id).join("|") === publicMoments.map((item) => item.id).join("|"),
+    "public recap disagreed with private factual performed results");
+  ok(showResultHighlights(privateShow, 1).length === 1
+    && showResultHighlights(privateShow, 0).length === 0,
+    "highlight reel exceeded the requested visible count");
+  const matchSlot = privateShow.runningOrder.find((slot) => slot.kind === "MATCH")!;
+  if (matchSlot.kind !== "MATCH") throw new Error("missing completed match");
+  const noWinner = showResultHighlights({
+    runningOrder: [{
+      ...matchSlot,
+      match: {
+        ...matchSlot.match,
+        titleOutcomes: [],
+        injuries: [],
+        winnerNames: [],
+        criticalRatingStars: 2.25,
+      },
+    }],
+  });
+  ok(noWinner.length === 1 && noWinner[0]?.category === "MAIN_EVENT"
+    && noWinner[0]?.detail.includes("No winner recorded")
+    && !noWinner[0]?.detail.includes("victorious"),
+    "presentation fabricated a winner for a finished match without winner evidence");
+});
+
+test("only a performed debut can headline the reel, never an unperformed arrival", () => {
+  const { aggregate, promotionAId } = twoPlayerFixture(72112);
+  const event = aggregate.state.events.find((item) => item.id === "results-event-a")!;
+  const person = aggregate.state.matchParticipants.find((item) => item.eventId === event.id)!.personId;
+  const expected = aggregate.state.people.find((item) => item.id === person)!.name;
+  aggregate.state.ledger.push({
+    id: "actual-live-debut-for-highlights",
+    worldId: aggregate.state.world.id,
+    date: { ...event.date }, order: 9951, type: "SHOW_SEGMENT_COMPLETED",
+    significanceAtTime: "NOTABLE", historicalSignificance: "NOTABLE",
+    entityIds: [event.id, promotionAId, person],
+    payload: {
+      eventId: event.id, promotionId: promotionAId,
+      sourceDraftId: "performed-debut-draft",
+      draftSegmentId: "performed-debut",
+      slotOrder: 1, segmentType: "LIVE_APPEARANCE",
+      participantIds: person, liveAppearanceKind: "DEBUT",
+      liveAppearanceObjective: "ESTABLISH_STAR",
+      plannedLengthMinutes: 5,
+    },
+  });
+  let privateShow = buildPlayerShowHistory(aggregate, "player-a").shows[0]!;
+  let highlights = showResultHighlights(privateShow);
+  ok(highlights.some((moment) => moment.category === "ARRIVAL"
+    && moment.headline.includes(expected) && moment.headline.includes("Promotion debut")),
+    "completed live debut was not celebrated with its actual wrestler");
+  ok(showResultHighlights(buildPlayerWorldResultsView(aggregate, "player-b").shows.find(
+    (show) => show.eventId === event.id)!).some((moment) => moment.category === "ARRIVAL"),
+    "public World Results omitted a genuinely performed debut");
+
+  aggregate.state.ledger = aggregate.state.ledger.filter((entry) =>
+    entry.id !== "actual-live-debut-for-highlights");
+  aggregate.state.ledger.push({
+    id: "unperformed-arrival-only",
+    worldId: aggregate.state.world.id, date: { ...event.date },
+    order: 9952, type: "PLANNED_LIVE_ARRIVAL_CANCELLED_AT_LOCK",
+    significanceAtTime: "NOTABLE", historicalSignificance: "NOTABLE",
+    entityIds: [event.id, promotionAId, person],
+    payload: {
+      eventId: event.id, promotionId: promotionAId,
+      sourceDraftId: "performed-debut-draft", draftSegmentId: "performed-debut",
+      personId: person, liveAppearanceKind: "DEBUT",
+      reason: "COMPLETED_HISTORY_CHANGED",
+    },
+  });
+  privateShow = buildPlayerShowHistory(aggregate, "player-a").shows[0]!;
+  highlights = showResultHighlights(privateShow);
+  ok(privateShow.cancelledArrivals.length === 1 && !highlights.some(
+    (moment) => moment.category === "ARRIVAL"),
+    "broadcast falsely presented an unperformed debut as a real show highlight");
 });
 
 test("show history exposes match-level consequences for the controlled promotion", () => {
