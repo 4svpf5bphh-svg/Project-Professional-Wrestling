@@ -485,6 +485,9 @@ function RosterCard({
               ? `${money(contract.appearanceFee)}/show`
               : `POP ${Math.round(wrestler.popularity)}`}</b>
           <small>{contract.unlimitedAppearances ? "Unlimited dates" : `${contract.datesRemaining}/${contract.dateEntitlement} dates`} · {contract.weeksToExpiry}w left</small>
+          {(wrestler.scheduledRenewals?.length ?? 0) > 0 ? (
+            <small>✓ Renewal signed · starts {ppwDate(wrestler.scheduledRenewals![0]!.startDate)}</small>
+          ) : null}
         </div>
       </summary>
       <div className={styles.cardBody}>
@@ -500,11 +503,13 @@ function RosterCard({
           <div>
             <span>{label(contract.exclusivity)} · expires {ppwDate(contract.endDate)}</span>
             <strong>
-              {contract.renewalReason === "DATES_EXHAUSTED"
-                ? "All purchased dates used · renegotiation open"
-                : contract.renewalWindowOpen
-                  ? "Renewal window open"
-                  : `${contract.weeksToExpiry} weeks to expiry`}
+              {(wrestler.scheduledRenewals?.length ?? 0) > 0
+                ? "Renewal accepted and signed — current contract remains active until the new term begins"
+                : contract.renewalReason === "DATES_EXHAUSTED"
+                  ? "All purchased dates used · renegotiation open"
+                  : contract.renewalWindowOpen
+                    ? "Renewal window open"
+                    : `${contract.weeksToExpiry} weeks to expiry`}
             </strong>
           </div>
           <div className={styles.moneyRows}>
@@ -516,6 +521,26 @@ function RosterCard({
             ) : null}
           </div>
         </div>
+        {(wrestler.scheduledRenewals?.length ?? 0) > 0 ? (
+          <div className={styles.contractBox} aria-label={`Signed upcoming contracts for ${wrestler.name}`}>
+            <strong>✓ Signed for the next term</strong>
+            {wrestler.scheduledRenewals!.map((renewal) => (
+              <div key={renewal.contractId}>
+                <span>Starts {ppwDate(renewal.startDate)} · expires {ppwDate(renewal.endDate)}</span>
+                <strong>{renewal.family === "EXCLUSIVE" ? "Unlimited appearances" : `${renewal.dateEntitlement - renewal.datesUsed}/${renewal.dateEntitlement} future dates`}</strong>
+              </div>
+            ))}
+            {wrestler.scheduledRenewals!.length > 1 ? (
+              <small role="alert">Warning: {wrestler.scheduledRenewals!.length} signed future agreements exist. They are not additional dates on the old contract; review before making more offers.</small>
+            ) : null}
+            <small>The current contract's remaining dates cannot be carried forward or used early. The signed renewal becomes bookable when its start week arrives.</small>
+          </div>
+        ) : null}
+        {(wrestler.concurrentContractCount ?? 1) > 1 ? (
+          <div className={styles.contractBox} role="alert">
+            Multiple signed contracts overlap for this wrestler in your promotion. The Roster displays one wrestler, not duplicate roster cards; existing contractual commitments remain in the World and need reconciliation.
+          </div>
+        ) : null}
         <div className={styles.presentationBox}>
           <div>
             <span>Promotion alignment</span>
