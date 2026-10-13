@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   AlphaCardChampionshipView,
   AlphaCardMatchView,
+  AlphaCardProgrammeView,
   AlphaCardParticipantView,
   AlphaCardSegmentView,
   AlphaCardSlotView,
@@ -26,7 +27,23 @@ import {
   typesForStoryGoal,
 } from "../../../../dist/packages/web-adapter/src/segment-story-goals.js";
 import { stableStoryContinuityWarnings } from "../../../../dist/packages/web-adapter/src/stable-story-continuity.js";
+import { postShowDirectionHint } from "../../../../dist/packages/web-adapter/src/programme-postshow-guidance.js";
 import styles from "./card.module.css";
+
+function ProgrammePostShowHint({ programme, slot }: {
+  programme: AlphaCardProgrammeView | undefined;
+  slot: "MATCH" | "SEGMENT";
+}): React.JSX.Element | null {
+  const direction = programme?.postShowDirection;
+  if (!direction) return null;
+  return (
+    <aside className={styles.continuityNote} aria-label="Post-show Programme continuity">
+      <strong><span aria-hidden="true">ⓘ</span> {direction.laterBeatRecorded ? "Earlier story direction" : "Post-show direction"}</strong>
+      <p>{postShowDirectionHint(direction, slot)}</p>
+      <small>Year {direction.selectedYear}, Week {direction.selectedWeek} · Advisory only. No performer, finish or scripted outcome is selected automatically.</small>
+    </aside>
+  );
+}
 
 type ErrorPayload = { error?: string };
 type BookableFinish = Exclude<MatchFinish, "INJURY_STOPPAGE">;
@@ -1581,6 +1598,10 @@ export default function CardClient(): React.JSX.Element {
                       })}
                     </select>
                     <small>Link this specific match to its storyline. An existing standing agreement applies only when this booking fits its exact terms. No storyline is inferred automatically.</small>
+                    <ProgrammePostShowHint
+                      programme={view.programmes.find((programme) => programme.programmeId === match.programmeId)}
+                      slot="MATCH"
+                    />
                   </div>
 
                   <div className={styles.sides}>
@@ -1901,6 +1922,10 @@ export default function CardClient(): React.JSX.Element {
                         </option>
                       ))}
                     </select>
+                    <ProgrammePostShowHint
+                      programme={view.programmes.find((programme) => programme.programmeId === segment.programmeId)}
+                      slot="SEGMENT"
+                    />
                   </div>
                   <div className={styles.control}>
                     <label>Minutes</label>
