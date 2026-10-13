@@ -856,6 +856,47 @@ test("frozen crowd-flow evidence is projected without reinterpreting mutable Wor
   );
 });
 
+test("frozen cheating reaction projects identically to owner and public results", () => {
+  const { aggregate } = twoPlayerFixture(72271);
+  const match = aggregate.state.matches.find((candidate) => candidate.id === "results-match-a")!;
+  const event = aggregate.state.events.find((candidate) => candidate.id === match.eventId)!;
+  const culprit = aggregate.state.matchParticipants.find((participant) =>
+    participant.matchId === match.id && participant.side === "A")!.personId;
+  match.finishCheaterPersonId = culprit;
+  setActualMatchFinish(match, "FOREIGN_OBJECT");
+  let own = buildPlayerShowHistory(aggregate, "player-a").shows[0]!.matches[0]!;
+  ok(own.finishFallout === null, "legacy result invented finish heat without a frozen resolution");
+  aggregate.state.ledger.push({
+    id: "results-finish-heat-ledger", worldId: aggregate.state.world.id,
+    date: { ...event.date }, order: 999, type: "MATCH_COMPLETED",
+    significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+    entityIds: [match.id, event.id, culprit],
+    payload: {
+      actualFinish: "FOREIGN_OBJECT", finishCheaterPersonId: culprit,
+      showFlowFinishModifier: 1.8, showFlowFinishReason: "HEEL_CHEATING_HEAT",
+      showFlowFinishRepeatCount: 0, showFlowFinishProgrammeLinked: true,
+    },
+  });
+  own = buildPlayerShowHistory(aggregate, "player-a").shows[0]!.matches[0]!;
+  let rival = buildPlayerWorldResultsView(aggregate, "player-b").shows
+    .find((show) => show.eventId === event.id)!.matches[0]!;
+  ok(own.finishFallout?.reason === "HEEL_CHEATING_HEAT"
+    && rival.finishFallout?.crowdAdjustment === 1.8
+    && rival.finishFallout?.programmeLinked === true,
+    "completed heel heat did not project equally into owner and public World results");
+  ok(own.crowdFlowFactors.some((factor) =>
+    factor.scope === "FINISH" && factor.impact === 1.8),
+    "frozen heat was absent from owner crowd context");
+  aggregate.state.ledger.at(-1)!.payload.showFlowFinishRepeatCount = 2;
+  aggregate.state.ledger.at(-1)!.payload.showFlowFinishReason = "DIRTY_FINISH_FAMILIAR";
+  aggregate.state.ledger.at(-1)!.payload.showFlowFinishModifier = 0;
+  own = buildPlayerShowHistory(aggregate, "player-a").shows[0]!.matches[0]!;
+  rival = buildPlayerWorldResultsView(aggregate, "player-b").shows
+    .find((show) => show.eventId === event.id)!.matches[0]!;
+  ok(own.finishFallout?.sameTrickRepeats === 2 && rival.finishFallout?.crowdAdjustment === 0,
+    "familiar finish was misread as a new popularity penalty");
+});
+
 test("non-members cannot read World show history", () => {
   const { aggregate } = twoPlayerFixture(72003);
   let rejected = false;
