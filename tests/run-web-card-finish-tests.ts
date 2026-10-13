@@ -187,6 +187,62 @@ for (const [finish, seed] of [["DISQUALIFICATION", 61103], ["FOREIGN_OBJECT", 61
   });
 }
 
+for (const [finish, seed] of [["FOREIGN_OBJECT", 61121], ["DISQUALIFICATION", 61122]] as const) {
+  await test(`tag-team ${finish} records the selected cheating wrestler, not an invented teammate`, async () => {
+    const setup = await fixture(seed);
+    const before = await loadAlphaCurrentWeekCard(setup.repository, setup.worldId, "alpha-player");
+    const singles = singlesCard(setup.participantIds);
+    const winnerIds = [setup.participantIds[0]!, setup.participantIds[1]!];
+    const losingIds = [setup.participantIds[2]!, setup.participantIds[3]!];
+    const culprit = finish === "DISQUALIFICATION" ? losingIds[1]! : winnerIds[1]!;
+    const tag: AlphaCardMatchView = {
+      ...singles[0]!, type: "TAG", sideAIds: winnerIds, sideBIds: losingIds,
+      intendedWinnerSide: "A", plannedFinish: finish, finishCheaterPersonId: culprit,
+    };
+    const card = [tag, ...singles.slice(2)];
+    let rejected = false;
+    try {
+      await saveAlphaCurrentWeekCard(setup.repository, setup.worldId, "alpha-player", {
+        requestId: `tag-missing-cheater-${seed}`, expectedRevision: before.world.revision,
+        expectedPlanVersion: before.workspaceVersion,
+        matches: [{ ...tag, finishCheaterPersonId: null }, ...card.slice(1)],
+        championshipAssignments: [],
+      });
+    } catch { rejected = true; }
+    ok(rejected, "tag match accepted an unnamed cheating wrestler");
+    rejected = false;
+    try {
+      await saveAlphaCurrentWeekCard(setup.repository, setup.worldId, "alpha-player", {
+        requestId: `tag-wrong-cheater-${seed}`, expectedRevision: before.world.revision,
+        expectedPlanVersion: before.workspaceVersion,
+        matches: [{ ...tag, finishCheaterPersonId: finish === "DISQUALIFICATION" ? winnerIds[1] : losingIds[1] }, ...card.slice(1)],
+        championshipAssignments: [],
+      });
+    } catch { rejected = true; }
+    ok(rejected, "tag match credited cheating to wrestler on wrong side");
+    const saved = await saveAlphaCurrentWeekCard(setup.repository, setup.worldId, "alpha-player", {
+      requestId: `tag-identified-cheater-${seed}`, expectedRevision: before.world.revision,
+      expectedPlanVersion: before.workspaceVersion, matches: card, championshipAssignments: [],
+    });
+    ok(saved.matches[0]?.finishCheaterPersonId === culprit, "Card did not save selected culprit");
+    await advanceAlphaWorldWeek(setup.repository, setup.worldId, "alpha-player", {
+      expectedRevision: saved.world.revision,
+    });
+    const resolved = await setup.repository.load(setup.worldId);
+    const event = resolved.state.events.find((show) => show.promotionId === setup.promotionId && show.status === "COMPLETED")!;
+    const match = resolved.state.matches.find((item) => item.eventId === event.id && item.order === 1)!;
+    ok(match.finishCheaterPersonId === culprit, "authoritative match lost tag cheating attribution");
+    const recorded = actualMatchFinish(match);
+    const entry = resolved.state.ledger.find((item) => item.type === "MATCH_COMPLETED" && item.entityIds[0] === match.id);
+    if (recorded === finish) {
+      ok(entry?.payload.finishCheaterPersonId === culprit, "completed match ledger lost real culprit");
+    } else {
+      ok(recorded === "INJURY_STOPPAGE" && entry?.payload.finishCheaterPersonId === undefined,
+        "injury stoppage falsely attributed a cheating finish");
+    }
+  });
+}
+
 await test("legacy browser card without finish derives and persists the intent default", async () => {
   const setup = await fixture(61102);
   const before = await loadAlphaCurrentWeekCard(setup.repository, setup.worldId, "alpha-player");

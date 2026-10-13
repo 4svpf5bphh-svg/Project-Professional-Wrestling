@@ -299,6 +299,35 @@ test("actual finishes come only from frozen authoritative data, including cheati
     "recorded DQ was omitted from factual highlights");
 });
 
+test("cheating identity is factual, side-checked and suppressed if the finish changes", () => {
+  const { aggregate } = twoPlayerFixture(72130);
+  const match = aggregate.state.matches.find((candidate) => candidate.id === "results-match-a")!;
+  const eligible = aggregate.state.matchParticipants.find((person) =>
+    person.matchId === match.id && person.side === "A")!;
+  const ineligible = aggregate.state.matchParticipants.find((person) =>
+    person.matchId === match.id && person.side === "B")!;
+  match.finishCheaterPersonId = eligible.personId;
+  setActualMatchFinish(match, "FOREIGN_OBJECT");
+  const owner = buildPlayerShowHistory(aggregate, "player-a").shows[0]!.matches[0]!;
+  const world = buildPlayerWorldResultsView(aggregate, "player-b").shows
+    .find((show) => show.eventId === "results-event-a")!.matches[0]!;
+  ok(owner.finishCheater?.personId === eligible.personId && world.finishCheater?.personId === eligible.personId,
+    "actual cheating wrestler did not match in private and public results");
+  const moments = showResultHighlights(buildPlayerShowHistory(aggregate, "player-a").shows[0]!);
+  ok(moments.some((moment) => moment.detail.includes(owner.finishCheater!.name)),
+    "broadcast did not name the recorded cheating wrestler");
+  match.finishCheaterPersonId = ineligible.personId;
+  ok(buildPlayerShowHistory(aggregate, "player-a").shows[0]!.matches[0]!.finishCheater === null,
+    "an opposite-side wrestler was falsely blamed for cheating");
+  match.finishCheaterPersonId = eligible.personId;
+  setActualMatchFinish(match, "INJURY_STOPPAGE");
+  ok(buildPlayerShowHistory(aggregate, "player-a").shows[0]!.matches[0]!.finishCheater === null,
+    "a changed injury stoppage retained its cancelled cheating narrative");
+  ok(buildPlayerWorldResultsView(aggregate, "player-b").shows
+    .find((show) => show.eventId === "results-event-a")!.matches[0]!.finishCheater === null,
+    "public results leaked the unperformed cheating identity");
+});
+
 test("completed-show highlight reel is truthful in owner and World Results and never guesses a winner", () => {
   const { aggregate } = twoPlayerFixture(72111);
   const privateShow = buildPlayerShowHistory(aggregate, "player-a").shows[0]!;
