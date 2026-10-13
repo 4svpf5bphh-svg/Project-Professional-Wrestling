@@ -36,6 +36,12 @@ import {
   type LiveAppearanceObjective,
   type PromoPurpose,
   PROMO_PURPOSES,
+  type InterviewFormat,
+  type InterviewTopic,
+  type InterviewResponse,
+  INTERVIEW_FORMATS,
+  INTERVIEW_TOPICS,
+  INTERVIEW_RESPONSES,
   type AttackPresentation,
   type AttackObjective,
   type TurnPresentation,
@@ -144,6 +150,9 @@ export interface AlphaCardSegmentView {
   liveAppearanceKind?: LiveAppearanceKind | null;
   liveAppearanceObjective?: LiveAppearanceObjective | null;
   promoPurpose?: PromoPurpose | null;
+  interviewFormat?: InterviewFormat | null;
+  interviewTopic?: InterviewTopic | null;
+  interviewResponse?: InterviewResponse | null;
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
   rescuerPersonId?: Id | null;
@@ -557,6 +566,19 @@ function normalizeSegments(
     if (promoPurpose !== null && !PROMO_PURPOSES.includes(promoPurpose)) {
       throw new Error("promo purpose must be a supported scripted story beat");
     }
+    const interviewFormat = segment.type === "INTERVIEW" ? (segment.interviewFormat ?? null) : null;
+    const interviewTopic = segment.type === "INTERVIEW" ? (segment.interviewTopic ?? null) : null;
+    const interviewResponse = segment.type === "INTERVIEW" ? (segment.interviewResponse ?? null) : null;
+    if ((interviewFormat !== null && !INTERVIEW_FORMATS.includes(interviewFormat))
+      || (interviewTopic !== null && !INTERVIEW_TOPICS.includes(interviewTopic))
+      || (interviewResponse !== null && !INTERVIEW_RESPONSES.includes(interviewResponse))) {
+      throw new Error("interview has an unsupported format, topic or scripted response");
+    }
+    if (segment.type === "INTERVIEW"
+      && [interviewFormat, interviewTopic, interviewResponse].some((value) => value !== null)
+      && [interviewFormat, interviewTopic, interviewResponse].some((value) => value === null)) {
+      throw new Error("interview requires a format, topic and scripted response together");
+    }
     if (segment.type === "LIVE_APPEARANCE") {
       if (!["DEBUT", "RETURN", "SURPRISE_REVEAL", "INTRODUCTION"].includes(liveAppearanceKind ?? "")
         || !["ESTABLISH_STAR", "BUILD_EXCITEMENT", "CREATE_MYSTERY", "UNSETTLE_RIVAL", "REIGNITE_PROGRAMME"].includes(liveAppearanceObjective ?? "")) {
@@ -728,6 +750,7 @@ function normalizeSegments(
       ...(segment.type === "VIDEO_PACKAGE" ? { videoSubjectPersonId, videoKind, videoObjective, videoReveal } : {}),
       ...(segment.type === "LIVE_APPEARANCE" ? { liveAppearanceKind, liveAppearanceObjective } : {}),
       ...(segment.type === "PROMO" ? { promoPurpose } : {}),
+      ...(segment.type === "INTERVIEW" ? { interviewFormat, interviewTopic, interviewResponse } : {}),
       ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
       ...(segment.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
       ...(segment.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
@@ -1188,6 +1211,9 @@ export async function loadAlphaShowCard(
       liveAppearanceKind: segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceKind ?? null) : null,
       liveAppearanceObjective: segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceObjective ?? null) : null,
       promoPurpose: segment.type === "PROMO" ? (segment.promoPurpose ?? null) : null,
+      interviewFormat: segment.type === "INTERVIEW" ? (segment.interviewFormat ?? null) : null,
+      interviewTopic: segment.type === "INTERVIEW" ? (segment.interviewTopic ?? null) : null,
+      interviewResponse: segment.type === "INTERVIEW" ? (segment.interviewResponse ?? null) : null,
       attackerPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
