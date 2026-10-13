@@ -10,6 +10,7 @@ import {
   joinPlayerToWorld,
   lockPersistedWorldForResolution,
   materializeCurrentWeekReservations,
+  materializedLiveArrivalConflicts,
   materializePersistedCurrentWeekReservations,
   reserveDetailedShowDraftCommand,
   resolvePersistedWorldWeek,
@@ -20,6 +21,7 @@ import {
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import { comparePpwDates } from "../packages/sim-core/src/clock.js";
+import { LedgerWriter } from "../packages/sim-core/src/ledger.js";
 import { humanWeekReadiness } from "../packages/sim-core/src/human-routine.js";
 import { createWorld, ensureWorldChampionships } from "../packages/sim-core/src/index.js";
 
@@ -417,6 +419,114 @@ asyncTest("week lock releases unresolved at-risk reservation and Routine Continu
   const resolved = await repo.load(f.state.world.id);
   ok(resolved.runtime.phase === "OPEN", "World did not reopen after at-risk week");
   ok(resolved.state.ledger.some((entry) => entry.type === "HUMAN_ROUTINE_CONTINUITY_TAKEOVER"), "Routine Continuity did not cover unresolved show work");
+});
+
+function bookedLiveArrivalFixture(seed: number, draftId: string) {
+  const f = fixture(seed);
+  const complete = completeSinglesCard(f, baseDraft(f, draftId));
+  const subject = complete.participantIds[0]!;
+  const segmentId = "promoter-scripted-first-arrival";
+  const draft: DetailedShowDraft = {
+    ...complete,
+    segments: [{
+      draftSegmentId: segmentId,
+      type: "LIVE_APPEARANCE",
+      participantIds: [subject],
+      programmeId: null,
+      plannedLengthMinutes: 4,
+      liveAppearanceKind: "DEBUT",
+      liveAppearanceObjective: "ESTABLISH_STAR",
+    }],
+    runningOrder: [
+      { kind: "SEGMENT", refId: segmentId },
+      ...complete.matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ],
+  };
+  saveAndReserve(f, draft);
+  const result = materializeCurrentWeekReservations(f.state, f.planning);
+  ok(result.materialized.length === 1, "prepared live arrival show was not materialized");
+  const event = f.state.events.find((entry) => entry.id === result.materialized[0]!.eventId)!;
+  return { f, draft, subject, segmentId, event };
+}
+
+test("an earlier committed physical show pre-empts a second same-week promotion debut", () => {
+  const { f, draft, subject, segmentId, event } = bookedLiveArrivalFixture(16164, "two-show-arrival");
+  const earlierEventId = "earlier-same-week-show-16164";
+  f.state.events.push({
+    ...structuredClone(event), id: earlierEventId,
+    date: { ...draft.targetDate, day: 2 },
+    status: "SCHEDULED",
+  });
+  const appearance = f.state.scheduledAppearances.find((entry) =>
+    entry.eventId === event.id && entry.personId === subject)!;
+  f.state.scheduledAppearances.push({
+    ...structuredClone(appearance), id: "earlier-same-week-appearance-16164",
+    eventId: earlierEventId, date: { ...draft.targetDate, day: 2 },
+    status: "COMMITTED",
+  });
+  const conflicts = materializedLiveArrivalConflicts(f.state, f.planning);
+  ok(conflicts.length === 1, "second same-week live debut was not flagged");
+  ok(conflicts[0]!.reason === "EARLIER_COMMITTED_APPEARANCE", "wrong chronological reason");
+  ok(conflicts[0]!.draftSegmentId === segmentId, "wrong show segment was reported");
+  ok(f.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!.liveAppearanceKind === "DEBUT",
+    "chronology check rewrote the scripted segment");
+});
+
+asyncTest("already-materialized stale debut blocks manual advance but scheduled lock preserves the rest of the show", async () => {
+  const { f, draft, subject, segmentId, event } = bookedLiveArrivalFixture(16165, "locked-live-debut");
+  const earlierId = "completed-earlier-live-angle-16165";
+  f.state.events.push({
+    ...structuredClone(event), id: earlierId,
+    date: { ...draft.targetDate, day: 2 }, status: "COMPLETED",
+    matchCount: 0, averageMatchRating: 0, bestMatchRating: 0,
+  });
+  new LedgerWriter(f.state.world.id, f.state.ledger).append({
+    date: { ...draft.targetDate, day: 2 },
+    type: "SHOW_SEGMENT_COMPLETED",
+    entityIds: [earlierId, f.promotionId, subject],
+    payload: { eventId: earlierId, promotionId: f.promotionId,
+      segmentType: "PROMO", participantIds: subject },
+  });
+  const conflicts = materializedLiveArrivalConflicts(f.state, f.planning);
+  ok(conflicts.length === 1 && conflicts[0]!.reason === "COMPLETED_HISTORY_CHANGED",
+    "materialized stale arrival escaped historical validation");
+  const repo = new InMemoryApplicationWorldRepository();
+  await repo.initialize(f);
+  let refused = false;
+  try {
+    await lockPersistedWorldForResolution(repo, f.state.world.id, f.runtime.revision, null, f.promotionId);
+  } catch (error) {
+    refused = error instanceof Error && error.message.includes("Live debut");
+  }
+  ok(refused, "manual player did not receive an actionable stale-debut blocker");
+  const afterRefusal = await repo.load(f.state.world.id);
+  ok(afterRefusal.runtime.phase === "OPEN", "manual refusal unexpectedly advanced the World");
+  ok(!afterRefusal.state.ledger.some((entry) =>
+    entry.type === "PLANNED_LIVE_ARRIVAL_CANCELLED_AT_LOCK"), "failed manual advance wrote a cancellation");
+
+  const revision = await lockPersistedWorldForResolution(
+    repo, f.state.world.id, afterRefusal.runtime.revision,
+  );
+  const locked = await repo.load(f.state.world.id);
+  const markers = locked.state.ledger.filter((entry) =>
+    entry.type === "PLANNED_LIVE_ARRIVAL_CANCELLED_AT_LOCK"
+    && entry.payload.eventId === event.id && entry.payload.draftSegmentId === segmentId);
+  ok(markers.length === 1, "scheduled lock did not mark the false debut exactly once");
+  ok(locked.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!.liveAppearanceKind === "DEBUT",
+    "automatic fallback silently converted scripted debut to a different story");
+
+  await resolvePersistedWorldWeek(repo, f.state.world.id, revision);
+  const resolved = await repo.load(f.state.world.id);
+  ok(resolved.state.events.some((entry) => entry.id === event.id && entry.status === "COMPLETED"),
+    "one false arrival caused the entire show to be lost");
+  ok(!resolved.state.ledger.some((entry) => (
+    entry.type === "SHOW_SEGMENT_COMPLETED"
+    && entry.payload.eventId === event.id && entry.payload.draftSegmentId === segmentId
+  )), "cancelled false arrival was recorded as an actual completed debut");
+  ok(resolved.state.ledger.filter((entry) => (
+    entry.type === "PLANNED_LIVE_ARRIVAL_CANCELLED_AT_LOCK"
+    && entry.payload.eventId === event.id
+  )).length === 1, "historical cancellation marker was duplicated during resolution");
 });
 
 await Promise.all(pending);
