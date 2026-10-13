@@ -406,6 +406,46 @@ test("an interview's authored question and answer are frozen as a real show segm
     "another promoter's private Results included the interview from a rival show");
 });
 
+test("actual celebrations preserve their scripted ending in private and public Results", () => {
+  const { aggregate, promotionAId } = twoPlayerFixture(72015);
+  const event = aggregate.state.events.find((item) => item.id === "results-event-a")!;
+  const wrestler = aggregate.state.matchParticipants.find((item) => item.eventId === event.id)!.personId;
+  aggregate.state.ledger.push({
+    id: "frozen-self-coronation",
+    worldId: aggregate.state.world.id,
+    date: { ...event.date },
+    order: 1752,
+    type: "SHOW_SEGMENT_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: [event.id, promotionAId, wrestler],
+    payload: {
+      eventId: event.id,
+      promotionId: promotionAId,
+      sourceDraftId: "ceremony-show",
+      draftSegmentId: "boastful-ceremony",
+      slotOrder: 1,
+      segmentType: "CELEBRATION",
+      celebrationOccasion: "SELF_CORONATION",
+      celebrationEnding: "WALK_OFF",
+      participantIds: wrestler,
+      programmeId: null,
+      plannedLengthMinutes: 5,
+    },
+  });
+  const personal = buildPlayerShowHistory(aggregate, "player-a").shows[0]!;
+  ok(personal.segments[0]?.celebrationOccasion === "SELF_CORONATION"
+    && personal.segments[0]?.celebrationEnding === "WALK_OFF",
+    "private Results changed the original kayfabe ceremony or ending");
+  const publicView = buildPlayerWorldResultsView(aggregate, "player-b");
+  const publicSegment = publicView.shows.find((show) => show.eventId === event.id)?.segments[0];
+  ok(publicSegment?.celebrationOccasion === "SELF_CORONATION"
+    && publicSegment?.celebrationEnding === "WALK_OFF",
+    "the actual on-screen ceremony was lost in World Results");
+  ok(buildPlayerShowHistory(aggregate, "player-b").shows[0]!.segments.length === 0,
+    "another promoter's private show included a rival celebration");
+});
+
 test("show history keeps positive alignment clarity separate from negative volatility", () => {
   const { aggregate } = twoPlayerFixture(72006);
   const event = aggregate.state.events.find((candidate) => candidate.id === "results-event-a")!;
