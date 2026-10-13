@@ -684,6 +684,8 @@ test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the
   const assault = { draftSegmentId: "assault", type: "POST_MATCH_ASSAULT" as const,
     participantIds: [aggressor, victim], attackerPersonId: aggressor,
     victimPersonId: victim, sourceDraftMatchId: source.draftMatchId,
+    attackPresentation: "BEATDOWN" as const, attackObjective: "ESCALATE_RIVALRY" as const,
+    postMatchAssaultEnding: "VICTIM_FIGHTS_BACK" as const,
     programmeId: null, plannedLengthMinutes: 4 };
   const base = { draftId: "post-match-show", promotionId: setup.promotion.id,
     targetDate: setup.targetDate, marketId: null, venueId: null, ticketStrategy: null,
@@ -705,6 +707,12 @@ test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the
   throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
     ...base, segments: [{ ...assault, sourceDraftMatchId: "not-booked" }],
   }), "reference a match");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...assault, postMatchAssaultEnding: "ARBITRARY_INJURY" as "VICTIM_FIGHTS_BACK" }],
+  }), "unsupported scripted ending");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    ...base, segments: [{ ...assault, attackObjective: null }],
+  }), "requires format, objective and ending together");
   upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, base);
   const event = completedEvent(setup);
   setup.state.events.push(event);
@@ -724,13 +732,19 @@ test("POST_MATCH_ASSAULT requires a completed match, immediate adjacency and the
       personId, side: index === 0 ? "A" : "B", won: index === 0,
     });
   }
+  const injuriesBeforeAssault = setup.state.injuries.length;
   ok(recordResolvedShowSegments(setup.state, setup.planning) === 1,
     "completed source match did not produce assault history");
+  ok(setup.state.injuries.length === injuriesBeforeAssault,
+    "show assault invented an injury after the match ended");
   const frozen = resolvedShowSegmentsForEvent(setup.state, event.id)[0]!;
   ok(frozen.sourceMatchId === id && frozen.sourceDraftMatchId === source.draftMatchId,
     "source match was not linked to the result");
   ok(frozen.victimMatchOutcome === "WON" && frozen.victimPersonId === victim,
     "frozen assault lost the victim's actual win");
+  ok(frozen.attackPresentation === "BEATDOWN" && frozen.attackObjective === "ESCALATE_RIVALRY"
+    && frozen.postMatchAssaultEnding === "VICTIM_FIGHTS_BACK",
+    "the completed assault rewrote the booker's original attack or who fought back");
   ok(recordResolvedShowSegments(setup.state, setup.planning) === 0,
     "replaying post-match assaults duplicated history");
   ok(setup.state.matches.find((match) => match.id === id)?.actualWinnerSide === "A",
