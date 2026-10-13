@@ -336,7 +336,7 @@ export function buildPlayerAttention(
         title: pendingNegotiation ? `${name} is considering your renewal offer` : urgent ? `${name}’s contract decision is due` : `${name} is entering the renewal window`,
         summary: pendingNegotiation
           ? `Your renewal offer is waiting for ${name}. Their current contract expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`
-          : `${name}’s ${contractFamilyLabel(contract.family)} contract expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`
+          : `${name}’s ${contractFamilyLabel(contract.family)} contract expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`,
         deadline: { ...contract.endDate },
         deepLink: `/talent/contracts?personId=${encodeURIComponent(contract.personId)}`,
         dismissible: true,

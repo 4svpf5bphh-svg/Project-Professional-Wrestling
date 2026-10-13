@@ -270,7 +270,7 @@ await test("zero-date contract news can be dismissed without changing actual boo
   const before = buildPlayerAttention(f.aggregate, f.playerId);
   const exhausted = before.find((item) => item.attentionId === `contract-dates-exhausted:${source.id}`);
   ok(exhausted?.dismissible === true, "date-exhausted contract item did not offer Dismiss");
-  ok(exhausted?.deepLink === "/talent", "contract reminder could not open roster");
+  ok(exhausted?.deepLink === "/talent/contracts?personId=" + encodeURIComponent(source.personId), "contract reminder did not open the affected wrestler in Contracts");
   ok(exhausted?.category === "ACTION_REQUIRED", "critical dates situation lost its urgency category");
 });
 
