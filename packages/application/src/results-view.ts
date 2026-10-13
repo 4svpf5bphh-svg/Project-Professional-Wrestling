@@ -152,6 +152,8 @@ export interface PlayerShowSegmentView {
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
+  rescueOutcome: "RESCUER_STANDS_TALL" | "ATTACKER_ESCAPES" | "RESCUE_OVERWHELMED" | null;
+  postMatchAssaultEnding: "ATTACKER_STANDS_TALL" | "VICTIM_FIGHTS_BACK" | "OFFICIALS_SEPARATE" | null;
   sourceMatchId: Id | null;
   victimMatchOutcome: "WON" | "LOST" | "DRAW" | null;
   initiatorPersonId: Id | null;
@@ -653,6 +655,8 @@ export function buildPlayerShowHistory(
         attackerPersonId: segment.attackerPersonId,
         victimPersonId: segment.victimPersonId,
         rescuerPersonId: segment.rescuerPersonId,
+        rescueOutcome: segment.rescueOutcome,
+        postMatchAssaultEnding: segment.postMatchAssaultEnding,
         sourceMatchId: segment.sourceMatchId,
         victimMatchOutcome: segment.victimMatchOutcome,
         initiatorPersonId: segment.initiatorPersonId,
