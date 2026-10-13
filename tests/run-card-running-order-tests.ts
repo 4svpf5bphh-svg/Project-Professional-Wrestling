@@ -1,6 +1,7 @@
 declare const process: { exitCode?: number };
 
 import { moveRunningOrderSlot, canMoveRunningOrderSlot } from "../packages/web-adapter/src/card-running-order.js";
+import { lockCardBackgroundScroll } from "../apps/web/app/card/card-background-scroll-lock.js";
 import type { AlphaCardSlotView, AlphaCardSegmentView } from "../packages/web-adapter/src/card-service.js";
 
 function equals(actual: unknown, expected: unknown, description: string): void {
@@ -62,6 +63,25 @@ test("another slot can move past an intact post-match booking", () => {
   equals(moveRunningOrderSlot(order, postMatch, 2, -1),
     [match("second"), match("opening"), segment("assault")],
     "independent slot should pass the grouped booking");
+});
+
+test("nested booking editor and wrestler picker always restore iPhone page scrolling", () => {
+  const body = { style: { overflow: "auto" } };
+  const releaseEditor = lockCardBackgroundScroll(body);
+  equals(body.style.overflow, "hidden", "booking editor must lock background");
+  const releasePicker = lockCardBackgroundScroll(body);
+  releasePicker();
+  equals(body.style.overflow, "hidden", "closing picker must not unlock the editor");
+  const releaseReplacement = lockCardBackgroundScroll(body);
+  releaseEditor();
+  equals(body.style.overflow, "hidden", "React editor effect replacement must not restore stale hidden");
+  releaseReplacement();
+  equals(body.style.overflow, "auto", "closing last editor restores original scrolling");
+  releaseReplacement();
+  equals(body.style.overflow, "auto", "repeated effect cleanup must be harmless");
+  const releaseNewEditor = lockCardBackgroundScroll(body);
+  releaseNewEditor();
+  equals(body.style.overflow, "auto", "opening a new slot must also recover scrolling");
 });
 
 console.log("\nCard running-order tests: " + passed + " passed, " + failed + " failed");
