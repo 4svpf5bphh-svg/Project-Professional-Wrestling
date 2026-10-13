@@ -717,7 +717,7 @@ export function reviewPlayerShowNarrative(
   if (gold) {
     headline = gold.winnerHolderName + " claims the gold!";
     lead = gold.winnerHolderName + " won the " + gold.championshipName
-      + ". The rest of the card had some catching up to do.";
+      + ". The championship picture looks different after tonight.";
   } else if (injured) {
     headline = "An injury overshadows the show";
     lead = injured.personName + " was injured during the card. That is one result nobody wanted.";
@@ -733,7 +733,7 @@ export function reviewPlayerShowNarrative(
     const returning = arrival.segment.liveAppearanceKind === "RETURN";
     headline = wrestler
       ? wrestler + (returning ? " is back!" : " has arrived!")
-      : returning ? "A surprise return!" : "A new arrival!";
+      : returning ? "A wrestler returns!" : "A new arrival!";
     lead = (wrestler ?? "A wrestler") + (returning
       ? " returned before the crowd." : " appeared live for the promotion.");
   } else if (bestMatch && bestMatch.criticalRatingStars >= 4) {
@@ -782,14 +782,15 @@ export function reviewPlayerShowNarrative(
       : show.crowdResponse < 58 ? "The audience never fully warmed to it."
         : "The crowd had its moments.";
   // Don't repeat the very same title/arrival/turn/injury in both sentences.
-  const secondary = !gold && injured
-    ? "An injury added a sour note."
-    : gold && injured
-      ? "An injury added a painful footnote."
-      : !gold && !injured && !turn && strongAngle && lead === ""
-        ? "An angle earned a strong reaction."
-        : "";
+  const secondary = gold && injured
+    ? "An injury added a painful footnote."
+    : !gold && !injured && !turn && strongAngle && lead === ""
+      ? "An angle earned a strong reaction."
+      : "";
 
+  if (matches.length === 0) {
+    headline = lead ? "The angles do the talking" : "No matches on the record";
+  }
   const recap = [lead, arc || contrast, secondary, audience].filter(Boolean).join(" ");
   return {
     ...overall, headline,
