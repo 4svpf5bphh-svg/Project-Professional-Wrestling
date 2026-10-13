@@ -417,6 +417,61 @@ await test("Card saves a chosen promo message, reloads it and rejects invented p
   ok(intact.segments[0]?.promoPurpose === "AIR_GRIEVANCE", "rejected promo changed the stored script");
 });
 
+await test("Card round-trips a scripted interview while retaining wrestler appearance count", async () => {
+  const f = await reservedShowFixture(61022);
+  const before = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  const matches = singlesCard(f.participantIds);
+  const interview: AlphaCardSegmentView = {
+    draftSegmentId: "hosted-interview",
+    type: "INTERVIEW",
+    participantIds: [f.participantIds[0]!],
+    programmeId: null,
+    plannedLengthMinutes: 5,
+    interviewFormat: "SIT_DOWN",
+    interviewTopic: "RIVALRY_PRESSURE",
+    interviewResponse: "WALKOUT",
+  };
+  const saved = await saveAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player", {
+    requestId: "interview-saved",
+    expectedRevision: before.world.revision,
+    expectedPlanVersion: before.workspaceVersion,
+    matches,
+    segments: [interview],
+    runningOrder: [
+      { kind: "SEGMENT", refId: interview.draftSegmentId },
+      ...matches.map((match) => ({ kind: "MATCH" as const, refId: match.draftMatchId })),
+    ],
+    championshipAssignments: [],
+  });
+  ok(saved.segments[0]?.interviewFormat === "SIT_DOWN"
+      && saved.segments[0]?.interviewTopic === "RIVALRY_PRESSURE"
+      && saved.segments[0]?.interviewResponse === "WALKOUT",
+    "server altered the interview subject, setting or answer");
+  ok(saved.participants.length === f.participantIds.length,
+    "fictional interview host increased reserved wrestler headcount");
+  const reloaded = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  ok(reloaded.segments[0]?.interviewResponse === "WALKOUT" && reloaded.segments[0]?.interviewTopic === "RIVALRY_PRESSURE",
+    "Card reload lost the originally booked question and response");
+  let rejected = false;
+  try {
+    await saveAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player", {
+      requestId: "interview-invalid-answer",
+      expectedRevision: reloaded.world.revision,
+      expectedPlanVersion: reloaded.workspaceVersion,
+      matches,
+      segments: [{ ...interview, interviewResponse: "RANDOM_ATTACK" as "CANDID" }],
+      runningOrder: reloaded.runningOrder,
+      championshipAssignments: [],
+    });
+  } catch (error) {
+    rejected = error instanceof Error && error.message.includes("interview");
+  }
+  ok(rejected, "invalid interview answer was accepted");
+  const intact = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  ok(intact.segments[0]?.interviewResponse === "WALKOUT",
+    "rejected update modified the actual persisted interview");
+});
+
 await test("Show Builder persists an interleaved Programme segment with wrestlers who also work matches", async () => {
   const fixture = await reservedShowFixture(61021);
   const beforeProgramme = await loadAlphaCurrentWeekCard(fixture.repository, fixture.worldId, "alpha-player");
