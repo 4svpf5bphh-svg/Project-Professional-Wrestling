@@ -1219,3 +1219,101 @@
   .broadcastLeadContent strong { font-size: 19px; }
   .showAnalysis > summary, .matchAnalysis > summary { min-height: 44px; }
 }
+
+/* Public World browsing: discover newsworthy shows without exposing private plans. */
+.worldToolsHeading {
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+}
+.worldToolsHeading > small {
+  color: #92aaa9;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.worldFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex: 1;
+  justify-content: flex-end;
+  align-items: flex-end;
+}
+.worldFilters label { min-width: min(220px, 100%); }
+.worldFilters input {
+  min-height: 44px;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(129,187,181,.34);
+  border-radius: 12px;
+  background: rgba(8,18,22,.95);
+  color: #edf7f5;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 16px; /* Avoid iOS zoom on focusing search. */
+}
+.worldTools select { min-height: 44px; max-width: 100%; font-size: 16px; }
+.worldSpotlights {
+  display: flex;
+  overflow-x: auto;
+  gap: 7px;
+  padding: 2px 2px 9px;
+  margin-bottom: 3px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+.worldSpotlight {
+  flex: 0 0 auto;
+  min-height: 44px;
+  border: 1px solid rgba(140,166,176,.32);
+  background: rgba(23,36,43,.9);
+  color: #b8cdcf;
+  border-radius: 999px;
+  padding: 9px 13px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.worldSpotlightSelected {
+  color: #dcfff5;
+  border-color: #60bbaa;
+  background: rgba(31,126,111,.38);
+}
+.worldSpotlight:focus-visible,
+.worldFilters input:focus-visible,
+.worldFilters select:focus-visible {
+  outline: 2px solid #83e9d5;
+  outline-offset: 2px;
+}
+.worldResultCount {
+  color: #8ca8ad;
+  font-size: 11px;
+  margin: 0 0 11px;
+  font-variant-numeric: tabular-nums;
+}
+.worldWeekHeading {
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: .1em;
+  color: #b1e6e0;
+  margin: 12px 0 0;
+  padding: 0 1px;
+}
+.showSummary .worldSummaryHeadline {
+  color: #ffdda9;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 620px) {
+  .worldTools { gap: 13px; }
+  .worldFilters { display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; gap: 10px; }
+  .worldFilters label { min-width: 0; }
+  .worldToolsHeading { min-width: 0; }
+  .worldSpotlights { margin-left: -4px; margin-right: -4px; padding-left: 4px; }
+  .worldWeekHeading { margin-top: 13px; }
+  .worldRating { justify-items: start; }
+  .showSummary > div:first-child { min-width: 0; }
+  .showSummary { gap: 12px; }
+}
