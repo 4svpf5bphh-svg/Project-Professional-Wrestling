@@ -446,6 +446,50 @@ test("actual celebrations preserve their scripted ending in private and public R
     "another promoter's private show included a rival celebration");
 });
 
+test("a resolved confrontation appears with its exact scripted ending in private and public Results", () => {
+  const { aggregate, promotionAId } = twoPlayerFixture(72016);
+  const event = aggregate.state.events.find((entry) => entry.id === "results-event-a")!;
+  const firstTwo = aggregate.state.matchParticipants
+    .filter((entry) => entry.eventId === event.id).slice(0, 2);
+  const instigator = firstTwo[1]!.personId;
+  const target = firstTwo[0]!.personId;
+  aggregate.state.ledger.push({
+    id: "resolved-faceoff-ledger",
+    worldId: aggregate.state.world.id,
+    date: { ...event.date },
+    order: 1753,
+    type: "SHOW_SEGMENT_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: [event.id, promotionAId, instigator, target],
+    payload: {
+      eventId: event.id,
+      promotionId: promotionAId,
+      sourceDraftId: "faceoff-draft",
+      draftSegmentId: "faceoff-on-screen",
+      slotOrder: 1,
+      segmentType: "CONFRONTATION",
+      participantIds: [instigator, target].join(","),
+      initiatorPersonId: instigator,
+      targetPersonId: target,
+      confrontationEnding: "INITIATOR_BACKS_DOWN",
+      programmeId: null,
+      plannedLengthMinutes: 5,
+    },
+  });
+  const owner = buildPlayerShowHistory(aggregate, "player-a").shows[0]!;
+  ok(owner.segments[0]?.confrontationEnding === "INITIATOR_BACKS_DOWN"
+    && owner.segments[0]?.initiatorPersonId === instigator
+    && owner.segments[0]?.targetPersonId === target,
+    "owner's Results rewrote the scripted confrontation");
+  const publicEvent = buildPlayerWorldResultsView(aggregate, "player-b").shows
+    .find((show) => show.eventId === event.id);
+  ok(publicEvent?.segments[0]?.confrontationEnding === "INITIATOR_BACKS_DOWN",
+    "public World Results lost the performed ending");
+  ok(buildPlayerShowHistory(aggregate, "player-b").shows[0]!.segments.length === 0,
+    "another promoter's private Results leaked this face-off");
+});
+
 test("show history keeps positive alignment clarity separate from negative volatility", () => {
   const { aggregate } = twoPlayerFixture(72006);
   const event = aggregate.state.events.find((candidate) => candidate.id === "results-event-a")!;
