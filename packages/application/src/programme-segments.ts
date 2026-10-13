@@ -13,13 +13,16 @@ import {
 } from "../../sim-core/src/alignment.js";
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
-import { PROMO_PURPOSES } from "./planning.js";
+import { PROMO_PURPOSES, INTERVIEW_FORMATS, INTERVIEW_TOPICS, INTERVIEW_RESPONSES } from "./planning.js";
 import type {
   DetailedProgrammeSegmentDraft,
   DetailedShowDraft,
   DetailedShowSegmentDraft,
   DetailedShowSegmentType,
   PromoPurpose,
+  InterviewFormat,
+  InterviewTopic,
+  InterviewResponse,
   VideoPackageKind,
   VideoPackageObjective,
   VideoPackageReveal,
@@ -77,6 +80,9 @@ export interface ResolvedShowSegment {
   liveAppearanceKind: LiveAppearanceKind | null;
   liveAppearanceObjective: LiveAppearanceObjective | null;
   promoPurpose: PromoPurpose | null;
+  interviewFormat: InterviewFormat | null;
+  interviewTopic: InterviewTopic | null;
+  interviewResponse: InterviewResponse | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
@@ -123,6 +129,9 @@ interface NormalizedDraftSegment {
   liveAppearanceKind: LiveAppearanceKind | null;
   liveAppearanceObjective: LiveAppearanceObjective | null;
   promoPurpose: PromoPurpose | null;
+  interviewFormat: InterviewFormat | null;
+  interviewTopic: InterviewTopic | null;
+  interviewResponse: InterviewResponse | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
@@ -209,6 +218,9 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     liveAppearanceKind: segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceKind ?? null) : null,
     liveAppearanceObjective: segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceObjective ?? null) : null,
     promoPurpose: segment.type === "PROMO" ? (segment.promoPurpose ?? null) : null,
+    interviewFormat: segment.type === "INTERVIEW" ? (segment.interviewFormat ?? null) : null,
+    interviewTopic: segment.type === "INTERVIEW" ? (segment.interviewTopic ?? null) : null,
+    interviewResponse: segment.type === "INTERVIEW" ? (segment.interviewResponse ?? null) : null,
     attackerPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
       ? (segment.attackerPersonId ?? null) : null,
     victimPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
@@ -240,6 +252,9 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       draftSegmentId: segment.draftSegmentId,
       type: "PROMO" as const,
       promoPurpose: null,
+      interviewFormat: null,
+      interviewTopic: null,
+      interviewResponse: null,
       participantIds: [...segment.participantIds],
       programmeId: segment.programmeId,
       plannedLengthMinutes: 6,
@@ -360,6 +375,40 @@ function segmentOutcome(
       return segment.participantIds.some((personId) => prior.includes(personId));
     }).length;
     angleFitModifier = round1(clamp(context - Math.min(3.5, repeated * 1.25), -5, 5));
+  }
+  if (segment.type === "INTERVIEW" && segment.interviewFormat && segment.interviewTopic && segment.interviewResponse) {
+    // An interview is a hosted question and scripted answer, not a monologue
+    // or an automatically created challenge. No imaginary interview host is
+    // added to contracted wrestler dates.
+    const subjectAlignment = segment.participantIds.length === 1
+      ? wrestlerAlignmentForPromotion(state, event.promotionId, segment.participantIds[0]!) : "TWEENER";
+    const topicFit = segment.interviewTopic === "RIVALRY_PRESSURE"
+      ? (programme ? 1.35 : -1.25)
+      : segment.interviewTopic === "CAREER_STORY" && segment.interviewFormat === "SIT_DOWN"
+        ? 1.1 : segment.interviewTopic === "RECENT_FORM" ? 0.35 : 0.45;
+    const formatFit = segment.interviewFormat === "IN_RING" && segment.interviewResponse === "DEFIANT" ? 1
+      : segment.interviewFormat === "SIT_DOWN" && segment.interviewResponse === "CANDID" ? 0.85 : 0;
+    const responseFit = segment.interviewResponse === "CANDID"
+      ? (subjectAlignment === "FACE" ? 1.35 : 0)
+      : segment.interviewResponse === "EVASIVE"
+        ? (subjectAlignment === "HEEL" ? 1.25 : subjectAlignment === "FACE" ? -0.6 : 0)
+        : segment.interviewResponse === "DEFIANT" ? (programme ? 0.9 : 0.25)
+        : segment.interviewResponse === "WALKOUT" ? (programme ? 0.45 : -1.25) : 0;
+    const thisWeek = ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear);
+    const repeated = state.ledger.filter((entry) => {
+      if (entry.type !== RESOLVED_SEGMENT_LEDGER_TYPE
+        || entry.payload.promotionId !== event.promotionId
+        || entry.payload.segmentType !== "INTERVIEW"
+        || entry.payload.interviewTopic !== segment.interviewTopic
+        || entry.payload.interviewResponse !== segment.interviewResponse
+        || typeof entry.payload.participantIds !== "string") return false;
+      const weeksAgo = thisWeek - ppwDateToWeekIndex(entry.date, state.ruleset.weeksPerYear);
+      return weeksAgo >= 1 && weeksAgo <= 6
+        && segment.participantIds.some((id) => entry.payload.participantIds.split(",").includes(id));
+    }).length;
+    angleFitModifier = round1(clamp(
+      topicFit + formatFit + responseFit - Math.min(3.5, repeated * 1.25), -5, 5,
+    ));
   }
   if (segment.type === "LIVE_APPEARANCE") {
     const introductionFit = segment.liveAppearanceKind === "DEBUT"
@@ -542,6 +591,9 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const liveAppearanceKind = entry.payload.liveAppearanceKind ?? null;
   const liveAppearanceObjective = entry.payload.liveAppearanceObjective ?? null;
   const promoPurpose = entry.payload.promoPurpose ?? null;
+  const interviewFormat = entry.payload.interviewFormat ?? null;
+  const interviewTopic = entry.payload.interviewTopic ?? null;
+  const interviewResponse = entry.payload.interviewResponse ?? null;
   const attackerPersonId = entry.payload.attackerPersonId ?? null;
   const victimPersonId = entry.payload.victimPersonId ?? null;
   const rescuerPersonId = entry.payload.rescuerPersonId ?? null;
@@ -595,6 +647,9 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || (liveAppearanceKind !== null && !["DEBUT", "RETURN", "SURPRISE_REVEAL", "INTRODUCTION"].includes(String(liveAppearanceKind)))
     || (liveAppearanceObjective !== null && !["ESTABLISH_STAR", "BUILD_EXCITEMENT", "CREATE_MYSTERY", "UNSETTLE_RIVAL", "REIGNITE_PROGRAMME"].includes(String(liveAppearanceObjective)))
     || (promoPurpose !== null && !PROMO_PURPOSES.includes(promoPurpose as PromoPurpose))
+    || (interviewFormat !== null && !INTERVIEW_FORMATS.includes(interviewFormat as InterviewFormat))
+    || (interviewTopic !== null && !INTERVIEW_TOPICS.includes(interviewTopic as InterviewTopic))
+    || (interviewResponse !== null && !INTERVIEW_RESPONSES.includes(interviewResponse as InterviewResponse))
     || typeof plannedLengthMinutes !== "number"
     || !Number.isInteger(plannedLengthMinutes)
     || (attackerPersonId !== null && typeof attackerPersonId !== "string")
@@ -640,6 +695,9 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     liveAppearanceKind: liveAppearanceKind as LiveAppearanceKind | null,
     liveAppearanceObjective: liveAppearanceObjective as LiveAppearanceObjective | null,
     promoPurpose: promoPurpose as PromoPurpose | null,
+    interviewFormat: interviewFormat as InterviewFormat | null,
+    interviewTopic: interviewTopic as InterviewTopic | null,
+    interviewResponse: interviewResponse as InterviewResponse | null,
     attackerPersonId: attackerPersonId as Id | null,
     victimPersonId: victimPersonId as Id | null,
     rescuerPersonId: rescuerPersonId as Id | null,
@@ -779,6 +837,9 @@ export function recordResolvedShowSegments(
             liveAppearanceKind: segment.liveAppearanceKind,
             liveAppearanceObjective: segment.liveAppearanceObjective,
             promoPurpose: segment.promoPurpose,
+            interviewFormat: segment.interviewFormat,
+            interviewTopic: segment.interviewTopic,
+            interviewResponse: segment.interviewResponse,
             attackerPersonId: segment.attackerPersonId,
             victimPersonId: segment.victimPersonId,
             rescuerPersonId: segment.rescuerPersonId,
