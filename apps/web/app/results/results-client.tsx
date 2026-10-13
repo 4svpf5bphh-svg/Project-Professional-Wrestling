@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PlayerShowHistoryView } from "../../../../dist/packages/application/src/results-view.js";
 import type { PlayerWorldResultsView } from "../../../../dist/packages/application/src/world-results-view.js";
-import ShowBroadcast, { segmentResultIcon } from "./show-broadcast";
+import ShowBroadcast, { MatchFinishReplay, segmentResultIcon } from "./show-broadcast";
 import styles from "./results.module.css";
 
 type ErrorPayload = { error?: string };
@@ -424,6 +424,7 @@ export default function ResultsClient(): React.JSX.Element {
                               <span>{match.winnerNames.length > 0 ? "WINNERS" : "WINNER NOT RECORDED"}</span>
                               <strong>{match.winnerNames.length > 0 ? match.winnerNames.join(" & ") : "No winner recorded"}</strong>
                             </div>
+                            <MatchFinishReplay match={match} />
                             <div className={styles.matchMeta}>
                               <span>{match.styleResult ? "Dimensional style" : `${label(match.intent)} intent`}</span>
                               <span>{match.actualLengthMinutes} min{match.actualLengthMinutes !== match.plannedLengthMinutes ? ` / ${match.plannedLengthMinutes} planned` : ""}</span>
@@ -706,6 +707,7 @@ export default function ResultsClient(): React.JSX.Element {
                                   <span>{match.winnerNames.length > 0 ? "WINNERS" : "WINNER NOT RECORDED"}</span>
                                   <strong>{match.winnerNames.length > 0 ? match.winnerNames.join(" & ") : "No winner recorded"}</strong>
                                 </div>
+                                <MatchFinishReplay match={match} />
                                 <div className={styles.matchMeta}>
                                   <span>{match.actualLengthMinutes} min</span>
                                   <span>Crowd {decimal(match.crowdResponse)}</span>

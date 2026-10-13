@@ -13,6 +13,7 @@ import {
 } from "../packages/application/src/index.js";
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
+import { setActualMatchFinish } from "../packages/sim-core/src/match-finishes.js";
 import { showResultHighlights } from "../packages/web-adapter/src/results-highlights.js";
 
 let passed = 0;
@@ -274,6 +275,28 @@ test("private Results explain a pre-empted return without inventing a public per
   const note = buildPlayerShowHistory(aggregate, "player-a").shows[0]!.cancelledArrivals[0]!;
   ok(note.authoredKind === "RETURN", "return was silently reclassified as an introduction");
   ok(note.reason === "EARLIER_COMMITTED_APPEARANCE", "return lost its chronology explanation");
+});
+
+test("actual finishes come only from frozen authoritative data, including cheating", () => {
+  const { aggregate } = twoPlayerFixture(72115);
+  const match = aggregate.state.matches.find((candidate) => candidate.id === "results-match-a")!;
+  let privateMatch = buildPlayerShowHistory(aggregate, "player-a").shows[0]!.matches[0]!;
+  ok(privateMatch.actualFinish === null, "legacy result invented an unrecorded pinfall");
+  setActualMatchFinish(match, "FOREIGN_OBJECT");
+  privateMatch = buildPlayerShowHistory(aggregate, "player-a").shows[0]!.matches[0]!;
+  const publicMatch = buildPlayerWorldResultsView(aggregate, "player-b").shows
+    .find((show) => show.eventId === "results-event-a")!.matches[0]!;
+  ok(privateMatch.actualFinish === "FOREIGN_OBJECT" && publicMatch.actualFinish === "FOREIGN_OBJECT",
+    "foreign-object finish did not project identically into private and public results");
+  ok(showResultHighlights(buildPlayerShowHistory(aggregate, "player-a").shows[0]!)
+    .some((moment) => moment.headline.includes("Foreign object")),
+    "performed dirty finish did not appear in replay");
+  setActualMatchFinish(match, "DISQUALIFICATION");
+  privateMatch = buildPlayerShowHistory(aggregate, "player-a").shows[0]!.matches[0]!;
+  ok(privateMatch.actualFinish === "DISQUALIFICATION", "disqualification wasn't reflected in completed results");
+  ok(showResultHighlights(buildPlayerShowHistory(aggregate, "player-a").shows[0]!)
+    .some((moment) => moment.headline.includes("Disqualification")),
+    "recorded DQ was omitted from factual highlights");
 });
 
 test("completed-show highlight reel is truthful in owner and World Results and never guesses a winner", () => {

@@ -5,7 +5,7 @@ import type { PlayerWorldResultShowView } from "../../application/src/world-resu
  * event feed, narrative model, score adjustment or private rival projection. */
 export interface ShowResultHighlight {
   id: string;
-  category: "CHAMPIONSHIP" | "ARRIVAL" | "INJURY" | "MAIN_EVENT" | "MATCH" | "ANGLE";
+  category: "CHAMPIONSHIP" | "ARRIVAL" | "INJURY" | "MAIN_EVENT" | "MATCH" | "ANGLE" | "FINISH";
   headline: string;
   detail: string;
   slotOrder: number;
@@ -37,6 +37,15 @@ export function showResultHighlights(show: ShowSource, limit = 3): ShowResultHig
           priority: 88, slotOrder: slot.order,
           headline: `${injury.personName} injured`,
           detail: `${injury.severity.toLowerCase().replaceAll("_", " ")} · ${injury.weeksOut} PPW week${injury.weeksOut === 1 ? "" : "s"} out`,
+        });
+      }
+      if (match.actualFinish === "DISQUALIFICATION" || match.actualFinish === "FOREIGN_OBJECT") {
+        const disqualified = match.actualFinish === "DISQUALIFICATION";
+        candidates.push({
+          id: `finish:${match.matchId}`, category: "FINISH",
+          priority: disqualified ? 91 : 90, slotOrder: slot.order,
+          headline: disqualified ? "Disqualification decides the bout" : "Foreign object decides the bout",
+          detail: `${match.winnerNames.length ? match.winnerNames.join(" & ") : "Winner not recorded"} · ${disqualified ? "Opponents disqualified for cheating" : "Foreign object went unseen"}`,
         });
       }
       const rating = Number.isFinite(match.criticalRatingStars) ? match.criticalRatingStars : 0;

@@ -155,6 +155,38 @@ await test("browser-booked match finish persists through show materialization an
   );
 });
 
+for (const [finish, seed] of [["DISQUALIFICATION", 61103], ["FOREIGN_OBJECT", 61104]] as const) {
+  await test(`booked ${finish} stays authored and appears in authoritative show history`, async () => {
+    const setup = await fixture(seed);
+    const before = await loadAlphaCurrentWeekCard(setup.repository, setup.worldId, "alpha-player");
+    const card = singlesCard(setup.participantIds);
+    card[0]!.plannedFinish = finish;
+    const saved = await saveAlphaCurrentWeekCard(setup.repository, setup.worldId, "alpha-player", {
+      requestId: `web-card-finish-${finish}`,
+      expectedRevision: before.world.revision,
+      expectedPlanVersion: before.workspaceVersion,
+      matches: card,
+      championshipAssignments: [],
+    });
+    ok(saved.matches[0]?.plannedFinish === finish, "card validation rewrote the authored finish");
+    await advanceAlphaWorldWeek(setup.repository, setup.worldId, "alpha-player", {
+      expectedRevision: saved.world.revision,
+    });
+    const resolved = await setup.repository.load(setup.worldId);
+    const show = resolved.state.events.find((event) =>
+      event.promotionId === setup.promotionId && event.status === "COMPLETED")!;
+    const match = resolved.state.matches.find((candidate) =>
+      candidate.eventId === show.id && candidate.order === 1)!;
+    ok(actualMatchFinish(match) === (match.finishChangedDueToInjury ? "INJURY_STOPPAGE" : finish),
+      "resolution invented or silently reversed the player-authored finish");
+    ok(match.actualWinnerSide === (match.finishChangedDueToInjury ? "B" : "A"),
+      "cheating detection randomly reversed the booked winner");
+    ok(resolved.state.ledger.some((entry) => entry.type === "MATCH_COMPLETED"
+      && entry.entityIds[0] === match.id && entry.payload.actualFinish === actualMatchFinish(match)),
+      "completed match history lost its recorded finish");
+  });
+}
+
 await test("legacy browser card without finish derives and persists the intent default", async () => {
   const setup = await fixture(61102);
   const before = await loadAlphaCurrentWeekCard(setup.repository, setup.worldId, "alpha-player");

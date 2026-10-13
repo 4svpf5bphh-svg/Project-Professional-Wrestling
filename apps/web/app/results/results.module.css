@@ -1074,3 +1074,23 @@
   color: #ffb5c0;
   background: rgba(230, 91, 112, .16);
 }
+
+/* Recorded, match-specific finish: visually distinct from a generic score. */
+.finishReplay {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 9px 0 12px;
+  border: 1px solid rgba(93, 233, 206, .26);
+  border-radius: 11px;
+  background: rgba(20, 71, 64, .22);
+  padding: 10px 12px;
+}
+.finishReplay > span { font-size: 20px; color: #70ead4; line-height: 1; }
+.finishReplay > div { display: grid; gap: 4px; min-width: 0; }
+.finishReplay strong { color: #e0fff8; font-size: 12px; letter-spacing: .07em; }
+.finishReplay small { color: #a8c7c1; font-size: 12px; line-height: 1.4; }
+.finishCheating { border-color: rgba(255, 185, 100, .42); background: rgba(86, 55, 21, .3); }
+.finishCheating > span, .finishCheating strong { color: #ffcb89; }
+.finishStoppage { border-color: rgba(252, 124, 151, .42); background: rgba(78, 31, 43, .33); }
+.finishStoppage > span, .finishStoppage strong { color: #ff9eaf; }
