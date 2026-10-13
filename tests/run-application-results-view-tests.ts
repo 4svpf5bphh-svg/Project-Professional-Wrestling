@@ -198,6 +198,82 @@ function twoPlayerFixture(seed: number): {
   };
 }
 
+test("cancelled live arrivals appear only in the owner's private Results, not as performed segments", () => {
+  const { aggregate, promotionAId, promotionBId } = twoPlayerFixture(72011);
+  const subject = aggregate.state.matchParticipants.find((person) => person.eventId === "results-event-a")!.personId;
+  const info = aggregate.state.people.find((person) => person.id === subject)!;
+  const event = aggregate.state.events.find((entry) => entry.id === "results-event-a")!;
+  const cancelled = {
+    id: "cancelled-arrival-ledger-1",
+    worldId: aggregate.state.world.id,
+    date: { ...event.date },
+    order: 1701,
+    type: "PLANNED_LIVE_ARRIVAL_CANCELLED_AT_LOCK",
+    significanceAtTime: "NOTABLE" as const,
+    historicalSignificance: "NOTABLE" as const,
+    entityIds: [promotionAId, event.id, subject],
+    payload: {
+      eventId: event.id,
+      promotionId: promotionAId,
+      sourceDraftId: "booked-show",
+      draftSegmentId: "cancelled-debut",
+      personId: subject,
+      liveAppearanceKind: "DEBUT",
+      reason: "COMPLETED_HISTORY_CHANGED",
+    },
+  };
+  aggregate.state.ledger.push(cancelled, {
+    ...cancelled,
+    id: "cancelled-arrival-ledger-duplicate",
+    order: 1702,
+  });
+  const own = buildPlayerShowHistory(aggregate, "player-a").shows[0]!;
+  ok(own.cancelledArrivals.length === 1, "one cancellation produced duplicate Results warnings");
+  ok(own.cancelledArrivals[0]!.wrestlerName === info.name, "warning lost the wrestler's name");
+  ok(own.cancelledArrivals[0]!.authoredKind === "DEBUT", "warning changed the original scripted kind");
+  ok(own.cancelledArrivals[0]!.reason === "COMPLETED_HISTORY_CHANGED", "warning lost the factual reason");
+  ok(own.segmentCount === 0 && own.segments.length === 0,
+    "a cancelled arrival was incorrectly counted as an on-screen segment");
+  ok(own.matches.length === 1, "cancelling one introduction lost the real match result");
+  const rival = buildPlayerShowHistory(aggregate, "player-b").shows[0]!;
+  ok(rival.eventId === "results-event-b", "results leaked another promotion's show");
+  ok(rival.cancelledArrivals.length === 0, "private cancellation leaked into rival promotion Results");
+
+  aggregate.state.ledger.push({
+    ...cancelled, id: "cancelled-arrival-wrong-promotion",
+    order: 1703,
+    payload: { ...cancelled.payload, promotionId: promotionBId, draftSegmentId: "private-rival-cancellation" },
+  });
+  ok(buildPlayerShowHistory(aggregate, "player-a").shows[0]!.cancelledArrivals.length === 1,
+    "another promotion's cancellation marker was imported into this promoter's private history");
+});
+
+test("private Results explain a pre-empted return without inventing a public performance", () => {
+  const { aggregate, promotionAId } = twoPlayerFixture(72012);
+  const event = aggregate.state.events.find((entry) => entry.id === "results-event-a")!;
+  const subject = aggregate.state.matchParticipants.find((person) => person.eventId === event.id)!.personId;
+  aggregate.state.ledger.push({
+    id: "cancelled-return-ledger",
+    worldId: aggregate.state.world.id,
+    date: { ...event.date },
+    order: 1801,
+    type: "PLANNED_LIVE_ARRIVAL_CANCELLED_AT_LOCK",
+    significanceAtTime: "NOTABLE",
+    historicalSignificance: "NOTABLE",
+    entityIds: [promotionAId, event.id, subject],
+    payload: {
+      eventId: event.id, promotionId: promotionAId,
+      sourceDraftId: "booked-return",
+      draftSegmentId: "cancelled-return",
+      personId: subject, liveAppearanceKind: "RETURN",
+      reason: "EARLIER_COMMITTED_APPEARANCE",
+    },
+  });
+  const note = buildPlayerShowHistory(aggregate, "player-a").shows[0]!.cancelledArrivals[0]!;
+  ok(note.authoredKind === "RETURN", "return was silently reclassified as an introduction");
+  ok(note.reason === "EARLIER_COMMITTED_APPEARANCE", "return lost its chronology explanation");
+});
+
 test("show history exposes match-level consequences for the controlled promotion", () => {
   const { aggregate, promotionAId } = twoPlayerFixture(72001);
   const view = buildPlayerShowHistory(aggregate, "player-a");
