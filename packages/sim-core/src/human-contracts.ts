@@ -80,6 +80,20 @@ export function submitHumanContractOffer(state: WorldState, plan: HumanContractO
   )) {
     throw new Error("renewal source contract does not belong to this promotion/wrestler");
   }
+  // A human promotion cannot sign a second overlapping term with the same wrestler
+  // just because the previous accepted renewal starts in a future PPW week.
+  // This enforces the invariant for BOTH manual offers and Talent Manager commands.
+  const signedDuplicate = state.contracts.some((contract) =>
+    contract.id !== sourceContractId
+    && contract.status === "SIGNED"
+    && contract.promotionId === promotion.id
+    && contract.personId === person.id
+    && contractOverlaps(contract, plan, state.ruleset.weeksPerYear)
+  );
+  if (signedDuplicate) {
+    throw new Error("Your promotion already has a signed overlapping contract for this wrestler. Review upcoming agreements in Contracts.");
+  }
+
   const replacingExhausted = Boolean(
     source
     && source.family === "LIMITED_NON_EXCLUSIVE"
