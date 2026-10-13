@@ -333,6 +333,14 @@ export default function ResultsClient(): React.JSX.Element {
                                   <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Representative"} invites {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Recruit"} to {slot.segment.stableName ?? "stable"} · {slot.segment.stableInvitationOutcome === "ACCEPTED" ? "Accepted on-screen" : "Refused on-screen"}</span>
                                 </div>
                               ) : null}
+                              {(slot.segment.type === "STABLE_EXIT"
+                                || slot.segment.type === "STABLE_INVITATION" && slot.segment.stableInvitationOutcome === "ACCEPTED"
+                                || slot.segment.type === "STABLE_RECONCILIATION" && slot.segment.stableReconciliationOutcome === "RECONCILED") && slot.segment.stableId ? (
+                                <div className={styles.matchMeta}>
+                                  <span>The televised stable story is recorded. Real roster membership is a separate, explicit promoter decision.</span>
+                                  <a href="/talent/stables" className={styles.participantLink}>Review stable follow-through →</a>
+                                </div>
+                              ) : null}
                               {slot.segment.type === "CONTRACT_SIGNING" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.signingOutcome ? (
                                 <div className={styles.matchMeta}>
                                   <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Proposer"} and {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Responder"} · {slot.segment.signingOutcome === "SIGNED" ? "Signed on-screen" : slot.segment.signingOutcome === "REJECTED" ? "Proposal rejected" : slot.segment.signingOutcome === "WALKOUT" ? "Walkout" : "Signing broke into a brawl"}</span>
