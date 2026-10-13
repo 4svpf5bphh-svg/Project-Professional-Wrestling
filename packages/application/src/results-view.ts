@@ -1,6 +1,6 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
-import { recordedFinishCheaterId, recordedMatchFinish } from "./match-finish-projection.js";
+import { recordedFinishCheaterId, recordedFinishFallout, recordedMatchFinish, type RecordedFinishFallout } from "./match-finish-projection.js";
 import type {
   Id,
   InjurySeverity,
@@ -23,7 +23,7 @@ import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
 export const PLAYER_SHOW_HISTORY_LIMIT = 12;
 
-export type PlayerShowCrowdFactorScope = "ALIGNMENT" | "PROGRAMME" | "PACING";
+export type PlayerShowCrowdFactorScope = "ALIGNMENT" | "PROGRAMME" | "PACING" | "FINISH";
 export type PlayerShowCrowdTone = "POSITIVE" | "NEUTRAL" | "NEGATIVE";
 export type PlayerShowCrowdReasonCode =
   | "FACE_HEEL_CLARITY"
@@ -41,7 +41,10 @@ export type PlayerShowCrowdReasonCode =
   | "BREATHER"
   | "HIGH_INTENSITY_STREAK"
   | "FLAT_CLOSER"
-  | "BIG_CLOSER";
+  | "BIG_CLOSER"
+  | "HEEL_CHEATING_HEAT"
+  | "FACE_CHEATING_BACKLASH"
+  | "DIRTY_FINISH_FAMILIAR";
 
 export interface PlayerShowCrowdFactorView {
   scope: PlayerShowCrowdFactorScope;
@@ -114,6 +117,7 @@ export interface PlayerShowMatchView {
   finishChangedDueToInjury: boolean;
   actualFinish: MatchFinish | null;
   finishCheater: { personId: Id; name: string } | null;
+  finishFallout: RecordedFinishFallout | null;
   participants: PlayerShowParticipantView[];
   winnerNames: string[];
   interference: { personId: Id; name: string; aidedSide: "A" | "B"; outcome: "SUCCESS" | "THWARTED" | "ABORTED" | null } | null;
@@ -258,6 +262,9 @@ const CROWD_REASON_LABELS: Record<PlayerShowCrowdReasonCode, string> = {
   HIGH_INTENSITY_STREAK: "Too much sustained intensity",
   FLAT_CLOSER: "Closing slot felt too low-key",
   BIG_CLOSER: "Big closer landed in the right slot",
+  HEEL_CHEATING_HEAT: "Heel cheating generated storyline heat",
+  FACE_CHEATING_BACKLASH: "Babyface cheating undermined the crowd reaction",
+  DIRTY_FINISH_FAMILIAR: "Same dirty finish lost its novelty",
 };
 
 function dateOrdinal(aggregate: ApplicationWorldAggregate, date: PpwDate): number {
@@ -330,6 +337,7 @@ function frozenCrowdFactors(
     ]),
     crowdFactor(entry, "PROGRAMME", matchId, matchOrder, "showFlowProgrammeModifier", "showFlowProgrammeReason"),
     crowdFactor(entry, "PACING", matchId, matchOrder, "showFlowPacingModifier", "showFlowPacingReason"),
+    crowdFactor(entry, "FINISH", matchId, matchOrder, "showFlowFinishModifier", "showFlowFinishReason"),
   ];
   return factors.filter((factor): factor is PlayerShowCrowdFactorView => factor !== null);
 }
@@ -627,6 +635,7 @@ export function buildPlayerShowHistory(
             const person = participants.find((participant) => participant.personId === personId);
             return person ? { personId: person.personId, name: person.name } : null;
           })(),
+          finishFallout: recordedFinishFallout(matchLedgerByMatch.get(match.id)),
           participants,
           winnerNames: participants.filter((participant) => participant.won).map((participant) => participant.name),
           interference: match.interference ? {

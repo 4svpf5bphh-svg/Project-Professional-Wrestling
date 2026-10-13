@@ -26,3 +26,29 @@ export function recordedFinishCheaterId(
   return chosen && participants.some((person) => person.personId === chosen && person.side === side)
     ? chosen : null;
 }
+
+// Frozen World Resolution evidence only. Zero lift is useful evidence of a
+// familiar trick, not permission to invent a dissatisfied crowd reaction.
+export interface RecordedFinishFallout {
+  reason: "HEEL_CHEATING_HEAT" | "FACE_CHEATING_BACKLASH" | "DIRTY_FINISH_FAMILIAR" | null;
+  crowdAdjustment: number;
+  sameTrickRepeats: number;
+  programmeLinked: boolean;
+}
+export function recordedFinishFallout(entry?: { payload: Record<string, unknown> }): RecordedFinishFallout | null {
+  if (!entry || typeof entry.payload.showFlowFinishModifier !== "number"
+    || !Number.isFinite(entry.payload.showFlowFinishModifier)) return null;
+  const reason = entry.payload.showFlowFinishReason;
+  if (reason !== null && reason !== "HEEL_CHEATING_HEAT"
+    && reason !== "FACE_CHEATING_BACKLASH" && reason !== "DIRTY_FINISH_FAMILIAR") return null;
+  const repeats = entry.payload.showFlowFinishRepeatCount;
+  const programmeLinked = entry.payload.showFlowFinishProgrammeLinked;
+  if (!Number.isInteger(repeats) || typeof repeats !== "number" || repeats < 0 || repeats > 2
+    || typeof programmeLinked !== "boolean") return null;
+  return {
+    reason,
+    crowdAdjustment: Math.round(entry.payload.showFlowFinishModifier * 10) / 10,
+    sameTrickRepeats: repeats,
+    programmeLinked,
+  };
+}

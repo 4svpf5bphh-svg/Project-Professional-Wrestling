@@ -1,6 +1,6 @@
 import type { WrestlerAlignment } from "../../domain/src/alignment.js";
 import type { MatchFinish } from "../../sim-core/src/match-finishes.js";
-import { recordedFinishCheaterId, recordedMatchFinish } from "./match-finish-projection.js";
+import { recordedFinishCheaterId, recordedFinishFallout, recordedMatchFinish, type RecordedFinishFallout } from "./match-finish-projection.js";
 import type {
   Id,
   InjurySeverity,
@@ -58,6 +58,7 @@ export interface PlayerWorldResultMatchView {
   winnerNames: string[];
   actualFinish: MatchFinish | null;
   finishCheater: { personId: Id; name: string } | null;
+  finishFallout: RecordedFinishFallout | null;
   interference: { personId: Id; name: string; aidedSide: "A" | "B"; outcome: "SUCCESS" | "THWARTED" | "ABORTED" | null } | null;
   titleOutcomes: PlayerWorldResultTitleOutcomeView[];
   injuries: PlayerWorldResultInjuryView[];
@@ -321,6 +322,7 @@ export function buildPlayerWorldResultsView(
             const person = participants.find((participant) => participant.personId === personId);
             return person ? { personId: person.personId, name: person.name } : null;
           })(),
+          finishFallout: recordedFinishFallout(completedMatchLedger.get(match.id)),
           interference: match.interference ? {
             personId: match.interference.personId,
             name: peopleById.get(match.interference.personId)?.name ?? "Unknown wrestler",
