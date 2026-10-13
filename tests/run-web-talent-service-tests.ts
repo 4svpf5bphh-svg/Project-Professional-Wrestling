@@ -918,6 +918,59 @@ await test("Talent service renews only inside the renewal window and starts afte
   ok(persisted.state.contracts.find((contract) => contract.id === source.id)?.status === "SIGNED", "submitting a renewal terminated the existing contract");
 });
 
+await test("a signed future renewal blocks repeat offers while keeping current contract dates unchanged", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 73992, playerId: "player-a" });
+  const promotion = aggregate.state.promotions.find((candidate) =>
+    candidate.playerTakeoverEligibility === "STANDARD" && candidate.lifecycle === "ACTIVE");
+  if (!promotion) throw new Error("fixture needs a promotion");
+  const source = aggregate.state.contracts.find((contract) =>
+    contract.promotionId === promotion.id && contract.status === "SIGNED" && contract.family !== "ONE_OFF");
+  if (!source) throw new Error("fixture needs an active source contract");
+  source.family = "LIMITED_NON_EXCLUSIVE";
+  source.exclusivity = "NON_EXCLUSIVE";
+  source.endDate = addPpwWeeks(aggregate.state.world.currentDate, 1, aggregate.state.ruleset.weeksPerYear);
+  const nextStart = addPpwWeeks(source.endDate, 1, aggregate.state.ruleset.weeksPerYear);
+  aggregate.state.contracts.push({
+    ...structuredClone(source),
+    id: "existing-future-signed-renewal",
+    signedDate: { ...aggregate.state.world.currentDate },
+    startDate: nextStart,
+    endDate: addPpwWeeks(nextStart, 12, aggregate.state.ruleset.weeksPerYear),
+    dateEntitlement: 9,
+    datesUsed: 0,
+  });
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "player-a", { promotionId: promotion.id, requestId: "claim-future-deal" });
+  const roster = await loadAlphaTalentSession(repository, worldId, "player-a");
+  const own = roster.roster.find((entry) => entry.personId === source.personId);
+  ok(own?.scheduledRenewals?.length === 1 && own?.contract.renewalWindowOpen === false,
+    "roster incorrectly offered a second renewal after signed future terms");
+  let rejected = false;
+  try {
+    await submitAlphaTalentOffer(repository, worldId, "player-a", {
+      requestId: "repeat-renewal-after-signature",
+      personId: source.personId,
+      sourceContractId: source.id,
+      family: "LIMITED_NON_EXCLUSIVE",
+      roleExpectation: source.roleExpectation,
+      termWeeks: 13,
+      dateEntitlement: 5,
+      weeklyGuarantee: source.weeklyGuarantee,
+      appearanceFee: source.appearanceFee,
+      signingBonus: 0,
+    });
+  } catch (error) {
+    rejected = error instanceof Error && error.message.includes("already signed");
+  }
+  ok(rejected, "second overlapping renewal was accepted even though future signed contract exists");
+  const persisted = await repository.load(worldId);
+  ok(persisted.state.contracts.filter((contract) => contract.personId === source.personId
+    && contract.promotionId === promotion.id && contract.status === "SIGNED").length === 2,
+    "duplicate renewal attempt mutated the World contracts");
+});
+
 await test("Talent service opens renegotiation when purchased dates are exhausted", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 73005, playerId: "player-a" });
