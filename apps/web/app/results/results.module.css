@@ -1094,3 +1094,7 @@
 .finishCheating > span, .finishCheating strong { color: #ffcb89; }
 .finishStoppage { border-color: rgba(252, 124, 151, .42); background: rgba(78, 31, 43, .33); }
 .finishStoppage > span, .finishStoppage strong { color: #ff9eaf; }
+
+/* Live crowd psychology is shown only when frozen into completed World history. */
+.finishHeat { color: #76e8c6 !important; font-weight: 750; }
+.finishBacklash { color: #ffc393 !important; font-weight: 750; }
