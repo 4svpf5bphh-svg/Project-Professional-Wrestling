@@ -52,6 +52,14 @@ await test("Alpha Attention dismissal persists, retries safely and cannot hide A
       current.state.ruleset.weeksPerYear,
     );
     continuing[1]!.endDate = { ...current.state.world.currentDate, day: 7 };
+    // Create a real mandatory Roster shortage alongside dismissible contract
+    // notices. An urgent contract notice is no longer non-dismissible news.
+    for (const contract of current.state.contracts) {
+      if (contract.promotionId === choice.promotionId
+        && contract.status === "SIGNED"
+        && contract.id !== continuing[0]!.id
+        && contract.id !== continuing[1]!.id) contract.status = "TERMINATED";
+    }
   });
 
   const before = await loadAlphaPlayerSession(repository, worldId, "alpha-player");
@@ -62,7 +70,7 @@ await test("Alpha Attention dismissal persists, retries safely and cannot hide A
     item.attentionId.startsWith("contract-expiry:") && item.category === "ACTION_REQUIRED"
   ));
   const required = before.attention.find((item) =>
-    item.category === "ACTION_REQUIRED" && !item.dismissible);
+    item.attentionId.startsWith("roster-shortage:") && !item.dismissible);
   ok(dismissible, "fixture did not expose a dismissible renewal-window item");
   ok(urgent?.dismissible === true, "urgent contract news must be dismissible");
   ok(required, "fixture did not expose a protected show/roster Action Required item");
