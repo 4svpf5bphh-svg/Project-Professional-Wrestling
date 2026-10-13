@@ -49,6 +49,10 @@ import {
   recentCompletedVictoryForCelebration,
   type AttackPresentation,
   type AttackObjective,
+  type RescueOutcome,
+  type PostMatchAssaultEnding,
+  RESCUE_OUTCOMES,
+  POST_MATCH_ASSAULT_ENDINGS,
   type TurnPresentation,
   type SigningOutcome,
   type StableInvitationOutcome,
@@ -165,6 +169,8 @@ export interface AlphaCardSegmentView {
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
   rescuerPersonId?: Id | null;
+  rescueOutcome?: RescueOutcome | null;
+  postMatchAssaultEnding?: PostMatchAssaultEnding | null;
   sourceDraftMatchId?: string | null;
   initiatorPersonId?: Id | null;
   targetPersonId?: Id | null;
@@ -650,6 +656,14 @@ function normalizeSegments(
       rescuerPersonId === attackerPersonId || rescuerPersonId === victimPersonId
       || !people.includes(rescuerPersonId!)
     )) throw new Error("RESCUE requires a distinct rescuer among segment participants");
+    const rescueOutcome = segment.type === "RESCUE" ? (segment.rescueOutcome ?? null) : null;
+    if (rescueOutcome !== null && !RESCUE_OUTCOMES.includes(rescueOutcome)) {
+      throw new Error("RESCUE has an unsupported scripted rescue outcome");
+    }
+    const postMatchAssaultEnding = segment.type === "POST_MATCH_ASSAULT" ? (segment.postMatchAssaultEnding ?? null) : null;
+    if (postMatchAssaultEnding !== null && !POST_MATCH_ASSAULT_ENDINGS.includes(postMatchAssaultEnding)) {
+      throw new Error("POST_MATCH_ASSAULT has an unsupported scripted ending");
+    }
     const isDirected = segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING" || segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" || segment.type === "STABLE_RECONCILIATION";
     const initiatorPersonId = isDirected && segment.initiatorPersonId != null
       ? requiredText(segment.initiatorPersonId, `segments[${index}].initiatorPersonId`, 128) : null;
@@ -728,12 +742,23 @@ function normalizeSegments(
       !initiatorPersonId || !targetPersonId
       || !["SIGNED", "REJECTED", "WALKOUT", "BRAWL"].includes(signingOutcome!)
     )) throw new Error("CONTRACT_SIGNING needs proposer, responder and a scripted outcome");
-    const attackPresentation = segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null;
-    const attackObjective = segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null;
+    const hasAttackChoices = segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT";
+    const attackPresentation = hasAttackChoices ? (segment.attackPresentation ?? (segment.type === "ATTACK" ? "BLINDSIDE" : null)) : null;
+    const attackObjective = hasAttackChoices ? (segment.attackObjective ?? (segment.type === "ATTACK" ? "GENERATE_HEAT" : null)) : null;
     if (segment.type === "ATTACK" && (
       !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(attackPresentation!)
       || !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(attackObjective!)
     )) throw new Error("ATTACK segment has an unsupported presentation or objective");
+    if (segment.type === "POST_MATCH_ASSAULT") {
+      const present = [attackPresentation, attackObjective, postMatchAssaultEnding].filter((value) => value !== null).length;
+      if (present !== 0 && present !== 3) {
+        throw new Error("POST_MATCH_ASSAULT requires format, objective and ending together, or none for legacy aftermath");
+      }
+      if (present === 3 && (
+        !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(attackPresentation!)
+        || !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(attackObjective!)
+      )) throw new Error("POST_MATCH_ASSAULT has an unsupported format or objective");
+    }
     if (segment.type === "TURN") {
       if (turnPresentation !== "REVEAL" && turnPresentation !== "BETRAYAL") {
         throw new Error("TURN segment has an unsupported presentation");
@@ -788,8 +813,9 @@ function normalizeSegments(
       ...(segment.type === "INTERRUPTION" ? { interruptionOutcome } : {}),
       ...(segment.type === "CONFRONTATION" ? { confrontationEnding } : {}),
       ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
-      ...(segment.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
-      ...(segment.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),
+      ...(segment.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId, rescueOutcome } : {}),
+      ...(segment.type === "POST_MATCH_ASSAULT"
+        ? { attackerPersonId, victimPersonId, sourceDraftMatchId, attackPresentation, attackObjective, postMatchAssaultEnding } : {}),
       ...(segment.type === "TURN" ? { turnPersonId, turnTargetAlignment, turnPresentation, betrayedPersonId } : {}),
     } satisfies DetailedShowSegmentDraft;
   });
@@ -1248,6 +1274,8 @@ export async function loadAlphaShowCard(
       attackerPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: ["ATTACK", "RESCUE", "POST_MATCH_ASSAULT"].includes(segment.type) ? (segment.victimPersonId ?? null) : null,
       rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
+      rescueOutcome: segment.type === "RESCUE" ? (segment.rescueOutcome ?? null) : null,
+      postMatchAssaultEnding: segment.type === "POST_MATCH_ASSAULT" ? (segment.postMatchAssaultEnding ?? null) : null,
       sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
       initiatorPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION"].includes(segment.type) ? (segment.initiatorPersonId ?? null) : null,
       targetPersonId: ["CHALLENGE", "CONFRONTATION", "INTERRUPTION", "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION"].includes(segment.type) ? (segment.targetPersonId ?? null) : null,
