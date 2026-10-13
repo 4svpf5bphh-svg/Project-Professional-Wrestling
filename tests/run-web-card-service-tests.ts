@@ -28,7 +28,8 @@ import {
   type AlphaCardSegmentView,
 } from "../packages/web-adapter/src/card-service.js";
 import { wrestlerAlignmentForPromotion } from "../packages/sim-core/src/alignment.js";
-import { mutateAlphaStable } from "../packages/web-adapter/src/stable-service.js";
+import { loadAlphaStableRoster, mutateAlphaStable } from "../packages/web-adapter/src/stable-service.js";
+import { stableStoryContinuityWarnings } from "../packages/web-adapter/src/stable-story-continuity.js";
 import { startAlphaManagedProgramme } from "../packages/web-adapter/src/programme-management-service.js";
 import {
   loadAlphaPlayerPlanner,
@@ -135,6 +136,84 @@ function singlesCard(participantIds: string[]): AlphaCardMatchView[] {
   }
   return matches;
 }
+
+await test("Card warns only for unresolved completed stable storylines and leaves booker authority untouched", async () => {
+  const f = await reservedShowFixture(61121);
+  const before = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  const roster = await loadAlphaStableRoster(f.repository, f.worldId, "alpha-player");
+  const members = f.participantIds.slice(0, 3);
+  const added = await mutateAlphaStable(f.repository, f.worldId, "alpha-player", {
+    action: "CREATE", requestId: "continuity-stable-formed", expectedRevision: roster.world.revision,
+    name: "The Story Stable", personIds: members,
+  });
+  const stable = added.stables.find((item) => item.name === "The Story Stable")!;
+  const target = members[1]!;
+  await f.repository.transact(f.worldId, null, (aggregate) => {
+    const state = aggregate.state;
+    const market = state.markets[0]!;
+    const venue = state.venues.find((item) => item.marketId === market.id) ?? state.venues[0]!;
+    state.events.push({
+      id: "continuity-completed-event", worldId: state.world.id,
+      promotionId: before.promotion.promotionId,
+      marketId: market.id, venueId: venue.id, date: { ...state.world.currentDate },
+      type: "REGULAR", status: "COMPLETED", ticketStrategy: "STANDARD",
+      expectedDemand: 100, attendance: 100, ticketYield: 25,
+      gateRevenue: 2500, totalCost: 2000, netResult: 500,
+      eventImportance: 60, matchCount: 0, averageMatchRating: 0, bestMatchRating: 0,
+      crowdResponse: 65,
+    });
+    state.ledger.push({
+      id: "continuity-completed-exit", worldId: state.world.id,
+      date: { ...state.world.currentDate }, order: 19920,
+      type: "SHOW_SEGMENT_COMPLETED",
+      significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+      entityIds: [stable.stableId, target],
+      payload: {
+        eventId: "continuity-completed-event", promotionId: before.promotion.promotionId,
+        stableId: stable.stableId, targetPersonId: target,
+        segmentType: "STABLE_EXIT", stableExitOutcome: "EXPELLED",
+      },
+    });
+  });
+  const card = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  ok(card.stableStoryFollowThrough.length === 1
+    && card.stableStoryFollowThrough[0]?.action === "REMOVE",
+    "Card failed to surface the owner-only completed stable departure");
+  const segment: AlphaCardSegmentView = {
+    draftSegmentId: "second-televised-exit", type: "STABLE_EXIT",
+    participantIds: [members[0]!, target],
+    programmeId: null, plannedLengthMinutes: 5,
+    stableId: stable.stableId, initiatorPersonId: members[0]!,
+    targetPersonId: target, stableExitOutcome: "WALKED_OUT",
+  };
+  const notes = stableStoryContinuityWarnings(segment, card.stableStoryFollowThrough, [segment]);
+  ok(notes.length === 1 && notes[0]!.includes("already") && notes[0]!.includes("not been confirmed"),
+    "a repeated unresolved televised exit did not warn the booker");
+  const otherPerson = { ...segment, targetPersonId: members[2] };
+  ok(stableStoryContinuityWarnings(otherPerson, card.stableStoryFollowThrough, [otherPerson]).length === 0,
+    "a different member falsely inherited the first member's stable story");
+  ok(stableStoryContinuityWarnings({ ...segment, type: "PROMO" },
+    card.stableStoryFollowThrough, [segment]).length === 0,
+    "unrelated promo inherited stable story warnings");
+  ok(stableStoryContinuityWarnings(segment, card.stableStoryFollowThrough,
+    [segment, { ...segment, draftSegmentId: "another-stable-exit" }]).length === 2,
+    "same-card duplicate did not flag another stable story for the same wrestler");
+  const check = await f.repository.load(f.worldId);
+  ok(check.state.stableMemberships?.some((member) =>
+    member.stableId === stable.stableId && member.personId === target && member.active),
+    "reading Card guidance silently executed the stable departure");
+  const admin = await loadAlphaStableRoster(f.repository, f.worldId, "alpha-player");
+  await mutateAlphaStable(f.repository, f.worldId, "alpha-player", {
+    action: "REMOVE", requestId: "continuity-booker-confirms-departure",
+    expectedRevision: admin.world.revision,
+    stableId: stable.stableId, personId: target,
+  });
+  const after = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
+  ok(after.stableStoryFollowThrough.length === 0,
+    "confirmed real departure left an obsolete warning in Card");
+  ok(stableStoryContinuityWarnings(segment, after.stableStoryFollowThrough, [segment]).length === 0,
+    "Card kept warning after the promoter explicitly updated roster membership");
+});
 
 await test("Show Builder exposes established teams as tag-booking shortcuts", async () => {
   const fixture = await reservedShowFixture(61010);
