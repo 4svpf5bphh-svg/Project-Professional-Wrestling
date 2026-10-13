@@ -1374,6 +1374,13 @@ export default function CardClient(): React.JSX.Element {
       </div>
 
       {error ? <div className={styles.errorBox}>{error}</div> : null}
+      {view.liveArrivalNeedsReview ? (
+        <div className={styles.errorBox} role="alert">
+          A booked live debut or return no longer matches this promotion’s completed or earlier scheduled show history.
+          Edit that segment and choose a truthful introduction, or revise your card before World Lock.
+          Your scripted choice has not been changed automatically.
+        </div>
+      ) : null}
 
       <section className="panel planner-panel">
         <div className="section-heading">
