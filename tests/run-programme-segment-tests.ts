@@ -1154,6 +1154,31 @@ test("INTERVIEW repetition counts only same-wrestler same-question and answer in
   }
 });
 
+test("legacy celebrations remain untyped while partially scripted celebrations are rejected", () => {
+  const setup = fixture(91619);
+  const base = {
+    draftId: "legacy-celebration-show", promotionId: setup.promotion.id,
+    targetDate: setup.targetDate, marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [], championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "legacy-celebration",
+      type: "CELEBRATION" as const,
+      participantIds: [setup.rosterIds[2]!],
+      programmeId: null, plannedLengthMinutes: 5,
+    }],
+  };
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, base);
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "historic generic celebration was rejected");
+  const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(frozen.celebrationOccasion === null && frozen.celebrationEnding === null,
+    "legacy completed celebration invented an occasion or an ending");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 1, {
+    ...base, segments: [{ ...base.segments[0]!, celebrationOccasion: "FAN_APPRECIATION" as const }],
+  }), "both an occasion and ending");
+});
+
 test("victory laps require a verified prior completed win, never a scheduled finish or a defeat", () => {
   const setup = fixture(91620);
   setup.state.world.currentDate = { year: 1, week: 8, day: 1 };
