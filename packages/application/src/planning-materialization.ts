@@ -10,6 +10,7 @@ import type {
 import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { contractCoversBookedDate, serviceCapacityDatesPerWeek } from "../../sim-core/src/contracts.js";
 import { creativeBlockersForDraft } from "./creative-consent.js";
+import { promotionLiveAppearanceHistory } from "./live-appearance-history.js";
 import { prepareHumanShow } from "../../sim-core/src/events.js";
 import {
   prepareHumanMatchCard,
@@ -43,7 +44,8 @@ export type ReservationRiskReason =
   | "CONTRACT_UNAVAILABLE"
   | "CONTRACT_DATE_EXHAUSTED"
   | "MATCH_STYLE_REFUSAL"
-  | "CREATIVE_APPROVAL_REQUIRED";
+  | "CREATIVE_APPROVAL_REQUIRED"
+  | "LIVE_APPEARANCE_HISTORY_CHANGED";
 
 export type ReservationAssessmentStatus = "NOT_DUE" | "READY" | "AT_RISK" | "EXPIRED";
 
@@ -254,6 +256,25 @@ export function assessDetailedShowReservation(
 
   const draft = sourceDraft(planning, reservation);
   if (draft) {
+    // Draft-time eligibility is not permanent: an earlier show may resolve
+    // after this card was reserved. Recheck historical *claims* before the
+    // authoritative commitment lock without rewriting the player's script.
+    for (const segment of draft.segments ?? []) {
+      if (segment.type !== "LIVE_APPEARANCE") continue;
+      const kind = segment.liveAppearanceKind;
+      if (kind !== "DEBUT" && kind !== "RETURN") continue;
+      const subject = segment.participantIds[0];
+      if (!subject) {
+        reasons.push("LIVE_APPEARANCE_HISTORY_CHANGED");
+        break;
+      }
+      const history = promotionLiveAppearanceHistory(state, reservation.promotionId, subject, reservation.targetDate);
+      if ((kind === "DEBUT" && history.status !== "DEBUT_ELIGIBLE")
+        || (kind === "RETURN" && history.status !== "RETURN_ELIGIBLE")) {
+        reasons.push("LIVE_APPEARANCE_HISTORY_CHANGED");
+        break;
+      }
+    }
     if (creativeBlockersForDraft(state, planning, draft).length > 0) reasons.push("CREATIVE_APPROVAL_REQUIRED");
     for (const match of draft.matches) {
       if (match.style === undefined || match.plannedLengthMinutes === null) continue;
