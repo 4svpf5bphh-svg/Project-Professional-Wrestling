@@ -17,6 +17,7 @@ import { normalizeMatchStyle } from "../../sim-core/src/match-style.js";
 import { comparePpwDates } from "../../sim-core/src/clock.js";
 import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
 import { promotionLiveAppearanceHistory } from "./live-appearance-history.js";
+import { recentCompletedVictoryForCelebration } from "./celebration-evidence.js";
 import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.js";
 import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import { requireSameWrestlerDivision } from "../../sim-core/src/wrestler-division.js";
@@ -90,6 +91,14 @@ export type InterviewTopic = (typeof INTERVIEW_TOPICS)[number];
 export const INTERVIEW_RESPONSES = ["CANDID", "EVASIVE", "DEFIANT", "WALKOUT"] as const;
 export type InterviewResponse = (typeof INTERVIEW_RESPONSES)[number];
 
+/** Celebration purpose and the exact on-screen closing beat are authored.
+ * A victory lap must be backed by completed match results; a self-coronation
+ * is explicitly a kayfabe boast, not evidence of a championship. */
+export const CELEBRATION_OCCASIONS = ["FAN_APPRECIATION", "SELF_CORONATION", "RIVALRY_TAUNT", "VICTORY_LAP"] as const;
+export type CelebrationOccasion = (typeof CELEBRATION_OCCASIONS)[number];
+export const CELEBRATION_ENDINGS = ["SALUTE_CROWD", "POSE", "TAUNT_RIVALS", "WALK_OFF"] as const;
+export type CelebrationEnding = (typeof CELEBRATION_ENDINGS)[number];
+
 export type AttackPresentation = "BLINDSIDE" | "BEATDOWN" | "PULL_APART_BRAWL";
 export type AttackObjective = "GENERATE_HEAT" | "BUILD_SYMPATHY" | "ESCALATE_RIVALRY";
 export type TurnPresentation = "REVEAL" | "BETRAYAL";
@@ -120,6 +129,9 @@ export interface DetailedShowSegmentDraft {
   interviewFormat?: InterviewFormat | null;
   interviewTopic?: InterviewTopic | null;
   interviewResponse?: InterviewResponse | null;
+  /** Both absent for historic generic celebrations. */
+  celebrationOccasion?: CelebrationOccasion | null;
+  celebrationEnding?: CelebrationEnding | null;
   // Roles are authored intent; participants alone must not invent attack direction.
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
@@ -468,6 +480,19 @@ function validateShowSegmentDraft(
     && [interviewFormat, interviewTopic, interviewResponse].some((value) => value === null)) {
     throw new Error("interview requires all three authored choices, or no choices for a legacy interview");
   }
+  const celebrationOccasion = draft.type === "CELEBRATION" ? (draft.celebrationOccasion ?? null) : null;
+  const celebrationEnding = draft.type === "CELEBRATION" ? (draft.celebrationEnding ?? null) : null;
+  if ((celebrationOccasion !== null && !CELEBRATION_OCCASIONS.includes(celebrationOccasion))
+    || (celebrationEnding !== null && !CELEBRATION_ENDINGS.includes(celebrationEnding))) {
+    throw new Error("celebration has an unsupported occasion or scripted ending");
+  }
+  if ((celebrationOccasion === null) !== (celebrationEnding === null)) {
+    throw new Error("celebration requires both an occasion and ending, or neither for a legacy celebration");
+  }
+  if (celebrationOccasion === "VICTORY_LAP"
+    && !recentCompletedVictoryForCelebration(state, promotionId, draft.participantIds, targetDate)) {
+    throw new Error("victory lap requires an actual completed win for every featured wrestler in this promotion within six PPW weeks");
+  }
   if (draft.type === "LIVE_APPEARANCE") {
     if (!["DEBUT", "RETURN", "SURPRISE_REVEAL", "INTRODUCTION"].includes(liveAppearanceKind ?? "")
       || !["ESTABLISH_STAR", "BUILD_EXCITEMENT", "CREATE_MYSTERY", "UNSETTLE_RIVAL", "REIGNITE_PROGRAMME"].includes(liveAppearanceObjective ?? "")) {
@@ -653,6 +678,7 @@ function validateShowSegmentDraft(
     ...(draft.type === "LIVE_APPEARANCE" ? { liveAppearanceKind, liveAppearanceObjective } : {}),
     ...(draft.type === "PROMO" ? { promoPurpose } : {}),
     ...(draft.type === "INTERVIEW" ? { interviewFormat, interviewTopic, interviewResponse } : {}),
+    ...(draft.type === "CELEBRATION" ? { celebrationOccasion, celebrationEnding } : {}),
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
     ...(draft.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
