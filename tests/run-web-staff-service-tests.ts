@@ -117,7 +117,7 @@ await test("delegate requires an employed manager and preserves exact money, rol
   ok(retry.offerId === submitted.offerId, "retry offered wrestler a second agreement");
   await rejects(() => authoriseAlphaTalentManagerRenewal(repo, worldId, "player-a", {
     requestId: "delegate-again", sourceContractId: source.id,
-  }), "pending offer");
+  }), "already pending");
   // Simulate a rejected standard resolver result to test staff outcome routing;
   // never claim that a real multiweek World resolution ran here.
   await repo.transact(worldId, null, current => {
