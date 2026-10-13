@@ -708,17 +708,21 @@ export default function ResultsClient(): React.JSX.Element {
                                 <MatchStarRating rating={match.criticalRatingStars} />
                               </div>
                               <div className={styles.worldContestants}>
-                                {match.participants.filter((person) => person.side === "A").map((person) => (
-                                  <span key={person.personId} className={person.won ? styles.worldWinner : undefined}>
-                                    {person.name}{person.won ? " ✓" : ""}
-                                  </span>
-                                ))}
+                                <div className={styles.worldSide}>
+                                  {match.participants.filter((person) => person.side === "A").map((person) => (
+                                    <span key={person.personId} className={person.won ? styles.worldWinner : undefined}>
+                                      {person.name}{person.won ? " ✓" : ""}
+                                    </span>
+                                  ))}
+                                </div>
                                 <b>VS</b>
-                                {match.participants.filter((person) => person.side === "B").map((person) => (
-                                  <span key={person.personId} className={person.won ? styles.worldWinner : undefined}>
-                                    {person.name}{person.won ? " ✓" : ""}
-                                  </span>
-                                ))}
+                                <div className={styles.worldSide}>
+                                  {match.participants.filter((person) => person.side === "B").map((person) => (
+                                    <span key={person.personId} className={person.won ? styles.worldWinner : undefined}>
+                                      {person.name}{person.won ? " ✓" : ""}
+                                    </span>
+                                  ))}
+                                </div>
                               </div>
                               <small>{match.winnerNames.length > 0 ? match.winnerNames.join(" & ") + " wins" : "Winner not recorded"}
                                 {match.actualFinish ? " · " + label(match.actualFinish) : ""}
