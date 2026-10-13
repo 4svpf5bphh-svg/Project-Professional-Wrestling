@@ -1311,5 +1311,40 @@ test("angle reviews use wrestling-language appropriate to segments and preserve 
   ok(variants.size >= 3, "editorial feedback was identical across many separate show angles");
 });
 
+
+test("specific booked angle details appear in recaps without inventing a result", () => {
+  const roster = [
+    { personId: "hero", name: "The Hero" },
+    { personId: "heel", name: "The Heel" },
+  ];
+  const assault = {
+    segmentId: "after-bell-attack",
+    type: "POST_MATCH_ASSAULT", participants: roster,
+    attackerPersonId: "heel", victimPersonId: "hero",
+    attackPresentation: "BLINDSIDE", postMatchAssaultEnding: "OFFICIALS_SEPARATE",
+    crowdResponse: 78, outcomeBand: "HOT",
+  } as unknown as PlayerShowSegmentView;
+  const recap = reviewPlayerSegment(assault);
+  ok(recap.recap.includes("After the bell:") && recap.recap.includes("The Heel blindsided The Hero"),
+    "after-match blindsiding lost the authored attack presentation");
+  ok(recap.recap.includes("Officials separated"),
+    "after-match assault forgot the specific closing beat");
+  const celebration = reviewPlayerSegment({
+    ...assault, type: "CELEBRATION",
+    celebrationOccasion: "SELF_CORONATION", celebrationEnding: "POSE",
+  });
+  ok(celebration.recap.includes("All bravado, no official title change"),
+    "scripted self-coronation was treated like a real championship win");
+  ok(celebration.recap.includes("struck a pose"),
+    "booked celebration ending was omitted");
+  const interview = reviewPlayerSegment({
+    ...assault, type: "INTERVIEW",
+    interviewTopic: "RIVALRY_PRESSURE", interviewResponse: "DEFIANT",
+  });
+  ok(interview.recap.includes("pressure of their rivalry") && interview.recap.includes("answered defiantly"),
+    "interview context or scripted answer was omitted");
+  ok(!interview.recap.includes("blindsided"), "interview inherited unrelated attack text");
+});
+
 console.log(`\nApplication results-view tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
