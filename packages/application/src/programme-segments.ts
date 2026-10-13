@@ -69,6 +69,26 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "LIVE_APPEARANCE",
 ]);
 
+/**
+ * Completed-history only. A submitted draft, future show, or another promotion
+ * cannot exhaust this promotion's story variety. A different purpose, response
+ * or presentation is a *different* beat, even with the same wrestlers.
+ */
+function recentPerformedBeatCount(
+  state: WorldState,
+  event: WorldState["events"][number],
+  isSameBeat: (payload: LedgerEvent["payload"]) => boolean,
+): number {
+  const week = ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear);
+  return state.ledger.filter((entry) => {
+    if (entry.type !== RESOLVED_SEGMENT_LEDGER_TYPE
+      || entry.payload.promotionId !== event.promotionId
+      || !isSameBeat(entry.payload)) return false;
+    const elapsedWeeks = week - ppwDateToWeekIndex(entry.date, state.ruleset.weeksPerYear);
+    return elapsedWeeks >= 1 && elapsedWeeks <= 6;
+  }).length;
+}
+
 export type ResolvedSegmentOutcomeBand = "POOR" | "FLAT" | "SOLID" | "STRONG" | "HOT";
 
 export interface ResolvedShowSegment {
@@ -483,7 +503,15 @@ function segmentOutcome(
     const mysteryFit = segment.videoReveal === "CRYPTIC" && segment.videoObjective === "CREATE_INTRIGUE" ? 1.5 : 0;
     const milestoneFit = segment.videoKind === "RIVALRY_RECAP" && programme ? 1.2
       : segment.videoKind === "RIVALRY_RECAP" ? -1.2 : 0;
-    angleFitModifier = round1(clamp(mysteryFit + milestoneFit, -5, 5));
+    const repeats = segment.videoSubjectPersonId && segment.videoKind && segment.videoObjective && segment.videoReveal
+      ? recentPerformedBeatCount(state, event, (payload) => (
+          payload.segmentType === "VIDEO_PACKAGE"
+          && payload.videoSubjectPersonId === segment.videoSubjectPersonId
+          && payload.videoKind === segment.videoKind
+          && payload.videoObjective === segment.videoObjective
+          && payload.videoReveal === segment.videoReveal
+        )) : 0;
+    angleFitModifier = round1(clamp(mysteryFit + milestoneFit - Math.min(3, repeats * 1), -5, 5));
   }
   if (segment.type === "ATTACK" && segment.attackerPersonId && segment.victimPersonId
     && segment.attackPresentation && segment.attackObjective) {
@@ -502,7 +530,26 @@ function segmentOutcome(
         : segment.attackObjective === "BUILD_SYMPATHY"
           ? (victimAlignment === "FACE" && attackerAlignment !== "FACE" ? 2.5 : -1.5)
           : programme ? 1.5 : -2.5;
-      angleFitModifier = round1(clamp(formatFit + objectiveFit, -5, 5));
+      const exact = recentPerformedBeatCount(state, event, (payload) => (
+        payload.segmentType === "ATTACK"
+        && payload.attackerPersonId === segment.attackerPersonId
+        && payload.victimPersonId === segment.victimPersonId
+        && payload.attackPresentation === segment.attackPresentation
+        && payload.attackObjective === segment.attackObjective
+      ));
+      // A beat-down after a match is a different context from an isolated
+      // attack. Recognise the recycled pair + identical delivery modestly,
+      // without treating the two booking categories as interchangeable.
+      const crossContext = recentPerformedBeatCount(state, event, (payload) => (
+        payload.segmentType === "POST_MATCH_ASSAULT"
+        && payload.attackerPersonId === segment.attackerPersonId
+        && payload.victimPersonId === segment.victimPersonId
+        && payload.attackPresentation === segment.attackPresentation
+        && payload.attackObjective === segment.attackObjective
+      ));
+      angleFitModifier = round1(clamp(
+        formatFit + objectiveFit - Math.min(3.5, exact * 1.1 + crossContext * 0.5), -5, 5,
+      ));
     }
   }
   if (segment.type === "RESCUE" && segment.attackerPersonId && segment.victimPersonId && segment.rescuerPersonId) {
@@ -572,7 +619,16 @@ function segmentOutcome(
     // The completed match result is an immutable input, never edited by an
     // assault. The booked aftermath controls who stands tall after the bell.
     angleFitModifier = round1(clamp(
-      roleClarity + aftermath + formatFit + objectiveFit + endingFit - Math.min(3.5, repeats * 1.25), -5, 5,
+      roleClarity + aftermath + formatFit + objectiveFit + endingFit - Math.min(
+        3.5, repeats * 1.25 + (segment.attackPresentation && segment.attackObjective
+          ? recentPerformedBeatCount(state, event, (payload) => (
+              payload.segmentType === "ATTACK"
+              && payload.attackerPersonId === segment.attackerPersonId
+              && payload.victimPersonId === segment.victimPersonId
+              && payload.attackPresentation === segment.attackPresentation
+              && payload.attackObjective === segment.attackObjective
+            )) * 0.5 : 0),
+      ), -5, 5,
     ));
   }
   if (segment.type === "CONFRONTATION" && segment.confrontationEnding
@@ -614,7 +670,16 @@ function segmentOutcome(
       : segment.interruptionOutcome === "INTERRUPTER_PREVAILS" ? (interrupterAlignment === "HEEL" ? 1 : 0)
       : segment.interruptionOutcome === "SPEAKER_PREVAILS" ? (speakerAlignment === "FACE" ? 1 : 0)
       : 0.25;
-    angleFitModifier = round1(clamp(rivalryContext + contrast + beat, -5, 5));
+    const repeats = segment.interruptionOutcome
+      ? recentPerformedBeatCount(state, event, (payload) => (
+          payload.segmentType === "INTERRUPTION"
+          && payload.initiatorPersonId === segment.initiatorPersonId
+          && payload.targetPersonId === segment.targetPersonId
+          && payload.interruptionOutcome === segment.interruptionOutcome
+        )) : 0;
+    angleFitModifier = round1(clamp(
+      rivalryContext + contrast + beat - Math.min(3.3, repeats * 1.1), -5, 5,
+    ));
   }
   if (segment.type === "CHALLENGE" && segment.challengeResponse && segment.initiatorPersonId && segment.targetPersonId) {
     // Booking controls the response; role clarity and rivalry affect reception.
@@ -624,7 +689,15 @@ function segmentOutcome(
     const context = programme ? clamp(((programme.heat ?? 50) - 50) / 18, -2, 2) : -0.5;
     const responseFit = segment.challengeResponse === "ACCEPTED" ? 0.5
       : segment.challengeResponse === "REFUSED" ? (challenged === "HEEL" ? 1 : -0.5) : 0;
-    angleFitModifier = round1(clamp(contrast + context + responseFit, -5, 5));
+    const repeats = recentPerformedBeatCount(state, event, (payload) => (
+      payload.segmentType === "CHALLENGE"
+      && payload.initiatorPersonId === segment.initiatorPersonId
+      && payload.targetPersonId === segment.targetPersonId
+      && payload.challengeResponse === segment.challengeResponse
+    ));
+    angleFitModifier = round1(clamp(
+      contrast + context + responseFit - Math.min(3.3, repeats * 1.1), -5, 5,
+    ));
   }
   if (segment.type === "STABLE_RECONCILIATION" && segment.initiatorPersonId && segment.targetPersonId) {
     // The booker scripts reconciliation or rejection; the World judges delivery.
