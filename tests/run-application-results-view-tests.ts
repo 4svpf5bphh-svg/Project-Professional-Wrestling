@@ -2,6 +2,7 @@ declare const process: { exitCode?: number };
 
 import {
   buildPlayerShowHistory,
+  buildPlayerWorldResultsView,
   claimIndependentPromotionForPlayer,
   createWorldCommandState,
   createWorldOwnershipState,
@@ -358,6 +359,51 @@ test("show Results display only the originally performed frozen promo message", 
     "Results converted a promo message into another kind of segment");
   ok(buildPlayerShowHistory(aggregate, "player-b").shows[0]!.segments.length === 0,
     "another promotion's show appeared in private Results");
+});
+
+test("an interview's authored question and answer are frozen as a real show segment", () => {
+  const { aggregate, promotionAId } = twoPlayerFixture(72014);
+  const event = aggregate.state.events.find((item) => item.id === "results-event-a")!;
+  const subject = aggregate.state.matchParticipants.find((item) => item.eventId === event.id)!.personId;
+  aggregate.state.ledger.push({
+    id: "frozen-interview-ledger",
+    worldId: aggregate.state.world.id,
+    date: { ...event.date },
+    order: 1751,
+    type: "SHOW_SEGMENT_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: [event.id, promotionAId, subject],
+    payload: {
+      eventId: event.id,
+      promotionId: promotionAId,
+      sourceDraftId: "authored-interview-show",
+      draftSegmentId: "guest-answer",
+      slotOrder: 1,
+      segmentType: "INTERVIEW",
+      interviewFormat: "IN_RING",
+      interviewTopic: "RIVALRY_PRESSURE",
+      interviewResponse: "DEFIANT",
+      participantIds: subject,
+      programmeId: null,
+      plannedLengthMinutes: 5,
+    },
+  });
+  const personal = buildPlayerShowHistory(aggregate, "player-a").shows[0]!;
+  const interview = personal.segments[0]!;
+  ok(interview.type === "INTERVIEW" && interview.interviewFormat === "IN_RING"
+    && interview.interviewTopic === "RIVALRY_PRESSURE" && interview.interviewResponse === "DEFIANT",
+    "private Results changed the scripted interview on screen");
+  ok(interview.participants.length === 1 && interview.participants[0]!.personId === subject,
+    "private Results fabricated an additional booked guest or interviewer");
+  const world = buildPlayerWorldResultsView(aggregate, "player-b");
+  const publicInterview = world.shows.find((item) => item.eventId === event.id)?.segments[0];
+  ok(publicInterview?.interviewResponse === "DEFIANT"
+    && publicInterview.interviewTopic === "RIVALRY_PRESSURE"
+    && publicInterview.interviewFormat === "IN_RING",
+    "public Results did not preserve the actual performed scripted interview");
+  ok(buildPlayerShowHistory(aggregate, "player-b").shows[0]!.segments.length === 0,
+    "another promoter's private Results included the interview from a rival show");
 });
 
 test("show history keeps positive alignment clarity separate from negative volatility", () => {
