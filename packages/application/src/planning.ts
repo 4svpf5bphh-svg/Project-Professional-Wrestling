@@ -76,6 +76,10 @@ export type VideoPackageReveal = "CRYPTIC" | "NAMED" | "FULL";
 export type LiveAppearanceKind = "DEBUT" | "RETURN" | "SURPRISE_REVEAL" | "INTRODUCTION";
 export type LiveAppearanceObjective = "ESTABLISH_STAR" | "BUILD_EXCITEMENT" | "CREATE_MYSTERY" | "UNSETTLE_RIVAL" | "REIGNITE_PROGRAMME";
 
+/** A promo's authored purpose, distinct from challenges and face-to-face confrontations. */
+export const PROMO_PURPOSES = ["STATEMENT_OF_INTENT", "BOAST", "RALLY_FANS", "AIR_GRIEVANCE", "ISSUE_WARNING"] as const;
+export type PromoPurpose = (typeof PROMO_PURPOSES)[number];
+
 export type AttackPresentation = "BLINDSIDE" | "BEATDOWN" | "PULL_APART_BRAWL";
 export type AttackObjective = "GENERATE_HEAT" | "BUILD_SYMPATHY" | "ESCALATE_RIVALRY";
 export type TurnPresentation = "REVEAL" | "BETRAYAL";
@@ -100,6 +104,8 @@ export interface DetailedShowSegmentDraft {
   videoReveal?: VideoPackageReveal | null;
   liveAppearanceKind?: LiveAppearanceKind | null;
   liveAppearanceObjective?: LiveAppearanceObjective | null;
+  /** Absent in legacy bookings, preserving their original generic promo. */
+  promoPurpose?: PromoPurpose | null;
   // Roles are authored intent; participants alone must not invent attack direction.
   attackerPersonId?: Id | null;
   victimPersonId?: Id | null;
@@ -431,6 +437,10 @@ function validateShowSegmentDraft(
   const videoReveal = draft.type === "VIDEO_PACKAGE" ? (draft.videoReveal ?? null) : null;
   const liveAppearanceKind = draft.type === "LIVE_APPEARANCE" ? (draft.liveAppearanceKind ?? null) : null;
   const liveAppearanceObjective = draft.type === "LIVE_APPEARANCE" ? (draft.liveAppearanceObjective ?? null) : null;
+  const promoPurpose = draft.type === "PROMO" ? (draft.promoPurpose ?? null) : null;
+  if (promoPurpose !== null && !PROMO_PURPOSES.includes(promoPurpose)) {
+    throw new Error("promo purpose must be a supported scripted story beat");
+  }
   if (draft.type === "LIVE_APPEARANCE") {
     if (!["DEBUT", "RETURN", "SURPRISE_REVEAL", "INTRODUCTION"].includes(liveAppearanceKind ?? "")
       || !["ESTABLISH_STAR", "BUILD_EXCITEMENT", "CREATE_MYSTERY", "UNSETTLE_RIVAL", "REIGNITE_PROGRAMME"].includes(liveAppearanceObjective ?? "")) {
@@ -614,6 +624,7 @@ function validateShowSegmentDraft(
     plannedLengthMinutes: draft.plannedLengthMinutes,
     ...(draft.type === "VIDEO_PACKAGE" ? { videoSubjectPersonId, videoKind, videoObjective, videoReveal } : {}),
     ...(draft.type === "LIVE_APPEARANCE" ? { liveAppearanceKind, liveAppearanceObjective } : {}),
+    ...(draft.type === "PROMO" ? { promoPurpose } : {}),
     ...(isDirected ? { initiatorPersonId, targetPersonId } : {}),
     ...(draft.type === "CONTRACT_SIGNING" ? { signingOutcome } : {}),
     ...(draft.type === "STABLE_INVITATION" ? { stableId, stableInvitationOutcome } : {}),
