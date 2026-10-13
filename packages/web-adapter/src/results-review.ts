@@ -309,3 +309,101 @@ export function reviewPlayerShow(show: Pick<PlayerShowResultView,
     : "The next card has a chance to put the pieces together.";
   return { headline, recap: [audience, matches, consequences].filter(Boolean).join(" "), verdict, tone };
 }
+
+
+/** Editorial chapter breaks turn a long booked card into a beginning, middle and end.
+ * Boundaries use performed running-order slots, never unperformed planned angles.
+ * This is a presentation-only reading of the completed World ledger. */
+export interface ShowReviewChapter {
+  startOrder: number;
+  chapter: "OPENING BELL" | "MIDDLE STRETCH" | "FINAL BELL";
+  headline: string;
+  recap: string;
+}
+export function reviewPlayerShowChapters(
+  show: Pick<PlayerShowResultView, "eventId" | "runningOrder">,
+): ShowReviewChapter[] {
+  const slots = show.runningOrder;
+  const count = slots.length;
+  // Don't pad a very short show with artificial "acts".
+  if (count < 4) return [];
+  const divisions = count >= 8 ? 3 : 2;
+  const chapterNames: ShowReviewChapter["chapter"][] = divisions === 3
+    ? ["OPENING BELL", "MIDDLE STRETCH", "FINAL BELL"]
+    : ["OPENING BELL", "FINAL BELL"];
+  return chapterNames.map((chapter, chapterIndex) => {
+    const start = Math.floor((chapterIndex * count) / divisions);
+    const end = Math.floor(((chapterIndex + 1) * count) / divisions);
+    const part = slots.slice(start, end);
+    const opener = part[0]!;
+    const titleMatch = part.find((slot) => slot.kind === "MATCH" &&
+      slot.match.titleOutcomes.some((title) => title.titleChanged));
+    const injuredMatch = part.find((slot) => slot.kind === "MATCH" && slot.match.injuries.length > 0);
+    const majorAngle = part.find((slot) => slot.kind === "SEGMENT" &&
+      ((slot.segment.type === "TURN" && Boolean(slot.segment.turnTargetAlignment))
+        || (slot.segment.type === "LIVE_APPEARANCE"
+          && ["DEBUT", "RETURN", "SURPRISE_REVEAL"].includes(slot.segment.liveAppearanceKind ?? ""))));
+    const dirtyMatch = part.find((slot) => slot.kind === "MATCH" &&
+      ["FOREIGN_OBJECT", "DISQUALIFICATION"].includes(slot.match.actualFinish ?? ""));
+    const featuredMatch = part.filter((slot) => slot.kind === "MATCH")
+      .sort((a, b) => (
+        (b.kind === "MATCH" ? b.match.criticalRatingStars : 0) -
+        (a.kind === "MATCH" ? a.match.criticalRatingStars : 0)
+      ))[0];
+    let headline: string;
+    let recap: string;
+    if (titleMatch?.kind === "MATCH") {
+      const title = titleMatch.match.titleOutcomes.find((entry) => entry.titleChanged)!;
+      headline = "Gold changes hands!";
+      recap = title.winnerHolderName + " captured the " + title.championshipName + ". The card had a title change to remember.";
+    } else if (injuredMatch?.kind === "MATCH") {
+      const injury = injuredMatch.match.injuries[0]!;
+      headline = "A night with a price";
+      recap = injury.personName + " suffered an injury during this part of the card. A reminder that not every result ends at the bell.";
+    } else if (majorAngle?.kind === "SEGMENT") {
+      const angle = majorAngle.segment;
+      const star = angle.participants.find((person) => person.personId === angle.turnPersonId)?.name
+        ?? angle.participants[0]?.name ?? "A featured wrestler";
+      if (angle.type === "TURN") {
+        headline = "A change of allegiance";
+        recap = star + " turned " + angle.turnTargetAlignment?.toLowerCase() + ". That's a talking point from this part of the show.";
+      } else {
+        headline = angle.liveAppearanceKind === "RETURN" ? "Look who's back" : "A new face in the spotlight";
+        recap = star + (angle.liveAppearanceKind === "RETURN"
+          ? " returned in front of the audience."
+          : angle.liveAppearanceKind === "DEBUT"
+            ? " made a live debut for the promotion."
+            : " was unveiled in a surprise live appearance.");
+      }
+    } else if (dirtyMatch?.kind === "MATCH") {
+      headline = "Controversy at the bell";
+      recap = dirtyMatch.match.actualFinish === "FOREIGN_OBJECT"
+        ? "A foreign object played a decisive part in one of the results. Hardly a clean night's work."
+        : "One contest ended in disqualification. The referee had the last word.";
+    } else if (featuredMatch?.kind === "MATCH" && featuredMatch.match.criticalRatingStars >= 4) {
+      headline = pick(["This stretch delivers", "Some serious in-ring quality", "The wrestling does the talking"],
+        show.eventId + ":" + opener.order, 71);
+      const winners = featuredMatch.match.winnerNames.join(" & ");
+      recap = winners
+        ? winners + " won a highly rated contest in this stretch of the show."
+        : "A highly rated contest gave this part of the card a genuine lift.";
+    } else {
+      const anyMatch = part.find((slot) => slot.kind === "MATCH");
+      const anySegment = part.find((slot) => slot.kind === "SEGMENT");
+      const label = chapter === "OPENING BELL" ? "The show gets underway"
+        : chapter === "FINAL BELL" ? "The closing stretch" : "The card rolls on";
+      headline = label;
+      if (anyMatch?.kind === "MATCH" && anyMatch.match.winnerNames.length > 0) {
+        recap = anyMatch.match.winnerNames.join(" & ") + " went over in this stretch of the card.";
+      } else if (anySegment?.kind === "SEGMENT") {
+        const subject = anySegment.segment.videoReveal === "CRYPTIC"
+          ? "A mystery video"
+          : anySegment.segment.participants[0]?.name ?? "A featured segment";
+        recap = subject + " featured as the running order progressed.";
+      } else {
+        recap = "The show continued with the results recorded below.";
+      }
+    }
+    return { startOrder: opener.order, chapter, headline, recap };
+  });
+}
