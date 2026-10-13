@@ -1,4 +1,5 @@
 import type { Id } from "../../domain/src/types.js";
+import { LedgerWriter } from "../../sim-core/src/ledger.js";
 import { generateWorldOpportunities } from "./opportunity-generation.js";
 import { evaluateBackstagePromises, generateBackstageConversations } from "./backstage.js";
 import { generateTagTeamPitches } from "./backstage-pitches.js";
@@ -13,6 +14,7 @@ import {
   closeCurrentWeekReservationsAtCommitmentLock,
   discardUnapprovedMaterializedCardAmendmentsAtLock,
   materializeCurrentWeekReservations,
+  materializedLiveArrivalConflicts,
   unresolvedDueCreativeApprovals,
   type ReservationMaterializationPass,
 } from "./planning-materialization.js";
@@ -117,6 +119,45 @@ export async function lockPersistedWorldForResolution(
     } else if (restoredAmendments > 0) {
       incrementWorldRevision(aggregate.runtime);
     }
+    const conflicts = materializedLiveArrivalConflicts(aggregate.state, aggregate.planning);
+    const ownConflict = manualPromotionId
+      ? conflicts.find((entry) => entry.promotionId === manualPromotionId)
+      : null;
+    if (ownConflict) {
+      throw new Error(
+        `Live ${ownConflict.kind.toLowerCase()} is no longer historically valid. Review the arrival segment on your Show Card and choose a truthful presentation before advancing.`,
+      );
+    }
+    // Automatic shared-World progression may not be stopped by an offline
+    // player's now-impossible scripted reveal. Explicitly log the unperformed
+    // segment; do not silently convert it to another authored outcome.
+    let cancelled = 0;
+    const writer = new LedgerWriter(aggregate.state.world.id, aggregate.state.ledger);
+    for (const conflict of conflicts) {
+      const alreadyRecorded = aggregate.state.ledger.some((entry) => (
+        entry.type === "PLANNED_LIVE_ARRIVAL_CANCELLED_AT_LOCK"
+        && entry.payload.eventId === conflict.eventId
+        && entry.payload.draftSegmentId === conflict.draftSegmentId
+      ));
+      if (alreadyRecorded) continue;
+      writer.append({
+        date: aggregate.state.world.currentDate,
+        type: "PLANNED_LIVE_ARRIVAL_CANCELLED_AT_LOCK",
+        significance: "NOTABLE",
+        entityIds: [conflict.promotionId, conflict.eventId, conflict.personId],
+        payload: {
+          eventId: conflict.eventId,
+          promotionId: conflict.promotionId,
+          sourceDraftId: conflict.sourceDraftId,
+          draftSegmentId: conflict.draftSegmentId,
+          personId: conflict.personId,
+          liveAppearanceKind: conflict.kind,
+          reason: conflict.reason,
+        },
+      });
+      cancelled += 1;
+    }
+    if (cancelled > 0) incrementWorldRevision(aggregate.runtime);
     lockWorldForResolution(aggregate.runtime, aggregate.state, realCycleKey);
   });
   return committed.revision;
