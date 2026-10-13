@@ -77,6 +77,17 @@ export interface PlayerPublicTalentIdentityView {
 
 export interface PlayerRosterContractView extends PlayerPublicTalentIdentityView {
   contractId: Id;
+  /** Signed follow-on agreements that are not yet bookable; owner-only. */
+  scheduledRenewals?: Array<{
+    contractId: Id;
+    startDate: PpwDate;
+    endDate: PpwDate;
+    family: ContractFamily;
+    dateEntitlement: number;
+    datesUsed: number;
+  }>;
+  /** Multiple simultaneous signed contracts with this same promotion are a data-integrity concern. */
+  concurrentContractCount?: number;
   alignment: WrestlerAlignment;
   alignmentChangeMode: "INITIAL_PRESENTATION" | "JUST_SIGNED" | "RETURNING" | "OFFSCREEN_SWITCH";
   alignmentNaturalReset: boolean;
@@ -385,7 +396,20 @@ export function buildPlayerTalentManagementView(
       .map((offer) => offer.personId),
   );
 
-  const roster = activeContractsForPromotion(aggregate.state, promotion.id)
+  // Older Worlds can contain overlapping accepted renewals for one wrestler.
+  // Show one roster identity, but retain visible evidence of all signed terms.
+  const activeRosterContracts = activeContractsForPromotion(aggregate.state, promotion.id);
+  const activeRosterByPerson = new Map<Id, (typeof activeRosterContracts)[number]>();
+  for (const contract of activeRosterContracts) {
+    const previous = activeRosterByPerson.get(contract.personId);
+    if (!previous || comparePpwDates(contract.startDate, previous.startDate, aggregate.state.ruleset.weeksPerYear) > 0
+      || (comparePpwDates(contract.startDate, previous.startDate, aggregate.state.ruleset.weeksPerYear) === 0
+        && contract.id > previous.id)) {
+      activeRosterByPerson.set(contract.personId, contract);
+    }
+  }
+
+  const roster = [...activeRosterByPerson.values()]
     .map((contract): PlayerRosterContractView | null => {
       const person = peopleById.get(contract.personId);
       if (!person) return null;
@@ -393,11 +417,30 @@ export function buildPlayerTalentManagementView(
       const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
       const datesExhausted = contract.family === "LIMITED_NON_EXCLUSIVE" && datesRemaining === 0;
       const expiryWindowOpen = remaining <= aggregate.state.ruleset.renewalWindowWeeks;
+      const ownSignedContracts = aggregate.state.contracts.filter((candidate) =>
+        candidate.promotionId === promotion.id && candidate.personId === contract.personId
+          && candidate.status === "SIGNED"
+          && comparePpwDates(candidate.endDate, currentDate, aggregate.state.ruleset.weeksPerYear) >= 0);
+      const scheduledRenewals = ownSignedContracts
+        .filter((candidate) => comparePpwDates(candidate.startDate, currentDate, aggregate.state.ruleset.weeksPerYear) > 0)
+        .sort((left, right) =>
+          comparePpwDates(left.startDate, right.startDate, aggregate.state.ruleset.weeksPerYear)
+          || left.id.localeCompare(right.id))
+        .map((candidate) => ({
+          contractId: candidate.id,
+          startDate: { ...candidate.startDate },
+          endDate: { ...candidate.endDate },
+          family: candidate.family,
+          dateEntitlement: candidate.dateEntitlement,
+          datesUsed: candidate.datesUsed,
+        }));
       const alignment = wrestlerAlignmentForPromotion(aggregate.state, promotion.id, person.id);
       const alignmentContext = promotionAlignmentChangeContext(aggregate.state, promotion.id, person.id);
       return {
         ...publicTalentIdentity(aggregate, person),
         contractId: contract.id,
+        scheduledRenewals,
+        concurrentContractCount: activeRosterContracts.filter((candidate) => candidate.personId === contract.personId).length,
         alignment,
         alignmentChangeMode: alignmentContext.method,
         alignmentNaturalReset: alignmentContext.naturalReset,
@@ -424,9 +467,9 @@ export function buildPlayerTalentManagementView(
           weeklyGuarantee: contract.weeklyGuarantee,
           appearanceFee: contract.appearanceFee,
           signingBonus: contract.signingBonus,
-          sameTermsRenewal: sameTermsRenewalTemplate(aggregate.state, contract),
-          renewalWindowOpen: datesExhausted || expiryWindowOpen,
-          renewalReason: datesExhausted ? "DATES_EXHAUSTED" : expiryWindowOpen ? "EXPIRY_WINDOW" : null,
+          sameTermsRenewal: scheduledRenewals.length > 0 ? null : sameTermsRenewalTemplate(aggregate.state, contract),
+          renewalWindowOpen: datesExhausted || (scheduledRenewals.length === 0 && expiryWindowOpen),
+          renewalReason: datesExhausted ? "DATES_EXHAUSTED" : scheduledRenewals.length > 0 ? null : expiryWindowOpen ? "EXPIRY_WINDOW" : null,
         },
       };
     })

@@ -28,6 +28,7 @@ import {
 } from "../../../../dist/packages/web-adapter/src/segment-story-goals.js";
 import { stableStoryContinuityWarnings } from "../../../../dist/packages/web-adapter/src/stable-story-continuity.js";
 import { postShowDirectionHint } from "../../../../dist/packages/web-adapter/src/programme-postshow-guidance.js";
+import { lockCardBackgroundScroll } from "./card-background-scroll-lock";
 import styles from "./card.module.css";
 
 function ProgrammePostShowHint({ programme, slot }: {
@@ -312,15 +313,13 @@ function WrestlerPicker({
   const [sort, setSort] = useState<WrestlerPickerSort>("POPULARITY");
 
   useEffect(() => {
-    const body = document.body;
-    const previousOverflow = body.style.overflow;
-    body.style.overflow = "hidden";
+    const releaseScrollLock = lockCardBackgroundScroll(document.body);
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => {
-      body.style.overflow = previousOverflow;
+      releaseScrollLock();
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [onClose]);
@@ -472,8 +471,7 @@ export default function CardClient(): React.JSX.Element {
   // The wrestler picker is a higher-priority sheet and owns Escape while it is open.
   useEffect(() => {
     if (!expandedSlotKey) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const releaseScrollLock = lockCardBackgroundScroll(document.body);
     if (!wrestlerPicker) editorCloseRef.current?.focus();
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && !wrestlerPicker) {
@@ -483,7 +481,7 @@ export default function CardClient(): React.JSX.Element {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      releaseScrollLock();
       window.removeEventListener("keydown", onKeyDown);
     };
   }, [expandedSlotKey, wrestlerPicker]);
