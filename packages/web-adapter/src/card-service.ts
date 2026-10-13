@@ -250,6 +250,7 @@ export interface AlphaCurrentWeekCardView {
   reservationId: string | null;
   planningState: PlayerShowPlanningState;
   canEdit: boolean;
+  liveArrivalNeedsReview: boolean;
   minParticipants: number;
   maxParticipants: number;
   marketName: string;
@@ -1253,6 +1254,7 @@ export async function loadAlphaShowCard(
     workspaceVersion: workspace.version,
     reservationId: reservation?.reservationId ?? null,
     planningState: status.state,
+    liveArrivalNeedsReview: status.riskReasons.includes("LIVE_APPEARANCE_HISTORY_CHANGED"),
     canEdit: aggregate.runtime.phase === "OPEN"
       && (status.availableActions.includes("EDIT_DRAFT") || status.availableActions.includes("EDIT_CARD")),
     minParticipants: aggregate.state.ruleset.minEventParticipants,
