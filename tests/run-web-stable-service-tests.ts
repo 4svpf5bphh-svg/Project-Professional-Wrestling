@@ -245,6 +245,65 @@ await test("A later refusal cancels the earlier story task; drafts and unperform
     "fictional acceptance mutated real membership");
 });
 
+await test("Completed stable reunion stays kayfabe until a player explicitly re-adds the former member", async () => {
+  const { repository, worldId, view } = await fixture(73345);
+  const ids = view.roster.slice(0, 3).map((entry) => entry.personId);
+  const created = await mutateAlphaStable(repository, worldId, "player-a", {
+    action: "CREATE", requestId: "reunion-create", expectedRevision: view.world.revision,
+    name: "The Reunion", personIds: ids,
+  });
+  const stableId = created.stables[0]!.stableId;
+  const departed = await mutateAlphaStable(repository, worldId, "player-a", {
+    action: "REMOVE", requestId: "reunion-history", expectedRevision: created.world.revision,
+    stableId, personId: ids[2]!,
+  });
+  ok(departed.stables[0]!.memberHistory.find((entry) => entry.personId === ids[2])?.active === false,
+    "real former membership history was not created");
+  await repository.transact(worldId, null, (aggregate) => {
+    const state = aggregate.state;
+    const market = state.markets[0]!;
+    const venue = state.venues.find((entry) => entry.marketId === market.id) ?? state.venues[0]!;
+    state.events.push({
+      id: "reunion-completed-show", worldId, promotionId: departed.player.promotionId!,
+      marketId: market.id, venueId: venue.id,
+      date: { ...state.world.currentDate },
+      type: "REGULAR", status: "COMPLETED", ticketStrategy: "STANDARD",
+      expectedDemand: 100, attendance: 100, ticketYield: 25,
+      gateRevenue: 2500, totalCost: 2000, netResult: 500,
+      eventImportance: 60, matchCount: 0, averageMatchRating: 0, bestMatchRating: 0,
+      crowdResponse: 65,
+    });
+    state.ledger.push({
+      id: "reconciled-former-member", worldId, date: { ...state.world.currentDate },
+      order: 19005, type: "SHOW_SEGMENT_COMPLETED",
+      significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+      entityIds: [stableId, ids[2]!],
+      payload: {
+        eventId: "reunion-completed-show", promotionId: departed.player.promotionId!,
+        stableId, targetPersonId: ids[2],
+        segmentType: "STABLE_RECONCILIATION",
+        stableReconciliationOutcome: "RECONCILED",
+      },
+    });
+  });
+  const pending = await loadAlphaStableRoster(repository, worldId, "player-a");
+  ok(pending.storyFollowThrough.length === 1
+    && pending.storyFollowThrough[0]?.action === "ADD"
+    && pending.storyFollowThrough[0]?.storyType === "STABLE_RECONCILIATION",
+    "performed reconciliation did not offer an explicit rejoin action");
+  ok(pending.stables[0]!.currentMembers.length === 2,
+    "on-screen reconciliation silently reinstated a member");
+  const accepted = await mutateAlphaStable(repository, worldId, "player-a", {
+    action: "ADD", requestId: "reunion-rejoin", expectedRevision: pending.world.revision,
+    stableId, personId: ids[2]!,
+  });
+  ok(accepted.storyFollowThrough.length === 0
+    && accepted.stables[0]!.currentMembers.length === 3,
+    "booker-approved reunion did not reconcile canonical membership");
+  ok(accepted.stables[0]!.memberHistory.filter((entry) => entry.personId === ids[2]).length === 2,
+    "real rejoining should create another historical membership record, not rewrite the old one");
+});
+
 await test("World Lock rejects stable membership changes, even by the controlling booker", async () => {
   const { repository, worldId, view } = await fixture(73342);
   await repository.transact(worldId, null, (aggregate) => { aggregate.runtime.phase = "LOCKING"; });
