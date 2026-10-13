@@ -446,7 +446,7 @@ test("legacy face-offs remain factual without inventing a scripted ending", () =
 });
 
 test("confrontation repetition is bounded to completed same-pair same-ending promotion history", () => {
-  function run(history: "NONE" | "SAME" | "OTHER_ENDING" | "SWAPPED_ROLES" | "OTHER_PAIR" | "OTHER_PROMOTION" | "OLD" | "UNPERFORMED") {
+  function run(history: "NONE" | "SAME" | "OTHER_ENDING" | "SWAPPED_ROLES" | "OTHER_PAIR" | "OTHER_PROMOTION" | "OLD" | "SAME_WEEK" | "FUTURE" | "UNPERFORMED") {
     const setup = fixture(91642);
     setup.state.world.currentDate = { year: 1, week: 8, day: 1 };
     setup.targetDate = { year: 1, week: 8, day: 6 };
@@ -455,7 +455,7 @@ test("confrontation repetition is bounded to completed same-pair same-ending pro
       setup.state.ledger.push({
         id: "earlier-face-off",
         worldId: setup.state.world.id,
-        date: { year: 1, week: history === "OLD" ? 1 : 7, day: 6 },
+        date: { year: 1, week: history === "OLD" ? 1 : history === "SAME_WEEK" ? 8 : history === "FUTURE" ? 9 : 7, day: 6 },
         order: 9751, type: "SHOW_SEGMENT_COMPLETED",
         significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
         entityIds: [setup.promotion.id, initiator!, target!],
@@ -492,7 +492,7 @@ test("confrontation repetition is bounded to completed same-pair same-ending pro
   ok(repeated.angleFitModifier < original.angleFitModifier
     && repeated.crowdResponse! < original.crowdResponse!,
     "same-pair same-ending standoffs never become stale");
-  for (const variant of ["OTHER_ENDING", "SWAPPED_ROLES", "OTHER_PAIR", "OTHER_PROMOTION", "OLD", "UNPERFORMED"] as const) {
+  for (const variant of ["OTHER_ENDING", "SWAPPED_ROLES", "OTHER_PAIR", "OTHER_PROMOTION", "OLD", "SAME_WEEK", "FUTURE", "UNPERFORMED"] as const) {
     ok(run(variant).angleFitModifier === original.angleFitModifier,
       `${variant} incorrectly counted as an identical completed stand-off`);
   }
