@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import type { PlayerShowHistoryView } from "../../../../dist/packages/application/src/results-view.js";
 import type { PlayerWorldResultsView } from "../../../../dist/packages/application/src/world-results-view.js";
-import ShowBroadcast, { MatchFinishReplay, segmentResultIcon } from "./show-broadcast";
+import ShowBroadcast, { MatchFinishReplay, MatchStarRating, segmentResultIcon } from "./show-broadcast";
 import { showResultHighlights } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
 import { reviewPlayerMatch, reviewPlayerSegment, type SlotReview } from "../../../../dist/packages/web-adapter/src/results-review.js";
 import {
@@ -487,7 +487,7 @@ export default function ResultsClient(): React.JSX.Element {
                           <article id={`show-${show.eventId}-slot-${slot.order}`} className={`${styles.matchCard} ${styles.matchResultCard} ${match.isMainEvent ? styles.mainEventResult : ""}`} key={match.matchId}>
                             <div className={styles.matchTop}>
                               <span>SLOT {slot.order} · {match.isMainEvent ? "MAIN EVENT" : "MATCH"} · {label(match.type)}</span>
-                              <strong className={styles.ratingMedallion}>★ {decimal(match.criticalRatingStars)}</strong>
+                              <MatchStarRating rating={match.criticalRatingStars} />
                             </div>
                             <div className={styles.versus}>
                               <div>{sideA.map((participant) => <span className={participant.won ? styles.winner : undefined} key={participant.personId}>{participant.name}{participant.won ? " ✓" : ""}</span>)}</div>
@@ -691,196 +691,55 @@ export default function ResultsClient(): React.JSX.Element {
                       </summary>
 
                       <div className={styles.showBody}>
-                        <ShowBroadcast show={show} />
-                        <details className={styles.showAnalysis}>
-                          <summary>Show analysis <span>Ratings, attendance and consequences</span></summary>
-                          <div className={styles.analysisBody}>
-                        <div className={styles.metrics}>
-                          <div><span>Average</span><strong>★ {decimal(show.averageMatchRating)}</strong></div>
-                          <div><span>Best match</span><strong>★ {decimal(show.bestMatchRating)}</strong></div>
-                          <div><span>Crowd</span><strong>{decimal(show.crowdResponse)}</strong></div>
-                          <div><span>Capacity</span><strong>{decimal(show.attendancePercentOfCapacity)}%</strong></div>
-                          <div><span>Matches</span><strong>{show.matchCount}</strong></div>
-                          <div><span>Segments</span><strong>{show.segmentCount}</strong></div>
-                          <div><span>Consequences</span><strong>{show.titleChangeCount} title · {show.injuryCount} inj.</strong></div>
-                        </div>
+                        <div className={styles.worldScoreboard}>
+                          <div className={styles.worldScoreboardHeading}>
+                            <div>
+                              <span className={styles.eyebrow}>RESULTS FROM THE WORLD</span>
+                              <strong>Final bell · full match results</strong>
+                            </div>
+                            <MatchStarRating rating={show.averageMatchRating} />
                           </div>
-                        </details>
-
-                        <div className={styles.matches}>
-                          {show.runningOrder.map((slot) => {
-                            if (slot.kind === "SEGMENT") {
-                              return (
-                                <article id={`show-${show.eventId}-slot-${slot.order}`}
-                              className={`${styles.matchCard} ${styles.segmentResultCard} ${slot.segment.outcomeBand === "HOT" ? styles.hotAngleResult : ""}`} key={slot.segment.segmentId}>
-                                  <div className={styles.matchTop}>
-                                    <span><b className={styles.slotGlyph} aria-hidden="true">{segmentResultIcon(slot.segment.type)}</b> SLOT {slot.order} · SEGMENT · {slot.segment.type === "LIVE_APPEARANCE" && slot.segment.liveAppearanceKind ? `live · ${label(slot.segment.liveAppearanceKind)}` : slot.segment.type === "VIDEO_PACKAGE" && slot.segment.videoKind ? `video · ${label(slot.segment.videoKind)}` : slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : slot.segment.type === "PROMO" && slot.segment.promoPurpose ? `promo · ${label(slot.segment.promoPurpose)}` : slot.segment.type === "INTERVIEW" && slot.segment.interviewTopic && slot.segment.interviewResponse ? `interview · ${label(slot.segment.interviewTopic)} · ${label(slot.segment.interviewResponse)}` : slot.segment.type === "CELEBRATION" && slot.segment.celebrationOccasion && slot.segment.celebrationEnding ? `celebration · ${label(slot.segment.celebrationOccasion)}` : slot.segment.type === "CONFRONTATION" && slot.segment.confrontationEnding ? `face-off · ${label(slot.segment.confrontationEnding)}` : label(slot.segment.type)}</span>
-                                    <strong className={slot.segment.outcomeBand === "HOT" ? styles.angleHot : slot.segment.outcomeBand === "POOR" ? styles.anglePoor : styles.angleImpact}>
-                                      {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
-                                        ? "SEGMENT"
-                                        : `${label(slot.segment.outcomeBand)} · Crowd ${decimal(slot.segment.crowdResponse)}`}
-                                    </strong>
-                                  </div>
-                                  <div className={styles.segmentParticipants}>
-                                    {slot.segment.participants.map((participant) => (
-                                      <a className={styles.participantLink} href={`/talent/profile?personId=${encodeURIComponent(participant.personId)}`} key={participant.personId}>
-                                        {participant.name}
-                                      </a>
-                                    ))}
-                                  </div>
-                                  {slot.segment.type === "LIVE_APPEARANCE" && slot.segment.liveAppearanceKind ? (
-
-                                    <div className={styles.matchMeta}>
-
-                                      <span>{slot.segment.participants[0]?.name ?? "Wrestler"} · {slot.segment.liveAppearanceKind === "DEBUT" ? "First live appearance for this promotion" : slot.segment.liveAppearanceKind === "RETURN" ? "Returns after time away" : slot.segment.liveAppearanceKind === "SURPRISE_REVEAL" ? "Surprise arrival" : "In-person introduction"}</span>
-
-
-                                    </div>
-
-                                  ) : null}
-                                  {slot.segment.type === "INTERVIEW" && slot.segment.interviewTopic && slot.segment.interviewResponse ? (
-                                <div className={styles.matchMeta}>
-                                  <span>Host asks about {label(slot.segment.interviewTopic)} · {label(slot.segment.interviewFormat ?? "BACKSTAGE")} interview</span>
-                                  <span>Scripted answer: {slot.segment.interviewResponse === "CANDID" ? "Candid answer" : slot.segment.interviewResponse === "EVASIVE" ? "Dodges the question" : slot.segment.interviewResponse === "DEFIANT" ? "Defiant answer" : "Walks out"}</span>
-                                </div>
-                              ) : null}
-                              {slot.segment.type === "CELEBRATION" && slot.segment.celebrationOccasion && slot.segment.celebrationEnding ? (
-                                <div className={styles.matchMeta}>
-                                  <span>{slot.segment.celebrationOccasion === "VICTORY_LAP" ? "Celebrates an actual previous match win" : slot.segment.celebrationOccasion === "SELF_CORONATION" ? "Kayfabe self-coronation · no real title awarded" : slot.segment.celebrationOccasion === "FAN_APPRECIATION" ? "Thanks the fans" : "Taunts a rival"}</span>
-                                  <span>Booked ending: {label(slot.segment.celebrationEnding)}</span>
-                                </div>
-                              ) : null}
-                              {slot.segment.type === "CONFRONTATION" && slot.segment.confrontationEnding ? (
-                                <div className={styles.matchMeta}>
-                                  <span>{slot.segment.initiatorPersonId === null || slot.segment.targetPersonId === null ? "On-screen face-off" : "Direct confrontation · booked wrestler roles"}</span>
-                                  <span>{slot.segment.confrontationEnding === "STAREDOWN" ? "Neither wrestler backs down" : slot.segment.confrontationEnding === "INITIATOR_BACKS_DOWN" ? "The instigator backs down" : slot.segment.confrontationEnding === "TARGET_BACKS_DOWN" ? "The targeted wrestler backs down" : "The wrestlers share a reluctant handshake"}</span>
-                                </div>
-                              ) : null}
-                              {slot.segment.type === "VIDEO_PACKAGE" ? (
-
-                                    <div className={styles.matchMeta}>
-
-                                      <span>{slot.segment.videoReveal === "CRYPTIC" ? "Mystery footage / silhouette" : slot.segment.videoSubjectName ?? "Featured talent"} · {slot.segment.videoKind ? label(slot.segment.videoKind) : "Wrestler spotlight"}</span>
-
-                                      <span>Pre-recorded footage · not a live appearance</span>
-
-                                    </div>
-
-                                  ) : null}
-                                  {slot.segment.type === "INTERRUPTION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.interruptionOutcome ? (
-                                <div className={styles.matchMeta}>
-                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Interrupter"} interrupts {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "speaker"} · {slot.segment.interruptionOutcome === "VERBAL_EXCHANGE" ? "Verbal exchange" : slot.segment.interruptionOutcome === "INTERRUPTER_PREVAILS" ? "Interrupter gets the better of them" : slot.segment.interruptionOutcome === "SPEAKER_PREVAILS" ? "Original speaker gets the better of them" : "Brawl erupts"}</span>
-                                </div>
-                              ) : null}
-                              {slot.segment.type === "STABLE_RECONCILIATION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.stableReconciliationOutcome ? (
-                                <div className={styles.matchMeta}>
-                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Representative"} approaches former member {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Former member"} of {slot.segment.stableName ?? "the stable"} · {slot.segment.stableReconciliationOutcome === "RECONCILED" ? "Reconciled on-screen" : "Reconciliation rebuffed"}</span>
-                                </div>
-                              ) : null}
-                              {slot.segment.type === "STABLE_EXIT" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.stableExitOutcome ? (
-                                <div className={styles.matchMeta}>
-                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Departing member"} {slot.segment.stableExitOutcome === "EXPELLED" ? "expelled from" : "walks out of"} {slot.segment.stableName ?? "the stable"} · {slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Representative"} represents the group</span>
-                                </div>
-                              ) : null}
-                              {slot.segment.type === "STABLE_INVITATION" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.stableInvitationOutcome ? (
-                                <div className={styles.matchMeta}>
-                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Representative"} invites {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Recruit"} to {slot.segment.stableName ?? "stable"} · {slot.segment.stableInvitationOutcome === "ACCEPTED" ? "Accepted on-screen" : "Refused on-screen"}</span>
-                                </div>
-                              ) : null}
-                              {slot.segment.type === "CONTRACT_SIGNING" && slot.segment.initiatorPersonId && slot.segment.targetPersonId && slot.segment.signingOutcome ? (
-                                <div className={styles.matchMeta}>
-                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Proposer"} and {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "Responder"} · {slot.segment.signingOutcome === "SIGNED" ? "Signed on-screen" : slot.segment.signingOutcome === "REJECTED" ? "Proposal rejected" : slot.segment.signingOutcome === "WALKOUT" ? "Walkout" : "Signing broke into a brawl"}</span>
-                                </div>
-                              ) : null}
-                              {(slot.segment.type === "CHALLENGE" || slot.segment.type === "CONFRONTATION") && slot.segment.initiatorPersonId && slot.segment.targetPersonId ? (
-                                  <div className={styles.matchMeta}>
-                                    <span>{slot.segment.participants.find((person) => person.personId === slot.segment.initiatorPersonId)?.name ?? "Wrestler"} {slot.segment.type === "CHALLENGE" ? "challenged" : "confronted"} {slot.segment.participants.find((person) => person.personId === slot.segment.targetPersonId)?.name ?? "opponent"}{slot.segment.type === "CHALLENGE" && slot.segment.challengeResponse
-                                      ? ` · ${slot.segment.challengeResponse === "ACCEPTED" ? "Challenge accepted" : slot.segment.challengeResponse === "REFUSED" ? "Challenge refused" : "Challenge left open"}`
-                                      : ""}</span>
-                                  </div>
-                                ) : null}
-                              {slot.segment.type === "POST_MATCH_ASSAULT" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.sourceMatchId ? (
-                                <div className={styles.matchMeta}>
-                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "Aggressor"} attacked {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} after the match ({slot.segment.victimMatchOutcome === "WON" ? "victim won" : slot.segment.victimMatchOutcome === "LOST" ? "victim lost" : "match drawn"})</span>
-                                  {slot.segment.postMatchAssaultEnding ? (
-                                    <span>{slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : "Assault"} · {slot.segment.attackObjective ? label(slot.segment.attackObjective) : "Unspecified motive"} · {slot.segment.postMatchAssaultEnding === "ATTACKER_STANDS_TALL" ? "Aggressor stands tall" : slot.segment.postMatchAssaultEnding === "VICTIM_FIGHTS_BACK" ? "Victim fights back" : "Officials separate the wrestlers"}</span>
-                                  ) : null}
-                                </div>
-                              ) : null}
-                              {slot.segment.type === "RESCUE" && slot.segment.attackerPersonId && slot.segment.victimPersonId && slot.segment.rescuerPersonId ? (
-                                <div className={styles.matchMeta}>
-                                  <span>{slot.segment.participants.find((person) => person.personId === slot.segment.rescuerPersonId)?.name ?? "Rescuer"} attempted to save {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"} from {slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "aggressor"}{slot.segment.rescueOutcome === "RESCUER_STANDS_TALL" ? " · rescuer drives off the attacker" : slot.segment.rescueOutcome === "ATTACKER_ESCAPES" ? " · attacker escapes the save" : slot.segment.rescueOutcome === "RESCUE_OVERWHELMED" ? " · rescue fails; attacker overwhelms them" : " · outcome not recorded in legacy booking"}</span>
-                                </div>
-                              ) : null}
-                              {slot.segment.type === "ATTACK" && slot.segment.attackerPersonId && slot.segment.victimPersonId ? (
-                                    <div className={styles.matchMeta}>
-                                      <span>{slot.segment.participants.find((person) => person.personId === slot.segment.attackerPersonId)?.name ?? "Attacker"} attacked {slot.segment.participants.find((person) => person.personId === slot.segment.victimPersonId)?.name ?? "victim"}</span>
-                                    </div>
-                                  ) : null}
-                                  {slot.segment.type === "TURN" && slot.segment.turnTargetAlignment ? (
-                                    <div className={styles.matchMeta}>
-                                      <span>
-                                        {slot.segment.participants.find((participant) => participant.personId === slot.segment.turnPersonId)?.name ?? "Wrestler"} → {label(slot.segment.turnTargetAlignment)}
-                                      </span>
-                                      {slot.segment.turnPresentation === "BETRAYAL" && slot.segment.betrayedPersonId ? (
-                                        <span>Betrayed {slot.segment.participants.find((person) => person.personId === slot.segment.betrayedPersonId)?.name ?? "another wrestler"}</span>
-                                      ) : null}
-                                    </div>
-                                  ) : null}
-                                </article>
-                              );
-                            }
-                            const match = slot.match;
-                            const sideA = match.participants.filter((participant) => participant.side === "A");
-                            const sideB = match.participants.filter((participant) => participant.side === "B");
-                            return (
-                              <article id={`show-${show.eventId}-slot-${slot.order}`} className={`${styles.matchCard} ${styles.matchResultCard} ${match.isMainEvent ? styles.mainEventResult : ""}`} key={match.matchId}>
-                                <div className={styles.matchTop}>
-                                  <span>SLOT {slot.order} · {match.isMainEvent ? "MAIN EVENT" : "MATCH"} · {label(match.type)}</span>
-                                  <strong className={styles.ratingMedallion}>★ {decimal(match.criticalRatingStars)}</strong>
-                                </div>
-                                <div className={styles.versus}>
-                                  <div>{sideA.map((participant) => (
-                                    <a className={`${styles.participantLink} ${participant.won ? styles.winner : ""}`} href={`/talent/profile?personId=${encodeURIComponent(participant.personId)}`} key={participant.personId}>
-                                      {participant.name}{participant.won ? " ✓" : ""}
-                                    </a>
-                                  ))}</div>
-                                  <b>vs</b>
-                                  <div>{sideB.map((participant) => (
-                                    <a className={`${styles.participantLink} ${participant.won ? styles.winner : ""}`} href={`/talent/profile?personId=${encodeURIComponent(participant.personId)}`} key={participant.personId}>
-                                      {participant.name}{participant.won ? " ✓" : ""}
-                                    </a>
-                                  ))}</div>
-                                </div>
-                                <div className={styles.winnerRibbon} aria-label="Recorded match result">
-                                  <span>{match.winnerNames.length > 0 ? "WINNERS" : "WINNER NOT RECORDED"}</span>
-                                  <strong>{match.winnerNames.length > 0 ? match.winnerNames.join(" & ") : "No winner recorded"}</strong>
-                                </div>
-                                <MatchFinishReplay match={match} />
-                                <div className={styles.matchMeta}>
-                                  <span>{match.actualLengthMinutes} min</span>
-                                  <span>Crowd {decimal(match.crowdResponse)}</span>
-                                </div>
-                                {match.interference ? (
-                                  <div className={styles.matchMeta}>
-                                    <span>Run-in: {match.interference.name} assisted Side {match.interference.aidedSide} · {match.interference.outcome === "SUCCESS" ? "Succeeded" : match.interference.outcome === "ABORTED" ? "Aborted" : "Thwarted"}</span>
-                                  </div>
-                                ) : null}
-                                {match.titleOutcomes.map((title) => (
-                                  <a className={`${styles.consequence} ${styles.titleLink} ${title.titleChanged ? styles.titleChangeMoment : ""}`} href="/championships" key={title.championshipId}>
-                                    <strong>{title.championshipName}</strong>
-                                    <span>{title.titleChanged ? `Title change → ${title.winnerHolderName}` : `${title.winnerHolderName} retained`}</span>
-                                  </a>
+                          {show.matches.length === 0 ? (
+                            <p className={styles.worldScoreboardEmpty}>No completed bouts were recorded for this show.</p>
+                          ) : show.matches.map((match) => (
+                            <article className={styles.worldResultRow} key={match.matchId}>
+                              <div className={styles.worldResultTop}>
+                                <span>{match.isMainEvent ? "MAIN EVENT" : "MATCH " + match.order} · {label(match.type)}</span>
+                                <MatchStarRating rating={match.criticalRatingStars} />
+                              </div>
+                              <div className={styles.worldContestants}>
+                                {match.participants.filter((person) => person.side === "A").map((person) => (
+                                  <span key={person.personId} className={person.won ? styles.worldWinner : undefined}>
+                                    {person.name}{person.won ? " ✓" : ""}
+                                  </span>
                                 ))}
-                                {match.injuries.map((injury) => (
-                                  <a className={`${styles.consequence} ${styles.injury} ${styles.titleLink}`} href={`/talent/profile?personId=${encodeURIComponent(injury.personId)}`} key={injury.injuryId}>
-                                    <strong>{injury.personName} injured</strong>
-                                    <span>{label(injury.severity)} · {injury.weeksOut} PPW week{injury.weeksOut === 1 ? "" : "s"} out</span>
-                                  </a>
+                                <b>VS</b>
+                                {match.participants.filter((person) => person.side === "B").map((person) => (
+                                  <span key={person.personId} className={person.won ? styles.worldWinner : undefined}>
+                                    {person.name}{person.won ? " ✓" : ""}
+                                  </span>
                                 ))}
-                              </article>
-                            );
-                          })}
+                              </div>
+                              <small>{match.winnerNames.length > 0 ? match.winnerNames.join(" & ") + " wins" : "Winner not recorded"}
+                                {match.actualFinish ? " · " + label(match.actualFinish) : ""}
+                              </small>
+                              {match.titleOutcomes.filter((entry) => entry.titleChanged).map((title) => (
+                                <div className={styles.worldMajorMoment} key={title.championshipId}>
+                                  <span aria-hidden="true">🏆</span>
+                                  <span>{title.championshipName} · new champion: {title.winnerHolderName}</span>
+                                </div>
+                              ))}
+                              {match.injuries.map((injury) => (
+                                <div className={styles.worldMajorMoment} key={injury.injuryId}>
+                                  <span aria-hidden="true">✚</span>
+                                  <span>{injury.personName} injured · {injury.weeksOut} PPW weeks out</span>
+                                </div>
+                              ))}
+                            </article>
+                          ))}
+                          <p className={styles.worldScoreboardFoot}>
+                            {integer(show.attendance)} attended · {show.segmentCount} segments · {show.titleChangeCount} title changes · {show.injuryCount} injuries
+                          </p>
                         </div>
                       </div>
                     </details>
