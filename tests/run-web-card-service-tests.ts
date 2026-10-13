@@ -137,6 +137,37 @@ function singlesCard(participantIds: string[]): AlphaCardMatchView[] {
   return matches;
 }
 
+await test("Continuity notes recognise accepted invitations and reunions without warning another wrestler or group", async () => {
+  const story = {
+    sourceSegmentId: "actual-show-segment", stableId: "real-stable", stableName: "The Unit",
+    personId: "recruited-wrestler", personName: "A Wrestler",
+    storyDate: { year: 2, week: 12, day: 6 },
+    storyType: "STABLE_INVITATION" as const, action: "ADD" as const, status: "READY" as const,
+  };
+  const segment: AlphaCardSegmentView = {
+    draftSegmentId: "repeat-invitation",
+    type: "STABLE_INVITATION",
+    participantIds: ["stable-representative", "recruited-wrestler"], programmeId: null,
+    plannedLengthMinutes: 5, initiatorPersonId: "stable-representative",
+    targetPersonId: "recruited-wrestler", stableId: "real-stable",
+    stableInvitationOutcome: "ACCEPTED",
+  };
+  const invited = stableStoryContinuityWarnings(segment, [story], [segment]);
+  ok(invited.length === 1 && invited[0]!.includes("accepted an invitation")
+    && invited[0]!.includes("Y2 W12"),
+    "authoring view failed to explain the earlier real on-screen accepted invitation");
+  const reunited = stableStoryContinuityWarnings(
+    { ...segment, type: "STABLE_RECONCILIATION", stableReconciliationOutcome: "RECONCILED" },
+    [{ ...story, storyType: "STABLE_RECONCILIATION" }], [segment],
+  );
+  ok(reunited.length === 1 && reunited[0]!.includes("reconciled with"),
+    "booker was not warned of repeated unresolved on-screen reconciliation");
+  ok(stableStoryContinuityWarnings({ ...segment, stableId: "other-stable" }, [story], [segment]).length === 0,
+    "another faction inherited a rival stable's story history");
+  ok(stableStoryContinuityWarnings({ ...segment, targetPersonId: "different-recruit" }, [story], [segment]).length === 0,
+    "another recruit inherited the prior wrestler's booking warning");
+});
+
 await test("Card warns only for unresolved completed stable storylines and leaves booker authority untouched", async () => {
   const f = await reservedShowFixture(61121);
   const before = await loadAlphaCurrentWeekCard(f.repository, f.worldId, "alpha-player");
