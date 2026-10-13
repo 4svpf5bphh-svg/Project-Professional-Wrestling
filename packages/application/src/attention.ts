@@ -284,15 +284,15 @@ export function buildPlayerAttention(
               : (offer.offerKind === "DATES_ADDENDUM" ? `${name} declined extra dates` : `${name} rejected your contract offer`),
           summary: delegated
             ? accepted
-              ? `${name} accepted the same-terms proposal your Talent Manager submitted. The contract is signed; no previous one-time bonus was repeated.`
+              ? `${name} accepted the same-terms proposal your Talent Manager submitted. The contract is signed and begins in PPW Week ${offer.startDate.week}, Year ${offer.startDate.year}; any older dates remain separate. No previous one-time bonus was repeated.`
               : `The Talent Manager's renewal attempt was unsuccessful. ${contractOfferRejectionSummary(offer.rejectionReason)} You can negotiate different terms manually.`
             : accepted
               ? `${offer.offerKind === "DATES_ADDENDUM"
                 ? `${name} agreed to additional appearances under the existing non-exclusive contract. No renewal was required.`
-                : `${name} accepted your ${contractFamilyLabel(offer.family)} offer for ${offer.family === "EXCLUSIVE" ? "unlimited appearances" : `${offer.dateEntitlement} dates`}. The contract is now signed.`}`
+                : `${name} accepted your ${contractFamilyLabel(offer.family)} offer for ${offer.family === "EXCLUSIVE" ? "unlimited appearances" : `${offer.dateEntitlement} dates`}. The contract is signed and starts PPW Week ${offer.startDate.week}, Year ${offer.startDate.year}; it does not refill the old contract's dates.`}`
               : contractOfferRejectionSummary(offer.rejectionReason),
           deadline: null,
-          deepLink: delegated ? "/staff" : "/business",
+          deepLink: delegated ? "/staff" : "/talent",
           dismissible: true,
           sourceOpportunityCategory: null,
         });
@@ -304,14 +304,14 @@ export function buildPlayerAttention(
       const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
       if (contract.family === "LIMITED_NON_EXCLUSIVE" && datesRemaining === 0) {
         const name = personName(aggregate, contract.personId);
-        items.push({
+        pushIfVisible(aggregate, playerId, items, {
           attentionId: `contract-dates-exhausted:${contract.id}`,
           category: "ACTION_REQUIRED",
           title: `${name} has no contracted dates remaining`,
-          summary: `${name}'s calendar contract is still active, but every purchased appearance has been used. Renegotiate now to buy more dates; an accepted addendum adds dates to the existing deal.`,
+          summary: `${name}'s current contract has no unused dates. You can offer an addendum if you need appearances before expiry. An already-signed future renewal does not replenish this contract.`,
           deadline: null,
           deepLink: "/talent",
-          dismissible: false,
+          dismissible: true,
           sourceOpportunityCategory: null,
         });
         continue;
@@ -327,7 +327,7 @@ export function buildPlayerAttention(
         summary: `${name}’s ${contractFamilyLabel(contract.family)} contract expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`,
         deadline: { ...contract.endDate },
         deepLink: null,
-        dismissible: !urgent,
+        dismissible: true,
         sourceOpportunityCategory: null,
       });
     }
