@@ -22,6 +22,12 @@ export function eligiblePostShowProgrammeIds(state: WorldState, promotionId: Id,
   const event = state.events.find((candidate) => candidate.id === eventId
     && candidate.promotionId === promotionId && candidate.status === "COMPLETED");
   if (!match || !event) return [];
+  const current = state.world.currentDate;
+  if (event.date.year > current.year
+    || (event.date.year === current.year && event.date.week > current.week)
+    || (event.date.year === current.year && event.date.week === current.week && event.date.day > current.day)) {
+    return [];
+  }
   const finish = actualMatchFinish(match);
   const isControversial = finish === "DISQUALIFICATION" || finish === "FOREIGN_OBJECT"
     || (finish === "PROTECTED_FINISH" && match.interference?.outcome === "SUCCESS");
