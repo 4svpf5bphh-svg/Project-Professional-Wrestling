@@ -53,6 +53,17 @@ const PROMO_PURPOSE_OPTIONS = [
   ["AIR_GRIEVANCE", "Air a grievance"],
   ["ISSUE_WARNING", "Send a warning"],
 ] as const;
+const INTERVIEW_TOPICS = [
+  ["CAREER_STORY", "Career story"], ["RIVALRY_PRESSURE", "Feud pressure"],
+  ["RECENT_FORM", "Recent form"], ["NEXT_STEPS", "What's next?"],
+] as const;
+const INTERVIEW_RESPONSES = [
+  ["CANDID", "Open / candid"], ["EVASIVE", "Dodges the question"],
+  ["DEFIANT", "Defiant answer"], ["WALKOUT", "Walks out"],
+] as const;
+const INTERVIEW_FORMATS = [
+  ["BACKSTAGE", "Backstage"], ["SIT_DOWN", "Sit-down"], ["IN_RING", "In-ring"],
+] as const;
 const ATTACK_FORMATS = ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"] as const;
 const ATTACK_OBJECTIVES = ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"] as const;
 const VIDEO_KINDS = [
@@ -609,6 +620,9 @@ export default function CardClient(): React.JSX.Element {
       liveAppearanceKind: type === "LIVE_APPEARANCE" ? "INTRODUCTION" : null,
       liveAppearanceObjective: type === "LIVE_APPEARANCE" ? "ESTABLISH_STAR" : null,
       promoPurpose: type === "PROMO" ? "STATEMENT_OF_INTENT" : null,
+      interviewFormat: type === "INTERVIEW" ? "BACKSTAGE" : null,
+      interviewTopic: type === "INTERVIEW" ? "CAREER_STORY" : null,
+      interviewResponse: type === "INTERVIEW" ? "CANDID" : null,
       attackerPersonId: null,
       victimPersonId: null,
       rescuerPersonId: null,
@@ -823,6 +837,9 @@ export default function CardClient(): React.JSX.Element {
       liveAppearanceKind: type === "LIVE_APPEARANCE" ? (segment.type === type ? (segment.liveAppearanceKind ?? "INTRODUCTION") : "INTRODUCTION") : null,
       liveAppearanceObjective: type === "LIVE_APPEARANCE" ? (segment.type === type ? (segment.liveAppearanceObjective ?? "ESTABLISH_STAR") : "ESTABLISH_STAR") : null,
       promoPurpose: type === "PROMO" ? (segment.type === type ? (segment.promoPurpose ?? "STATEMENT_OF_INTENT") : "STATEMENT_OF_INTENT") : null,
+      interviewFormat: type === "INTERVIEW" ? (segment.type === type ? (segment.interviewFormat ?? "BACKSTAGE") : "BACKSTAGE") : null,
+      interviewTopic: type === "INTERVIEW" ? (segment.type === type ? (segment.interviewTopic ?? "CAREER_STORY") : "CAREER_STORY") : null,
+      interviewResponse: type === "INTERVIEW" ? (segment.type === type ? (segment.interviewResponse ?? "CANDID") : "CANDID") : null,
       attackerPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[0] === segment.attackerPersonId
         ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[1] === segment.victimPersonId
@@ -1132,6 +1149,10 @@ export default function CardClient(): React.JSX.Element {
     if (segment.type === "PROMO") {
       const cast = segment.participantIds.map(personName).join(" & ") || "Choose speaker";
       return `Promo · ${pretty(segment.promoPurpose ?? "STATEMENT_OF_INTENT")} · ${cast} · ${segment.plannedLengthMinutes} min`;
+    }
+    if (segment.type === "INTERVIEW") {
+      const cast = segment.participantIds.map(personName).join(" & ") || "Choose guest";
+      return `Interview · ${pretty(segment.interviewTopic ?? "CAREER_STORY")} · ${pretty(segment.interviewResponse ?? "CANDID")} · ${cast}`;
     }
     if (segment.type === "VIDEO_PACKAGE") {
       const subject = view?.videoSubjects.find((person) => person.personId === segment.videoSubjectPersonId)?.name
@@ -1910,6 +1931,52 @@ export default function CardClient(): React.JSX.Element {
                       ))}
                     </div>
                     <small className={styles.sideLabel}>Repeating the same message with the same wrestler can wear thin. Develop the storyline or change the subject to keep the audience interested.</small>
+                  </div>
+                ) : null}
+
+                {segment.type === "INTERVIEW" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>What's the interviewer asking about?</span>
+                      <small>A neutral host asks the question; no extra wrestler or contract date is booked.</small>
+                    </div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Interview topic">
+                      {INTERVIEW_TOPICS.map(([topic, label]) => (
+                        <button key={topic} type="button" disabled={!view.canEdit}
+                          aria-pressed={(segment.interviewTopic ?? "CAREER_STORY") === topic}
+                          className={(segment.interviewTopic ?? "CAREER_STORY") === topic ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { interviewTopic: topic })}>{label}</button>
+                      ))}
+                    </div>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>How does the wrestler answer?</span>
+                      <small>You script the response. The simulation judges the crowd's reaction, not what was said.</small>
+                    </div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Interview scripted response">
+                      {INTERVIEW_RESPONSES.map(([response, label]) => (
+                        <button key={response} type="button" disabled={!view.canEdit}
+                          aria-pressed={(segment.interviewResponse ?? "CANDID") === response}
+                          className={(segment.interviewResponse ?? "CANDID") === response ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { interviewResponse: response })}>{label}</button>
+                      ))}
+                    </div>
+                    {bookingMode === "ADVANCED" ? (
+                      <>
+                        <div className={styles.segmentPeopleHeader}>
+                          <span>Where does the interview happen?</span>
+                          <small>A different setting, not a new type of segment or additional booked talent.</small>
+                        </div>
+                        <div className={styles.slotTypeRow} role="group" aria-label="Interview format">
+                          {INTERVIEW_FORMATS.map(([format, label]) => (
+                            <button key={format} type="button" disabled={!view.canEdit}
+                              aria-pressed={(segment.interviewFormat ?? "BACKSTAGE") === format}
+                              className={(segment.interviewFormat ?? "BACKSTAGE") === format ? styles.typeActive : styles.secondaryButton}
+                              onClick={() => updateSegment(segment.draftSegmentId, { interviewFormat: format })}>{label}</button>
+                          ))}
+                        </div>
+                      </>
+                    ) : null}
+                    <small className={styles.sideLabel}>An evasive answer or walkout is scripted, not randomly imposed. A question about feud pressure lands more naturally when an active Programme exists.</small>
                   </div>
                 ) : null}
 
