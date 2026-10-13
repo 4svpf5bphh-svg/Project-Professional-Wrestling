@@ -288,6 +288,16 @@ try {
   };
   ok(matches.length >= 2, "HTTP scripted run-in fixture needs at least two singles matches");
   const runInPerson = matches[1].sideAIds[0];
+  matches[1] = {
+    ...matches[1],
+    plannedFinish: "FOREIGN_OBJECT",
+    finishCheaterPersonId: matches[1].sideAIds[0],
+  };
+  if (matches.length > 2) matches[2] = {
+    ...matches[2],
+    plannedFinish: "DISQUALIFICATION",
+    finishCheaterPersonId: matches[2].sideBIds[0],
+  };
   matches[0] = {
     ...matches[0], style: httpStyle,
     interfererPersonId: runInPerson,
@@ -305,6 +315,7 @@ try {
     plannedLengthMinutes: 5,
     turnPersonId: turnPerson.personId,
     turnTargetAlignment,
+    turnPresentation: "REVEAL",
   };
   const firstMatch = matches[0];
   const secondMatch = matches[1];
@@ -317,6 +328,9 @@ try {
     sourceDraftMatchId: firstMatch.draftMatchId,
     programmeId: null,
     plannedLengthMinutes: 5,
+    attackPresentation: "BLINDSIDE",
+    attackObjective: "ESCALATE_RIVALRY",
+    postMatchAssaultEnding: "OFFICIALS_SEPARATE",
   };
   const signing = {
     draftSegmentId: `${cardView.draftId}:ci-contract-signing`,
@@ -358,8 +372,53 @@ try {
     attackerPersonId: secondMatch.sideBIds[0],
     victimPersonId: firstMatch.sideAIds[0],
     rescuerPersonId: secondMatch.sideAIds[0],
+    rescueOutcome: "RESCUER_STANDS_TALL",
   };
-  const scriptedSegments = [assault, signing, interruption, attack, rescue, turnSegment];
+  const video = {
+    draftSegmentId: `${cardView.draftId}:ci-video`,
+    type: "VIDEO_PACKAGE",
+    participantIds: [],
+    programmeId: null,
+    plannedLengthMinutes: 3,
+    videoSubjectPersonId: turnPerson.personId,
+    videoKind: "RIVALRY_RECAP",
+    videoObjective: "RECAP_STAKES",
+    videoReveal: "NAMED",
+  };
+  const appearance = {
+    draftSegmentId: `${cardView.draftId}:ci-live-intro`,
+    type: "LIVE_APPEARANCE",
+    participantIds: [turnPerson.personId],
+    programmeId: null,
+    plannedLengthMinutes: 3,
+    liveAppearanceKind: "INTRODUCTION",
+    liveAppearanceObjective: "ESTABLISH_STAR",
+  };
+  const promo = {
+    draftSegmentId: `${cardView.draftId}:ci-promo`,
+    type: "PROMO", participantIds: [turnPerson.personId], programmeId: null,
+    plannedLengthMinutes: 3, promoPurpose: "ISSUE_WARNING",
+  };
+  const interview = {
+    draftSegmentId: `${cardView.draftId}:ci-interview`,
+    type: "INTERVIEW", participantIds: [turnPerson.personId], programmeId: null,
+    plannedLengthMinutes: 3, interviewFormat: "BACKSTAGE",
+    interviewTopic: "RIVALRY_PRESSURE", interviewResponse: "DEFIANT",
+  };
+  const celebration = {
+    draftSegmentId: `${cardView.draftId}:ci-celebration`,
+    type: "CELEBRATION", participantIds: [turnPerson.personId], programmeId: null,
+    plannedLengthMinutes: 3, celebrationOccasion: "FAN_APPRECIATION",
+    celebrationEnding: "SALUTE_CROWD",
+  };
+  const confrontation = {
+    draftSegmentId: `${cardView.draftId}:ci-confrontation`,
+    type: "CONFRONTATION", participantIds: [firstMatch.sideAIds[0], firstMatch.sideBIds[0]],
+    programmeId: null, plannedLengthMinutes: 3,
+    initiatorPersonId: firstMatch.sideAIds[0], targetPersonId: firstMatch.sideBIds[0],
+    confrontationEnding: "STAREDOWN",
+  };
+  const scriptedSegments = [assault, signing, interruption, attack, rescue, turnSegment, video, appearance, promo, interview, celebration, confrontation];
   const bookedOrder = [
     { kind: "MATCH", refId: firstMatch.draftMatchId },
     { kind: "SEGMENT", refId: assault.draftSegmentId },
@@ -384,6 +443,12 @@ try {
   ok(savedCard.matches.every((match) => match.type === "SINGLES"), "HTTP match card changed booked match types");
   ok(savedCard.matches[0]?.style?.competitiveness === 84, "HTTP show-card route dropped match style");
   ok(savedCard.matches[0]?.style?.risk === 31, "HTTP show-card route changed match style dimensions");
+  ok(savedCard.matches[1]?.plannedFinish === "FOREIGN_OBJECT"
+    && savedCard.matches[1]?.finishCheaterPersonId === matches[1].sideAIds[0],
+    "HTTP show-card route rejected or stripped foreign-object finish/cheater");
+  if (matches.length > 2) ok(savedCard.matches[2]?.plannedFinish === "DISQUALIFICATION"
+    && savedCard.matches[2]?.finishCheaterPersonId === matches[2].sideBIds[0],
+    "HTTP show-card route rejected or stripped disqualification finish/cheater");
   ok(savedCard.segments?.length === scriptedSegments.length, "HTTP save dropped new segment types");
   const savedByType = new Map(savedCard.segments.map((segment) => [segment.type, segment]));
   ok(savedByType.get("TURN")?.turnPersonId === turnPerson.personId, "HTTP show-card route dropped the turning wrestler");
@@ -402,13 +467,43 @@ try {
   ok(savedByType.get("ATTACK")?.attackPresentation === "BEATDOWN"
     && savedByType.get("ATTACK")?.attackObjective === "BUILD_SYMPATHY",
     "HTTP route discarded attack format or objective");
-  ok(savedByType.get("RESCUE")?.rescuerPersonId === rescue.rescuerPersonId,
-    "HTTP route discarded the named rescuer");
+  ok(savedByType.get("RESCUE")?.rescuerPersonId === rescue.rescuerPersonId
+    && savedByType.get("RESCUE")?.rescueOutcome === "RESCUER_STANDS_TALL",
+    "HTTP route discarded the named rescuer or scripted rescue ending");
+  ok(savedByType.get("POST_MATCH_ASSAULT")?.postMatchAssaultEnding === "OFFICIALS_SEPARATE"
+    && savedByType.get("POST_MATCH_ASSAULT")?.attackPresentation === "BLINDSIDE",
+    "HTTP route lost authored post-match assault format and ending");
+  ok(savedByType.get("VIDEO_PACKAGE")?.videoKind === "RIVALRY_RECAP"
+    && savedByType.get("VIDEO_PACKAGE")?.videoObjective === "RECAP_STAKES"
+    && savedByType.get("VIDEO_PACKAGE")?.videoReveal === "NAMED"
+    && savedByType.get("VIDEO_PACKAGE")?.videoSubjectPersonId === turnPerson.personId,
+    "HTTP route lost video-package identity or objective");
+  ok(savedByType.get("LIVE_APPEARANCE")?.liveAppearanceKind === "INTRODUCTION"
+    && savedByType.get("LIVE_APPEARANCE")?.liveAppearanceObjective === "ESTABLISH_STAR",
+    "HTTP route lost live introduction subtype or goal");
+  ok(savedByType.get("PROMO")?.promoPurpose === "ISSUE_WARNING", "HTTP route discarded promo purpose");
+  ok(savedByType.get("INTERVIEW")?.interviewFormat === "BACKSTAGE"
+    && savedByType.get("INTERVIEW")?.interviewTopic === "RIVALRY_PRESSURE"
+    && savedByType.get("INTERVIEW")?.interviewResponse === "DEFIANT",
+    "HTTP route discarded authored interview details");
+  ok(savedByType.get("CELEBRATION")?.celebrationOccasion === "FAN_APPRECIATION"
+    && savedByType.get("CELEBRATION")?.celebrationEnding === "SALUTE_CROWD",
+    "HTTP route discarded celebration occasion or ending");
+  ok(savedByType.get("CONFRONTATION")?.confrontationEnding === "STAREDOWN",
+    "HTTP route discarded authored confrontation ending");
   ok(savedCard.matches[0]?.interfererPersonId === runInPerson
     && savedCard.matches[0]?.interferenceSide === "A"
     && savedCard.matches[0]?.interferenceOutcome === "SUCCESS",
     "HTTP route discarded a player's selected match run-in");
   const reloadedCard = await json(await fetch(`${baseUrl}/api/show-card?draftId=${encodeURIComponent(draftId)}`, { cache: "no-store" }));
+  ok(reloadedCard.matches[1]?.plannedFinish === "FOREIGN_OBJECT"
+    && reloadedCard.matches[1]?.finishCheaterPersonId === matches[1].sideAIds[0],
+    "HTTP reload lost scripted foreign-object finish");
+  ok(reloadedCard.segments.some((segment) => segment.type === "VIDEO_PACKAGE"
+    && segment.videoKind === "RIVALRY_RECAP")
+    && reloadedCard.segments.some((segment) => segment.type === "LIVE_APPEARANCE"
+      && segment.liveAppearanceKind === "INTRODUCTION"),
+    "HTTP reload lost video or live appearance scripting");
   ok(reloadedCard.matches[0]?.interfererPersonId === runInPerson
     && reloadedCard.matches[0]?.interferenceOutcome === "SUCCESS",
     "HTTP reload silently reset the selected match interference");
