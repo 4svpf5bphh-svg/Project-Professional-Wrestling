@@ -907,6 +907,117 @@ test("an established feud gives a pull-apart brawl a stronger reception than a c
   ok(hot.crowdResponse! > cold.crowdResponse!, "hot rivalry failed to improve brawl response");
 });
 
+test("PROMO preserves a selected message without inventing a target or rewriting the scripted speech", () => {
+  const setup = fixture(91601);
+  const speaker = setup.rosterIds[2]!;
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+    draftId: "scripted-promo",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null,
+    venueId: null,
+    ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [],
+    championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "promo-speaker",
+      type: "PROMO",
+      promoPurpose: "RALLY_FANS",
+      participantIds: [speaker],
+      programmeId: null,
+      plannedLengthMinutes: 6,
+    }],
+    runningOrder: [{ kind: "SEGMENT", refId: "promo-speaker" }],
+  });
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "scripted promo did not resolve");
+  const frozen = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(frozen.promoPurpose === "RALLY_FANS", "completed promo lost its authored message");
+  ok(frozen.type === "PROMO" && frozen.participantIds[0] === speaker, "promo created an alternate event or performer");
+  ok(frozen.targetPersonId === null && frozen.challengeResponse === null, "promo invented a challenge or rival response");
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 0, "re-running segment resolution duplicated promo history");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 1, {
+    draftId: "invalid-promo",
+    promotionId: setup.promotion.id,
+    targetDate: setup.targetDate,
+    marketId: null,
+    venueId: null,
+    ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4),
+    matches: [],
+    championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "bad-purpose",
+      type: "PROMO",
+      promoPurpose: "INVENTED_OUTCOME" as "BOAST",
+      participantIds: [speaker],
+      programmeId: null,
+      plannedLengthMinutes: 5,
+    }],
+  }), "promo purpose must be a supported");
+});
+
+test("promo repetition is modest, scoped to a completed same-message speech by the same talent and promotion", () => {
+  function resolveWithHistory(prior: "NONE" | "MATCH" | "DIFFERENT_BEAT" | "OTHER_SPEAKER" | "OTHER_PROMOTION" | "OLD" | "DRAFT") {
+    const setup = fixture(91602);
+    setup.state.world.currentDate = { year: 1, week: 8, day: 1 };
+    setup.targetDate = { year: 1, week: 8, day: 6 };
+    const speaker = setup.rosterIds[2]!;
+    if (prior !== "NONE" && prior !== "DRAFT") {
+      const priorEntry = {
+        id: "prior-performed-promo",
+        worldId: setup.state.world.id,
+        date: { year: 1, week: prior === "OLD" ? 1 : 7, day: 6 },
+        order: 9750,
+        type: "SHOW_SEGMENT_COMPLETED",
+        significanceAtTime: "ROUTINE" as const,
+        historicalSignificance: "ROUTINE" as const,
+        entityIds: [setup.promotion.id, speaker],
+        payload: {
+          promotionId: prior === "OTHER_PROMOTION" ? "other-promotion" : setup.promotion.id,
+          segmentType: "PROMO",
+          promoPurpose: prior === "DIFFERENT_BEAT" ? "BOAST" : "RALLY_FANS",
+          participantIds: prior === "OTHER_SPEAKER" ? setup.rosterIds[1]! : speaker,
+        },
+      };
+      setup.state.ledger.push(priorEntry);
+    }
+    // A pending draft is never completed evidence and should not affect the World.
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      draftId: "tested-promo",
+      promotionId: setup.promotion.id,
+      targetDate: setup.targetDate,
+      marketId: null,
+      venueId: null,
+      ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4),
+      matches: [],
+      championshipAssignments: [],
+      segments: [{
+        draftSegmentId: "tested-promo-beat",
+        type: "PROMO",
+        promoPurpose: "RALLY_FANS",
+        participantIds: [speaker],
+        programmeId: null,
+        plannedLengthMinutes: 5,
+      }],
+    });
+    setup.state.events.push(completedEvent(setup));
+    recordResolvedShowSegments(setup.state, setup.planning);
+    return resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  }
+  const fresh = resolveWithHistory("NONE");
+  const repeated = resolveWithHistory("MATCH");
+  ok(repeated.angleFitModifier < fresh.angleFitModifier, "same-wrestler repeated message did not wear thin");
+  ok(repeated.crowdResponse! < fresh.crowdResponse!, "repeated message did not affect audience reception");
+  for (const other of ["DIFFERENT_BEAT", "OTHER_SPEAKER", "OTHER_PROMOTION", "OLD", "DRAFT"] as const) {
+    const outcome = resolveWithHistory(other);
+    ok(outcome.angleFitModifier === fresh.angleFitModifier,
+      `${other} was incorrectly penalised as an identical performed promo`);
+  }
+});
+
 test("standalone segments become factual show history without inventing Programme activity", () => {
   const setup = fixture(9151);
   upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
