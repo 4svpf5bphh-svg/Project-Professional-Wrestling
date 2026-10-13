@@ -91,10 +91,13 @@ export function MatchFinishReplay({ match }: { match: ReplayMatch }): React.JSX.
 
 /** This is a presentation lens on already completed show records. */
 export default function ShowBroadcast({ show }: { show: BroadcastShow }): React.JSX.Element {
-  const moments = showResultHighlights(show);
+  // No more than two distinct slots in the opening reel: the full review is below.
+  // Duplicate championship/injury stories about one bout belong to that bout's recap.
+  const moments = showResultHighlights(show, 12)
+    .filter((moment, index, all) => all.findIndex((other) => other.slotOrder === moment.slotOrder) === index)
+    .slice(0, 2);
   const lead = moments[0] ?? null;
   const otherMoments = moments.slice(1);
-  const crowd = Number.isFinite(show.crowdResponse) ? show.crowdResponse : 0;
   const editorial = reviewPlayerShow(show);
   return (
     <section className={styles.broadcast} aria-label="Completed show highlights">
@@ -108,22 +111,14 @@ export default function ShowBroadcast({ show }: { show: BroadcastShow }): React.
         <p>{editorial.recap}</p>
         <em>{editorial.verdict}</em>
       </div>
-      <div className={styles.broadcastNumbers}>
-        <div className={styles.broadcastCrowd}>
-          <span>CROWD RESPONSE</span>
-          <strong>{display(show.crowdResponse)}<small> / 100</small></strong>
-          <div className={styles.crowdRail} role="meter" aria-label="Final crowd response out of 100"
-            aria-valuemin={0} aria-valuemax={100}
-            aria-valuenow={Math.min(100, Math.max(0, Math.round(crowd)))}>
-            <span style={{ width: `${Math.min(100, Math.max(0, crowd))}%` }} />
-          </div>
-        </div>
-        <div className={styles.broadcastBest}>
-          <span>BEST BOUT</span>
-          <MatchStarRating rating={show.bestMatchRating} />
-          <small>Show average ★ {display(show.averageMatchRating)}</small>
-        </div>
+      <div className={styles.broadcastQuickFacts} aria-label="Show figures at a glance">
+        <span>THE CROWD <strong>{display(show.crowdResponse)} / 100</strong></span>
+        <span>BEST MATCH <MatchStarRating rating={show.bestMatchRating} /></span>
       </div>
+      <nav className={styles.broadcastJump} aria-label="Jump through this show">
+        <a href={"#show-" + show.eventId + "-card"}>Read the card ↓</a>
+        <a href={"#show-" + show.eventId + "-finale"}>The last word ↓</a>
+      </nav>
       {lead ? (
         <a className={`${styles.broadcastLead} ${lead.category === "CHAMPIONSHIP" ? styles.broadcastLeadTitle : lead.category === "INJURY" ? styles.broadcastLeadInjury : ""}`}
           href={`#show-${show.eventId}-slot-${lead.slotOrder}`}
