@@ -65,7 +65,7 @@ export function segmentDirectionHint(type: DetailedShowSegmentType): string {
   switch (type) {
     case "PROMO": return "Choose the message: boast, rally fans, air a grievance, issue a warning or state an intention. Repeating the same speech wears thin.";
     case "INTERVIEW": return "A neutral host asks about a wrestler's career, form, future or rivalry. Script a candid answer, defiance, evasion or walkout.";
-    case "CELEBRATION": return "Let the audience react to a victory or milestone. The character and timing change the reception.";
+    case "CELEBRATION": return "Celebrate a verified recent win, thank the fans, taunt a rival or stage a kayfabe self-coronation. Script exactly how it ends.";
     case "CONFRONTATION": return "Bring two wrestlers face to face. Choose who instigates the encounter and who is targeted.";
     case "INTERRUPTION": return "Choose who interrupts, whose time they steal and who wins the scripted exchange.";
     case "ATTACK": return "Script the aggressor and victim, then choose the assault format and what it is meant to achieve.";
