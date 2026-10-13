@@ -498,6 +498,87 @@ test("confrontation repetition is bounded to completed same-pair same-ending pro
   }
 });
 
+test("player-authored failed rescue remains a failed attempt without changing injuries or backstage relationships", () => {
+  const setup = fixture(91901);
+  const [aggressor, victim, rescuer] = setup.rosterIds;
+  const draft = {
+    draftId: "failed-rescue", promotionId: setup.promotion.id, targetDate: setup.targetDate,
+    marketId: null, venueId: null, ticketStrategy: null,
+    participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+    segments: [{
+      draftSegmentId: "rescue-fails", type: "RESCUE" as const,
+      participantIds: [aggressor!, victim!, rescuer!],
+      attackerPersonId: aggressor!, victimPersonId: victim!, rescuerPersonId: rescuer!,
+      rescueOutcome: "RESCUE_OVERWHELMED" as const,
+      programmeId: null, plannedLengthMinutes: 5,
+    }],
+  };
+  upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, draft);
+  const injuryCount = setup.state.injuries.length;
+  const relationshipCount = setup.state.wrestlerRelationships?.length ?? 0;
+  setup.state.events.push(completedEvent(setup));
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 1, "scripted failed rescue did not resolve");
+  const result = resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  ok(result.type === "RESCUE" && result.rescueOutcome === "RESCUE_OVERWHELMED",
+    "World Lock rewrote the booker's failed rescue as a success");
+  ok(result.attackerPersonId === aggressor && result.victimPersonId === victim
+    && result.rescuerPersonId === rescuer, "booked wrestler roles changed at resolution");
+  ok(setup.state.injuries.length === injuryCount
+    && (setup.state.wrestlerRelationships?.length ?? 0) === relationshipCount,
+    "rescue angle manufactured real injuries or friendships");
+  ok(recordResolvedShowSegments(setup.state, setup.planning) === 0, "resolving the show again duplicated rescue history");
+  throwsContaining(() => upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 1, {
+    ...draft, segments: [{ ...draft.segments[0]!, rescueOutcome: "SOMEONE_ELSE_DECIDES" as "RESCUE_OVERWHELMED" }],
+  }), "unsupported scripted rescue outcome");
+  ok(setup.planning.workspaces[0]!.detailedShowDrafts[0]!.segments![0]!.rescueOutcome === "RESCUE_OVERWHELMED",
+    "invalid rescue altered persisted authored intent");
+});
+
+test("rescue repetition tracks only previous completed identical attempted saves for the same promotion", () => {
+  function run(prior: "NONE" | "MATCH" | "OTHER_ENDING" | "OTHER_RESCUER" | "OTHER_PROMOTION" | "OLD" | "FUTURE") {
+    const setup = fixture(91902);
+    setup.state.world.currentDate = { year: 1, week: 8, day: 1 };
+    setup.targetDate = { year: 1, week: 8, day: 6 };
+    const [aggressor, victim, rescuer, other] = setup.rosterIds;
+    if (prior !== "NONE") {
+      setup.state.ledger.push({
+        id: "prior-save", worldId: setup.state.world.id,
+        date: { year: 1, week: prior === "OLD" ? 1 : prior === "FUTURE" ? 9 : 7, day: 6 },
+        order: 9850, type: "SHOW_SEGMENT_COMPLETED",
+        significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+        entityIds: [setup.promotion.id, aggressor!, victim!, rescuer!],
+        payload: {
+          promotionId: prior === "OTHER_PROMOTION" ? "other-promotion" : setup.promotion.id,
+          segmentType: "RESCUE", attackerPersonId: aggressor!, victimPersonId: victim!,
+          rescuerPersonId: prior === "OTHER_RESCUER" ? other : rescuer,
+          rescueOutcome: prior === "OTHER_ENDING" ? "ATTACKER_ESCAPES" : "RESCUER_STANDS_TALL",
+        },
+      });
+    }
+    upsertDetailedShowDraft(setup.state, setup.planning, setup.promotion.id, 0, {
+      draftId: "repeat-save-show", promotionId: setup.promotion.id,
+      targetDate: setup.targetDate, marketId: null, venueId: null, ticketStrategy: null,
+      participantIds: setup.rosterIds.slice(0, 4), matches: [], championshipAssignments: [],
+      segments: [{
+        draftSegmentId: "save", type: "RESCUE",
+        participantIds: [aggressor!, victim!, rescuer!],
+        attackerPersonId: aggressor!, victimPersonId: victim!, rescuerPersonId: rescuer!,
+        rescueOutcome: "RESCUER_STANDS_TALL", programmeId: null, plannedLengthMinutes: 5,
+      }],
+    });
+    setup.state.events.push(completedEvent(setup));
+    recordResolvedShowSegments(setup.state, setup.planning);
+    return resolvedShowSegmentsForEvent(setup.state, setup.state.events[0]!.id)[0]!;
+  }
+  const fresh = run("NONE");
+  ok(run("MATCH").angleFitModifier < fresh.angleFitModifier,
+    "identical completed rescue never loses freshness");
+  for (const kind of ["OTHER_ENDING", "OTHER_RESCUER", "OTHER_PROMOTION", "OLD", "FUTURE"] as const) {
+    ok(run(kind).angleFitModifier === fresh.angleFitModifier,
+      `${kind} incorrectly counted as a repeated rescue`);
+  }
+});
+
 test("RESCUE freezes the aggressor, victim and rescuer as distinct characters", () => {
   const setup = fixture(9167);
   const [aggressor, victim, rescuer] = setup.rosterIds;
