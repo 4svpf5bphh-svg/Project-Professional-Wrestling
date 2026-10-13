@@ -490,6 +490,64 @@ test("a resolved confrontation appears with its exact scripted ending in private
     "another promoter's private Results leaked this face-off");
 });
 
+test("Results preserve a failed rescue and post-match fightback instead of inventing a successful save or match reversal", () => {
+  const { aggregate, promotionAId } = twoPlayerFixture(72017);
+  const event = aggregate.state.events.find((entry) => entry.id === "results-event-a")!;
+  const people = aggregate.state.matchParticipants
+    .filter((person) => person.eventId === event.id).map((person) => person.personId);
+  const [attacker, victim] = people;
+  const rescuer = aggregate.state.people.find((person) => person.id !== attacker && person.id !== victim)!.id;
+  const match = aggregate.state.matches.find((entry) => entry.eventId === event.id)!;
+  const originalWinner = match.actualWinnerSide;
+  const originalInjuries = aggregate.state.injuries.length;
+  for (const [i, segmentType] of (["RESCUE", "POST_MATCH_ASSAULT"] as const).entries()) {
+    aggregate.state.ledger.push({
+      id: `authored-aftermath-${i}`, worldId: aggregate.state.world.id,
+      date: { ...event.date }, order: 1790 + i,
+      type: "SHOW_SEGMENT_COMPLETED",
+      significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+      entityIds: [event.id, promotionAId, attacker!, victim!, rescuer],
+      payload: {
+        eventId: event.id, promotionId: promotionAId,
+        sourceDraftId: "authored-aftermath-show",
+        draftSegmentId: `aftermath-${i}`,
+        slotOrder: i + 1, segmentType,
+        participantIds: (segmentType === "RESCUE" ? [attacker!, victim!, rescuer] : [attacker!, victim!]).join(","),
+        attackerPersonId: attacker!, victimPersonId: victim!,
+        rescuerPersonId: segmentType === "RESCUE" ? rescuer : null,
+        rescueOutcome: segmentType === "RESCUE" ? "RESCUE_OVERWHELMED" : null,
+        sourceDraftMatchId: segmentType === "POST_MATCH_ASSAULT" ? "results-match-script" : null,
+        sourceMatchId: segmentType === "POST_MATCH_ASSAULT" ? match.id : null,
+        victimMatchOutcome: segmentType === "POST_MATCH_ASSAULT" ? "LOST" : null,
+        attackPresentation: segmentType === "POST_MATCH_ASSAULT" ? "BEATDOWN" : null,
+        attackObjective: segmentType === "POST_MATCH_ASSAULT" ? "BUILD_SYMPATHY" : null,
+        postMatchAssaultEnding: segmentType === "POST_MATCH_ASSAULT" ? "VICTIM_FIGHTS_BACK" : null,
+        programmeId: null, plannedLengthMinutes: 5,
+      },
+    });
+  }
+  const owner = buildPlayerShowHistory(aggregate, "player-a").shows[0]!;
+  const failed = owner.segments.find((entry) => entry.type === "RESCUE")!;
+  const retaliation = owner.segments.find((entry) => entry.type === "POST_MATCH_ASSAULT")!;
+  ok(failed.rescueOutcome === "RESCUE_OVERWHELMED",
+    "private Results invented a successful save instead of showing the booked failure");
+  ok(retaliation.postMatchAssaultEnding === "VICTIM_FIGHTS_BACK"
+    && retaliation.attackPresentation === "BEATDOWN"
+    && retaliation.attackObjective === "BUILD_SYMPATHY"
+    && retaliation.sourceMatchId === match.id,
+    "private Results lost the actual scripted aftermath or source match");
+  const publicShow = buildPlayerWorldResultsView(aggregate, "player-b").shows
+    .find((entry) => entry.eventId === event.id)!;
+  ok(publicShow.segments.find((entry) => entry.type === "RESCUE")?.rescueOutcome === "RESCUE_OVERWHELMED",
+    "public Results turned an attempted rescue into a successful one");
+  ok(publicShow.segments.find((entry) => entry.type === "POST_MATCH_ASSAULT")?.postMatchAssaultEnding === "VICTIM_FIGHTS_BACK",
+    "public Results lost the performed post-match ending");
+  ok(match.actualWinnerSide === originalWinner && aggregate.state.injuries.length === originalInjuries,
+    "an on-screen aftermath rewrote match results or fabricated injuries");
+  ok(buildPlayerShowHistory(aggregate, "player-b").shows[0]!.segments.length === 0,
+    "rivalry-private show report leaked to another promotion");
+});
+
 test("show history keeps positive alignment clarity separate from negative volatility", () => {
   const { aggregate } = twoPlayerFixture(72006);
   const event = aggregate.state.events.find((candidate) => candidate.id === "results-event-a")!;
