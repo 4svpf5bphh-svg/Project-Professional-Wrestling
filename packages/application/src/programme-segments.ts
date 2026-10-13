@@ -16,6 +16,7 @@ import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import {
   PROMO_PURPOSES, INTERVIEW_FORMATS, INTERVIEW_TOPICS, INTERVIEW_RESPONSES,
   CELEBRATION_OCCASIONS, CELEBRATION_ENDINGS, CONFRONTATION_ENDINGS,
+  RESCUE_OUTCOMES, POST_MATCH_ASSAULT_ENDINGS,
 } from "./planning.js";
 import type {
   DetailedProgrammeSegmentDraft,
@@ -35,6 +36,8 @@ import type {
   LiveAppearanceObjective,
   AttackPresentation,
   AttackObjective,
+  RescueOutcome,
+  PostMatchAssaultEnding,
   TurnPresentation,
   SigningOutcome,
   ChallengeResponse,
@@ -94,6 +97,8 @@ export interface ResolvedShowSegment {
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
+  rescueOutcome: RescueOutcome | null;
+  postMatchAssaultEnding: PostMatchAssaultEnding | null;
   sourceDraftMatchId: string | null;
   sourceMatchId: Id | null;
   victimMatchOutcome: "WON" | "LOST" | "DRAW" | null;
@@ -146,6 +151,8 @@ interface NormalizedDraftSegment {
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
+  rescueOutcome: RescueOutcome | null;
+  postMatchAssaultEnding: PostMatchAssaultEnding | null;
   sourceDraftMatchId: string | null;
   initiatorPersonId: Id | null;
   targetPersonId: Id | null;
@@ -240,6 +247,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     victimPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
       ? (segment.victimPersonId ?? null) : null,
     rescuerPersonId: segment.type === "RESCUE" ? (segment.rescuerPersonId ?? null) : null,
+    rescueOutcome: segment.type === "RESCUE" ? (segment.rescueOutcome ?? null) : null,
+    postMatchAssaultEnding: segment.type === "POST_MATCH_ASSAULT" ? (segment.postMatchAssaultEnding ?? null) : null,
     sourceDraftMatchId: segment.type === "POST_MATCH_ASSAULT" ? (segment.sourceDraftMatchId ?? null) : null,
     initiatorPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING" || segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" || segment.type === "STABLE_RECONCILIATION" ? (segment.initiatorPersonId ?? null) : null,
     targetPersonId: segment.type === "CHALLENGE" || segment.type === "CONFRONTATION" || segment.type === "INTERRUPTION" || segment.type === "CONTRACT_SIGNING" || segment.type === "STABLE_INVITATION" || segment.type === "STABLE_EXIT" || segment.type === "STABLE_RECONCILIATION" ? (segment.targetPersonId ?? null) : null,
@@ -252,8 +261,10 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     stableInvitationOutcome: segment.type === "STABLE_INVITATION" ? (segment.stableInvitationOutcome ?? "REFUSED") : null,
     stableExitOutcome: segment.type === "STABLE_EXIT" ? (segment.stableExitOutcome ?? "EXPELLED") : null,
     stableReconciliationOutcome: segment.type === "STABLE_RECONCILIATION" ? (segment.stableReconciliationOutcome ?? "RECONCILED") : null,
-    attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? null) : null,
-    attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? null) : null,
+    attackPresentation: segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT"
+      ? (segment.attackPresentation ?? null) : null,
+    attackObjective: segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT"
+      ? (segment.attackObjective ?? null) : null,
     turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
     turnTargetAlignment: segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
     turnPresentation: segment.type === "TURN" ? (segment.turnPresentation ?? "REVEAL") : null,
@@ -284,6 +295,8 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
       attackerPersonId: null,
       victimPersonId: null,
       rescuerPersonId: null,
+      rescueOutcome: null,
+      postMatchAssaultEnding: null,
       sourceDraftMatchId: null,
       initiatorPersonId: null,
       targetPersonId: null,
@@ -500,13 +513,30 @@ function segmentOutcome(
       const rescuerAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, rescuer.id);
       const aggressorAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, aggressor.id);
       const victimAlignment = wrestlerAlignmentForPromotion(state, event.promotionId, victim.id);
-      // The save is not automatically successful: presentation, alignment and
-      // storyline context determine how convincingly it lands.
+      // The World only rates reception. It never changes whether the
+      // player-scripted attempted save actually succeeds or fails.
       const clarity = rescuerAlignment === "FACE" && aggressorAlignment === "HEEL" && victimAlignment === "FACE"
         ? 2.5 : rescuerAlignment === "HEEL" && victimAlignment === "FACE" ? -2 : 0;
       const credibility = clamp((rescuer.skills.presentation - 50) / 20, -2.5, 2.5);
       const stakes = programme ? clamp(((programme.heat ?? 50) - 50) / 15, -2, 2) : -0.5;
-      angleFitModifier = round1(clamp(clarity + credibility + stakes, -5, 5));
+      const endingFit = segment.rescueOutcome === "RESCUER_STANDS_TALL" ? 0.9
+        : segment.rescueOutcome === "ATTACKER_ESCAPES" ? (programme ? 0.8 : 0)
+        : segment.rescueOutcome === "RESCUE_OVERWHELMED" ? (rescuerAlignment === "FACE" ? -0.45 : 0.15) : 0;
+      const currentWeek = ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear);
+      const repeats = segment.rescueOutcome ? state.ledger.filter((entry) => {
+        if (entry.type !== RESOLVED_SEGMENT_LEDGER_TYPE
+          || entry.payload.promotionId !== event.promotionId
+          || entry.payload.segmentType !== "RESCUE"
+          || entry.payload.attackerPersonId !== segment.attackerPersonId
+          || entry.payload.victimPersonId !== segment.victimPersonId
+          || entry.payload.rescuerPersonId !== segment.rescuerPersonId
+          || entry.payload.rescueOutcome !== segment.rescueOutcome) return false;
+        const weeksAgo = currentWeek - ppwDateToWeekIndex(entry.date, state.ruleset.weeksPerYear);
+        return weeksAgo >= 1 && weeksAgo <= 6;
+      }).length : 0;
+      angleFitModifier = round1(clamp(
+        clarity + credibility + stakes + endingFit - Math.min(3.5, repeats * 1.25), -5, 5,
+      ));
     }
   }
   if (segment.type === "POST_MATCH_ASSAULT" && segment.attackerPersonId && segment.victimPersonId && victimMatchOutcome) {
@@ -516,7 +546,34 @@ function segmentOutcome(
       : attackerAlignment === "FACE" && victimAlignment === "FACE" ? -2 : 0;
     // Match result is authoritative. The assault cannot alter it.
     const aftermath = victimMatchOutcome === "WON" ? 1 : victimMatchOutcome === "LOST" ? -0.5 : 0;
-    angleFitModifier = round1(clamp(roleClarity + aftermath, -5, 5));
+    const formatFit = segment.attackPresentation === "BLINDSIDE" ? (attackerAlignment === "HEEL" ? 0.9 : -0.75)
+      : segment.attackPresentation === "BEATDOWN" ? 0.5
+      : segment.attackPresentation === "PULL_APART_BRAWL" ? (programme ? 1 : -0.75) : 0;
+    const objectiveFit = segment.attackObjective === "ESCALATE_RIVALRY" ? (programme ? 1.15 : -0.8)
+      : segment.attackObjective === "BUILD_SYMPATHY" ? (victimAlignment === "FACE" ? 0.8 : -0.6)
+      : segment.attackObjective === "GENERATE_HEAT" ? (attackerAlignment === "HEEL" ? 0.8 : -0.6) : 0;
+    const endingFit = segment.postMatchAssaultEnding === "ATTACKER_STANDS_TALL" ? (attackerAlignment === "HEEL" ? 0.55 : 0)
+      : segment.postMatchAssaultEnding === "VICTIM_FIGHTS_BACK" ? (victimAlignment === "FACE" ? 0.9 : 0.15)
+      : segment.postMatchAssaultEnding === "OFFICIALS_SEPARATE" ? 0.35 : 0;
+    const currentWeek = ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear);
+    const repeats = segment.postMatchAssaultEnding && segment.attackPresentation && segment.attackObjective
+      ? state.ledger.filter((entry) => {
+        if (entry.type !== RESOLVED_SEGMENT_LEDGER_TYPE
+          || entry.payload.promotionId !== event.promotionId
+          || entry.payload.segmentType !== "POST_MATCH_ASSAULT"
+          || entry.payload.attackerPersonId !== segment.attackerPersonId
+          || entry.payload.victimPersonId !== segment.victimPersonId
+          || entry.payload.attackPresentation !== segment.attackPresentation
+          || entry.payload.attackObjective !== segment.attackObjective
+          || entry.payload.postMatchAssaultEnding !== segment.postMatchAssaultEnding) return false;
+        const weeksAgo = currentWeek - ppwDateToWeekIndex(entry.date, state.ruleset.weeksPerYear);
+        return weeksAgo >= 1 && weeksAgo <= 6;
+      }).length : 0;
+    // The completed match result is an immutable input, never edited by an
+    // assault. The booked aftermath controls who stands tall after the bell.
+    angleFitModifier = round1(clamp(
+      roleClarity + aftermath + formatFit + objectiveFit + endingFit - Math.min(3.5, repeats * 1.25), -5, 5,
+    ));
   }
   if (segment.type === "CONFRONTATION" && segment.confrontationEnding
     && segment.initiatorPersonId && segment.targetPersonId) {
@@ -676,6 +733,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const attackerPersonId = entry.payload.attackerPersonId ?? null;
   const victimPersonId = entry.payload.victimPersonId ?? null;
   const rescuerPersonId = entry.payload.rescuerPersonId ?? null;
+  const rescueOutcome = entry.payload.rescueOutcome ?? null;
+  const postMatchAssaultEnding = entry.payload.postMatchAssaultEnding ?? null;
   const sourceDraftMatchId = entry.payload.sourceDraftMatchId ?? null;
   const sourceMatchId = entry.payload.sourceMatchId ?? null;
   const victimMatchOutcome = entry.payload.victimMatchOutcome ?? null;
@@ -733,6 +792,9 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || (celebrationOccasion !== null && !CELEBRATION_OCCASIONS.includes(celebrationOccasion as CelebrationOccasion))
     || (celebrationEnding !== null && !CELEBRATION_ENDINGS.includes(celebrationEnding as CelebrationEnding))
     || (confrontationEnding !== null && !CONFRONTATION_ENDINGS.includes(confrontationEnding as ConfrontationEnding))
+    || (rescueOutcome !== null && !RESCUE_OUTCOMES.includes(rescueOutcome as RescueOutcome))
+    || (postMatchAssaultEnding !== null
+      && !POST_MATCH_ASSAULT_ENDINGS.includes(postMatchAssaultEnding as PostMatchAssaultEnding))
     || typeof plannedLengthMinutes !== "number"
     || !Number.isInteger(plannedLengthMinutes)
     || (attackerPersonId !== null && typeof attackerPersonId !== "string")
@@ -786,6 +848,8 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     attackerPersonId: attackerPersonId as Id | null,
     victimPersonId: victimPersonId as Id | null,
     rescuerPersonId: rescuerPersonId as Id | null,
+    rescueOutcome: rescueOutcome as RescueOutcome | null,
+    postMatchAssaultEnding: postMatchAssaultEnding as PostMatchAssaultEnding | null,
     sourceDraftMatchId: sourceDraftMatchId as string | null,
     sourceMatchId: sourceMatchId as Id | null,
     victimMatchOutcome: victimMatchOutcome as "WON" | "LOST" | "DRAW" | null,
@@ -931,6 +995,8 @@ export function recordResolvedShowSegments(
             attackerPersonId: segment.attackerPersonId,
             victimPersonId: segment.victimPersonId,
             rescuerPersonId: segment.rescuerPersonId,
+            rescueOutcome: segment.rescueOutcome,
+            postMatchAssaultEnding: segment.postMatchAssaultEnding,
             sourceDraftMatchId: segment.sourceDraftMatchId,
             sourceMatchId: sourceMatch?.sourceMatchId ?? null,
             victimMatchOutcome: sourceMatch?.victimMatchOutcome ?? null,
