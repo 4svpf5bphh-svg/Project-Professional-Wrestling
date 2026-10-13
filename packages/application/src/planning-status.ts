@@ -7,6 +7,7 @@ import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { promotionShowSeriesDueForDate } from "../../sim-core/src/show-calendar.js";
 import {
   reservationAssessmentForDraft,
+  materializedLiveArrivalConflicts,
   type ReservationAssessment,
   type ReservationRiskReason,
 } from "./planning-materialization.js";
@@ -244,6 +245,11 @@ export function playerShowPlanningStatus(
     ? reservationAssessmentForDraft(state, planning, promotionId, draftId)
     : null;
   const eventId = materializedEventIdForDraft(state, promotionId, draftId);
+  const staleMaterializedArrival = !reservation && eventId !== null
+    && materializedLiveArrivalConflicts(state, planning).some((conflict) => (
+      conflict.promotionId === promotionId && conflict.eventId === eventId
+      && conflict.sourceDraftId === draftId
+    ));
 
   let planningState: PlayerShowPlanningState;
   let readiness: PlayerShowReadiness;
@@ -256,6 +262,12 @@ export function playerShowPlanningStatus(
     else if (reservationChanged) readiness = "RESERVATION_DUE";
     else readiness = reservedCardIsComplete(draft, reservation) ? "READY_TO_LOCK" : "CARD_REQUIRED";
   } else if (eventId) {
+    if (staleMaterializedArrival) {
+      // The actual event still exists and is editable. Do not mislabel this
+      // as an unreserved draft or remove the player's real show commitment.
+      planningState = "MATERIALIZED";
+      readiness = "CARD_REQUIRED";
+    } else {
     const weekReadiness = relation === "CURRENT" ? currentWeekReadiness(state, promotionId) : null;
     if (weekReadiness === "READY_TO_LOCK") {
       planningState = "READY_TO_LOCK";
@@ -263,6 +275,7 @@ export function playerShowPlanningStatus(
     } else {
       planningState = "MATERIALIZED";
       readiness = weekReadiness ?? (relation === "FUTURE" ? "FUTURE" : relation === "PAST" ? "PAST" : "CARD_REQUIRED");
+    }
     }
   } else if (
     lockedTargetMatches(runtime, draft.targetDate)
@@ -289,7 +302,7 @@ export function playerShowPlanningStatus(
     eventId,
     reservationId: reservation?.reservationId ?? null,
     reservationAssessment: assessment,
-    riskReasons: assessment?.reasons ?? [],
+    riskReasons: [...(assessment?.reasons ?? []), ...(staleMaterializedArrival ? ["LIVE_APPEARANCE_HISTORY_CHANGED" as const] : [])],
     workspaceVersion: workspace.version,
     reservedPlanVersion,
     // Historical field name retained for compatibility; this reflects this
