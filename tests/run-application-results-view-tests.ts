@@ -18,7 +18,7 @@ import {
 import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
 import { setActualMatchFinish } from "../packages/sim-core/src/match-finishes.js";
-import { hotSegmentHeadline, showResultHighlights } from "../packages/web-adapter/src/results-highlights.js";
+import { hotSegmentHeadline, showResultHighlights, showOpeningHighlights } from "../packages/web-adapter/src/results-highlights.js";
 import { reviewPlayerMatch, reviewPlayerSegment, reviewPlayerShow, reviewPlayerShowChapters, reviewPlayerShowFinalBell } from "../packages/web-adapter/src/results-review.js";
 import type { PlayerShowMatchView, PlayerShowSegmentView, PlayerShowResultView } from "../packages/application/src/results-view.js";
 import { discoverWorldResults, worldResultsWeekLabel, worldShowHasSpotlight } from "../packages/web-adapter/src/world-results-discovery.js";
@@ -342,6 +342,14 @@ test("completed-show highlight reel is truthful in owner and World Results and n
     (show) => show.eventId === privateShow.eventId)!;
   const owned = showResultHighlights(privateShow);
   const publicMoments = showResultHighlights(publicShow);
+  const opening = showOpeningHighlights(privateShow);
+  ok(opening.length <= 2 && new Set(opening.map((moment) => moment.slotOrder)).size === opening.length,
+    "player show opening repeated the same slot or crowded the iPhone");
+  ok(opening[0]?.category === "CHAMPIONSHIP" && opening[0].slotOrder === owned[0]?.slotOrder,
+    "cover-story curation discarded the genuinely most important moment");
+  ok(JSON.stringify(showOpeningHighlights(structuredClone(privateShow))) === JSON.stringify(opening),
+    "cover-story selection changed across reloads");
+
   ok(owned.length === 3 && owned[0]?.category === "CHAMPIONSHIP"
     && owned[1]?.category === "INJURY" && owned[2]?.category === "MAIN_EVENT",
     "show replay did not rank real title, injury and best match consequences");
