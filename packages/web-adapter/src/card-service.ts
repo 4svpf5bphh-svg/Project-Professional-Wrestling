@@ -1287,8 +1287,10 @@ export async function loadAlphaShowCard(
       challengeResponse: segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : null,
       interruptionOutcome: segment.type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null,
       confrontationEnding: segment.type === "CONFRONTATION" ? (segment.confrontationEnding ?? null) : null,
-      attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
-      attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null,
+      attackPresentation: segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT"
+        ? (segment.attackPresentation ?? (segment.type === "ATTACK" ? "BLINDSIDE" : null)) : null,
+      attackObjective: segment.type === "ATTACK" || segment.type === "POST_MATCH_ASSAULT"
+        ? (segment.attackObjective ?? (segment.type === "ATTACK" ? "GENERATE_HEAT" : null)) : null,
       turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
       turnTargetAlignment: segment.type === "TURN" ? (segment.turnTargetAlignment ?? null) : null,
       turnPresentation: segment.type === "TURN" ? (segment.turnPresentation ?? "REVEAL") : null,
