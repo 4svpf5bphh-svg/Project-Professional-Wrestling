@@ -821,7 +821,7 @@ export default function CardClient(): React.JSX.Element {
       videoObjective: type === "VIDEO_PACKAGE" ? (segment.type === type ? (segment.videoObjective ?? "BUILD_ANTICIPATION") : "BUILD_ANTICIPATION") : null,
       videoReveal: type === "VIDEO_PACKAGE" ? (segment.type === type ? (segment.videoReveal ?? "NAMED") : "NAMED") : null,
       liveAppearanceKind: type === "LIVE_APPEARANCE" ? (segment.type === type ? (segment.liveAppearanceKind ?? "INTRODUCTION") : "INTRODUCTION") : null,
-      liveAppearanceObjective: type === "LIVE_APPEARANCE" ? (segment.type === type ? (segment.promoPurpose === undefined ? segment.liveAppearanceObjective ?? "ESTABLISH_STAR" : segment.liveAppearanceObjective ?? "ESTABLISH_STAR") : "ESTABLISH_STAR") : null,
+      liveAppearanceObjective: type === "LIVE_APPEARANCE" ? (segment.type === type ? (segment.liveAppearanceObjective ?? "ESTABLISH_STAR") : "ESTABLISH_STAR") : null,
       promoPurpose: type === "PROMO" ? (segment.type === type ? (segment.promoPurpose ?? "STATEMENT_OF_INTENT") : "STATEMENT_OF_INTENT") : null,
       attackerPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[0] === segment.attackerPersonId
         ? (segment.attackerPersonId ?? null) : null,
