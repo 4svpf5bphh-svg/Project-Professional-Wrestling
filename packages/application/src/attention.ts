@@ -299,18 +299,28 @@ export function buildPlayerAttention(
       }
     }
 
+    const pendingNegotiations = new Set(
+      aggregate.state.contractOffers
+        .filter((offer) => offer.promotionId === promotion.id
+          && offer.status === "PENDING"
+          && (offer.offerKind === "RENEWAL" || offer.offerKind === "DATES_ADDENDUM"))
+        .map((offer) => offer.personId),
+    );
     for (const contract of activeContracts) {
+      const pendingNegotiation = pendingNegotiations.has(contract.personId);
       if (contract.family === "ONE_OFF") continue;
       const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
       if (contract.family === "LIMITED_NON_EXCLUSIVE" && datesRemaining === 0) {
         const name = personName(aggregate, contract.personId);
         pushIfVisible(aggregate, playerId, items, {
           attentionId: `contract-dates-exhausted:${contract.id}`,
-          category: "ACTION_REQUIRED",
-          title: `${name} has no contracted dates remaining`,
-          summary: `${name}'s current contract has no unused dates. You can offer an addendum if you need appearances before expiry. An already-signed future renewal does not replenish this contract.`,
+          category: pendingNegotiation ? "WATCHING" : "ACTION_REQUIRED",
+          title: pendingNegotiation ? `${name} is considering your contract proposal` : `${name} has no contracted dates remaining`,
+          summary: pendingNegotiation
+            ? `You are waiting for ${name}'s decision. The current agreement has no available dates until more are agreed.`
+            : `${name}'s current contract has no unused dates. You can offer an addendum if you need appearances before expiry. An already-signed future renewal does not replenish this contract.`,
           deadline: null,
-          deepLink: "/talent",
+          deepLink: `/talent/contracts?personId=${encodeURIComponent(contract.personId)}`,
           dismissible: true,
           sourceOpportunityCategory: null,
         });
@@ -322,11 +332,13 @@ export function buildPlayerAttention(
       const name = personName(aggregate, contract.personId);
       pushIfVisible(aggregate, playerId, items, {
         attentionId: `contract-expiry:${contract.id}`,
-        category: urgent ? "ACTION_REQUIRED" : "IMPORTANT",
-        title: urgent ? `${name}’s contract decision is due` : `${name} is entering the renewal window`,
-        summary: `${name}’s ${contractFamilyLabel(contract.family)} contract expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`,
+        category: pendingNegotiation ? "WATCHING" : urgent ? "ACTION_REQUIRED" : "IMPORTANT",
+        title: pendingNegotiation ? `${name} is considering your renewal offer` : urgent ? `${name}’s contract decision is due` : `${name} is entering the renewal window`,
+        summary: pendingNegotiation
+          ? `Your renewal offer is waiting for ${name}. Their current contract expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`
+          : `${name}’s ${contractFamilyLabel(contract.family)} contract expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`
         deadline: { ...contract.endDate },
-        deepLink: null,
+        deepLink: `/talent/contracts?personId=${encodeURIComponent(contract.personId)}`,
         dismissible: true,
         sourceOpportunityCategory: null,
       });

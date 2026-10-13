@@ -174,9 +174,9 @@ function alphaAttentionDeepLink(item: PlayerAttentionItem): string | null {
     || item.attentionId.startsWith("at-risk-show:")
     || item.attentionId.startsWith("watching-show:")
   ) return "/planner";
+  if (item.attentionId.startsWith("contract-expiry:")) return "/talent/contracts";
   if (
     item.attentionId.startsWith("roster-shortage:")
-    || item.attentionId.startsWith("contract-expiry:")
     || item.attentionId.startsWith("injury:")
   ) return "/talent";
   if (item.attentionId.startsWith("show-resolved:")) return "/results";
