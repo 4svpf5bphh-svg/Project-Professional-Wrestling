@@ -545,3 +545,133 @@ export function reviewPlayerShowFinalBell(
             : "The final bell has sounded. The next show is another chance to win them over.";
   return { standout, disappointment, consequence, lastWord };
 }
+
+
+/** A complete-show copy desk. Individual fact-based recaps remain untouched;
+ * repeated stock verdicts are rotated before readers encounter several copies
+ * in one card. This does not feed back into the multiplayer World simulation.
+ */
+export interface RunningOrderReview {
+  order: number;
+  kind: "MATCH" | "SEGMENT";
+  review: SlotReview;
+}
+function replacementVerdicts(
+  kind: "MATCH" | "SEGMENT",
+  tone: ReviewTone,
+  type: string,
+): readonly string[] {
+  if (kind === "MATCH") {
+    if (tone === "GREAT") return [
+      "A fine advertisement for this promotion.", "That one belongs on the rewatch list.",
+      "The work between the ropes deserved its flowers.", "A very good night to be a wrestling fan.",
+      "The fans got a proper match for their money.",
+    ];
+    if (tone === "GOOD") return [
+      "Worth the ticket price.", "They kept it lively without stealing the entire show.",
+      "Good stuff, and a job well done.", "A bout the promoter can be happy with.",
+      "No masterpiece, but plenty to like.",
+    ];
+    if (tone === "ROUGH") return [
+      "Some nights the chemistry just isn't there.", "Not a match anyone will be demanding to see again.",
+      "The bell couldn't come soon enough.", "A night they'll want to put behind them.",
+      "The idea may need another outing — after some serious work.",
+    ];
+    return [
+      "There was something here, even if it never fully came together.",
+      "More workmanlike than memorable.", "A mixed bag, though not a total write-off.",
+      "The audience got an uneven contest.", "This had its moments but left plenty on the table.",
+    ];
+  }
+  // Avoid insulting a genuinely successful scripted moment or calling an
+  // interview a 'match'. Promo and physical angles need different vocabulary.
+  if (type === "PROMO" || type === "INTERVIEW") {
+    if (tone === "GREAT") return [
+      "A microphone segment with a pulse. The fans listened.",
+      "The delivery struck a chord with the room.", "That's how you get a wrestling crowd engaged.",
+      "A good night for talking people into the building next week.",
+    ];
+    if (tone === "ROUGH") return [
+      "They lost the room on this one.", "That needed a stronger hook.",
+      "The words never found their audience.", "The delivery didn't connect.",
+    ];
+  }
+  if (type === "ATTACK" || type === "POST_MATCH_ASSAULT" || type === "RESCUE") {
+    if (tone === "GREAT") return [
+      "The trouble got the reaction it deserved.", "That made for a lively bit of wrestling theatre.",
+      "A well-received piece of chaos.", "The crowd was all over that one.",
+    ];
+    if (tone === "ROUGH") return [
+      "All that commotion for very little reward.", "The crowd response was much colder than the action.",
+      "The physical angle never really clicked.", "Chaos is only fun when somebody cares.",
+    ];
+  }
+  if (type === "VIDEO_PACKAGE" || type === "LIVE_APPEARANCE") {
+    if (tone === "GREAT") return [
+      "The presentation got the reaction it was after.", "A genuine spark from the audience.",
+      "A memorable piece of showmanship.", "The build-up paid off with the crowd.",
+    ];
+    if (tone === "ROUGH") return [
+      "The audience never truly bought the moment.", "That presentation needed more of a spark.",
+      "The room barely stirred.", "Not quite the reaction the show was chasing.",
+    ];
+  }
+  if (tone === "GREAT") return [
+    "That one earned its applause.", "The crowd responded exactly as a promoter would hope.",
+    "A well-received moment on the card.", "Plenty of life in that segment.",
+  ];
+  if (tone === "GOOD") return [
+    "A nice little bit of business.", "The audience was on board.",
+    "A positive step in the show's flow.", "That worked well enough for this crowd.",
+  ];
+  if (tone === "ROUGH") return [
+    "The segment sank without a trace.", "A swing and a miss from the booking team.",
+    "That wasn't the crowd reaction anyone wanted.", "This one missed the mark.",
+  ];
+  return [
+    "A fairly quiet moment of the evening.", "It served its purpose without stealing the headlines.",
+    "Fine, though hardly a show-stealer.", "It didn't move the needle much.",
+  ];
+}
+
+export function reviewPlayerShowRunningOrder(
+  show: Pick<PlayerShowResultView, "eventId" | "runningOrder">,
+): RunningOrderReview[] {
+  const recent: string[] = [];
+  return show.runningOrder.map((slot) => {
+    const type = slot.kind === "MATCH" ? slot.match.type : slot.segment.type;
+    const id = slot.kind === "MATCH" ? slot.match.matchId : slot.segment.segmentId;
+    const baseline = slot.kind === "MATCH"
+      ? reviewPlayerMatch(slot.match)
+      : reviewPlayerSegment(slot.segment);
+    let result = baseline;
+    if (recent.includes(baseline.verdict)) {
+      // This pool is keyed to the actual *kind* and evaluated tone, not the
+      // outcome of another unrelated segment. Fact-heavy verdicts are preserved.
+      const isSpecificMatchOpinion = slot.kind === "MATCH" &&
+        ((Number.isFinite(slot.match.crowdResponse) && slot.match.crowdResponse < 46
+          && slot.match.criticalRatingStars >= 3.5)
+        || (Number.isFinite(slot.match.crowdResponse) && slot.match.crowdResponse >= 78
+          && slot.match.criticalRatingStars < 2.5)
+        || slot.match.styleResult?.delivery === "MISSED");
+      const noRecordedAngleReaction = slot.kind === "SEGMENT"
+        && slot.segment.outcomeBand === null && slot.segment.crowdResponse === null;
+      if (!isSpecificMatchOpinion && !noRecordedAngleReaction) {
+        const alternatives = replacementVerdicts(slot.kind, baseline.tone, type);
+        const choiceStart = Math.abs((id + ":" + show.eventId).split("").reduce(
+          (total, letter) => (Math.imul(total, 33) ^ letter.charCodeAt(0)) | 0, 5381,
+        )) % alternatives.length;
+        for (let attempt = 0; attempt < alternatives.length; attempt += 1) {
+          const candidate = alternatives[(choiceStart + attempt) % alternatives.length]!;
+          if (!recent.includes(candidate)) {
+            result = { ...baseline, verdict: candidate };
+            break;
+          }
+        }
+      }
+    }
+    recent.push(result.verdict);
+    if (recent.length > 4) recent.shift();
+    return { order: slot.order, kind: slot.kind, review: result };
+  });
+}
