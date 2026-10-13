@@ -261,7 +261,7 @@ export default function ResultsClient(): React.JSX.Element {
                           return (
                             <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
                               <div className={styles.matchTop}>
-                                <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "LIVE_APPEARANCE" && slot.segment.liveAppearanceKind ? `live · ${label(slot.segment.liveAppearanceKind)}` : slot.segment.type === "VIDEO_PACKAGE" && slot.segment.videoKind ? `video · ${label(slot.segment.videoKind)}` : slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : slot.segment.type === "PROMO" && slot.segment.promoPurpose ? `promo · ${label(slot.segment.promoPurpose)}` : slot.segment.type === "INTERVIEW" && slot.segment.interviewTopic && slot.segment.interviewResponse ? `interview · ${label(slot.segment.interviewTopic)} · ${label(slot.segment.interviewResponse)}` : slot.segment.type === "CELEBRATION" && slot.segment.celebrationOccasion && slot.segment.celebrationEnding ? `celebration · ${label(slot.segment.celebrationOccasion)}` : label(slot.segment.type)}</span>
+                                <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "LIVE_APPEARANCE" && slot.segment.liveAppearanceKind ? `live · ${label(slot.segment.liveAppearanceKind)}` : slot.segment.type === "VIDEO_PACKAGE" && slot.segment.videoKind ? `video · ${label(slot.segment.videoKind)}` : slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : slot.segment.type === "PROMO" && slot.segment.promoPurpose ? `promo · ${label(slot.segment.promoPurpose)}` : slot.segment.type === "INTERVIEW" && slot.segment.interviewTopic && slot.segment.interviewResponse ? `interview · ${label(slot.segment.interviewTopic)} · ${label(slot.segment.interviewResponse)}` : slot.segment.type === "CELEBRATION" && slot.segment.celebrationOccasion && slot.segment.celebrationEnding ? `celebration · ${label(slot.segment.celebrationOccasion)}` : slot.segment.type === "CONFRONTATION" && slot.segment.confrontationEnding ? `face-off · ${label(slot.segment.confrontationEnding)}` : label(slot.segment.type)}</span>
                                 <strong>
                                   {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
                                     ? `${slot.segment.plannedLengthMinutes} min`
@@ -294,6 +294,12 @@ export default function ResultsClient(): React.JSX.Element {
                                 <div className={styles.matchMeta}>
                                   <span>{slot.segment.celebrationOccasion === "VICTORY_LAP" ? "Celebrates an actual previous match win" : slot.segment.celebrationOccasion === "SELF_CORONATION" ? "Kayfabe self-coronation · no real title awarded" : slot.segment.celebrationOccasion === "FAN_APPRECIATION" ? "Thanks the fans" : "Taunts a rival"}</span>
                                   <span>Booked ending: {label(slot.segment.celebrationEnding)}</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "CONFRONTATION" && slot.segment.confrontationEnding ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.initiatorPersonId === null || slot.segment.targetPersonId === null ? "On-screen face-off" : "Direct confrontation · booked wrestler roles"}</span>
+                                  <span>{slot.segment.confrontationEnding === "STAREDOWN" ? "Neither wrestler backs down" : slot.segment.confrontationEnding === "INITIATOR_BACKS_DOWN" ? "The instigator backs down" : slot.segment.confrontationEnding === "TARGET_BACKS_DOWN" ? "The targeted wrestler backs down" : "The wrestlers share a reluctant handshake"}</span>
                                 </div>
                               ) : null}
                               {slot.segment.type === "VIDEO_PACKAGE" ? (
@@ -538,7 +544,7 @@ export default function ResultsClient(): React.JSX.Element {
                               return (
                                 <article className={`${styles.matchCard} ${styles.segmentResultCard}`} key={slot.segment.segmentId}>
                                   <div className={styles.matchTop}>
-                                    <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "LIVE_APPEARANCE" && slot.segment.liveAppearanceKind ? `live · ${label(slot.segment.liveAppearanceKind)}` : slot.segment.type === "VIDEO_PACKAGE" && slot.segment.videoKind ? `video · ${label(slot.segment.videoKind)}` : slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : slot.segment.type === "PROMO" && slot.segment.promoPurpose ? `promo · ${label(slot.segment.promoPurpose)}` : slot.segment.type === "INTERVIEW" && slot.segment.interviewTopic && slot.segment.interviewResponse ? `interview · ${label(slot.segment.interviewTopic)} · ${label(slot.segment.interviewResponse)}` : slot.segment.type === "CELEBRATION" && slot.segment.celebrationOccasion && slot.segment.celebrationEnding ? `celebration · ${label(slot.segment.celebrationOccasion)}` : label(slot.segment.type)}</span>
+                                    <span>SLOT {slot.order} · SEGMENT · {slot.segment.type === "LIVE_APPEARANCE" && slot.segment.liveAppearanceKind ? `live · ${label(slot.segment.liveAppearanceKind)}` : slot.segment.type === "VIDEO_PACKAGE" && slot.segment.videoKind ? `video · ${label(slot.segment.videoKind)}` : slot.segment.type === "ATTACK" && slot.segment.attackPresentation ? label(slot.segment.attackPresentation) : slot.segment.type === "PROMO" && slot.segment.promoPurpose ? `promo · ${label(slot.segment.promoPurpose)}` : slot.segment.type === "INTERVIEW" && slot.segment.interviewTopic && slot.segment.interviewResponse ? `interview · ${label(slot.segment.interviewTopic)} · ${label(slot.segment.interviewResponse)}` : slot.segment.type === "CELEBRATION" && slot.segment.celebrationOccasion && slot.segment.celebrationEnding ? `celebration · ${label(slot.segment.celebrationOccasion)}` : slot.segment.type === "CONFRONTATION" && slot.segment.confrontationEnding ? `face-off · ${label(slot.segment.confrontationEnding)}` : label(slot.segment.type)}</span>
                                     <strong>
                                       {slot.segment.crowdResponse === null || slot.segment.outcomeBand === null
                                         ? "SEGMENT"
@@ -572,6 +578,12 @@ export default function ResultsClient(): React.JSX.Element {
                                 <div className={styles.matchMeta}>
                                   <span>{slot.segment.celebrationOccasion === "VICTORY_LAP" ? "Celebrates an actual previous match win" : slot.segment.celebrationOccasion === "SELF_CORONATION" ? "Kayfabe self-coronation · no real title awarded" : slot.segment.celebrationOccasion === "FAN_APPRECIATION" ? "Thanks the fans" : "Taunts a rival"}</span>
                                   <span>Booked ending: {label(slot.segment.celebrationEnding)}</span>
+                                </div>
+                              ) : null}
+                              {slot.segment.type === "CONFRONTATION" && slot.segment.confrontationEnding ? (
+                                <div className={styles.matchMeta}>
+                                  <span>{slot.segment.initiatorPersonId === null || slot.segment.targetPersonId === null ? "On-screen face-off" : "Direct confrontation · booked wrestler roles"}</span>
+                                  <span>{slot.segment.confrontationEnding === "STAREDOWN" ? "Neither wrestler backs down" : slot.segment.confrontationEnding === "INITIATOR_BACKS_DOWN" ? "The instigator backs down" : slot.segment.confrontationEnding === "TARGET_BACKS_DOWN" ? "The targeted wrestler backs down" : "The wrestlers share a reluctant handshake"}</span>
                                 </div>
                               ) : null}
                               {slot.segment.type === "VIDEO_PACKAGE" ? (
