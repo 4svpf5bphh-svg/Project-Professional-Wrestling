@@ -73,6 +73,7 @@ import { contractCoversBookedDate } from "../../sim-core/src/contract-calendar.j
 import { activeContractsForPromotion } from "../../sim-core/src/contracts.js";
 import { promotionLiveAppearanceHistory } from "../../application/src/live-appearance-history.js";
 import type { WorldPlanningState } from "../../application/src/planning.js";
+import { programmePostShowDirection, type ProgrammePostShowDirection } from "./programme-postshow-guidance.js";
 import {
   assessMatchStyleReadiness,
   normalizeMatchStyle,
@@ -200,6 +201,8 @@ export interface AlphaCardProgrammeView {
   participantIds: Id[];
   heat: number | null;
   repetition: number;
+  /** Private, read-only direction; the booking engine does not execute it. */
+  postShowDirection: ProgrammePostShowDirection | null;
 }
 
 export interface AlphaCardSlotView {
@@ -520,7 +523,7 @@ function programmeSideLabel(state: WorldState, refs: ProgrammeParticipantRef[]):
   }).join(" & ");
 }
 
-function cardProgrammes(state: WorldState, promotionId: Id): AlphaCardProgrammeView[] {
+function cardProgrammes(state: WorldState, planning: WorldPlanningState, promotionId: Id): AlphaCardProgrammeView[] {
   return (state.programmes ?? [])
     .filter((programme) => programme.promotionId === promotionId && programme.status === "ACTIVE")
     .map((programme) => ({
@@ -529,6 +532,10 @@ function cardProgrammes(state: WorldState, promotionId: Id): AlphaCardProgrammeV
       participantIds: programmeParticipantIds(state, programme.id),
       heat: programme.heat,
       repetition: programme.repetition,
+      postShowDirection: programmePostShowDirection(
+        planning.postShowFollowUps, state.programmeActivities,
+        promotionId, programme.id, state.ruleset.weeksPerYear,
+      ),
     }))
     .sort((left, right) => (
       (right.heat ?? -1) - (left.heat ?? -1)
@@ -1263,7 +1270,7 @@ export async function loadAlphaShowCard(
 
   const market = draft.marketId ? aggregate.state.markets.find((candidate) => candidate.id === draft.marketId) : null;
   const venue = draft.venueId ? aggregate.state.venues.find((candidate) => candidate.id === draft.venueId) : null;
-  const programmes = cardProgrammes(aggregate.state, promotion.id);
+  const programmes = cardProgrammes(aggregate.state, aggregate.planning, promotion.id);
   const segments: AlphaCardSegmentView[] = [
     ...(draft.segments ?? []).map((segment) => ({
       draftSegmentId: segment.draftSegmentId,
