@@ -17,6 +17,7 @@ type Candidate = ShowResultHighlight & { priority: number };
 export function showResultHighlights(show: ShowSource, limit = 3): ShowResultHighlight[] {
   const candidates: Candidate[] = [];
   let topMatch: Candidate | null = null;
+  let topRating = -1;
 
   for (const slot of show.runningOrder) {
     if (slot.kind === "MATCH") {
@@ -39,7 +40,8 @@ export function showResultHighlights(show: ShowSource, limit = 3): ShowResultHig
         });
       }
       const rating = Number.isFinite(match.criticalRatingStars) ? match.criticalRatingStars : 0;
-      if (!topMatch || rating > Number(topMatch.detail.split("★ ")[1]?.split(" ")[0] ?? -1)) {
+      if (rating > topRating) {
+        topRating = rating;
         topMatch = {
           id: `best:${match.matchId}`, category: match.isMainEvent ? "MAIN_EVENT" : "MATCH",
           priority: 78, slotOrder: slot.order,
@@ -62,9 +64,10 @@ export function showResultHighlights(show: ShowSource, limit = 3): ShowResultHig
         });
       }
       if (segment.type === "TURN" && segment.turnTargetAlignment) {
+        const turningWrestler = segment.participants.find((person) => person.personId === segment.turnPersonId)?.name ?? wrestler;
         candidates.push({
           id: `turn:${segment.segmentId}`, category: "ANGLE", priority: 84,
-          slotOrder: slot.order, headline: `${wrestler} turns ${segment.turnTargetAlignment.toLowerCase()}`,
+          slotOrder: slot.order, headline: `${turningWrestler} turns ${segment.turnTargetAlignment.toLowerCase()}`,
           detail: segment.turnPresentation === "BETRAYAL" ? "Betrayal on screen" : "Alignment change",
         });
       }
