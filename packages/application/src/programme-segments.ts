@@ -12,11 +12,14 @@ import {
   wrestlerAlignmentForPromotion,
 } from "../../sim-core/src/alignment.js";
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
+import { ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
+import { PROMO_PURPOSES } from "./planning.js";
 import type {
   DetailedProgrammeSegmentDraft,
   DetailedShowDraft,
   DetailedShowSegmentDraft,
   DetailedShowSegmentType,
+  PromoPurpose,
   VideoPackageKind,
   VideoPackageObjective,
   VideoPackageReveal,
@@ -73,6 +76,7 @@ export interface ResolvedShowSegment {
   videoReveal: VideoPackageReveal | null;
   liveAppearanceKind: LiveAppearanceKind | null;
   liveAppearanceObjective: LiveAppearanceObjective | null;
+  promoPurpose: PromoPurpose | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
@@ -118,6 +122,7 @@ interface NormalizedDraftSegment {
   videoReveal: VideoPackageReveal | null;
   liveAppearanceKind: LiveAppearanceKind | null;
   liveAppearanceObjective: LiveAppearanceObjective | null;
+  promoPurpose: PromoPurpose | null;
   attackerPersonId: Id | null;
   victimPersonId: Id | null;
   rescuerPersonId: Id | null;
@@ -203,6 +208,7 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     videoReveal: segment.type === "VIDEO_PACKAGE" ? (segment.videoReveal ?? null) : null,
     liveAppearanceKind: segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceKind ?? null) : null,
     liveAppearanceObjective: segment.type === "LIVE_APPEARANCE" ? (segment.liveAppearanceObjective ?? null) : null,
+    promoPurpose: segment.type === "PROMO" ? (segment.promoPurpose ?? null) : null,
     attackerPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
       ? (segment.attackerPersonId ?? null) : null,
     victimPersonId: segment.type === "ATTACK" || segment.type === "RESCUE" || segment.type === "POST_MATCH_ASSAULT"
@@ -233,6 +239,7 @@ function normalizedSegments(draft: DetailedShowDraft): NormalizedDraftSegment[] 
     .map((segment) => ({
       draftSegmentId: segment.draftSegmentId,
       type: "PROMO" as const,
+      promoPurpose: null,
       participantIds: [...segment.participantIds],
       programmeId: segment.programmeId,
       plannedLengthMinutes: 6,
@@ -330,6 +337,30 @@ function segmentOutcome(
   // A format's appeal depends on character roles and rivalry context.
   // An angle never invents an injury or changes a finish.
   let angleFitModifier = 0;
+  if (segment.type === "PROMO" && segment.promoPurpose) {
+    const speakerAlignment = segment.participantIds.length === 1
+      ? wrestlerAlignmentForPromotion(state, event.promotionId, segment.participantIds[0]!) : "TWEENER";
+    const context = segment.promoPurpose === "AIR_GRIEVANCE" || segment.promoPurpose === "ISSUE_WARNING"
+      ? (programme ? 1.5 : -0.8)
+      : segment.promoPurpose === "BOAST" ? (speakerAlignment === "HEEL" ? 1.5 : speakerAlignment === "FACE" ? -0.6 : 0)
+      : segment.promoPurpose === "RALLY_FANS" ? (speakerAlignment === "FACE" ? 1.5 : speakerAlignment === "HEEL" ? -1.0 : 0)
+      : 0.5;
+    // Only actual earlier performances matter, never pending cards or future shows.
+    // A recurring performer can change subject instead of losing the promo format.
+    const thisWeek = ppwDateToWeekIndex(event.date, state.ruleset.weeksPerYear);
+    const repeated = state.ledger.filter((entry) => {
+      if (entry.type !== RESOLVED_SEGMENT_LEDGER_TYPE
+        || entry.payload.promotionId !== event.promotionId
+        || entry.payload.segmentType !== "PROMO"
+        || entry.payload.promoPurpose !== segment.promoPurpose
+        || typeof entry.payload.participantIds !== "string") return false;
+      const weeksAgo = thisWeek - ppwDateToWeekIndex(entry.date, state.ruleset.weeksPerYear);
+      if (weeksAgo < 1 || weeksAgo > 6) return false;
+      const prior = entry.payload.participantIds.split(",");
+      return segment.participantIds.some((personId) => prior.includes(personId));
+    }).length;
+    angleFitModifier = round1(clamp(context - Math.min(3.5, repeated * 1.25), -5, 5));
+  }
   if (segment.type === "LIVE_APPEARANCE") {
     const introductionFit = segment.liveAppearanceKind === "DEBUT"
       || segment.liveAppearanceKind === "RETURN" ? 1.2 : 0;
@@ -510,6 +541,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
   const videoReveal = entry.payload.videoReveal ?? null;
   const liveAppearanceKind = entry.payload.liveAppearanceKind ?? null;
   const liveAppearanceObjective = entry.payload.liveAppearanceObjective ?? null;
+  const promoPurpose = entry.payload.promoPurpose ?? null;
   const attackerPersonId = entry.payload.attackerPersonId ?? null;
   const victimPersonId = entry.payload.victimPersonId ?? null;
   const rescuerPersonId = entry.payload.rescuerPersonId ?? null;
@@ -562,6 +594,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     || (videoReveal !== null && !["CRYPTIC", "NAMED", "FULL"].includes(String(videoReveal)))
     || (liveAppearanceKind !== null && !["DEBUT", "RETURN", "SURPRISE_REVEAL", "INTRODUCTION"].includes(String(liveAppearanceKind)))
     || (liveAppearanceObjective !== null && !["ESTABLISH_STAR", "BUILD_EXCITEMENT", "CREATE_MYSTERY", "UNSETTLE_RIVAL", "REIGNITE_PROGRAMME"].includes(String(liveAppearanceObjective)))
+    || (promoPurpose !== null && !PROMO_PURPOSES.includes(promoPurpose as PromoPurpose))
     || typeof plannedLengthMinutes !== "number"
     || !Number.isInteger(plannedLengthMinutes)
     || (attackerPersonId !== null && typeof attackerPersonId !== "string")
@@ -606,6 +639,7 @@ function resolvedSegmentFromLedger(entry: LedgerEvent): ResolvedShowSegment | nu
     videoReveal: videoReveal as VideoPackageReveal | null,
     liveAppearanceKind: liveAppearanceKind as LiveAppearanceKind | null,
     liveAppearanceObjective: liveAppearanceObjective as LiveAppearanceObjective | null,
+    promoPurpose: promoPurpose as PromoPurpose | null,
     attackerPersonId: attackerPersonId as Id | null,
     victimPersonId: victimPersonId as Id | null,
     rescuerPersonId: rescuerPersonId as Id | null,
@@ -744,6 +778,7 @@ export function recordResolvedShowSegments(
             videoReveal: segment.videoReveal,
             liveAppearanceKind: segment.liveAppearanceKind,
             liveAppearanceObjective: segment.liveAppearanceObjective,
+            promoPurpose: segment.promoPurpose,
             attackerPersonId: segment.attackerPersonId,
             victimPersonId: segment.victimPersonId,
             rescuerPersonId: segment.rescuerPersonId,
