@@ -211,6 +211,7 @@ export default function ProgrammesClient(): React.JSX.Element {
                           : "Let the result stand"} · chosen Year {programme.latestFollowUp.year}, Week {programme.latestFollowUp.week}</span>
                         <small>This is a planning reminder, not an auto-booked match or segment.</small>
                         <a href="/results">Review match results →</a>
+                        <a href="/card">Open Card to choose the next beat →</a>
                       </div>
                     ) : null}
                   </article>
