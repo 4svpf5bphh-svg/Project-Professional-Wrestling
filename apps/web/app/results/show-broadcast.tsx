@@ -78,6 +78,8 @@ export function MatchFinishReplay({ match }: { match: ReplayMatch }): React.JSX.
 /** This is a presentation lens on already completed show records. */
 export default function ShowBroadcast({ show }: { show: BroadcastShow }): React.JSX.Element {
   const moments = showResultHighlights(show);
+  const lead = moments[0] ?? null;
+  const otherMoments = moments.slice(1);
   const crowd = Number.isFinite(show.crowdResponse) ? show.crowdResponse : 0;
   return (
     <section className={styles.broadcast} aria-label="Completed show highlights">
@@ -101,9 +103,22 @@ export default function ShowBroadcast({ show }: { show: BroadcastShow }): React.
           <small>Show average ★ {display(show.averageMatchRating)}</small>
         </div>
       </div>
-      {moments.length > 0 ? (
+      {lead ? (
+        <a className={`${styles.broadcastLead} ${lead.category === "CHAMPIONSHIP" ? styles.broadcastLeadTitle : lead.category === "INJURY" ? styles.broadcastLeadInjury : ""}`}
+          href={`#show-${show.eventId}-slot-${lead.slotOrder}`}
+          aria-label={`Read slot ${lead.slotOrder}: ${lead.headline}`}>
+          <span className={styles.broadcastLeadIcon} aria-hidden="true">{iconFor(lead.category)}</span>
+          <span className={styles.broadcastLeadContent}>
+            <small>THE NIGHT'S HEADLINE · {lead.category.replaceAll("_", " ")} · SLOT {lead.slotOrder}</small>
+            <strong>{lead.headline}</strong>
+            <span>{lead.detail}</span>
+            <em>See what happened <span aria-hidden="true">↗</span></em>
+          </span>
+        </a>
+      ) : null}
+      {otherMoments.length > 0 ? (
         <div className={styles.reelCards}>
-          {moments.map((moment) => (
+          {otherMoments.map((moment) => (
             <a href={`#show-${show.eventId}-slot-${moment.slotOrder}`}
               className={`${styles.reelCard} ${moment.category === "CHAMPIONSHIP" ? styles.reelTitle : moment.category === "INJURY" ? styles.reelInjury : ""}`}
               key={moment.id}>
@@ -117,7 +132,7 @@ export default function ShowBroadcast({ show }: { show: BroadcastShow }): React.
             </a>
           ))}
         </div>
-      ) : <p className={styles.reelEmpty}>Full completed card and crowd response below.</p>}
+      ) : !lead ? <p className={styles.reelEmpty}>Full completed card and crowd response below.</p> : null}
     </section>
   );
 }
