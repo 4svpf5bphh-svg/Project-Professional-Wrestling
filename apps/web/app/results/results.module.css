@@ -1617,3 +1617,123 @@
   .showChapter { padding: 0 5px 7px; }
   .showChapter p { font-size: 12px; }
 }
+
+
+/* Player show review: the final word, not another box of simulation telemetry. */
+.finale {
+  overflow: hidden;
+  margin-top: 19px;
+  border: 1px solid rgba(248, 187, 97, .36);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(250, 173, 65, .18), transparent 42%),
+    linear-gradient(145deg, rgba(52, 36, 46, .98), rgba(10, 22, 31, .97));
+}
+.finaleHeader {
+  padding: 21px 18px 16px;
+  border-bottom: 1px solid rgba(244, 196, 114, .2);
+}
+.finaleHeader > span {
+  color: #ffd28d;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: .17em;
+}
+.finaleHeader h2 {
+  margin: 8px 0 3px;
+  color: #fff6e8;
+  font-size: clamp(22px, 5vw, 32px);
+  line-height: 1.12;
+}
+.finaleHeader p {
+  margin: 0;
+  color: #cbbfbd;
+  font-size: 13px;
+}
+.finaleMoments {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 225px), 1fr));
+  gap: 9px;
+  padding: 13px;
+}
+.finaleMoment {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 15px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(176, 199, 210, .16);
+  background: rgba(15, 31, 41, .88);
+  color: #edf5f8;
+  text-decoration: none;
+  transition: background .15s ease, transform .15s ease;
+}
+.finaleMoment:hover,
+.finaleMoment:focus-visible {
+  background: rgba(35, 54, 67, .97);
+  transform: translateY(-1px);
+}
+.finaleMoment small {
+  color: #ffe0a5;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .09em;
+}
+.finaleMoment strong {
+  color: #fff5e5;
+  font-size: 17px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.finaleMoment > span {
+  color: #c5d6db;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.finaleMoment em {
+  align-self: end;
+  margin-top: 2px;
+  color: #abcbc8;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 800;
+}
+.finaleBest {
+  border-color: rgba(246, 196, 90, .36);
+  background: linear-gradient(155deg, rgba(104, 70, 24, .4), rgba(17, 31, 37, .85));
+}
+.finaleRough {
+  border-color: rgba(244, 138, 151, .35);
+  background: linear-gradient(155deg, rgba(98, 36, 49, .34), rgba(18, 26, 37, .9));
+}
+.finaleRough small { color: #ffb6c2; }
+.finaleFallout {
+  border-color: rgba(166, 136, 246, .38);
+  background: linear-gradient(155deg, rgba(79, 47, 100, .44), rgba(16, 26, 43, .85));
+}
+.finaleFallout small { color: #d8b6ff; }
+.finaleLastWord {
+  margin: 0;
+  padding: 14px 18px 18px;
+  border-top: 1px solid rgba(243, 192, 105, .16);
+  color: #e7dfd9;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.finaleLastWord b {
+  color: #ffca76;
+  margin-right: 8px;
+  font-size: 10px;
+  letter-spacing: .1em;
+}
+@media (max-width: 440px) {
+  .finaleHeader { padding: 17px 14px 13px; }
+  .finaleMoments { gap: 9px; padding: 10px; }
+  .finaleMoment { padding: 13px; }
+  .finaleLastWord { padding: 12px 14px 15px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .finaleMoment { transition: none; }
+  .finaleMoment:hover { transform: none; }
+}
