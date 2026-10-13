@@ -1353,13 +1353,13 @@ test("player show chapter breaks trace actual running order without invented mom
       matchId: "chapter-match-" + order, order,
       type: "SINGLES", criticalRatingStars: 3, winnerNames: ["Winner " + order],
       actualFinish: "CLEAN_PIN", titleOutcomes: [], injuries: [], ...props,
-    } as PlayerShowMatchView };
+    } as unknown as PlayerShowMatchView };
   }
   function segment(order: number, props: Record<string, unknown> = {}) {
     return { kind: "SEGMENT" as const, order, segment: {
       segmentId: "chapter-segment-" + order, type: "PROMO",
       participants: [], videoReveal: null, ...props,
-    } as PlayerShowSegmentView };
+    } as unknown as PlayerShowSegmentView };
   }
   const show = { eventId: "chapters-eight", runningOrder: [
     match(1),
