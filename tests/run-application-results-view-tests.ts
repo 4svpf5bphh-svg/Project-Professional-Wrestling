@@ -1279,7 +1279,7 @@ test("player recap separates quality from crowd approval and describes retained 
     ...base, crowdResponse: 66, criticalRatingStars: 2.4,
     styleResult: { delivery: "MISSED" },
   } as unknown as PlayerShowMatchView);
-  ok(missedBrief.recap.includes("planned style was a stretch too far")
+  ok(missedBrief.recap.includes("ambitious approach never quite came together")
     && /ambition|delivery/.test(missedBrief.verdict),
     "style mismatch did not affect the report despite being in the result");
 });
