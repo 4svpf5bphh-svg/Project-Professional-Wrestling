@@ -333,7 +333,7 @@ const MATCH_INTENTS = new Set<MatchIntent>([
   "PROTECTIVE",
   "EPIC",
 ]);
-const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
+export const CARD_SEGMENT_TYPES = [
   "PROMO",
   "INTERVIEW",
   "CONFRONTATION",
@@ -350,7 +350,8 @@ const SEGMENT_TYPES = new Set<DetailedShowSegmentType>([
   "TURN",
   "VIDEO_PACKAGE",
   "LIVE_APPEARANCE",
-]);
+] as const satisfies readonly DetailedShowSegmentType[];
+const SEGMENT_TYPES = new Set<DetailedShowSegmentType>(CARD_SEGMENT_TYPES);
 
 function requiredText(value: string, label: string, maxLength = 220): string {
   const normalized = value.trim();
