@@ -110,8 +110,8 @@ export function showResultHighlights(show: ShowSource, limit = 3): ShowResultHig
         candidates.push({
           id: `hot:${segment.segmentId}`, category: "ANGLE", priority: 64,
           slotOrder: slot.order,
-          headline: hotSegmentHeadline(segment.type, segment.type === "VIDEO_PACKAGE" && segment.videoReveal === "CRYPTIC" ? "Mystery footage" : wrestler),
-          detail: `${segment.type === "VIDEO_PACKAGE" && segment.videoReveal === "CRYPTIC" ? "Mystery footage" : wrestler} · crowd ${segment.crowdResponse === null ? "not recorded" : segment.crowdResponse.toFixed(1)}`,
+          headline: hotSegmentHeadline(segment.type, segment.type === "VIDEO_PACKAGE" && segment.videoReveal !== "NAMED" && segment.videoReveal !== "FULL" ? "Mystery footage" : wrestler),
+          detail: `${segment.type === "VIDEO_PACKAGE" && segment.videoReveal !== "NAMED" && segment.videoReveal !== "FULL" ? "Mystery footage" : wrestler} · crowd ${segment.crowdResponse === null ? "not recorded" : segment.crowdResponse.toFixed(1)}`,
         });
       }
     }

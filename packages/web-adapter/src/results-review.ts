@@ -211,9 +211,14 @@ export function reviewPlayerSegment(segment: PlayerShowSegmentView): SlotReview 
         : turning + " revealed a new allegiance."; break;
     }
     case "VIDEO_PACKAGE":
-      headline = segment.videoReveal === "CRYPTIC" ? "Who's behind the mystery footage?" : (segment.videoSubjectName ?? "A featured wrestler") + " in focus";
-      recap = segment.videoReveal === "CRYPTIC" ? "Cryptic footage aired without publicly identifying its subject."
-        : "A pre-recorded " + (segment.videoKind ?? "spotlight").toLowerCase().replaceAll("_", " ") + " showcased " + (segment.videoSubjectName ?? "the wrestler") + "."; break;
+      headline = segment.videoReveal === "NAMED" || segment.videoReveal === "FULL"
+        ? (segment.videoSubjectName ?? "A featured wrestler") + " in focus"
+        : "Who's behind the mystery footage?";
+      recap = segment.videoReveal === "NAMED" || segment.videoReveal === "FULL"
+        ? "A pre-recorded " + (segment.videoKind ?? "spotlight").toLowerCase().replaceAll("_", " ") + " showcased " + (segment.videoSubjectName ?? "the wrestler") + "."
+        : segment.videoReveal === "CRYPTIC"
+          ? "Cryptic footage aired without publicly identifying its subject."
+          : "A video package aired, but the surviving record does not establish a public reveal."; break;
     case "LIVE_APPEARANCE":
       headline = segment.liveAppearanceKind === "DEBUT" ? who + " has arrived!"
         : segment.liveAppearanceKind === "RETURN" ? who + " is back!"
@@ -396,8 +401,10 @@ export function reviewPlayerShowChapters(
       if (anyMatch?.kind === "MATCH" && anyMatch.match.winnerNames.length > 0) {
         recap = anyMatch.match.winnerNames.join(" & ") + " went over in this stretch of the card.";
       } else if (anySegment?.kind === "SEGMENT") {
-        const subject = anySegment.segment.videoReveal === "CRYPTIC"
-          ? "A mystery video"
+        const subject = anySegment.segment.type === "VIDEO_PACKAGE"
+          && anySegment.segment.videoReveal !== "NAMED"
+          && anySegment.segment.videoReveal !== "FULL"
+          ? "A video package"
           : anySegment.segment.participants[0]?.name ?? "A featured segment";
         recap = subject + " featured as the running order progressed.";
       } else {
@@ -748,7 +755,8 @@ export function reviewPlayerShowNarrative(
   } else if (strongAngle) {
     const participants = strongAngle.segment.participants
       .filter((entry) => !(strongAngle.segment.type === "VIDEO_PACKAGE"
-        && strongAngle.segment.videoReveal === "CRYPTIC"))
+        && strongAngle.segment.videoReveal !== "NAMED"
+        && strongAngle.segment.videoReveal !== "FULL"))
       .map((entry) => entry.name);
     lead = participants.length
       ? participants[0] + " featured in a well-received " +
@@ -806,7 +814,8 @@ export function reviewPlayerShowNarrative(
 export function reviewSegmentVisibleNames(
   segment: Pick<PlayerShowSegmentView, "type" | "participants" | "videoReveal" | "videoSubjectName">,
 ): string[] {
-  if (segment.type === "VIDEO_PACKAGE" && segment.videoReveal === "CRYPTIC") {
+  if (segment.type === "VIDEO_PACKAGE" && segment.videoReveal !== "NAMED"
+    && segment.videoReveal !== "FULL") {
     return ["Mystery footage"];
   }
   const visible = segment.participants.map((participant) => participant.name);

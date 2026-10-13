@@ -1659,10 +1659,28 @@ test("cryptic results participant strip conceals the unrevealed wrestler", () =>
   const revealed = reviewSegmentVisibleNames({ ...base, videoReveal: "NAMED" });
   ok(revealed.includes("The Mystery Wrestler"),
     "a deliberately named video failed to show its subject");
-  const old = reviewSegmentVisibleNames({
-    ...base, participants: [], videoReveal: null,
-  });
-  ok(old.length === 0, "missing archival reveal status was treated as permission to identify a wrestler");
+  const old = reviewSegmentVisibleNames({ ...base, videoReveal: null });
+  ok(old.length === 1 && old[0] === "Mystery footage",
+    "archived unlabelled video exposed a subject that was never publicly identified");
+  const archived = {
+    type: "VIDEO_PACKAGE" as const, order: 1, segment: {
+      segmentId: "archival-video-unknown-reveal", type: "VIDEO_PACKAGE",
+      videoReveal: null, videoSubjectName: "The Mystery Wrestler",
+      participants: [{ personId: "secret", name: "The Mystery Wrestler" }],
+      outcomeBand: "HOT", crowdResponse: 84,
+    } as unknown as PlayerShowSegmentView,
+  };
+  const archivedShow = {
+    eventId: "archival-video-show", runningOrder: [archived],
+    crowdResponse: 74, averageMatchRating: 0,
+    titleChangeCount: 0, injuryCount: 0, matchCount: 0, segmentCount: 1,
+  };
+  ok(!JSON.stringify(reviewPlayerShowNarrative(archivedShow)).includes("The Mystery Wrestler"),
+    "archived video subject leaked into show narrative");
+  ok(!JSON.stringify(reviewPlayerSegment(archived.segment)).includes("The Mystery Wrestler"),
+    "archived video subject leaked into angle recap");
+  ok(!JSON.stringify(showResultHighlights(archivedShow)).includes("The Mystery Wrestler"),
+    "archived video subject leaked into event headlines");
   const promo = reviewSegmentVisibleNames({
     ...base, type: "PROMO", videoReveal: null,
   });
