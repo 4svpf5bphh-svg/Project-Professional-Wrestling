@@ -656,10 +656,20 @@ function validateShowSegmentDraft(
   const hasAttackChoices = draft.type === "ATTACK" || draft.type === "POST_MATCH_ASSAULT";
   const attackPresentation = hasAttackChoices ? (draft.attackPresentation ?? (draft.type === "ATTACK" ? "BLINDSIDE" : null)) : null;
   const attackObjective = hasAttackChoices ? (draft.attackObjective ?? (draft.type === "ATTACK" ? "GENERATE_HEAT" : null)) : null;
-  if (hasAttackChoices && (
+  if (draft.type === "ATTACK" && (
     !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(attackPresentation!)
     || !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(attackObjective!)
   )) throw new Error("ATTACK segment has an unsupported presentation or objective");
+  if (draft.type === "POST_MATCH_ASSAULT") {
+    const provided = [attackPresentation, attackObjective, postMatchAssaultEnding].filter((value) => value !== null).length;
+    if (provided !== 0 && provided !== 3) {
+      throw new Error("POST_MATCH_ASSAULT requires format, objective and ending together, or none for legacy aftermath");
+    }
+    if (provided === 3 && (
+      !["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"].includes(attackPresentation!)
+      || !["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"].includes(attackObjective!)
+    )) throw new Error("POST_MATCH_ASSAULT has an unsupported format or objective");
+  }
   const turnPresentation = draft.type === "TURN" ? (draft.turnPresentation ?? "REVEAL") : null;
   const betrayedPersonId = draft.type === "TURN" && turnPresentation === "BETRAYAL"
     ? (draft.betrayedPersonId == null ? null : normalizedId(draft.betrayedPersonId, "betrayedPersonId"))
