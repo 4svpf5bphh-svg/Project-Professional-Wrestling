@@ -284,36 +284,64 @@ export function buildPlayerAttention(
               : (offer.offerKind === "DATES_ADDENDUM" ? `${name} declined extra dates` : `${name} rejected your contract offer`),
           summary: delegated
             ? accepted
-              ? `${name} accepted the same-terms proposal your Talent Manager submitted. The contract is signed and begins in PPW Week ${offer.startDate.week}, Year ${offer.startDate.year}; any older dates remain separate. No previous one-time bonus was repeated.`
+              ? `${name} accepted the same-terms proposal your Talent Manager submitted. The contract is signed, starting PPW Week ${offer.startDate.week}, Year ${offer.startDate.year}; earlier dates remain separate. No previous one-time bonus was repeated.`
               : `The Talent Manager's renewal attempt was unsuccessful. ${contractOfferRejectionSummary(offer.rejectionReason)} You can negotiate different terms manually.`
             : accepted
               ? `${offer.offerKind === "DATES_ADDENDUM"
                 ? `${name} agreed to additional appearances under the existing non-exclusive contract. No renewal was required.`
-                : `${name} accepted your ${contractFamilyLabel(offer.family)} offer for ${offer.family === "EXCLUSIVE" ? "unlimited appearances" : `${offer.dateEntitlement} dates`}. The contract is signed and starts PPW Week ${offer.startDate.week}, Year ${offer.startDate.year}; it does not refill the old contract's dates.`}`
+                : `${name} accepted your ${contractFamilyLabel(offer.family)} offer for ${offer.family === "EXCLUSIVE" ? "unlimited appearances" : `${offer.dateEntitlement} dates`}. It is signed, starting PPW Week ${offer.startDate.week}, Year ${offer.startDate.year}; the old contract's dates are not refilled.`}`
               : contractOfferRejectionSummary(offer.rejectionReason),
           deadline: null,
-          deepLink: delegated ? "/staff" : "/talent",
+          deepLink: `/talent/contracts?personId=${encodeURIComponent(offer.personId)}`,
           dismissible: true,
           sourceOpportunityCategory: null,
         });
       }
     }
 
+    // Compute once from the shared offer ledger; avoid repeated historical scans for every roster member.
+    const pendingNegotiations = new Set(
+      aggregate.state.contractOffers
+        .filter((offer) => (
+          offer.promotionId === promotion.id
+          && offer.status === "PENDING"
+          && (offer.offerKind === "RENEWAL" || offer.offerKind === "DATES_ADDENDUM")
+        ))
+        .map((offer) => offer.personId),
+    );
+    const signedFutureByPerson = new Map<string, (typeof aggregate.state.contracts)[number]>();
+    for (const scheduled of aggregate.state.contracts) {
+      if (scheduled.promotionId !== promotion.id || scheduled.status !== "SIGNED"
+        || weekIndex(aggregate, scheduled.startDate) <= weekIndex(aggregate, currentDate)) continue;
+      const previous = signedFutureByPerson.get(scheduled.personId);
+      if (!previous || weekIndex(aggregate, scheduled.startDate) < weekIndex(aggregate, previous.startDate)) {
+        signedFutureByPerson.set(scheduled.personId, scheduled);
+      }
+    }
     for (const contract of activeContracts) {
       if (contract.family === "ONE_OFF") continue;
+      const pendingNegotiation = pendingNegotiations.has(contract.personId);
+      const futureRenewal = signedFutureByPerson.get(contract.personId) ?? null;
       const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
       if (contract.family === "LIMITED_NON_EXCLUSIVE" && datesRemaining === 0) {
         const name = personName(aggregate, contract.personId);
-        pushIfVisible(aggregate, playerId, items, {
+        const item = {
           attentionId: `contract-dates-exhausted:${contract.id}`,
-          category: "ACTION_REQUIRED",
-          title: `${name} has no contracted dates remaining`,
-          summary: `${name}'s current contract has no unused dates. You can offer an addendum if you need appearances before expiry. An already-signed future renewal does not replenish this contract.`,
+          category: pendingNegotiation || futureRenewal ? "WATCHING" as const : "ACTION_REQUIRED" as const,
+          title: pendingNegotiation ? `${name} is considering your contract proposal`
+            : futureRenewal ? `${name}'s renewal is signed for a future week`
+              : `${name} has no contracted dates remaining`,
+          summary: pendingNegotiation
+            ? `You are waiting for ${name}'s decision. The current contract has no more appearances.`
+            : futureRenewal
+              ? `The new deal is signed and starts PPW Week ${futureRenewal.startDate.week}, Year ${futureRenewal.startDate.year}. The old term has zero dates now; you can negotiate a separate addendum if you need dates before then.`
+              : `${name}'s current calendar contract has no unused dates. A consensual addendum can buy more appearances before expiry.`,
           deadline: null,
-          deepLink: "/talent",
+          deepLink: `/talent/contracts?personId=${encodeURIComponent(contract.personId)}`,
           dismissible: true,
           sourceOpportunityCategory: null,
-        });
+        };
+        pushIfVisible(aggregate, playerId, items, item);
         continue;
       }
       const weeksRemaining = weekIndex(aggregate, contract.endDate) - weekIndex(aggregate, currentDate);
@@ -322,11 +350,18 @@ export function buildPlayerAttention(
       const name = personName(aggregate, contract.personId);
       pushIfVisible(aggregate, playerId, items, {
         attentionId: `contract-expiry:${contract.id}`,
-        category: urgent ? "ACTION_REQUIRED" : "IMPORTANT",
-        title: urgent ? `${name}’s contract decision is due` : `${name} is entering the renewal window`,
-        summary: `${name}’s ${contractFamilyLabel(contract.family)} contract expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`,
+        category: pendingNegotiation || futureRenewal ? "WATCHING" : urgent ? "ACTION_REQUIRED" : "IMPORTANT",
+        title: pendingNegotiation
+          ? `${name} is considering your renewal offer`
+          : futureRenewal ? `${name}'s next contract is already signed`
+            : urgent ? `${name}’s contract decision is due` : `${name} is entering the renewal window`,
+        summary: pendingNegotiation
+          ? `Your contract offer to ${name} is awaiting a response. The current agreement expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`
+          : futureRenewal
+            ? `The existing agreement expires soon, but the signed replacement starts PPW Week ${futureRenewal.startDate.week}, Year ${futureRenewal.startDate.year}. No repeat renewal is needed.`
+            : `${name}’s ${contractFamilyLabel(contract.family)} contract expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`,
         deadline: { ...contract.endDate },
-        deepLink: null,
+        deepLink: `/talent/contracts?personId=${encodeURIComponent(contract.personId)}`,
         dismissible: true,
         sourceOpportunityCategory: null,
       });
