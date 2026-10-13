@@ -56,7 +56,7 @@ await test("Alpha Attention dismissal persists, retries safely and cannot hide A
 
   const before = await loadAlphaPlayerSession(repository, worldId, "alpha-player");
   const dismissible = before.attention.find((item) => (
-    item.attentionId.startsWith("contract-expiry:") && item.dismissible
+    item.attentionId.startsWith("contract-expiry:") && item.dismissible && item.category !== "ACTION_REQUIRED"
   ));
   const urgent = before.attention.find((item) => (
     item.attentionId.startsWith("contract-expiry:") && item.category === "ACTION_REQUIRED"
