@@ -284,7 +284,7 @@ export function buildFreshPlan(
     if (state.contractOffers.some((offer) =>
       offer.promotionId === promotionId && offer.personId === personId
       && offer.status === "PENDING" && offer.offerKind === "RENEWAL")) {
-      throw new Error("A renewal offer is already pending for this wrestler.");
+      throw new Error("A pending offer for this wrestler's renewal already exists.");
     }
   }
 
