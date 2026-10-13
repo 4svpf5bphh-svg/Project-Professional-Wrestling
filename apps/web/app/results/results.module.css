@@ -1011,3 +1011,66 @@
 @media (prefers-reduced-motion: reduce) {
   .reelCard { transition: none; }
 }
+
+
+.winnerRibbon {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  margin: 0 0 11px;
+  padding: 10px 12px;
+  border: 1px solid rgba(94, 224, 207, .23);
+  border-radius: 10px;
+  background: linear-gradient(100deg, rgba(31, 128, 109, .18), rgba(15, 37, 43, .22));
+}
+
+.winnerRibbon span {
+  color: #7eccc1;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .12em;
+}
+
+.winnerRibbon strong {
+  color: #d9fff3;
+  font-size: clamp(13px, 2.5vw, 17px);
+  overflow-wrap: anywhere;
+}
+
+.mainEventResult .winnerRibbon {
+  border-color: rgba(246, 187, 96, .32);
+  background: linear-gradient(100deg, rgba(121, 77, 36, .22), rgba(30, 28, 41, .3));
+}
+
+.mainEventResult .winnerRibbon span,
+.mainEventResult .winnerRibbon strong {
+  color: #ffe0ac;
+}
+
+.angleImpact,
+.angleHot,
+.anglePoor {
+  align-self: flex-start;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.angleImpact {
+  color: #c7dcff;
+  background: rgba(112, 162, 238, .14);
+}
+
+.angleHot {
+  color: #f9d5ff;
+  background: rgba(188, 92, 244, .23);
+  border: 1px solid rgba(188, 92, 244, .32);
+}
+
+.anglePoor {
+  color: #ffb5c0;
+  background: rgba(230, 91, 112, .16);
+}
