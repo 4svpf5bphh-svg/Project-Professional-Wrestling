@@ -628,6 +628,7 @@ export default function CardClient(): React.JSX.Element {
       style: { ...defaultMatchStyleForIntent("COMPETITIVE") },
       plannedLengthMinutes: type === "TAG" ? 15 : 12,
       plannedFinish: "CLEAN_PIN",
+      finishCheaterPersonId: null,
       interfererPersonId: null,
       interferenceSide: null,
     }]);
@@ -705,6 +706,7 @@ export default function CardClient(): React.JSX.Element {
       intent,
       style: { ...defaultMatchStyleForIntent(intent) },
       plannedFinish: defaultFinishForIntent(intent),
+      finishCheaterPersonId: null,
     });
   }
 
@@ -1496,6 +1498,9 @@ export default function CardClient(): React.JSX.Element {
               if (!match) return null;
               const assignment = assignmentForMatch(match.draftMatchId);
               const finish = (match.plannedFinish ?? defaultFinishForIntent(match.intent)) as BookableFinish;
+              const cheatingSide = finish === "FOREIGN_OBJECT" ? match.intendedWinnerSide
+                : finish === "DISQUALIFICATION" ? (match.intendedWinnerSide === "A" ? "B" : "A") : null;
+              const cheaterOptions = cheatingSide === "A" ? match.sideAIds : cheatingSide === "B" ? match.sideBIds : [];
               const style = match.style ?? defaultMatchStyleForIntent(match.intent);
               const styleLoad = evaluateMatchStyleLoad(style, match.plannedLengthMinutes);
               const readiness = liveMatchReadiness({ ...match, style });
@@ -1655,9 +1660,29 @@ export default function CardClient(): React.JSX.Element {
                   </div>
 
                   <div className={styles.controls}>
-                    <div className={styles.control}><label>Winner</label><select value={match.intendedWinnerSide} disabled={!view.canEdit} onChange={(event) => updateMatch(match.draftMatchId, { intendedWinnerSide: event.target.value as "A" | "B" })}><option value="A">Side A</option><option value="B">Side B</option></select></div>
+                    <div className={styles.control}><label>Winner</label><select value={match.intendedWinnerSide} disabled={!view.canEdit} onChange={(event) => updateMatch(match.draftMatchId, { intendedWinnerSide: event.target.value as "A" | "B", finishCheaterPersonId: null })}><option value="A">Side A</option><option value="B">Side B</option></select></div>
                     <div className={styles.control}><label>Preset</label><select value={match.intent} disabled={!view.canEdit} onChange={(event) => setMatchPreset(match.draftMatchId, event.target.value as AlphaCardMatchView["intent"])}>{MATCH_INTENTS.map((intent) => <option key={intent} value={intent}>{pretty(intent)}</option>)}</select></div>
-                    <div className={styles.control}><label>Finish</label><select value={finish} disabled={!view.canEdit} onChange={(event) => updateMatch(match.draftMatchId, { plannedFinish: event.target.value as BookableFinish })}>{MATCH_FINISHES.map((item) => <option key={item} value={item}>{finishLabel(item)}</option>)}</select></div>
+                    <div className={styles.control}><label>Finish</label><select value={finish} disabled={!view.canEdit} onChange={(event) => updateMatch(match.draftMatchId, { plannedFinish: event.target.value as BookableFinish, finishCheaterPersonId: null })}>{MATCH_FINISHES.map((item) => <option key={item} value={item}>{finishLabel(item)}</option>)}</select></div>
+                    {cheatingSide ? (
+                      <div className={styles.control}>
+                        <label>{finish === "DISQUALIFICATION" ? "Who gets caught cheating?" : "Who uses the foreign object?"}</label>
+                        {match.type === "SINGLES" ? (
+                          <div>{cheaterOptions[0] ? participantView(cheaterOptions[0])?.name ?? "Selected wrestler" : "Choose both wrestlers"}</div>
+                        ) : (
+                          <select value={cheaterOptions.includes(match.finishCheaterPersonId ?? "") ? match.finishCheaterPersonId ?? "" : ""}
+                            disabled={!view.canEdit} aria-label="Wrestler who cheats"
+                            onChange={(event) => updateMatch(match.draftMatchId, { finishCheaterPersonId: event.target.value || null })}>
+                            <option value="">Choose wrestler…</option>
+                            {cheaterOptions.filter(Boolean).map((personId) => (
+                              <option key={personId} value={personId}>{participantView(personId)?.name ?? "Selected wrestler"}</option>
+                            ))}
+                          </select>
+                        )}
+                        <small>{finish === "DISQUALIFICATION"
+                          ? "The culprit's team is disqualified; the booked winner gets the match."
+                          : "The referee misses it; the booked winner gets the match."}</small>
+                      </div>
+                    ) : null}
                     <div className={styles.control}><label>Minutes</label><MinuteField value={match.plannedLengthMinutes} min={3} max={60} disabled={!view.canEdit} onCommit={(plannedLengthMinutes) => updateMatch(match.draftMatchId, { plannedLengthMinutes })} /></div>
                     <div className={styles.control}>
                       <label>Championship</label>
