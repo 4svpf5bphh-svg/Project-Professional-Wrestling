@@ -56,6 +56,8 @@ import {
   type StableReconciliationOutcome,
   type ChallengeResponse,
   type InterruptionOutcome,
+  type ConfrontationEnding,
+  CONFRONTATION_ENDINGS,
   type DetailedShowSlotRef,
   type PlayerShowPlanningState,
 } from "../../application/src/index.js";
@@ -173,6 +175,7 @@ export interface AlphaCardSegmentView {
   stableReconciliationOutcome?: StableReconciliationOutcome | null;
   challengeResponse?: ChallengeResponse | null;
   interruptionOutcome?: InterruptionOutcome | null;
+  confrontationEnding?: ConfrontationEnding | null;
   attackPresentation?: AttackPresentation | null;
   attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
@@ -660,6 +663,10 @@ function normalizeSegments(
     if (challengeResponse !== null && !["ACCEPTED", "REFUSED", "LEFT_OPEN"].includes(challengeResponse)) {
       throw new Error("CHALLENGE has an unsupported scripted response");
     }
+    const confrontationEnding = segment.type === "CONFRONTATION" ? (segment.confrontationEnding ?? null) : null;
+    if (confrontationEnding !== null && !CONFRONTATION_ENDINGS.includes(confrontationEnding)) {
+      throw new Error("CONFRONTATION has an unsupported scripted stand-off ending");
+    }
     const interruptionOutcome = segment.type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null;
     if (segment.type === "INTERRUPTION" && (
       !initiatorPersonId || !targetPersonId
@@ -779,6 +786,7 @@ function normalizeSegments(
       ...(segment.type === "STABLE_RECONCILIATION" ? { stableId, stableReconciliationOutcome } : {}),
       ...(segment.type === "CHALLENGE" && challengeResponse ? { challengeResponse } : {}),
       ...(segment.type === "INTERRUPTION" ? { interruptionOutcome } : {}),
+      ...(segment.type === "CONFRONTATION" ? { confrontationEnding } : {}),
       ...(segment.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
       ...(segment.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
       ...(segment.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),
@@ -1250,6 +1258,7 @@ export async function loadAlphaShowCard(
       stableReconciliationOutcome: segment.type === "STABLE_RECONCILIATION" ? (segment.stableReconciliationOutcome ?? "RECONCILED") : null,
       challengeResponse: segment.type === "CHALLENGE" ? (segment.challengeResponse ?? null) : null,
       interruptionOutcome: segment.type === "INTERRUPTION" ? (segment.interruptionOutcome ?? "VERBAL_EXCHANGE") : null,
+      confrontationEnding: segment.type === "CONFRONTATION" ? (segment.confrontationEnding ?? null) : null,
       attackPresentation: segment.type === "ATTACK" ? (segment.attackPresentation ?? "BLINDSIDE") : null,
       attackObjective: segment.type === "ATTACK" ? (segment.attackObjective ?? "GENERATE_HEAT") : null,
       turnPersonId: segment.type === "TURN" ? (segment.turnPersonId ?? null) : null,
