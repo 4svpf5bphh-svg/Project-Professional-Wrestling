@@ -299,21 +299,36 @@ export function buildPlayerAttention(
       }
     }
 
+    // Compute once from the shared offer ledger; avoid repeated historical scans for every roster member.
+    const pendingNegotiations = new Set(
+      aggregate.state.contractOffers
+        .filter((offer) => (
+          offer.promotionId === promotion.id
+          && offer.status === "PENDING"
+          && (offer.offerKind === "RENEWAL" || offer.offerKind === "DATES_ADDENDUM")
+        ))
+        .map((offer) => offer.personId),
+    );
     for (const contract of activeContracts) {
       if (contract.family === "ONE_OFF") continue;
+      const pendingNegotiation = pendingNegotiations.has(contract.personId);
       const datesRemaining = Math.max(0, contract.dateEntitlement - contract.datesUsed);
       if (contract.family === "LIMITED_NON_EXCLUSIVE" && datesRemaining === 0) {
         const name = personName(aggregate, contract.personId);
-        items.push({
+        const item = {
           attentionId: `contract-dates-exhausted:${contract.id}`,
-          category: "ACTION_REQUIRED",
-          title: `${name} has no contracted dates remaining`,
-          summary: `${name}'s calendar contract is still active, but every purchased appearance has been used. Renegotiate now to buy more dates; an accepted addendum adds dates to the existing deal.`,
+          category: pendingNegotiation ? "WATCHING" as const : "ACTION_REQUIRED" as const,
+          title: pendingNegotiation ? `${name} is considering your contract proposal` : `${name} has no contracted dates remaining`,
+          summary: pendingNegotiation
+            ? `You are waiting for ${name}'s decision. The existing calendar contract remains active, but no new appearances are available until more dates are agreed.`
+            : `${name}'s calendar contract is still active, but every purchased appearance has been used. Renegotiate now to buy more dates; an accepted addendum adds dates to the existing deal.`,
           deadline: null,
-          deepLink: "/talent",
-          dismissible: false,
+          deepLink: `/talent/contracts?personId=${encodeURIComponent(contract.personId)}`,
+          dismissible: Boolean(pendingNegotiation),
           sourceOpportunityCategory: null,
-        });
+        };
+        if (pendingNegotiation) pushIfVisible(aggregate, playerId, items, item);
+        else items.push(item);
         continue;
       }
       const weeksRemaining = weekIndex(aggregate, contract.endDate) - weekIndex(aggregate, currentDate);
@@ -322,12 +337,16 @@ export function buildPlayerAttention(
       const name = personName(aggregate, contract.personId);
       pushIfVisible(aggregate, playerId, items, {
         attentionId: `contract-expiry:${contract.id}`,
-        category: urgent ? "ACTION_REQUIRED" : "IMPORTANT",
-        title: urgent ? `${name}’s contract decision is due` : `${name} is entering the renewal window`,
-        summary: `${name}’s ${contractFamilyLabel(contract.family)} contract expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`,
+        category: pendingNegotiation ? "WATCHING" : urgent ? "ACTION_REQUIRED" : "IMPORTANT",
+        title: pendingNegotiation
+          ? `${name} is considering your renewal offer`
+          : urgent ? `${name}’s contract decision is due` : `${name} is entering the renewal window`,
+        summary: pendingNegotiation
+          ? `Your contract offer to ${name} is awaiting a response. The current agreement expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`
+          : `${name}’s ${contractFamilyLabel(contract.family)} contract expires ${weeksRemaining === 0 ? "this PPW week" : `in ${weeksRemaining} PPW week${weeksRemaining === 1 ? "" : "s"}`}.`,
         deadline: { ...contract.endDate },
-        deepLink: null,
-        dismissible: !urgent,
+        deepLink: `/talent/contracts?personId=${encodeURIComponent(contract.personId)}`,
+        dismissible: Boolean(pendingNegotiation) || !urgent,
         sourceOpportunityCategory: null,
       });
     }

@@ -305,7 +305,8 @@ await test("Alpha player home view carries the same player-scoped Attention with
   );
 
   const renewal = view.attention.find((item) => item.attentionId === `contract-expiry:${contract.id}`);
-  ok(renewal?.deepLink === "/talent", "renewal Attention did not link to Talent");
+  ok(renewal?.deepLink === "/talent/contracts?personId=" + encodeURIComponent(contract.personId),
+    "renewal Attention did not link directly to its wrestler in Contracts");
 });
 
 await test("reserved current-week preparation replaces false missing-show Attention and becomes READY when the card is complete", () => {
