@@ -19,6 +19,8 @@ import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
 import { setActualMatchFinish } from "../packages/sim-core/src/match-finishes.js";
 import { hotSegmentHeadline, showResultHighlights } from "../packages/web-adapter/src/results-highlights.js";
+import { reviewPlayerMatch, reviewPlayerSegment } from "../packages/web-adapter/src/results-review.js";
+import type { PlayerShowMatchView, PlayerShowSegmentView } from "../packages/application/src/results-view.js";
 import { discoverWorldResults, worldResultsWeekLabel, worldShowHasSpotlight } from "../packages/web-adapter/src/world-results-discovery.js";
 
 let passed = 0;
@@ -1141,6 +1143,80 @@ test("non-members cannot read World show history", () => {
     rejected = error instanceof Error && error.message.includes("not an active member");
   }
   ok(rejected, "non-member could read show history");
+});
+
+
+test("editorial match reviews are deterministic, factual and read-only", () => {
+  const match = {
+    matchId: "editorial-foreign-object",
+    intent: "TECHNICAL",
+    winnerNames: ["Megan Bayne"],
+    criticalRatingStars: 3.6,
+    crowdResponse: 76,
+    actualFinish: "FOREIGN_OBJECT",
+    finishCheater: { personId: "bayne", name: "Megan Bayne" },
+    interference: null,
+    titleOutcomes: [],
+    injuries: [],
+  } as unknown as PlayerShowMatchView;
+  const original = JSON.stringify(match);
+  const first = reviewPlayerMatch(match);
+  ok(first.headline.length > 10 && first.recap.includes("Megan Bayne"), "match recap lacked an identifiable wrestler");
+  ok(first.recap.includes("foreign object") && first.recap.includes("referee"), "dirty match finish was invented or lost");
+  ok(!first.recap.includes("injur") && !first.recap.includes("title changed"),
+    "editorial match recap invented an injury or title change");
+  ok(JSON.stringify(reviewPlayerMatch(structuredClone(match))) === JSON.stringify(first),
+    "same resolved match produced different text after reload");
+  ok(JSON.stringify(match) === original, "read-only editorial renderer mutated the simulated match");
+  const stopped = reviewPlayerMatch({
+    ...match, actualFinish: "INJURY_STOPPAGE", finishCheater: null, injuries: [
+      { injuryId: "inj", personId: "bayne", personName: "Megan Bayne", severity: "MINOR", weeksOut: 1 },
+    ],
+  } as PlayerShowMatchView);
+  ok(stopped.recap.includes("stopped") && !stopped.recap.includes("foreign object"),
+    "injury stoppage was falsely described as planned cheating");
+  const unknown = reviewPlayerMatch({ ...match, actualFinish: null, finishCheater: null } as PlayerShowMatchView);
+  ok(unknown.recap.includes("wasn't recorded") && !unknown.recap.includes("pinfall"),
+    "historic unknown finish was made up");
+});
+
+test("editorial segment recaps respect scripted endings and cryptic reveal privacy", () => {
+  const seed = {
+    segmentId: "cryptic-clip",
+    type: "VIDEO_PACKAGE",
+    participants: [],
+    videoSubjectName: "Secret Superstar",
+    videoReveal: "CRYPTIC",
+    videoKind: "DEBUT_TEASER",
+    outcomeBand: "HOT",
+    crowdResponse: 82,
+  } as unknown as PlayerShowSegmentView;
+  const cryptic = reviewPlayerSegment(seed);
+  ok(!JSON.stringify(cryptic).includes("Secret Superstar"),
+    "cryptic video spoiled its secret identity");
+  const revealed = reviewPlayerSegment({ ...seed, videoReveal: "NAMED" } as PlayerShowSegmentView);
+  ok(revealed.recap.includes("Secret Superstar"), "named video hid its officially revealed wrestler");
+  const rescue = {
+    segmentId: "rescue-stopped",
+    type: "RESCUE",
+    participants: [
+      { personId: "a", name: "Attacker" },
+      { personId: "b", name: "Victim" },
+      { personId: "r", name: "Rescuer" },
+    ],
+    attackerPersonId: "a", victimPersonId: "b", rescuerPersonId: "r",
+    rescueOutcome: "RESCUE_OVERWHELMED",
+    outcomeBand: "POOR",
+    crowdResponse: 24,
+  } as unknown as PlayerShowSegmentView;
+  const unsuccessful = reviewPlayerSegment(rescue);
+  ok(unsuccessful.recap.includes("rescue failed") && unsuccessful.tone === "ROUGH",
+    "editorial recap turned a failed rescue into a scripted success");
+  ok(!unsuccessful.recap.includes("rescuer drove off"),
+    "editorial recap invented a successful rescue outcome");
+  const earlier = JSON.stringify(rescue);
+  ok(JSON.stringify(reviewPlayerSegment(rescue)) === JSON.stringify(unsuccessful)
+    && JSON.stringify(rescue) === earlier, "segment editorial changed between reloads or mutated the ledger projection");
 });
 
 console.log(`\nApplication results-view tests: ${passed} passed, ${failed} failed`);
