@@ -109,6 +109,12 @@ export type StableExitOutcome = "EXPELLED" | "WALKED_OUT";
 export type StableReconciliationOutcome = "RECONCILED" | "REBUFFED";
 // Both outcomes are player-scripted; no random story outcome at World Lock.
 export type InterruptionOutcome = "VERBAL_EXCHANGE" | "INTERRUPTER_PREVAILS" | "SPEAKER_PREVAILS" | "BRAWL";
+/** A direct face-to-face meeting, not an interruption, match challenge or attack.
+ * Every ending is authored; no simulated character silently changes their mind. */
+export const CONFRONTATION_ENDINGS = [
+  "STAREDOWN", "INITIATOR_BACKS_DOWN", "TARGET_BACKS_DOWN", "RELUCTANT_HANDSHAKE",
+] as const;
+export type ConfrontationEnding = (typeof CONFRONTATION_ENDINGS)[number];
 
 export interface DetailedShowSegmentDraft {
   draftSegmentId: string;
@@ -149,6 +155,8 @@ export interface DetailedShowSegmentDraft {
   stableReconciliationOutcome?: StableReconciliationOutcome | null;
   challengeResponse?: ChallengeResponse | null;
   interruptionOutcome?: InterruptionOutcome | null;
+  /** Null preserves historical stand-offs without an authored outcome. */
+  confrontationEnding?: ConfrontationEnding | null;
   attackPresentation?: AttackPresentation | null;
   attackObjective?: AttackObjective | null;
   turnPersonId?: Id | null;
@@ -563,6 +571,10 @@ function validateShowSegmentDraft(
   if (challengeResponse !== null && !["ACCEPTED", "REFUSED", "LEFT_OPEN"].includes(challengeResponse)) {
     throw new Error("CHALLENGE has an unsupported scripted response");
   }
+  const confrontationEnding = draft.type === "CONFRONTATION" ? (draft.confrontationEnding ?? null) : null;
+  if (confrontationEnding !== null && !CONFRONTATION_ENDINGS.includes(confrontationEnding)) {
+    throw new Error("CONFRONTATION has an unsupported scripted stand-off ending");
+  }
   const interruptionOutcome = draft.type === "INTERRUPTION" ? (draft.interruptionOutcome ?? "VERBAL_EXCHANGE") : null;
   if (draft.type === "INTERRUPTION" && (
     !initiatorPersonId || !targetPersonId
@@ -686,6 +698,7 @@ function validateShowSegmentDraft(
     ...(draft.type === "STABLE_RECONCILIATION" ? { stableId, stableReconciliationOutcome } : {}),
     ...(draft.type === "CHALLENGE" && challengeResponse ? { challengeResponse } : {}),
     ...(draft.type === "INTERRUPTION" ? { interruptionOutcome } : {}),
+    ...(draft.type === "CONFRONTATION" ? { confrontationEnding } : {}),
     ...(draft.type === "ATTACK" ? { attackerPersonId, victimPersonId, attackPresentation, attackObjective } : {}),
     ...(draft.type === "RESCUE" ? { attackerPersonId, victimPersonId, rescuerPersonId } : {}),
     ...(draft.type === "POST_MATCH_ASSAULT" ? { attackerPersonId, victimPersonId, sourceDraftMatchId } : {}),
