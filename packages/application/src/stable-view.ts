@@ -1,5 +1,6 @@
 import type { Id, PpwDate, StableStatus } from "../../domain/src/types.js";
 import { currentRosterPersonIds } from "../../sim-core/src/contracts.js";
+import { comparePpwDates, ppwDateToWeekIndex } from "../../sim-core/src/clock.js";
 import { activePromotionControlForPlayer, activeWorldMembership } from "./ownership.js";
 import type { ApplicationWorldAggregate } from "./world-aggregate.js";
 
@@ -21,12 +22,28 @@ export interface PlayerStableEntryView {
   currentMembers: PlayerStableMemberView[];
   memberHistory: PlayerStableMemberView[];
 }
+/** A completed on-screen storyline that still needs an explicit roster choice.
+ * Read-only: this is never a membership command or free simulation power. */
+export interface PlayerStableStoryFollowThroughView {
+  sourceSegmentId: Id;
+  stableId: Id;
+  stableName: string;
+  personId: Id;
+  personName: string;
+  storyDate: PpwDate;
+  storyType: "STABLE_INVITATION" | "STABLE_EXIT" | "STABLE_RECONCILIATION";
+  action: "ADD" | "REMOVE";
+  status: "READY" | "NOT_ON_ROSTER" | "OTHER_STABLE" | "STABLE_FULL" | "STABLE_INACTIVE";
+}
+
 export interface PlayerStableRosterView {
   world: { worldId: Id; name: string; currentDate: PpwDate; revision: number };
   player: { playerId: string; promotionId: Id | null };
   canEdit: boolean;
   roster: { personId: Id; name: string; stableId: Id | null }[];
   stables: PlayerStableEntryView[];
+  /** The newest *performed* stable story per stable + wrestler, maximum six PPW weeks old. */
+  storyFollowThrough: PlayerStableStoryFollowThroughView[];
 }
 
 /** Read-only projection. No contracts, hidden morale, or simulation adjustments. */
@@ -66,6 +83,65 @@ export function buildPlayerStableRosterView(aggregate: ApplicationWorldAggregate
   for (const stable of stables.filter((entry) => entry.status === "ACTIVE")) {
     for (const member of stable.currentMembers) activeStableByPerson.set(member.personId, stable.stableId);
   }
+  // Real history only; a draft, a reserved show or a rival promotion's
+  // storyline is never presented as an owner roster task. The latest completed
+  // beat supersedes an older invitation/exit for the same stable and person.
+  const now = aggregate.state.world.currentDate;
+  const weeksPerYear = aggregate.state.ruleset.weeksPerYear;
+  const recentStory = new Map<string, typeof aggregate.state.ledger[number]>();
+  if (promotionId !== null) {
+    const completed = aggregate.state.ledger.filter((entry) => {
+      if (entry.type !== "SHOW_SEGMENT_COMPLETED" || entry.payload.promotionId !== promotionId) return false;
+      if (typeof entry.payload.stableId !== "string" || typeof entry.payload.targetPersonId !== "string") return false;
+      if (!["STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION"].includes(String(entry.payload.segmentType))) return false;
+      const age = ppwDateToWeekIndex(now, weeksPerYear) - ppwDateToWeekIndex(entry.date, weeksPerYear);
+      if (age < 0 || age > 6 || comparePpwDates(entry.date, now, weeksPerYear) > 0) return false;
+      return aggregate.state.events.some((event) => event.id === entry.payload.eventId
+        && event.promotionId === promotionId && event.status === "COMPLETED");
+    }).sort((left, right) =>
+      comparePpwDates(left.date, right.date, weeksPerYear)
+      || left.order - right.order || left.id.localeCompare(right.id));
+    for (const entry of completed) {
+      recentStory.set(entry.payload.stableId + ":" + entry.payload.targetPersonId, entry);
+    }
+  }
+  const storyFollowThrough: PlayerStableStoryFollowThroughView[] = [];
+  for (const entry of recentStory.values()) {
+    const storyType = entry.payload.segmentType;
+    const action = storyType === "STABLE_EXIT" ? "REMOVE"
+      : storyType === "STABLE_INVITATION" && entry.payload.stableInvitationOutcome === "ACCEPTED"
+        ? "ADD"
+        : storyType === "STABLE_RECONCILIATION" && entry.payload.stableReconciliationOutcome === "RECONCILED"
+          ? "ADD" : null;
+    if (!action) continue; // A refused/rebuffed story cancels the older task.
+    const stableId = String(entry.payload.stableId);
+    const personId = String(entry.payload.targetPersonId);
+    const stable = stables.find((candidate) => candidate.stableId === stableId);
+    if (!stable) continue;
+    const isMember = stable.currentMembers.some((member) => member.personId === personId);
+    // The roster state may already be correct because the player deliberately
+    // used the existing Stables control. Never ask for a duplicate command.
+    if (action === "ADD" && isMember || action === "REMOVE" && !isMember) continue;
+    const otherStable = stables.some((candidate) => candidate.status === "ACTIVE"
+      && candidate.stableId !== stableId
+      && candidate.currentMembers.some((member) => member.personId === personId));
+    const status: PlayerStableStoryFollowThroughView["status"] = stable.status !== "ACTIVE"
+      ? "STABLE_INACTIVE" : action === "ADD" && !rosterIds.has(personId)
+        ? "NOT_ON_ROSTER" : action === "ADD" && otherStable
+          ? "OTHER_STABLE" : action === "ADD" && stable.currentMembers.length >= 12
+            ? "STABLE_FULL" : "READY";
+    storyFollowThrough.push({
+      sourceSegmentId: entry.id, stableId, stableName: stable.name, personId,
+      personName: people.get(personId)?.name ?? "Unknown wrestler",
+      storyDate: { ...entry.date },
+      storyType: storyType as PlayerStableStoryFollowThroughView["storyType"],
+      action, status,
+    });
+  }
+  storyFollowThrough.sort((a, b) =>
+    comparePpwDates(b.storyDate, a.storyDate, weeksPerYear)
+    || a.stableName.localeCompare(b.stableName) || a.personName.localeCompare(b.personName));
+
   return {
     world: {
       worldId: aggregate.state.world.id,
@@ -84,5 +160,6 @@ export function buildPlayerStableRosterView(aggregate: ApplicationWorldAggregate
       }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     stables,
+    storyFollowThrough,
   };
 }
