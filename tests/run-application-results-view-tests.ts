@@ -19,6 +19,7 @@ import { DEFAULT_RULESET } from "../packages/config/src/default-ruleset.js";
 import { createWorld, setWrestlerAlignment } from "../packages/sim-core/src/index.js";
 import { setActualMatchFinish } from "../packages/sim-core/src/match-finishes.js";
 import { hotSegmentHeadline, showResultHighlights } from "../packages/web-adapter/src/results-highlights.js";
+import { discoverWorldResults, worldResultsWeekLabel, worldShowHasSpotlight } from "../packages/web-adapter/src/world-results-discovery.js";
 
 let passed = 0;
 let failed = 0;
@@ -406,6 +407,104 @@ test("Results headline variety uses performed segment facts and conceals cryptic
   ok(arrival.length === 1 && arrival[0]?.category === "ARRIVAL"
     && arrival[0]?.headline.includes("Debuting Wrestler"),
     "one true debut produced repetitive arrival and hot-angle headline cards");
+});
+
+test("public World timeline filters actual title changes, injuries, cheating and wrestler search", () => {
+  const { aggregate } = twoPlayerFixture(72511);
+  const original = buildPlayerWorldResultsView(aggregate, "player-a");
+  const all = { promotionId: "ALL", spotlight: "ALL" as const, query: "" };
+  ok(original.shows.length === 2 && discoverWorldResults(original.shows, all).length === 2,
+    "world discovery changed the public source order or discarded completed shows");
+  const first = original.shows.find((show) => show.eventId === "results-event-a")!;
+  const second = original.shows.find((show) => show.eventId === "results-event-b")!;
+  ok(discoverWorldResults(original.shows, { ...all, spotlight: "TITLE_CHANGES" })
+    .map((show) => show.eventId).join("|") === first.eventId,
+    "title spotlight searched only visible broadcast highlights or included unrelated matches");
+  ok(discoverWorldResults(original.shows, { ...all, spotlight: "INJURIES" })
+    .map((show) => show.eventId).join("|") === first.eventId,
+    "injury spotlight lost a recorded bout consequence");
+  ok(!worldShowHasSpotlight(second, "CONTROVERSY"),
+    "ordinary completed match was mislabelled a controversial finish");
+  const winner = first.matches[0]!.participants[0]!.name;
+  ok(discoverWorldResults(original.shows, { ...all, query: winner.toUpperCase() })
+    .map((show) => show.eventId).join("|") === first.eventId,
+    "case-insensitive public wrestler search didn't match an actual participant");
+  ok(discoverWorldResults(original.shows, { ...all, query: " Independent Championship " })
+    .map((show) => show.eventId).join("|") === first.eventId,
+    "public title name was absent from result search");
+  ok(discoverWorldResults(original.shows, {
+    ...all, promotionId: second.promotionId, spotlight: "TITLE_CHANGES",
+  }).length === 0, "promotion and editorial spotlights were not intersected");
+  ok(worldResultsWeekLabel(first) === "Year 1 · Week 2",
+    "World timeline week grouping changed the canonical PPW date");
+  const cheating = aggregate.state.matches.find((match) => match.id === "results-match-b")!;
+  setActualMatchFinish(cheating, "FOREIGN_OBJECT");
+  const updated = buildPlayerWorldResultsView(aggregate, "player-a");
+  ok(discoverWorldResults(updated.shows, { ...all, spotlight: "CONTROVERSY" })
+    .map((show) => show.eventId).join("|") === second.eventId,
+    "a completed actual foreign-object finish was not discoverable");
+  ok(discoverWorldResults(updated.shows, all).map((show) => show.eventId).join("|")
+    === updated.shows.map((show) => show.eventId).join("|"),
+    "discovery mutated World chronological order");
+});
+
+test("public World Results never expose a cryptic video subject via participants or searchable names", () => {
+  const { aggregate, promotionBId } = twoPlayerFixture(72512);
+  const event = aggregate.state.events.find((item) => item.id === "results-event-b")!;
+  const involved = new Set(aggregate.state.matchParticipants.map((participant) => participant.personId));
+  const hidden = aggregate.state.people.find((person) => !involved.has(person.id) && person.name.length > 2)!;
+  ok(Boolean(hidden), "cryptic fixture needs an unrelated wrestler");
+  aggregate.state.ledger.push({
+    id: "secret-clip-public-privacy",
+    worldId: aggregate.state.world.id,
+    date: { ...event.date }, order: 9701, type: "SHOW_SEGMENT_COMPLETED",
+    significanceAtTime: "ROUTINE", historicalSignificance: "ROUTINE",
+    entityIds: [event.id, promotionBId, hidden.id],
+    payload: {
+      eventId: event.id, promotionId: promotionBId,
+      sourceDraftId: "cryptic-clip-card", draftSegmentId: "cryptic-clip",
+      slotOrder: 2, segmentType: "VIDEO_PACKAGE",
+      participantIds: hidden.id, programmeId: null, plannedLengthMinutes: 3,
+      videoSubjectPersonId: hidden.id, videoReveal: "CRYPTIC",
+      videoKind: "DEBUT_TEASER",
+    },
+  });
+  const world = buildPlayerWorldResultsView(aggregate, "player-a");
+  const show = world.shows.find((item) => item.eventId === event.id)!;
+  const clip = show.segments.find((segment) => segment.type === "VIDEO_PACKAGE");
+  ok(Boolean(clip), "performed cryptic video wasn't included in public results");
+  ok(clip!.participants.length === 0 && clip!.videoSubjectName === null,
+    "cryptic reveal leaked a hidden wrestler through the public projection");
+  ok(!JSON.stringify(show.runningOrder).includes(hidden.name),
+    "public card detail exposed cryptic video subject despite concealed reveal");
+  ok(discoverWorldResults(world.shows, {
+    promotionId: "ALL", spotlight: "ALL", query: hidden.name,
+  }).length === 0, "World search allowed secret wrestler name to reveal the mystery clip");
+
+  aggregate.state.ledger.push({
+    id: "visible-debut-for-timeline-filter",
+    worldId: aggregate.state.world.id,
+    date: { ...event.date }, order: 9702, type: "SHOW_SEGMENT_COMPLETED",
+    significanceAtTime: "NOTABLE", historicalSignificance: "NOTABLE",
+    entityIds: [event.id, promotionBId, hidden.id],
+    payload: {
+      eventId: event.id, promotionId: promotionBId,
+      sourceDraftId: "visible-arrival", draftSegmentId: "visible-arrival",
+      slotOrder: 3, segmentType: "LIVE_APPEARANCE",
+      participantIds: hidden.id, programmeId: null, plannedLengthMinutes: 5,
+      liveAppearanceKind: "DEBUT", liveAppearanceObjective: "ESTABLISH_STAR",
+    },
+  });
+  const revealed = buildPlayerWorldResultsView(aggregate, "player-a");
+  const arrivalShows = discoverWorldResults(revealed.shows, {
+    promotionId: "ALL", spotlight: "ARRIVALS", query: "",
+  });
+  ok(arrivalShows.length === 1 && arrivalShows[0]?.eventId === event.id,
+    "a performed public debut wasn't discoverable");
+  ok(discoverWorldResults(revealed.shows, {
+    promotionId: "ALL", spotlight: "ALL", query: hidden.name,
+  }).some((item) => item.eventId === event.id),
+    "a subsequently performed public debut remained unnecessarily concealed");
 });
 
 test("only a performed debut can headline the reel, never an unperformed arrival", () => {
