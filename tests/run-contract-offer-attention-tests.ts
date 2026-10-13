@@ -2,9 +2,11 @@ declare const process: { exitCode?: number };
 
 import {
   buildPlayerAttention,
+  buildAlphaPlayerWorldView,
   claimIndependentPromotionForPlayer,
 } from "../packages/application/src/index.js";
 import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
+import { activeContractsForPromotion } from "../packages/sim-core/src/index.js";
 
 let passed = 0;
 let failed = 0;
@@ -95,7 +97,7 @@ test("resolved player contract offers surface accepted and rejected Attention wi
   ok(accepted?.category === "IMPORTANT", "accepted contract result was not surfaced as Important");
   ok(accepted?.title.includes(acceptedPerson.name), "accepted contract result lost the wrestler name");
   ok(accepted?.title.includes("accepted"), "accepted contract result did not state the decision");
-  ok(accepted?.deepLink === "/business", "accepted contract result did not link to Business");
+  ok(accepted?.deepLink === "/talent", "accepted contract result did not link to Talent");
   ok(accepted?.dismissible === true, "accepted contract result should be dismissible");
 
   ok(rejected?.category === "IMPORTANT", "rejected contract result was not surfaced as Important");
@@ -104,6 +106,39 @@ test("resolved player contract offers surface accepted and rejected Attention wi
   ok(rejected?.summary.includes("expectations"), "rejected contract result did not translate the internal rejection reason");
   ok(!rejected?.summary.includes("threshold"), "rejected contract result leaked internal threshold wording");
   ok(!items.some((item) => item.attentionId === "contract-offer-result:offer-rival-rejected"), "rival contract outcome leaked into player Attention");
+});
+
+
+test("expiry and exhausted-date attention opens the exact wrestler in the Contracts workspace", () => {
+  const playerId = "contract-desk-attention";
+  const aggregate = createAlphaWorldAggregate({ seed: 61993, playerId });
+  const promotion = aggregate.state.promotions.find((candidate) => (
+    candidate.playerTakeoverEligibility === "STANDARD" && candidate.lifecycle === "ACTIVE"
+  ));
+  if (!promotion) throw new Error("no Indie for contract desk fixture");
+  claimIndependentPromotionForPlayer(aggregate.state, aggregate.ownership, playerId, promotion.id);
+
+  const active = activeContractsForPromotion(aggregate.state, promotion.id);
+  const expiryContract = active.find((contract) => contract.family !== "ONE_OFF");
+  if (!expiryContract) throw new Error("contract desk fixture has no multiweek signed contract");
+  expiryContract.endDate = { ...aggregate.state.world.currentDate, day: 7 };
+  const expiryLink = "/talent/contracts?personId=" + encodeURIComponent(expiryContract.personId);
+  const expiryAlert = buildPlayerAttention(aggregate, playerId)
+    .find((item) => item.attentionId === "contract-expiry:" + expiryContract.id);
+  ok(expiryAlert?.deepLink === expiryLink, "expiry alert must link to the affected wrestler's contract");
+  const playerExpiry = buildAlphaPlayerWorldView(aggregate, playerId).attention
+    .find((item) => item.attentionId === "contract-expiry:" + expiryContract.id);
+  ok(playerExpiry?.deepLink === expiryLink, "home Attention deep link must preserve the target wrestler");
+
+  const exhausted = active.find((contract) => (
+    contract.family === "LIMITED_NON_EXCLUSIVE" && contract.id !== expiryContract.id
+  ));
+  if (!exhausted) throw new Error("contract desk fixture has no second limited non-exclusive contract");
+  exhausted.datesUsed = exhausted.dateEntitlement;
+  const datesAlert = buildAlphaPlayerWorldView(aggregate, playerId).attention
+    .find((item) => item.attentionId === "contract-dates-exhausted:" + exhausted.id);
+  ok(datesAlert?.deepLink === "/talent/contracts?personId=" + encodeURIComponent(exhausted.personId),
+    "exhausted appearance dates should open the specific wrestler's contract editor");
 });
 
 console.log(`\nContract-offer Attention tests: ${passed} passed, ${failed} failed`);

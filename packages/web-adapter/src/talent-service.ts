@@ -265,6 +265,29 @@ export function buildFreshPlan(
     ? { ...startDate, day: 7 }
     : addPpwWeeks(startDate, request.termWeeks - 1, state.ruleset.weeksPerYear);
 
+  // A signed follow-on renewal is a completed commitment, even before its
+  // start date. Never sell another overlapping full contract for the same
+  // promotion/wrestler merely because the previous term remains active.
+  if (sourceContractId) {
+    const scheduled = state.contracts.some((contract) =>
+      contract.id !== sourceContractId
+      && contract.promotionId === promotionId
+      && contract.personId === personId
+      && contract.status === "SIGNED"
+      && ppwDateToWeekIndex(contract.startDate, state.ruleset.weeksPerYear)
+        > ppwDateToWeekIndex(state.world.currentDate, state.ruleset.weeksPerYear)
+      && ppwDateToWeekIndex(contract.startDate, state.ruleset.weeksPerYear)
+        <= ppwDateToWeekIndex(endDate, state.ruleset.weeksPerYear)
+      && ppwDateToWeekIndex(contract.endDate, state.ruleset.weeksPerYear)
+        >= ppwDateToWeekIndex(startDate, state.ruleset.weeksPerYear));
+    if (scheduled) throw new Error("A renewal is already signed for this wrestler. The new contract starts after the current term; review it on your roster.");
+    if (state.contractOffers.some((offer) =>
+      offer.promotionId === promotionId && offer.personId === personId
+      && offer.status === "PENDING" && offer.offerKind === "RENEWAL")) {
+      throw new Error("A pending offer for this wrestler's renewal already exists.");
+    }
+  }
+
   return {
     promotionId,
     personId,

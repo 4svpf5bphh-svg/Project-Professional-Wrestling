@@ -249,7 +249,7 @@ await test("Attention surfaces roster injuries and contracts entering the renewa
   ok(!items.some((item) => item.attentionId === `contract-expiry:${rivalContract.id}`), "rival contract leaked into player Attention");
 });
 
-await test("an imminent contract deadline escalates to non-dismissible Action Required", () => {
+await test("an imminent contract deadline remains Action Required but can be dismissed as news", () => {
   const f = fixture(18503);
   const contract = f.aggregate.state.contracts.find((candidate) => candidate.id === f.contractId)!;
   contract.endDate = { ...f.aggregate.state.world.currentDate, day: 7 };
@@ -257,8 +257,21 @@ await test("an imminent contract deadline escalates to non-dismissible Action Re
   const item = buildPlayerAttention(f.aggregate, f.playerId)
     .find((candidate) => candidate.attentionId === `contract-expiry:${contract.id}`);
   ok(item?.category === "ACTION_REQUIRED", "current-week contract decision did not escalate");
-  ok(item?.dismissible === false, "urgent contract decision was dismissible");
+  ok(item?.dismissible === true, "urgent contract news must offer Dismiss without waiving the actual deadline");
   ok(item?.deadline?.day === 7, "urgent contract deadline lost its PPW day");
+});
+
+await test("zero-date contract news can be dismissed without changing actual booking rights", () => {
+  const f = fixture(18533);
+  const source = f.aggregate.state.contracts.find((candidate) => candidate.id === f.contractId)!;
+  source.family = "LIMITED_NON_EXCLUSIVE";
+  source.exclusivity = "NON_EXCLUSIVE";
+  source.datesUsed = source.dateEntitlement;
+  const before = buildPlayerAttention(f.aggregate, f.playerId);
+  const exhausted = before.find((item) => item.attentionId === `contract-dates-exhausted:${source.id}`);
+  ok(exhausted?.dismissible === true, "date-exhausted contract item did not offer Dismiss");
+  ok(exhausted?.deepLink === "/talent/contracts?personId=" + encodeURIComponent(source.personId), "contract reminder did not open the affected wrestler in Contracts");
+  ok(exhausted?.category === "ACTION_REQUIRED", "critical dates situation lost its urgency category");
 });
 
 await test("Attention flags a human roster below the minimum viable floor", () => {
@@ -305,7 +318,8 @@ await test("Alpha player home view carries the same player-scoped Attention with
   );
 
   const renewal = view.attention.find((item) => item.attentionId === `contract-expiry:${contract.id}`);
-  ok(renewal?.deepLink === "/talent", "renewal Attention did not link to Talent");
+  ok(renewal?.deepLink === "/talent/contracts?personId=" + encodeURIComponent(contract.personId),
+    "renewal Attention did not link directly to its wrestler in Contracts");
 });
 
 await test("reserved current-week preparation replaces false missing-show Attention and becomes READY when the card is complete", () => {
