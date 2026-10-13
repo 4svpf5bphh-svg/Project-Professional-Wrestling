@@ -39,7 +39,7 @@ The missing everyday segment family now measures actual **completed** recent exa
 
 For **POST_MATCH_ASSAULT**, preserve its existing exact repeat check; add only weaker 0.5 credit for the same completed standalone attack beat with same attacker, victim, format and objective, inside its existing 3.5 cap. Changing setting is meaningful variety; do not count contexts as identical.
 
-The other ten types remain either previously covered by their own richer rule or gated by underlying one-time state/history. Avoid a global blanket penalty that would make an evolving feud monotonous and punish ordinary wrestling tropes.
+The other twelve types retain their existing richer repetition, historical eligibility or authority rules; several faction and signing beats still require explicit lifecycle work rather than a blanket novelty penalty. Avoid a global blanket penalty that would make an evolving feud monotonous and punish ordinary wrestling tropes.
 
 ## Reality & parity findings
 
