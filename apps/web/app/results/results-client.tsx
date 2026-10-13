@@ -212,14 +212,19 @@ export default function ResultsClient(): React.JSX.Element {
                       <strong>Year {show.date.year}, Week {show.date.week} · {show.venueName}</strong>
                       <span>{show.marketName} · {integer(show.attendance)} attendance ({decimal(show.attendancePercentOfCapacity)}%)</span>
                     </div>
-                    <div className={show.netResult >= 0 ? styles.positive : styles.negative}>
-                      {show.netResult >= 0 ? "+" : ""}{money(show.netResult)}
+                    <div className={styles.worldRating}>
+                      <span>SHOW CROWD</span>
+                      <strong>{decimal(show.crowdResponse)}</strong>
                     </div>
                   </summary>
 
                   <div className={styles.showBody}>
                     <ShowBroadcast show={show} />
+                    <details className={styles.showAnalysis}>
+                      <summary>Show analysis &amp; economics <span>Full numbers and crowd breakdown</span></summary>
+                      <div className={styles.analysisBody}>
                     <div className={styles.metrics}>
+                      <div><span>Net result</span><strong className={show.netResult >= 0 ? styles.positive : styles.negative}>{show.netResult >= 0 ? "+" : ""}{money(show.netResult)}</strong></div>
                       <div><span>Gate</span><strong>{money(show.gateRevenue)}</strong></div>
                       <div><span>Cost</span><strong>{money(show.totalCost)}</strong></div>
                       <div><span>Average</span><strong>★ {decimal(show.averageMatchRating)}</strong></div>
@@ -295,6 +300,8 @@ export default function ResultsClient(): React.JSX.Element {
                         ) : null}
                       </section>
                     ) : null}
+                      </div>
+                    </details>
 
                     <div className={styles.matches}>
                       {show.runningOrder.map((slot) => {
@@ -492,6 +499,9 @@ export default function ResultsClient(): React.JSX.Element {
                                 {!canChooseFollowUp ? <small>Available when the World is open for planning.</small> : null}
                               </div>
                             ) : null}
+                            <details className={styles.matchAnalysis}>
+                              <summary>Match breakdown · Crowd {decimal(match.crowdResponse)} · {match.actualLengthMinutes} min</summary>
+                              <div className={styles.matchAnalysisBody}>
                             <div className={styles.matchMeta}>
                               <span>{match.styleResult ? "Dimensional style" : `${label(match.intent)} intent`}</span>
                               <span>{match.actualLengthMinutes} min{match.actualLengthMinutes !== match.plannedLengthMinutes ? ` / ${match.plannedLengthMinutes} planned` : ""}</span>
@@ -538,6 +548,8 @@ export default function ResultsClient(): React.JSX.Element {
                                 </div>
                               </div>
                             ) : null}
+                              </div>
+                            </details>
                             {match.titleOutcomes.map((title) => (
                               <div className={`${styles.consequence} ${title.titleChanged ? styles.titleChangeMoment : ""}`} key={title.championshipId}>
                                 <strong>{title.championshipName}</strong>
@@ -615,6 +627,9 @@ export default function ResultsClient(): React.JSX.Element {
 
                       <div className={styles.showBody}>
                         <ShowBroadcast show={show} />
+                        <details className={styles.showAnalysis}>
+                          <summary>Show analysis <span>Ratings, attendance and consequences</span></summary>
+                          <div className={styles.analysisBody}>
                         <div className={styles.metrics}>
                           <div><span>Average</span><strong>★ {decimal(show.averageMatchRating)}</strong></div>
                           <div><span>Best match</span><strong>★ {decimal(show.bestMatchRating)}</strong></div>
@@ -624,6 +639,8 @@ export default function ResultsClient(): React.JSX.Element {
                           <div><span>Segments</span><strong>{show.segmentCount}</strong></div>
                           <div><span>Consequences</span><strong>{show.titleChangeCount} title · {show.injuryCount} inj.</strong></div>
                         </div>
+                          </div>
+                        </details>
 
                         <div className={styles.matches}>
                           {show.runningOrder.map((slot) => {
