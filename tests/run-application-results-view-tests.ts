@@ -325,6 +325,41 @@ test("show history merges frozen segments with matches in the original slot orde
   ok(show.segments[0]?.plannedLengthMinutes === 5, "private Results lost segment duration");
 });
 
+test("show Results display only the originally performed frozen promo message", () => {
+  const { aggregate, promotionAId } = twoPlayerFixture(72013);
+  const event = aggregate.state.events.find((entry) => entry.id === "results-event-a")!;
+  const speaker = aggregate.state.matchParticipants.find((entry) => entry.eventId === event.id)!.personId;
+  aggregate.state.ledger.push({
+    id: "frozen-promo-purpose",
+    worldId: aggregate.state.world.id,
+    date: { ...event.date },
+    order: 1750,
+    type: "SHOW_SEGMENT_COMPLETED",
+    significanceAtTime: "ROUTINE",
+    historicalSignificance: "ROUTINE",
+    entityIds: [event.id, promotionAId, speaker],
+    payload: {
+      eventId: event.id,
+      promotionId: promotionAId,
+      sourceDraftId: "promoter-show",
+      draftSegmentId: "authored-promo",
+      slotOrder: 1,
+      segmentType: "PROMO",
+      promoPurpose: "ISSUE_WARNING",
+      participantIds: speaker,
+      programmeId: null,
+      plannedLengthMinutes: 5,
+    },
+  });
+  const projected = buildPlayerShowHistory(aggregate, "player-a").shows[0]!;
+  ok(projected.segments[0]?.promoPurpose === "ISSUE_WARNING",
+    "Results lost the player's originally scripted promo message");
+  ok(projected.segments[0]?.type === "PROMO",
+    "Results converted a promo message into another kind of segment");
+  ok(buildPlayerShowHistory(aggregate, "player-b").shows[0]!.segments.length === 0,
+    "another promotion's show appeared in private Results");
+});
+
 test("show history keeps positive alignment clarity separate from negative volatility", () => {
   const { aggregate } = twoPlayerFixture(72006);
   const event = aggregate.state.events.find((candidate) => candidate.id === "results-event-a")!;
