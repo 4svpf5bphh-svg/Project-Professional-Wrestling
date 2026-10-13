@@ -46,6 +46,13 @@ const MATCH_INTENTS: AlphaCardMatchView["intent"][] = [
   "HIGH_RISK", "STORY", "PROTECTIVE", "EPIC",
 ];
 const MATCH_FINISHES: BookableFinish[] = ["CLEAN_PIN", "SUBMISSION", "FLASH_PIN", "PROTECTED_FINISH"];
+const PROMO_PURPOSE_OPTIONS = [
+  ["STATEMENT_OF_INTENT", "Statement of intent"],
+  ["BOAST", "Brag / boast"],
+  ["RALLY_FANS", "Rally the crowd"],
+  ["AIR_GRIEVANCE", "Air a grievance"],
+  ["ISSUE_WARNING", "Send a warning"],
+] as const;
 const ATTACK_FORMATS = ["BLINDSIDE", "BEATDOWN", "PULL_APART_BRAWL"] as const;
 const ATTACK_OBJECTIVES = ["GENERATE_HEAT", "BUILD_SYMPATHY", "ESCALATE_RIVALRY"] as const;
 const VIDEO_KINDS = [
@@ -601,6 +608,7 @@ export default function CardClient(): React.JSX.Element {
       videoReveal: type === "VIDEO_PACKAGE" ? "NAMED" : null,
       liveAppearanceKind: type === "LIVE_APPEARANCE" ? "INTRODUCTION" : null,
       liveAppearanceObjective: type === "LIVE_APPEARANCE" ? "ESTABLISH_STAR" : null,
+      promoPurpose: type === "PROMO" ? "STATEMENT_OF_INTENT" : null,
       attackerPersonId: null,
       victimPersonId: null,
       rescuerPersonId: null,
@@ -813,7 +821,8 @@ export default function CardClient(): React.JSX.Element {
       videoObjective: type === "VIDEO_PACKAGE" ? (segment.type === type ? (segment.videoObjective ?? "BUILD_ANTICIPATION") : "BUILD_ANTICIPATION") : null,
       videoReveal: type === "VIDEO_PACKAGE" ? (segment.type === type ? (segment.videoReveal ?? "NAMED") : "NAMED") : null,
       liveAppearanceKind: type === "LIVE_APPEARANCE" ? (segment.type === type ? (segment.liveAppearanceKind ?? "INTRODUCTION") : "INTRODUCTION") : null,
-      liveAppearanceObjective: type === "LIVE_APPEARANCE" ? (segment.type === type ? (segment.liveAppearanceObjective ?? "ESTABLISH_STAR") : "ESTABLISH_STAR") : null,
+      liveAppearanceObjective: type === "LIVE_APPEARANCE" ? (segment.type === type ? (segment.promoPurpose === undefined ? segment.liveAppearanceObjective ?? "ESTABLISH_STAR" : segment.liveAppearanceObjective ?? "ESTABLISH_STAR") : "ESTABLISH_STAR") : null,
+      promoPurpose: type === "PROMO" ? (segment.type === type ? (segment.promoPurpose ?? "STATEMENT_OF_INTENT") : "STATEMENT_OF_INTENT") : null,
       attackerPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[0] === segment.attackerPersonId
         ? (segment.attackerPersonId ?? null) : null,
       victimPersonId: (type === "ATTACK" || type === "RESCUE" || type === "POST_MATCH_ASSAULT") && type === segment.type && participantIds[1] === segment.victimPersonId
@@ -1119,6 +1128,10 @@ export default function CardClient(): React.JSX.Element {
     if (segment.type === "LIVE_APPEARANCE") {
       const who = segment.participantIds[0] ? personName(segment.participantIds[0]) : "Choose a wrestler";
       return `${pretty(segment.liveAppearanceKind ?? "INTRODUCTION")} · ${who} · ${segment.plannedLengthMinutes} min`;
+    }
+    if (segment.type === "PROMO") {
+      const cast = segment.participantIds.map(personName).join(" & ") || "Choose speaker";
+      return `Promo · ${pretty(segment.promoPurpose ?? "STATEMENT_OF_INTENT")} · ${cast} · ${segment.plannedLengthMinutes} min`;
     }
     if (segment.type === "VIDEO_PACKAGE") {
       const subject = view?.videoSubjects.find((person) => person.personId === segment.videoSubjectPersonId)?.name
@@ -1879,6 +1892,24 @@ export default function CardClient(): React.JSX.Element {
                       ))}
                     </div>
                     <small className={styles.sideLabel}>A cryptic teaser conceals the wrestler's identity from the audience. A video never causes an actual debut, return, contract or recovery.</small>
+                  </div>
+                ) : null}
+
+                {segment.type === "PROMO" ? (
+                  <div className={styles.segmentPeople}>
+                    <div className={styles.segmentPeopleHeader}>
+                      <span>What's the message?</span>
+                      <small>Choose one clear purpose for this promo. Challenges and confrontations are separate angles.</small>
+                    </div>
+                    <div className={styles.slotTypeRow} role="group" aria-label="Promo message">
+                      {PROMO_PURPOSE_OPTIONS.map(([purpose, label]) => (
+                        <button key={purpose} type="button" disabled={!view.canEdit}
+                          aria-pressed={(segment.promoPurpose ?? "STATEMENT_OF_INTENT") === purpose}
+                          className={(segment.promoPurpose ?? "STATEMENT_OF_INTENT") === purpose ? styles.typeActive : styles.secondaryButton}
+                          onClick={() => updateSegment(segment.draftSegmentId, { promoPurpose: purpose })}>{label}</button>
+                      ))}
+                    </div>
+                    <small className={styles.sideLabel}>Repeating the same message with the same wrestler can wear thin. Develop the storyline or change the subject to keep the audience interested.</small>
                   </div>
                 ) : null}
 
