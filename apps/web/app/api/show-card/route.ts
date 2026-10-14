@@ -6,9 +6,11 @@ import type {
   MatchType,
 } from "../../../../../dist/packages/domain/src/types.js";
 import { normalizeMatchStyle } from "../../../../../dist/packages/sim-core/src/match-style.js";
+import { BOOKABLE_MATCH_FINISHES } from "../../../../../dist/packages/sim-core/src/match-finishes.js";
 import {
   loadAlphaShowCard,
   saveAlphaShowCard,
+  CARD_SEGMENT_TYPES,
   type AlphaCardMatchView,
   type AlphaCardSegmentView,
   type AlphaCardSlotView,
@@ -44,12 +46,7 @@ const MATCH_INTENTS = new Set<MatchIntent>([
   "PROTECTIVE",
   "EPIC",
 ]);
-const MATCH_FINISHES = new Set<BookableFinish>([
-  "CLEAN_PIN",
-  "SUBMISSION",
-  "FLASH_PIN",
-  "PROTECTED_FINISH",
-]);
+const MATCH_FINISHES = new Set<BookableFinish>(BOOKABLE_MATCH_FINISHES);
 
 function requiredText(value: unknown, label: string, maxLength: number): string {
   if (typeof value !== "string") throw new Error(`${label} must be a string`);
@@ -147,6 +144,7 @@ function matches(value: unknown): AlphaCardMatchView[] {
       ...(style === undefined ? {} : { style }),
       plannedLengthMinutes: plannedLength(candidate.plannedLengthMinutes, `matches[${index}].plannedLengthMinutes`),
       ...(plannedFinish === undefined ? {} : { plannedFinish }),
+      finishCheaterPersonId: optionalText(candidate.finishCheaterPersonId, `matches[${index}].finishCheaterPersonId`, 128) ?? null,
       // The HTTP boundary must not strip the script written in the card UI.
       interfererPersonId: optionalText(candidate.interfererPersonId, `matches[${index}].interfererPersonId`, 128) ?? null,
       interferenceSide: nullableChoice(candidate.interferenceSide, `matches[${index}].interferenceSide`, ["A", "B"]) ,
@@ -165,12 +163,8 @@ function segmentLength(value: unknown, label: string): number {
 function segments(value: unknown): AlphaCardSegmentView[] {
   if (value === undefined) return [];
   if (!Array.isArray(value)) throw new Error("segments must be an array");
-  // Keep the HTTP schema in step with the playable Card and service layer.
-  const supported = new Set<string>([
-    "PROMO", "INTERVIEW", "CONFRONTATION", "INTERRUPTION", "CHALLENGE",
-    "CONTRACT_SIGNING", "STABLE_INVITATION", "STABLE_EXIT", "STABLE_RECONCILIATION",
-    "ATTACK", "RESCUE", "POST_MATCH_ASSAULT", "CELEBRATION", "TURN",
-  ]);
+  // Single source of truth with card-service; do not reject new bookable segment types here.
+  const supported = new Set<string>(CARD_SEGMENT_TYPES);
   return value.map((entry, index) => {
     if (!entry || typeof entry !== "object") throw new Error(`segments[${index}] must be an object`);
     const candidate = entry as Record<string, unknown>;
@@ -188,9 +182,23 @@ function segments(value: unknown): AlphaCardSegmentView[] {
       participantIds: personIds(candidate.participantIds, `segments[${index}].participantIds`),
       programmeId: fieldId("programmeId"),
       plannedLengthMinutes: segmentLength(candidate.plannedLengthMinutes, `segments[${index}].plannedLengthMinutes`),
+      videoSubjectPersonId: fieldId("videoSubjectPersonId"),
+      videoKind: pick("videoKind", ["DEBUT_TEASER", "RETURN_TEASER", "CHARACTER_SPOTLIGHT", "RIVALRY_RECAP", "EVENT_HYPE", "TRAINING_MONTAGE"]),
+      videoObjective: pick("videoObjective", ["CREATE_INTRIGUE", "BUILD_ANTICIPATION", "ESTABLISH_THREAT", "BUILD_SYMPATHY", "RECAP_STAKES"]),
+      videoReveal: pick("videoReveal", ["CRYPTIC", "NAMED", "FULL"]),
+      liveAppearanceKind: pick("liveAppearanceKind", ["DEBUT", "RETURN", "SURPRISE_REVEAL", "INTRODUCTION"]),
+      liveAppearanceObjective: pick("liveAppearanceObjective", ["ESTABLISH_STAR", "BUILD_EXCITEMENT", "CREATE_MYSTERY", "UNSETTLE_RIVAL", "REIGNITE_PROGRAMME"]),
+      promoPurpose: pick("promoPurpose", ["STATEMENT_OF_INTENT", "BOAST", "RALLY_FANS", "AIR_GRIEVANCE", "ISSUE_WARNING"]),
+      interviewFormat: pick("interviewFormat", ["BACKSTAGE", "SIT_DOWN", "IN_RING"]),
+      interviewTopic: pick("interviewTopic", ["CAREER_STORY", "RIVALRY_PRESSURE", "RECENT_FORM", "NEXT_STEPS"]),
+      interviewResponse: pick("interviewResponse", ["CANDID", "EVASIVE", "DEFIANT", "WALKOUT"]),
+      celebrationOccasion: pick("celebrationOccasion", ["FAN_APPRECIATION", "SELF_CORONATION", "RIVALRY_TAUNT", "VICTORY_LAP"]),
+      celebrationEnding: pick("celebrationEnding", ["SALUTE_CROWD", "POSE", "TAUNT_RIVALS", "WALK_OFF"]),
       attackerPersonId: fieldId("attackerPersonId"),
       victimPersonId: fieldId("victimPersonId"),
       rescuerPersonId: fieldId("rescuerPersonId"),
+      rescueOutcome: pick("rescueOutcome", ["RESCUER_STANDS_TALL", "ATTACKER_ESCAPES", "RESCUE_OVERWHELMED"]),
+      postMatchAssaultEnding: pick("postMatchAssaultEnding", ["ATTACKER_STANDS_TALL", "VICTIM_FIGHTS_BACK", "OFFICIALS_SEPARATE"]),
       sourceDraftMatchId: fieldId("sourceDraftMatchId"),
       initiatorPersonId: fieldId("initiatorPersonId"),
       targetPersonId: fieldId("targetPersonId"),
@@ -200,6 +208,7 @@ function segments(value: unknown): AlphaCardSegmentView[] {
       stableExitOutcome: pick("stableExitOutcome", ["EXPELLED", "WALKED_OUT"]),
       stableReconciliationOutcome: pick("stableReconciliationOutcome", ["RECONCILED", "REBUFFED"]),
       challengeResponse: pick("challengeResponse", ["ACCEPTED", "REFUSED", "LEFT_OPEN"]),
+      confrontationEnding: pick("confrontationEnding", ["STAREDOWN", "INITIATOR_BACKS_DOWN", "TARGET_BACKS_DOWN", "RELUCTANT_HANDSHAKE"]),
       interruptionOutcome: pick("interruptionOutcome", [
         "VERBAL_EXCHANGE", "INTERRUPTER_PREVAILS", "SPEAKER_PREVAILS", "BRAWL",
       ]),
