@@ -4,6 +4,7 @@ import {
   hireAlphaTalentManager,
   releaseAlphaTalentManager,
   authoriseAlphaTalentManagerRenewal,
+  authoriseAlphaTalentManagerDatesAddendum,
   type StaffActionRequest,
 } from "../../../../../dist/packages/web-adapter/src/staff-service.js";
 import { withAlphaServerContext } from "../../../../../dist/packages/web-adapter/src/server-world.js";
@@ -51,5 +52,17 @@ export async function PATCH(request: Request): Promise<NextResponse> {
     return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Could not authorise renewal" }, { status: 400 });
+  }
+}
+
+/** Each request authorises one exact proposal, not ongoing negotiation permission. */
+export async function PUT(request: Request): Promise<NextResponse> {
+  try {
+    const body = await request.json() as StaffActionRequest;
+    const result = await withAlphaServerContext(({ repository, worldId, playerId }) =>
+      authoriseAlphaTalentManagerDatesAddendum(repository, worldId, playerId, body));
+    return NextResponse.json(result, { headers: { "Cache-Control": "no-store" } });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not authorise additional dates" }, { status: 400 });
   }
 }
