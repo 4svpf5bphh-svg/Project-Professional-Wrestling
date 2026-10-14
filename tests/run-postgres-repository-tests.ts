@@ -345,13 +345,54 @@ try {
     ok(loaded.commands.receipts.length === 1, "relational command receipt was not persisted");
     ok(loaded.state.promotions.find((candidate) => candidate.id === promotion.id)?.controllerType === "HUMAN", "simulation snapshot was not persisted");
 
+    const beforeReceipt = await inspectionSql`
+      SELECT xmin::text AS tuple_revision
+      FROM ppw_command_receipts
+      WHERE world_id = ${aggregate.state.world.id} AND request_id = ${envelope.requestId}
+    ` as unknown as Array<{ tuple_revision: string }>;
     const retry = await repository.transact(aggregate.state.world.id, 1, (working) => (
       claimIndependentPromotionCommand(working.state, working.ownership, working.commands, working.runtime, envelope)
     ));
+    const afterReceipt = await inspectionSql`
+      SELECT xmin::text AS tuple_revision
+      FROM ppw_command_receipts
+      WHERE world_id = ${aggregate.state.world.id} AND request_id = ${envelope.requestId}
+    ` as unknown as Array<{ tuple_revision: string }>;
+    ok(beforeReceipt[0]?.tuple_revision === afterReceipt[0]?.tuple_revision,
+      "idempotent retry rewrote an unchanged historical receipt");
     ok(retry.revision === 1, "idempotent retry revised persisted World");
     const afterRetry = await repository.load(aggregate.state.world.id);
     ok(afterRetry.commands.receipts.length === 1, "idempotent retry duplicated persisted receipt");
     ok(afterRetry.ownership.promotionControls.length === 1, "idempotent retry duplicated persisted control");
+  });
+
+
+  await test("transaction refuses to rewrite historical command receipts", async () => {
+    const aggregate = fixture(14009);
+    joinPlayerToWorld(aggregate.ownership, "player-protected", aggregate.state.world.currentDate);
+    await repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const promotion = aggregate.state.promotions.find(x =>
+      x.tier === "INDEPENDENT" && x.lifecycle === "ACTIVE")!;
+    await repository.transact(worldId, null, working => {
+      claimIndependentPromotionCommand(
+        working.state, working.ownership, working.commands, working.runtime,
+        { requestId: "protected-original", worldId, playerId: "player-protected",
+          commandType: "CLAIM_INDEPENDENT_PROMOTION", payload: { promotionId: promotion.id } },
+      );
+    });
+    let rejected = false;
+    try {
+      await repository.transact(worldId, null, working => {
+        working.commands.receipts[0]!.canonicalPayload = '{"tampered":true}';
+      });
+    } catch (error) {
+      rejected = error instanceof Error && error.message.includes("immutable command receipt");
+    }
+    ok(rejected, "transaction accepted a rewrite of an idempotency receipt");
+    const intact = await repository.load(worldId);
+    ok(intact.commands.receipts[0]?.canonicalPayload !== '{"tampered":true}',
+      "an old receipt changed despite its transaction being rejected");
   });
 
   await test("PostgreSQL transaction rollback leaves no partial World mutation", async () => {

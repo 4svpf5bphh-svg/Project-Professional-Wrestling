@@ -353,7 +353,15 @@ async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): P
   return restorePersistedApplicationWorld(snapshot);
 }
 
-async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggregate): Promise<void> {
+async function writeAggregate(
+  sql: SqlClient,
+  aggregate: ApplicationWorldAggregate,
+  previousReceiptCount = 0,
+): Promise<void> {
+  if (!Number.isSafeInteger(previousReceiptCount) || previousReceiptCount < 0
+    || previousReceiptCount > aggregate.commands.receipts.length) {
+    throw new Error("invalid prior command receipt count during World persistence");
+  }
   const snapshot = createPersistedApplicationWorld(aggregate);
   const worldId = aggregate.state.world.id;
 
@@ -409,7 +417,11 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
   }
   await sql`DELETE FROM ppw_promotion_controls WHERE world_id = ${worldId} AND ordinal >= ${snapshot.ownership.promotionControls.length}`;
 
-  for (const receipt of snapshot.commands.receipts) {
+  // Receipts are immutable. Rewriting every old receipt on every player
+  // action scales writes, query count and Neon transfer with World age.
+  // Only new append-only receipts are persisted; the transaction verifies
+  // that its historical receipt prefix was not modified before writing.
+  for (const receipt of snapshot.commands.receipts.slice(previousReceiptCount)) {
     await sql`
       INSERT INTO ppw_command_receipts(
         world_id, request_id, player_id, command_type, canonical_payload, result_json, committed_date, committed_revision
@@ -417,13 +429,7 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
         ${worldId}, ${receipt.requestId}, ${receipt.playerId}, ${receipt.commandType}, ${receipt.canonicalPayload},
         ${receipt.resultJson}, ${sql.json(receipt.committedDate as never)}, ${receipt.committedRevision}
       )
-      ON CONFLICT (world_id, request_id) DO UPDATE SET
-        player_id = EXCLUDED.player_id,
-        command_type = EXCLUDED.command_type,
-        canonical_payload = EXCLUDED.canonical_payload,
-        result_json = EXCLUDED.result_json,
-        committed_date = EXCLUDED.committed_date,
-        committed_revision = EXCLUDED.committed_revision
+      ON CONFLICT (world_id, request_id) DO NOTHING
     `;
   }
 }
@@ -488,8 +494,15 @@ export class PostgresApplicationWorldRepository implements ApplicationWorldRepos
           `stale World revision for ${worldId}: expected ${expectedRevision}, current ${working.runtime.revision}`,
         );
       }
+      // A command receipt is an immutable idempotency record. An action may
+      // append a new receipt but must never rewrite or reorder old receipts.
+      const previousReceipts = JSON.stringify(working.commands.receipts);
+      const previousReceiptCount = working.commands.receipts.length;
       const result = await action(working);
-      await writeAggregate(transactionalSql, working);
+      if (JSON.stringify(working.commands.receipts.slice(0, previousReceiptCount)) !== previousReceipts) {
+        throw new Error("World transaction changed an existing immutable command receipt");
+      }
+      await writeAggregate(transactionalSql, working, previousReceiptCount);
       return { result, revision: working.runtime.revision };
     });
   }
