@@ -201,7 +201,7 @@ BEGIN
     NEW.updated_at := clock_timestamp();
   END IF;
   RETURN NEW;
-END
+END;
 ';
 DROP TRIGGER IF EXISTS ppw_guard_world_snapshot_transport ON ppw_worlds;
 CREATE TRIGGER ppw_guard_world_snapshot_transport
