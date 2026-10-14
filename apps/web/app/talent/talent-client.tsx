@@ -693,12 +693,15 @@ function OfferCard({ offer, focused = false }: { offer: PlayerPendingContractOff
       <div className={styles.contractBox}>
         <div>
           <span>{offer.offerKind === "DATES_ADDENDUM" ? "Additional-dates proposal · same contract" : `${label(offer.family)} · ${label(offer.exclusivity)}`}</span>
-          <strong>{label(offer.roleExpectation)} · {offer.family === "EXCLUSIVE" ? "Unlimited dates" : `${offer.dateEntitlement} ${offer.offerKind === "DATES_ADDENDUM" ? "total dates proposed" : "dates"}`} · to {ppwDate(offer.endDate)}</strong>
+          <strong>{offer.offerKind === "DATES_ADDENDUM"
+            ? `Proposed amended entitlement: ${offer.dateEntitlement} total contracted dates · existing expiry ${ppwDate(offer.endDate)}`
+            : `${label(offer.roleExpectation)} · ${offer.family === "EXCLUSIVE" ? "Unlimited dates" : `${offer.dateEntitlement} dates`} · to ${ppwDate(offer.endDate)}`}</strong>
+          {offer.offerKind === "DATES_ADDENDUM" ? <span>Additional appearances added to the current contract if accepted; existing wages and appearance fees remain in place.</span> : null}
         </div>
         <div className={styles.moneyRows}>
           <span>Weekly <b>{money(offer.weeklyGuarantee)}</b></span>
           <span>Appearance <b>{money(offer.appearanceFee)}</b></span>
-          <span>{offer.offerKind === "DATES_ADDENDUM" ? "Extra payment" : "Signing"} <b>{money(offer.signingBonus)}</b></span>
+          <span>{offer.offerKind === "DATES_ADDENDUM" ? "One-time additional payment" : "Signing"} <b>{money(offer.signingBonus)}</b></span>
           {offer.creativeControl !== "NONE" && offer.offerKind !== "DATES_ADDENDUM" ? (
             <span>Creative rights <b>{label(offer.creativeControl)}</b></span>
           ) : null}
