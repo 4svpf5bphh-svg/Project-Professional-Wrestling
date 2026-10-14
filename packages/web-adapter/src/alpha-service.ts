@@ -206,8 +206,8 @@ export function upgradeLegacyRealPromotionCalendarsSafely(
 async function upgradePersistedLegacyRealPromotionCalendars(
   repository: ApplicationWorldRepository,
   worldId: string,
+  aggregate: ApplicationWorldAggregate,
 ): Promise<void> {
-  const aggregate = await repository.load(worldId);
   const hasCandidate = aggregate.state.promotions.some((promotion) => (
     promotion.identity?.origin === "REAL_WORLD"
     && hasExactUntouchedGenericCalendar(aggregate, promotion)
@@ -260,7 +260,7 @@ export async function ensureAlphaWorld(
           incrementWorldRevision(current.runtime);
       });
     }
-    await upgradePersistedLegacyRealPromotionCalendars(repository, worldId);
+    await upgradePersistedLegacyRealPromotionCalendars(repository, worldId, existing);
     return worldId;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
