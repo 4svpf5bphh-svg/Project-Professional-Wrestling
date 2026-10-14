@@ -1,4 +1,4 @@
-import type { ApplicationWorldRepository } from "../../application/src/world-aggregate.js";
+import { transactWithReceiptIds, type ApplicationWorldRepository } from "../../application/src/world-aggregate.js";
 import {
   activePromotionControlForPlayer,
   authoriseStaffRenewalCommand,
@@ -41,7 +41,7 @@ export async function hireAlphaTalentManager(
 ): Promise<StaffActionResult> {
   const requestId = required(request.requestId, "requestId");
   const staffId = required(request.staffId, "staffId");
-  const { result } = await repository.transact(worldId, null, aggregate => {
+  const { result } = await transactWithReceiptIds(repository, worldId, null, [requestId], aggregate => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("control a promotion to hire staff");
     hireStaffCommand(aggregate.state, aggregate.ownership, aggregate.commands, aggregate.runtime, {
@@ -58,7 +58,7 @@ export async function releaseAlphaTalentManager(
 ): Promise<StaffActionResult> {
   const requestId = required(request.requestId, "requestId");
   const employmentId = required(request.employmentId, "employmentId");
-  const { result } = await repository.transact(worldId, null, aggregate => {
+  const { result } = await transactWithReceiptIds(repository, worldId, null, [requestId], aggregate => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("control a promotion to release staff");
     releaseStaffCommand(aggregate.state, aggregate.ownership, aggregate.commands, aggregate.runtime, {
@@ -78,7 +78,7 @@ export async function authoriseAlphaTalentManagerRenewal(
 ): Promise<StaffActionResult> {
   const requestId = required(request.requestId, "requestId");
   const sourceContractId = required(request.sourceContractId, "sourceContractId");
-  const { result } = await repository.transact(worldId, null, aggregate => {
+  const { result } = await transactWithReceiptIds(repository, worldId, null, [requestId], aggregate => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("control a promotion to renew talent");
     const prior = aggregate.commands.receipts.find(row => row.requestId === requestId);

@@ -3,6 +3,7 @@ import type {
   WrestlingEventType,
 } from "../../domain/src/types.js";
 import {
+  transactWithReceiptIds,
   activePromotionControlForPlayer,
   archivePromotionShowSeriesCommand,
   buildPlayerWorldCalendarView,
@@ -63,7 +64,7 @@ export async function saveAlphaWorldCalendarSeries(
   const requestId = requiredText(request.requestId, "requestId");
   revision(request.expectedRevision);
 
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [requestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("Take control of a promotion before editing its calendar");
     assertOpen(aggregate.runtime.phase);
@@ -109,7 +110,7 @@ export async function archiveAlphaWorldCalendarSeries(
   const showSeriesId = requiredText(request.showSeriesId, "showSeriesId", 180);
   revision(request.expectedRevision);
 
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [requestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("Take control of a promotion before editing its calendar");
     assertOpen(aggregate.runtime.phase);

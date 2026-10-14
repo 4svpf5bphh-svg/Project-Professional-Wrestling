@@ -1,4 +1,5 @@
 import {
+  transactWithReceiptIds,
   activePromotionControlForPlayer,
   buildPlayerWrestlerProfileView,
   createWorldEngagementState,
@@ -42,7 +43,7 @@ export async function saveAlphaWrestlerCreative(
   if (typeof request.personId !== "string" || !request.personId.trim()
     || request.personId.length > 128) throw new Error("invalid wrestler ID");
 
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [request.requestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("take control of a promotion to edit presentation");
     const receipt = aggregate.commands.receipts.find((entry) => entry.requestId === request.requestId);

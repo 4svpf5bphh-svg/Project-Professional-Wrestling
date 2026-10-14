@@ -78,6 +78,20 @@ export interface ApplicationWorldRepository {
   ): Promise<WorldTransactionResult<TResult>>;
 }
 
+/** Narrow, durable idempotency lookup for player-authored commands.
+ * The World row lock serializes contenders before their receipt lookup.
+ */
+export function transactWithReceiptIds<TResult>(
+  repository: ApplicationWorldRepository,
+  worldId: Id,
+  expectedRevision: number | null,
+  receiptRequestIds: readonly string[],
+  action: (aggregate: ApplicationWorldAggregate) => TResult | Promise<TResult>,
+): Promise<WorldTransactionResult<TResult>> {
+  if (receiptRequestIds.length === 0) throw new Error("command transaction requires a retry receipt ID");
+  return repository.transact(worldId, expectedRevision, action, receiptRequestIds);
+}
+
 /** Explicit opt-in for simulation and non-idempotency mutations.
  * They must never need historical command receipts to execute.
  */

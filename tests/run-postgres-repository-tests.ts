@@ -61,6 +61,29 @@ try {
 
 
 
+  await test("selective receipt lookups return only requested historical rows", async () => {
+    const aggregate = fixture(14012);
+    await repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const old = (id: string) => ({
+      worldId, requestId: id, playerId: "selective-player",
+      commandType: "CLAIM_INDEPENDENT_PROMOTION" as const,
+      canonicalPayload: "{}", resultJson: "{}", committedDate: { ...aggregate.state.world.currentDate },
+      committedRevision: aggregate.runtime.revision,
+    });
+    await repository.transact(worldId, null, working => {
+      working.commands.receipts.push(old("first-very-old"), old("second-very-old"), old("third-very-old"));
+    });
+    const selected = await repository.transact(worldId, null, working => (
+      working.commands.receipts.map(receipt => receipt.requestId)
+    ), ["second-very-old"]);
+    ok(selected.result.length === 1 && selected.result[0] === "second-very-old",
+      "specific request lookup loaded the wrong historical receipts");
+    const untouched = await repository.load(worldId);
+    ok(untouched.commands.receipts.length === 3,
+      "selective transaction truncated persisted command history");
+  });
+
   await test("receipt-free transactions skip historical history without removing persisted receipts", async () => {
     const aggregate = fixture(14010);
     joinPlayerToWorld(aggregate.ownership, "receipt-free-player", aggregate.state.world.currentDate);
