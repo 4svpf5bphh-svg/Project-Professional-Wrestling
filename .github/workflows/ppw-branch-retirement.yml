@@ -1,5 +1,5 @@
 name: PPW approved branch retirement
-# Maintenance: trigger non-destructive preview after API parsing fix
+# Maintenance: trigger non-destructive preview after default-branch safety fix
 run-name: PPW branch retirement — ${{ inputs.mode || 'preview' }}
 
 on:
