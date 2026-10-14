@@ -104,12 +104,11 @@ async function readWorldWithoutCommandReceipts(
   mode: "full" | "talent" = "full",
 ): Promise<{ aggregate: ApplicationWorldAggregate; snapshotVersion: string }> {
   const startedAt = performance.now();
-  // Only current-schema read-only Talent/Staff views may omit history.
+  // Only current-schema read-only Talent/Staff views may omit financial history.
   // Older schema versions must retain their complete legacy migration inputs.
   const stateProjection = mode === "talent"
     ? sql`CASE WHEN state_schema_version = ${CURRENT_WORLD_STATE_SCHEMA_VERSION}
-      THEN jsonb_set(jsonb_set(world_state, '{ledger}', '[]'::jsonb),
-        '{financialTransactions}', '[]'::jsonb)
+      THEN jsonb_set(world_state, '{financialTransactions}', '[]'::jsonb)
       ELSE world_state END`
     : sql`world_state`;
   const worldRows = await sql`
@@ -259,7 +258,7 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     if (full?.version === version) {
       this.stats.cacheHits += 1;
       const readOnly = structuredClone(full.aggregate);
-      readOnly.state.ledger = [];
+      // Talent alignment and creative context require the complete Ledger.
       readOnly.state.financialTransactions = [];
       return readOnly;
     }
