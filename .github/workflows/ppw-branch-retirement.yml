@@ -1,0 +1,55 @@
+name: PPW approved branch retirement
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Preview first; delete only after reviewing preview report"
+        required: true
+        type: choice
+        options:
+          - preview
+          - delete
+        default: preview
+      confirmation:
+        description: "For delete mode only, type DELETE-APPROVED-174"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: ppw-branch-retirement
+  cancel-in-progress: false
+
+jobs:
+  retirement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout approved register
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Confirm approved register exists
+        run: test -f docs/FINAL-GITHUB-BRANCH-DELETE-LISTS-2026-10-14.md
+      - name: Execute guarded cleanup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MODE: ${{ inputs.mode }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/retire-approved-branches.py
+      - name: Publish audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ppw-branch-retirement-report
+          path: branch-retirement-report.*
+          if-no-files-found: warn
