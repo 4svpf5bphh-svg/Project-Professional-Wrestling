@@ -254,5 +254,40 @@ await test("verified bootstrap metadata prevents expensive repeat compatibility 
   }
 });
 
+
+await test("Talent and Staff read-only projections match full authoritative views", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62029, playerId: "lean-talent-player" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const lean = await access.repository.loadTalentView(worldId);
+    ok(lean.state.ledger.length === 0 && lean.state.financialTransactions.length === 0,
+      "read-only Talent view transferred histories it does not need");
+    ok(access.readStatistics().trimmedHistoryReads === 1,
+      "first Talent view did not use the history-trimmed SQL projection");
+    const again = await access.repository.loadTalentView(worldId);
+    ok(access.readStatistics().trimmedHistoryReads === 1,
+      "second Talent view transferred a full history-trimmed snapshot");
+    ok(again.state.people.length === lean.state.people.length, "cached Talent view changed wrestler population");
+
+    const { buildPlayerTalentManagementView } = await import("../packages/application/src/talent-view.js");
+    const { buildPlayerTalentDirectoryView } = await import("../packages/application/src/talent-view.js");
+    const { buildPlayerStaffView } = await import("../packages/application/src/staff-view.js");
+    const full = await access.repository.load(worldId);
+    const same = (left: unknown, right: unknown, label: string) =>
+      ok(JSON.stringify(left) === JSON.stringify(right), `lean ${label} differs from full World read`);
+    same(buildPlayerTalentManagementView(lean, "lean-talent-player"),
+      buildPlayerTalentManagementView(full, "lean-talent-player"), "Talent management");
+    same(buildPlayerTalentDirectoryView(lean, "lean-talent-player"),
+      buildPlayerTalentDirectoryView(full, "lean-talent-player"), "Wrestler directory");
+    same(buildPlayerStaffView(lean, "lean-talent-player"),
+      buildPlayerStaffView(full, "lean-talent-player"), "Staff");
+  } finally {
+    await access.close();
+  }
+});
+
 console.log(`\nPostgreSQL server-world access tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
