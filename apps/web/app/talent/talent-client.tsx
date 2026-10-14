@@ -1415,13 +1415,13 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
                 onChange={(extraDates) => setDateAddendum(current => current ? { ...current, extraDates } : null)} />
             </label>
             <label>
-              <span>One-time extra payment</span>
+              <span>Extra payment offered (one-time)</span>
               <MoneyInput value={dateAddendum.payment} disabled={submitting}
                 onChange={(payment) => setDateAddendum(current => current ? { ...current, payment } : null)} />
             </label>
           </div>
           <div className={styles.editorFooter}>
-            <span>Wrestler acceptance is not guaranteed. Expiry, exclusivity, regular wage and appearance fee stay unchanged.</span>
+            <span>This payment is only for the added dates, on top of existing weekly wages and appearance fees. It does not replace those payments. The wrestler may reject the offer; expiry and exclusivity stay unchanged.</span>
             <button className={styles.primaryButton} type="button" disabled={submitting}
               onClick={() => void submitMoreDates()}>{submitting ? "Submitting…" : "Offer more dates"}</button>
           </div>
