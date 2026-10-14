@@ -31,7 +31,9 @@ function required(value: unknown, label: string): string {
 export async function loadAlphaStaff(
   repository: ApplicationWorldRepository, worldId: string, playerId: string,
 ): Promise<PlayerStaffView> {
-  return buildPlayerStaffView(await repository.load(worldId), playerId);
+  return buildPlayerStaffView(
+    await (repository.loadTalentView?.(worldId) ?? repository.load(worldId)), playerId,
+  );
 }
 
 export async function hireAlphaTalentManager(
