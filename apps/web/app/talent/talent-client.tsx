@@ -1085,10 +1085,10 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
     }
     const wrestler = view.roster.find((entry) => entry.personId === focusPersonId);
     if (!wrestler) return;
-    const cardId = wrestler.contract.renewalWindowOpen
-      ? `actionable-contract-${wrestler.personId}`
-      : (wrestler.scheduledRenewals?.length ?? 0) > 0
-        ? `signed-contract-${wrestler.personId}`
+    const cardId = (wrestler.scheduledRenewals?.length ?? 0) > 0
+      ? `signed-contract-${wrestler.personId}`
+      : wrestler.contract.renewalWindowOpen && !view.pendingOffers.some((offer) => offer.personId === wrestler.personId)
+        ? `actionable-contract-${wrestler.personId}`
         : null;
     const destinationId = cardId ?? `current-contract-${wrestler.personId}`;
     if (destinationId) {
@@ -1299,7 +1299,8 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
   );
   const pendingPeople = useMemo(() => new Set((view?.pendingOffers ?? []).map((offer) => offer.personId)), [view]);
   const contractDeskActionable = useMemo(() => (view?.roster ?? [])
-    .filter((entry) => entry.contract.renewalWindowOpen && !pendingPeople.has(entry.personId))
+    .filter((entry) => entry.contract.renewalWindowOpen && !pendingPeople.has(entry.personId)
+      && (entry.scheduledRenewals?.length ?? 0) === 0)
     .filter((entry) => matchesQuery(entry.name, query))
     .sort((left, right) => (
       Number(right.contract.renewalReason === "DATES_EXHAUSTED") - Number(left.contract.renewalReason === "DATES_EXHAUSTED")
