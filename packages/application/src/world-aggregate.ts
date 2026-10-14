@@ -88,8 +88,13 @@ export function transactWithReceiptIds<TResult>(
   receiptRequestIds: readonly string[],
   action: (aggregate: ApplicationWorldAggregate) => TResult | Promise<TResult>,
 ): Promise<WorldTransactionResult<TResult>> {
-  if (receiptRequestIds.length === 0) throw new Error("command transaction requires a retry receipt ID");
-  return repository.transact(worldId, expectedRevision, action, receiptRequestIds);
+  // Command receipts always store the normalized requestId. Some older API
+  // routes supply an untrimmed string, so normalize BEFORE the SQL lookup.
+  const ids = receiptRequestIds.map((id) => typeof id === "string" ? id.trim() : "");
+  if (ids.length === 0 || ids.some((id) => id.length === 0 || id.length > 256)) {
+    throw new Error("command transaction requires valid retry receipt IDs");
+  }
+  return repository.transact(worldId, expectedRevision, action, ids);
 }
 
 /** Explicit opt-in for simulation and non-idempotency mutations.

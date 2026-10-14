@@ -8,6 +8,7 @@ import {
   createWorldPlanningState,
   createWorldRuntimeState,
   joinPlayerToWorld,
+  transactWithReceiptIds,
   lockPersistedCurrentWeekShowCommitments,
   lockPersistedWorldForResolution,
   resolvePersistedWorldWeek,
@@ -117,10 +118,11 @@ try {
       "receipt-free transaction deleted a historical command receipt");
     ok(after.state.promotions[0]!.cash === before.state.promotions[0]!.cash + 25,
       "receipt-free transaction lost a World state change");
-    const retry = await repository.transact(worldId, null, working =>
+    const retry = await transactWithReceiptIds(repository, worldId, null, ["  historic-claim  "], working =>
       claimIndependentPromotionCommand(
-        working.state, working.ownership, working.commands, working.runtime, claim,
-      ), [claim.requestId]);
+        working.state, working.ownership, working.commands, working.runtime,
+        { ...claim, requestId: "  historic-claim  " },
+      ));
     ok(retry.revision === after.runtime.revision,
       "selective historical idempotent retry changed World revision");
   });
