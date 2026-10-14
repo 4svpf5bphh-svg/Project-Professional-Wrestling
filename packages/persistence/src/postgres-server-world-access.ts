@@ -189,6 +189,15 @@ export function createPostgresServerWorldAccess(connectionString: string): Postg
         const engagement = row.engagement_state
           ? normalizeWorldEngagementState(row.engagement_state as WorldEngagementState, worldId)
           : createWorldEngagementState(worldId);
+        const previous = engagement.playerActivity.find((activity) => activity.playerId === playerId);
+        const unchanged = previous?.status === "ACTIVE"
+          && previous.lastActiveCycleKey === realCycleKey
+          && previous.lastActiveRevision === Number(row.runtime_revision)
+          && previous.lastActivePpwDate.year === row.current_ppw_date.year
+          && previous.lastActivePpwDate.week === row.current_ppw_date.week
+          && previous.lastActivePpwDate.day === row.current_ppw_date.day;
+        if (unchanged) return;
+
         recordPlayerActivityInState(
           engagement,
           playerId,
