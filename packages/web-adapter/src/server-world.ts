@@ -4,7 +4,13 @@ import {
   createPostgresServerWorldAccess,
   type PostgresServerWorldAccess,
 } from "../../persistence/src/postgres-server-world-access.js";
-import { ensureAlphaWorld } from "./alpha-service.js";
+import { alphaWorldId, ensureAlphaWorld } from "./alpha-service.js";
+
+/**
+ * Increment whenever existing Worlds require a new startup compatibility
+ * repair. A version is only persisted AFTER every repair succeeds.
+ */
+const SERVER_BOOTSTRAP_REPAIR_VERSION = 1;
 
 export interface AlphaServerContext {
   repository: ApplicationWorldRepository;
@@ -56,14 +62,20 @@ function ensureSchemaReady(
 
 function ensureWorldReady(
   connectionString: string,
-  repository: ApplicationWorldRepository,
+  access: PostgresServerWorldAccess,
   options: { seed: number; playerId: string; worldName: string },
 ): Promise<string> {
   const key = `${connectionString}\u0000${options.seed}\u0000${options.worldName}`;
   const existing = worldBootstraps.get(key);
   if (existing) return existing;
 
-  const bootstrap = ensureAlphaWorld(repository, options).catch((error) => {
+  const bootstrap = (async () => {
+    const candidate = alphaWorldId(options.seed);
+    if (await access.bootstrapVerified(candidate, SERVER_BOOTSTRAP_REPAIR_VERSION)) return candidate;
+    const worldId = await ensureAlphaWorld(access.repository, options);
+    await access.markBootstrapVerified(worldId, SERVER_BOOTSTRAP_REPAIR_VERSION);
+    return worldId;
+  })().catch(error => {
     worldBootstraps.delete(key);
     throw error;
   });
@@ -125,7 +137,7 @@ export async function withAlphaServerContext<TResult>(
 
     const bootstrapStartedAt = performance.now();
     await ensureSchemaReady(connectionString, access.repository);
-    const worldId = await ensureWorldReady(connectionString, access.repository, { seed, playerId, worldName });
+    const worldId = await ensureWorldReady(connectionString, access, { seed, playerId, worldName });
     bootstrapMs = performance.now() - bootstrapStartedAt;
 
     if (trackPlayerActivity) {
