@@ -14,7 +14,7 @@ REGISTER = Path("docs/FINAL-GITHUB-BRANCH-DELETE-LISTS-2026-10-14.md")
 MODE = os.environ.get("MODE", "preview")
 CONFIRMATION = os.environ.get("CONFIRMATION", "")
 REPO = os.environ["GH_REPO"]
-PROTECTED = {"main", "work/neon-cleanup-batched"}
+PROTECTED = {"main", "alpha-1a", "work/neon-cleanup-batched"}
 report = []
 
 def gh(method, endpoint):
@@ -51,8 +51,9 @@ def main():
         raise ValueError(f"Expected exactly 174 distinct approved candidates; found {len(names)}")
     repo = api(f"repos/{REPO}")
     default = repo["default_branch"]
-    if default != "main":
-        raise ValueError(f"Default branch unexpectedly {default!r}; refusing")
+    if default not in {"main", "alpha-1a"}:
+        raise ValueError(f"Unrecognized default branch {default!r}; refusing")
+    PROTECTED.add(default)
     for name in names:
         if name in PROTECTED or name.startswith("recovery/") or name.startswith("backup/"):
             record(name, "SKIP", "protected or recovery/backup name")
