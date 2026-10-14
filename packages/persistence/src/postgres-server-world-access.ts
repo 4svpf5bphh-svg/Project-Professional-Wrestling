@@ -34,6 +34,8 @@ export interface ServerWorldReadStatistics {
   fullSnapshotReads: number;
   versionProbes: number;
   cacheHits: number;
+  /** Concurrent requests sharing an in-flight snapshot, without duplicate transfer. */
+  coalescedReads: number;
   /** Count of read-only Talent/Staff projections served from PostgreSQL. */
   trimmedHistoryReads: number;
   compressedSnapshotReads: number;
@@ -260,8 +262,11 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     version: string;
     aggregate: ApplicationWorldAggregate;
   }>();
+  /** Only simultaneous identical reads share work; each consumer gets a clone. */
+  private readonly pendingFull = new Map<string, Promise<ApplicationWorldAggregate>>();
+  private readonly pendingTalent = new Map<string, Promise<ApplicationWorldAggregate>>();
   private readonly stats: ServerWorldReadStatistics = {
-    fullSnapshotReads: 0, versionProbes: 0, cacheHits: 0, trimmedHistoryReads: 0,
+    fullSnapshotReads: 0, versionProbes: 0, cacheHits: 0, coalescedReads: 0, trimmedHistoryReads: 0,
     compressedSnapshotReads: 0, rawFallbackReads: 0, backfilledSnapshots: 0,
     snapshotWireBytes: 0,
   };
@@ -288,22 +293,35 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
       return structuredClone(cached.aggregate);
     }
 
-    this.stats.fullSnapshotReads += 1;
-    const fresh = await readWorldWithoutCommandReceipts(this.serverSql, worldId);
-    if (fresh.usedCompressed) this.stats.compressedSnapshotReads += 1;
-    else this.stats.rawFallbackReads += 1;
-    if (fresh.backfilled) this.stats.backfilledSnapshots += 1;
-    this.stats.snapshotWireBytes += fresh.snapshotWireBytes;
-    // A bounded cache prevents many independent Worlds exhausting memory.
-    this.cache.delete(worldId);
-    this.cache.set(worldId, {
-      version: fresh.snapshotVersion,
-      aggregate: structuredClone(fresh.aggregate),
-    });
-    if (this.cache.size > 2) {
-      this.cache.delete(this.cache.keys().next().value!);
+    const key = JSON.stringify([worldId, rows[0].snapshot_version]);
+    const pending = this.pendingFull.get(key);
+    if (pending) {
+      this.stats.coalescedReads += 1;
+      return structuredClone(await pending);
     }
-    return fresh.aggregate;
+    // A cold navigation can fan out multiple GET requests from one Vercel
+    // instance. Transfer a given version of the World only once.
+    const loading = (async () => {
+      this.stats.fullSnapshotReads += 1;
+      const fresh = await readWorldWithoutCommandReceipts(this.serverSql, worldId);
+      if (fresh.usedCompressed) this.stats.compressedSnapshotReads += 1;
+      else this.stats.rawFallbackReads += 1;
+      if (fresh.backfilled) this.stats.backfilledSnapshots += 1;
+      this.stats.snapshotWireBytes += fresh.snapshotWireBytes;
+      this.cache.delete(worldId);
+      this.cache.set(worldId, {
+        version: fresh.snapshotVersion,
+        aggregate: structuredClone(fresh.aggregate),
+      });
+      if (this.cache.size > 2) this.cache.delete(this.cache.keys().next().value!);
+      return fresh.aggregate;
+    })();
+    this.pendingFull.set(key, loading);
+    try {
+      return structuredClone(await loading);
+    } finally {
+      if (this.pendingFull.get(key) === loading) this.pendingFull.delete(key);
+    }
   }
 
   async loadTalentView(worldId: Id): Promise<ApplicationWorldAggregate> {
@@ -327,18 +345,41 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
       this.stats.cacheHits += 1;
       return structuredClone(cached.aggregate);
     }
-    const fresh = await readWorldWithoutCommandReceipts(this.serverSql, worldId, "talent");
-    this.stats.trimmedHistoryReads += 1;
-    if (fresh.usedCompressed) this.stats.compressedSnapshotReads += 1;
-    else this.stats.rawFallbackReads += 1;
-    if (fresh.backfilled) this.stats.backfilledSnapshots += 1;
-    this.stats.snapshotWireBytes += fresh.snapshotWireBytes;
-    this.talentCache.delete(worldId);
-    this.talentCache.set(worldId, {
-      version: fresh.snapshotVersion, aggregate: structuredClone(fresh.aggregate),
-    });
-    if (this.talentCache.size > 2) this.talentCache.delete(this.talentCache.keys().next().value!);
-    return fresh.aggregate;
+    const key = JSON.stringify([worldId, version]);
+    // Prefer an already-running complete World read over transferring a
+    // second copy just to produce a Talent/Staff read-only projection.
+    const pendingFull = this.pendingFull.get(key);
+    if (pendingFull) {
+      this.stats.coalescedReads += 1;
+      const view = structuredClone(await pendingFull);
+      view.state.financialTransactions = [];
+      return view;
+    }
+    const pendingTalent = this.pendingTalent.get(key);
+    if (pendingTalent) {
+      this.stats.coalescedReads += 1;
+      return structuredClone(await pendingTalent);
+    }
+    const loading = (async () => {
+      const fresh = await readWorldWithoutCommandReceipts(this.serverSql, worldId, "talent");
+      this.stats.trimmedHistoryReads += 1;
+      if (fresh.usedCompressed) this.stats.compressedSnapshotReads += 1;
+      else this.stats.rawFallbackReads += 1;
+      if (fresh.backfilled) this.stats.backfilledSnapshots += 1;
+      this.stats.snapshotWireBytes += fresh.snapshotWireBytes;
+      this.talentCache.delete(worldId);
+      this.talentCache.set(worldId, {
+        version: fresh.snapshotVersion, aggregate: structuredClone(fresh.aggregate),
+      });
+      if (this.talentCache.size > 2) this.talentCache.delete(this.talentCache.keys().next().value!);
+      return fresh.aggregate;
+    })();
+    this.pendingTalent.set(key, loading);
+    try {
+      return structuredClone(await loading);
+    } finally {
+      if (this.pendingTalent.get(key) === loading) this.pendingTalent.delete(key);
+    }
   }
 
   /** Activity writes only change engagement, not simulation World state.

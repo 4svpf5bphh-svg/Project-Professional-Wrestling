@@ -348,5 +348,59 @@ await test("legacy JSONB snapshot backfills gzip once without mutating World rev
   }
 });
 
+
+await test("concurrent cold navigation transfers each World snapshot only once per version", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62033, playerId: "concurrent-player" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    // Simulate many mobile views arriving before a cold server cache is filled.
+    const views = await Promise.all(Array.from({ length: 24 }, (_, index) => (
+      index % 3 === 0
+        ? access.repository.loadTalentView(worldId)
+        : access.repository.load(worldId)
+    )));
+    ok(views.every(view => view.state.people.length === aggregate.state.people.length),
+      "coalesced load lost wrestler profiles");
+    ok(views.every((view, index) => index % 3 !== 0
+      || view.state.financialTransactions.length === 0),
+      "Talent coalescing leaked financial history into read-only projection");
+    const counters = access.readStatistics();
+    ok(counters.fullSnapshotReads + counters.trimmedHistoryReads <= 2,
+      `concurrent cold requests transferred more than two World copies: ${JSON.stringify(counters)}`);
+    ok(counters.snapshotWireBytes > 0,
+      "cold concurrent reads omitted the snapshot transfer instrumentation");
+    views[0]!.state.promotions[0]!.cash = -999_444;
+    ok(views.slice(1).every(view => view.state.promotions[0]!.cash !== -999_444),
+      "concurrent consumers shared mutable World state");
+    const after = await access.repository.load(worldId);
+    ok(after.state.promotions[0]!.cash !== -999_444,
+      "concurrent cache returned a caller-mutated World");
+  } finally {
+    await access.close();
+  }
+});
+
+await test("two simultaneous Talent-only cold screens coalesce into one snapshot read", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62034, playerId: "concurrent-talent-player" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const views = await Promise.all(Array.from({ length: 16 }, () =>
+      access.repository.loadTalentView(worldId)));
+    ok(views.every(view => view.state.people.length === aggregate.state.people.length),
+      "concurrent Talent loads lost wrestler directory");
+    const counts = access.readStatistics();
+    ok(counts.trimmedHistoryReads === 1 && counts.fullSnapshotReads === 0,
+      `concurrent Talent screens transferred duplicate World snapshots: ${JSON.stringify(counts)}`);
+  } finally {
+    await access.close();
+  }
+});
+
 console.log(`\nPostgreSQL server-world access tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
