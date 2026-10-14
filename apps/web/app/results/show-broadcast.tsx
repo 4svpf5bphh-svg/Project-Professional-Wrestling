@@ -1,15 +1,28 @@
 "use client";
 
 import type { PlayerShowResultView, PlayerShowMatchView } from "../../../../dist/packages/application/src/results-view.js";
-import type { PlayerWorldResultShowView, PlayerWorldResultMatchView } from "../../../../dist/packages/application/src/world-results-view.js";
-import { showResultHighlights, type ShowResultHighlight } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
+import type { PlayerWorldResultMatchView } from "../../../../dist/packages/application/src/world-results-view.js";
+import { showOpeningHighlights, type ShowResultHighlight } from "../../../../dist/packages/web-adapter/src/results-highlights.js";
+import { reviewPlayerShowNarrative, reviewPlayerShowFinalBell, type FinalBellMoment } from "../../../../dist/packages/web-adapter/src/results-review.js";
 import styles from "./results.module.css";
 
-type BroadcastShow = Pick<PlayerShowResultView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating" | "bestMatchRating"> |
-  Pick<PlayerWorldResultShowView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating" | "bestMatchRating">;
+type BroadcastShow = Pick<PlayerShowResultView, "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating" | "bestMatchRating" | "titleChangeCount" | "injuryCount" | "matchCount" | "segmentCount">;
 
 function display(value: number): string {
   return new Intl.NumberFormat("en-GB", { maximumFractionDigits: 1 }).format(value);
+}
+
+export function MatchStarRating({ rating }: { rating: number }): React.JSX.Element {
+  const safe = Number.isFinite(rating) ? Math.max(0, Math.min(5, rating)) : 0;
+  return (
+    <span className={styles.visualStarRating} role="img" aria-label={`${display(safe)} of 5 stars`}>
+      <span className={styles.starGlyphs} aria-hidden="true">
+        <span>★★★★★</span>
+        <span className={styles.starFill} style={{ width: `${safe * 20}%` }}>★★★★★</span>
+      </span>
+      <strong>{display(safe)}</strong>
+    </span>
+  );
 }
 
 function iconFor(category: ShowResultHighlight["category"]): string {
@@ -77,32 +90,30 @@ export function MatchFinishReplay({ match }: { match: ReplayMatch }): React.JSX.
 
 /** This is a presentation lens on already completed show records. */
 export default function ShowBroadcast({ show }: { show: BroadcastShow }): React.JSX.Element {
-  const moments = showResultHighlights(show);
+  const moments = showOpeningHighlights(show);
   const lead = moments[0] ?? null;
   const otherMoments = moments.slice(1);
-  const crowd = Number.isFinite(show.crowdResponse) ? show.crowdResponse : 0;
+  const editorial = reviewPlayerShowNarrative(show);
   return (
     <section className={styles.broadcast} aria-label="Completed show highlights">
       <div className={styles.broadcastMasthead}>
-        <span><span aria-hidden="true">◉</span> PPW · SHOW REPLAY</span>
-        <span>THE NIGHT IN FOCUS</span>
+        <span><span aria-hidden="true">◉</span> PPW · THE FINAL BELL</span>
+        <span>THE SHOW REVIEW</span>
       </div>
-      <div className={styles.broadcastNumbers}>
-        <div className={styles.broadcastCrowd}>
-          <span>CROWD RESPONSE</span>
-          <strong>{display(show.crowdResponse)}<small> / 100</small></strong>
-          <div className={styles.crowdRail} role="meter" aria-label="Final crowd response out of 100"
-            aria-valuemin={0} aria-valuemax={100}
-            aria-valuenow={Math.min(100, Math.max(0, Math.round(crowd)))}>
-            <span style={{ width: `${Math.min(100, Math.max(0, crowd))}%` }} />
-          </div>
-        </div>
-        <div className={styles.broadcastBest}>
-          <span>BEST BOUT</span>
-          <strong><span aria-hidden="true">★</span> {display(show.bestMatchRating)}</strong>
-          <small>Show average ★ {display(show.averageMatchRating)}</small>
-        </div>
+      <div className={`${styles.broadcastEditorial} ${editorial.tone === "GREAT" ? styles.broadcastEditorialGreat : editorial.tone === "ROUGH" ? styles.broadcastEditorialRough : ""}`}>
+        <small>THE VERDICT · {editorial.tone === "GREAT" ? "MUST SEE" : editorial.tone === "ROUGH" ? "ROUGH NIGHT" : editorial.tone === "GOOD" ? "WORTH WATCHING" : "MIXED FORTUNES"}</small>
+        <h2>{editorial.headline}</h2>
+        <p>{editorial.recap}</p>
+        <em>{editorial.verdict}</em>
       </div>
+      <div className={styles.broadcastQuickFacts} aria-label="Show figures at a glance">
+        <span>THE CROWD <strong>{display(show.crowdResponse)} / 100</strong></span>
+        <span>BEST MATCH <MatchStarRating rating={show.bestMatchRating} /></span>
+      </div>
+      <nav className={styles.broadcastJump} aria-label="Jump through this show">
+        <a href={"#show-" + show.eventId + "-card"}>Read the card ↓</a>
+        <a href={"#show-" + show.eventId + "-finale"}>The last word ↓</a>
+      </nav>
       {lead ? (
         <a className={`${styles.broadcastLead} ${lead.category === "CHAMPIONSHIP" ? styles.broadcastLeadTitle : lead.category === "INJURY" ? styles.broadcastLeadInjury : ""}`}
           href={`#show-${show.eventId}-slot-${lead.slotOrder}`}
@@ -133,6 +144,47 @@ export default function ShowBroadcast({ show }: { show: BroadcastShow }): React.
           ))}
         </div>
       ) : !lead ? <p className={styles.reelEmpty}>Full completed card and crowd response below.</p> : null}
+    </section>
+  );
+}
+
+
+function FinaleMoment({ moment, eventId, style }: {
+  moment: FinalBellMoment;
+  eventId: string;
+  style: "best" | "rough" | "fallout";
+}): React.JSX.Element {
+  return (
+    <a className={styles.finaleMoment + " " + (style === "best" ? styles.finaleBest
+      : style === "rough" ? styles.finaleRough : styles.finaleFallout)}
+      href={"#show-" + eventId + "-slot-" + moment.slotOrder}>
+      <small>{style === "best" ? "★" : style === "rough" ? "↘" : "⚡"} {moment.label}</small>
+      <strong>{moment.headline}</strong>
+      <span>{moment.detail}</span>
+      <em>Back to this moment ↗</em>
+    </a>
+  );
+}
+
+/** Read-only closing credits for player-owned shows. No extra match actions. */
+export function ShowFinalBell({ show }: { show: Pick<PlayerShowResultView,
+  "eventId" | "runningOrder" | "crowdResponse" | "averageMatchRating"> }): React.JSX.Element {
+  const finale = reviewPlayerShowFinalBell(show);
+  return (
+    <section className={styles.finale} aria-label="The final word on this show">
+      <header className={styles.finaleHeader}>
+        <span>PPW · AT THE FINAL BELL</span>
+        <h2>The night in the books.</h2>
+        <p>What we'll remember — for better or worse.</p>
+      </header>
+      <div className={styles.finaleMoments}>
+        {finale.standout ? <FinaleMoment moment={finale.standout} eventId={show.eventId} style="best" /> : null}
+        {finale.disappointment
+          ? <FinaleMoment moment={finale.disappointment} eventId={show.eventId} style="rough" /> : null}
+        {finale.consequence
+          ? <FinaleMoment moment={finale.consequence} eventId={show.eventId} style="fallout" /> : null}
+      </div>
+      <p className={styles.finaleLastWord}><b>THE LAST WORD</b> {finale.lastWord}</p>
     </section>
   );
 }
