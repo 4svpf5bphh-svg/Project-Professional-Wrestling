@@ -1,15 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { timingSafeEqual } from "node:crypto";
 
 /**
- * Temporary single-player Alpha perimeter, NOT multiplayer identity.
- * Fail closed if a strong password is not configured.
- * Protects all player-facing routes, including mutation APIs.
+ * Temporary single-player Alpha perimeter. Not multiplayer authentication.
+ * Web Crypto is supported by the Next.js Edge middleware runtime.
  */
-export function middleware(request: NextRequest): NextResponse {
+async function digest(value: string): Promise<Uint8Array> {
+  const bytes = new TextEncoder().encode(value);
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+}
+
+function equalDigest(a: Uint8Array, b: Uint8Array): boolean {
+  let difference = a.length ^ b.length;
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    difference |= (a[index] ?? 0) ^ (b[index] ?? 0);
+  }
+  return difference === 0;
+}
+
+export async function middleware(request: NextRequest): Promise<NextResponse> {
   const password = process.env.PPW_ALPHA_ACCESS_PASSWORD;
   if (!password || password.length < 16) {
-    return new NextResponse("Alpha access is not configured", { status: 503 });
+    return new NextResponse("Alpha access is not configured", {
+      status: 503,
+      headers: { "Cache-Control": "no-store" },
+    });
   }
 
   const authorization = request.headers.get("authorization") ?? "";
@@ -23,12 +37,10 @@ export function middleware(request: NextRequest): NextResponse {
       }
     }
   } catch {
-    // Invalid Basic authorization is unauthenticated.
+    // Malformed Basic credentials are treated as unauthenticated.
   }
 
-  const actual = Buffer.from(suppliedPassword, "utf8");
-  const expected = Buffer.from(password, "utf8");
-  const authorized = actual.length === expected.length && timingSafeEqual(actual, expected);
+  const authorized = equalDigest(await digest(suppliedPassword), await digest(password));
   if (!authorized) {
     return new NextResponse("Authentication required", {
       status: 401,
