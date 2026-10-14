@@ -225,5 +225,34 @@ await test("player activity cannot stamp a stale World cache as authoritative", 
   }
 });
 
+
+await test("verified bootstrap metadata prevents expensive repeat compatibility loading", async () => {
+  const first = createPostgresServerWorldAccess(connectionString);
+  const second = createPostgresServerWorldAccess(connectionString);
+  try {
+    await first.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62028, playerId: "bootstrap-metadata-player" });
+    await first.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    ok(!(await first.bootstrapVerified(worldId, 1)),
+      "unverified World incorrectly skipped its required compatibility repairs");
+    await first.markBootstrapVerified(worldId, 1);
+    ok(await second.bootstrapVerified(worldId, 1),
+      "new server instance cannot observe completed compatibility repairs");
+    ok(!(await second.bootstrapVerified(worldId, 2)),
+      "future repairs must not be skipped by an older verified marker");
+    const persisted = await second.repository.load(worldId);
+    ok(persisted.runtime.revision === aggregate.runtime.revision
+      && persisted.state.people.length === aggregate.state.people.length,
+      "bootstrap marker changed World state or revision");
+    await second.markBootstrapVerified(worldId, 1);
+    ok(await first.bootstrapVerified(worldId, 1),
+      "repeated marking lost the durable verification marker");
+  } finally {
+    await first.close();
+    await second.close();
+  }
+});
+
 console.log(`\nPostgreSQL server-world access tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
