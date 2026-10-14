@@ -258,6 +258,9 @@ await test("verified bootstrap metadata prevents expensive repeat compatibility 
 
 await test("Talent and Staff read-only projections match full authoritative views", async () => {
   const access = createPostgresServerWorldAccess(connectionString);
+  // A fresh server instance must exercise the cold projection: promotion
+  // claiming legitimately warmed the original instance's full read cache.
+  const reader = createPostgresServerWorldAccess(connectionString);
   try {
     await access.repository.migrate();
     const aggregate = createAlphaWorldAggregate({ seed: 62029, playerId: "lean-talent-player" });
@@ -268,15 +271,16 @@ await test("Talent and Staff read-only projections match full authoritative view
     const worldId = aggregate.state.world.id;
     await claimAlphaPromotion(access.repository, worldId, "lean-talent-player",
       { promotionId: indie.id, requestId: "lean-views-claim" });
-    const lean = await access.repository.loadTalentView(worldId);
+    const lean = await reader.repository.loadTalentView(worldId);
     ok(lean.state.ledger.length > 0 && lean.state.financialTransactions.length === 0,
       "Talent view lost the ledger needed for wrestler creative and alignment");
 
-    ok(access.readStatistics().trimmedHistoryReads === 1,
-      "first Talent view did not use the history-trimmed SQL projection");
-    const again = await access.repository.loadTalentView(worldId);
-    ok(access.readStatistics().trimmedHistoryReads === 1,
-      "second Talent view transferred a full history-trimmed snapshot");
+    ok(reader.readStatistics().trimmedHistoryReads === 1,
+      "cold Talent instance did not use the read-only projection");
+    const again = await reader.repository.loadTalentView(worldId);
+    ok(reader.readStatistics().trimmedHistoryReads === 1
+      && reader.readStatistics().cacheHits === 1,
+      "repeat Talent view transferred another snapshot");
     ok(again.state.people.length === lean.state.people.length, "cached Talent view changed wrestler population");
 
     const { buildPlayerTalentManagementView } = await import("../packages/application/src/talent-view.js");
@@ -296,6 +300,7 @@ await test("Talent and Staff read-only projections match full authoritative view
       buildPlayerStaffView(full, "lean-talent-player"), "Staff");
   } finally {
     await access.close();
+    await reader.close();
   }
 });
 
