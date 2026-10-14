@@ -110,8 +110,8 @@ export function showResultHighlights(show: ShowSource, limit = 3): ShowResultHig
         candidates.push({
           id: `hot:${segment.segmentId}`, category: "ANGLE", priority: 64,
           slotOrder: slot.order,
-          headline: hotSegmentHeadline(segment.type, segment.type === "VIDEO_PACKAGE" && segment.videoReveal === "CRYPTIC" ? "Mystery footage" : wrestler),
-          detail: `${segment.type === "VIDEO_PACKAGE" && segment.videoReveal === "CRYPTIC" ? "Mystery footage" : wrestler} · crowd ${segment.crowdResponse === null ? "not recorded" : segment.crowdResponse.toFixed(1)}`,
+          headline: hotSegmentHeadline(segment.type, segment.type === "VIDEO_PACKAGE" && segment.videoReveal !== "NAMED" && segment.videoReveal !== "FULL" ? "Mystery footage" : wrestler),
+          detail: `${segment.type === "VIDEO_PACKAGE" && segment.videoReveal !== "NAMED" && segment.videoReveal !== "FULL" ? "Mystery footage" : wrestler} · crowd ${segment.crowdResponse === null ? "not recorded" : segment.crowdResponse.toFixed(1)}`,
         });
       }
     }
@@ -125,4 +125,20 @@ export function showResultHighlights(show: ShowSource, limit = 3): ShowResultHig
       b.priority - a.priority || a.slotOrder - b.slotOrder || a.id.localeCompare(b.id))
     .slice(0, Math.max(0, Math.floor(Number.isFinite(limit) ? limit : 3)))
     .map(({ priority: _priority, ...item }) => item);
+}
+
+
+/** The cover story is *not* the full replay. Two distinct important slots
+ * avoid making iPhone users scroll through the same injury/title match three
+ * times before the running order even begins. The complete facts stay below. */
+export function showOpeningHighlights(show: ShowSource): ShowResultHighlight[] {
+  const seenSlots = new Set<number>();
+  const featured: ShowResultHighlight[] = [];
+  for (const moment of showResultHighlights(show, 12)) {
+    if (seenSlots.has(moment.slotOrder)) continue;
+    seenSlots.add(moment.slotOrder);
+    featured.push(moment);
+    if (featured.length === 2) break;
+  }
+  return featured;
 }
