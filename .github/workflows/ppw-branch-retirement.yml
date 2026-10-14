@@ -1,7 +1,11 @@
 name: PPW approved branch retirement
-run-name: PPW branch retirement — ${{ inputs.mode }}
+run-name: PPW branch retirement — ${{ inputs.mode || 'preview' }}
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ppw-branch-retirement.yml'
   workflow_dispatch:
     inputs:
       mode:
@@ -41,7 +45,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          MODE: ${{ inputs.mode }}
+          MODE: ${{ inputs.mode || 'preview' }}
           CONFIRMATION: ${{ inputs.confirmation }}
         shell: bash
         run: |
