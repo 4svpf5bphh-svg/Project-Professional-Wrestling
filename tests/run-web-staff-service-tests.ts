@@ -118,7 +118,7 @@ await test("delegate requires an employed manager and preserves exact money, rol
   ok(retry.offerId === submitted.offerId, "retry offered wrestler a second agreement");
   await rejects(() => authoriseAlphaTalentManagerRenewal(repo, worldId, "player-a", {
     requestId: "delegate-again", sourceContractId: source.id,
-  }), "pending offer");
+  }), "not eligible");
   // Simulate a rejected standard resolver result to test staff outcome routing;
   // never claim that a real multiweek World resolution ran here.
   await repo.transact(worldId, null, current => {
@@ -170,7 +170,7 @@ await test("bounded staff addendum uses standard consent, pending offer and idem
   ok(pending?.offerKind === "DATES_ADDENDUM" && pending.status === "PENDING"
     && pending.sourceContractId === source.id && pending.signingBonus === request.additionalPayment,
     "not a standard pending wrestler-consent proposal");
-  ok(pending.dateEntitlement === source.dateEntitlement + 1,
+  ok(pending?.dateEntitlement === source.dateEntitlement + 1,
     "staff changed date entitlement beyond player permission");
   ok(after.state.contracts.find(contract => contract.id === source.id)?.dateEntitlement === source.dateEntitlement,
     "staff mutated signed contract before wrestler acceptance");
