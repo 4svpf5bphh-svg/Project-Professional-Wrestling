@@ -27,13 +27,15 @@ concurrency:
 jobs:
   retirement:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - name: Checkout approved register
         uses: actions/checkout@v4
         with:
           ref: main
           persist-credentials: false
+      - name: Confirm approved register exists
+        run: test -f docs/FINAL-GITHUB-BRANCH-DELETE-LISTS-2026-10-14.md
       - name: Execute guarded cleanup
         env:
           GH_TOKEN: ${{ github.token }}
