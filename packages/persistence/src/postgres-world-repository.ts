@@ -172,6 +172,44 @@ WHERE worlds.world_id = 'world-20261002'
     name: "add optional compressed snapshot transport without changing authoritative JSONB",
     sql: `ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS world_state_gzip bytea NULL;`,
   },
+  {
+    version: 11,
+    name: "invalidate stale gzip on JSONB-only updates and refresh cache version",
+    sql: `
+CREATE OR REPLACE FUNCTION ppw_guard_world_snapshot_transport()
+RETURNS trigger LANGUAGE plpgsql AS $
+BEGIN
+  -- Older binaries, recovery tools and manual edits can change authoritative
+  -- JSONB alone. Make the compressed transport nullable again rather than
+  -- serve stale wrestler data.
+  IF NEW.world_state_gzip IS NOT DISTINCT FROM OLD.world_state_gzip
+     AND NEW.world_state IS DISTINCT FROM OLD.world_state THEN
+    NEW.world_state_gzip := NULL;
+  END IF;
+
+  -- An external change must invalidate a warm Vercel instance, even when
+  -- that writer forgot to update its version marker.
+  IF NEW.updated_at IS NOT DISTINCT FROM OLD.updated_at
+     AND (
+       NEW.world_state IS DISTINCT FROM OLD.world_state
+       OR NEW.planning_state IS DISTINCT FROM OLD.planning_state
+       OR NEW.engagement_state IS DISTINCT FROM OLD.engagement_state
+       OR NEW.runtime_phase IS DISTINCT FROM OLD.runtime_phase
+       OR NEW.runtime_revision IS DISTINCT FROM OLD.runtime_revision
+       OR NEW.human_seat_limit IS DISTINCT FROM OLD.human_seat_limit
+     ) THEN
+    NEW.updated_at := clock_timestamp();
+  END IF;
+  RETURN NEW;
+END
+$;
+DROP TRIGGER IF EXISTS ppw_guard_world_snapshot_transport ON ppw_worlds;
+CREATE TRIGGER ppw_guard_world_snapshot_transport
+BEFORE UPDATE OF world_state, planning_state, engagement_state,
+  runtime_phase, runtime_revision, human_seat_limit ON ppw_worlds
+FOR EACH ROW EXECUTE FUNCTION ppw_guard_world_snapshot_transport();
+`,
+  },
 ] as const;
 
 export const POSTGRES_APPLICATION_SCHEMA_SQL = [
@@ -335,7 +373,7 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
       locked_real_cycle_key = ${snapshot.runtime.lockedRealCycleKey ?? null},
       last_resolved_real_cycle_key = ${snapshot.runtime.lastResolvedRealCycleKey ?? null},
       human_seat_limit = ${snapshot.ownership.humanSeatLimit},
-      updated_at = now()
+      updated_at = clock_timestamp()
     WHERE world_id = ${worldId}
   `;
 

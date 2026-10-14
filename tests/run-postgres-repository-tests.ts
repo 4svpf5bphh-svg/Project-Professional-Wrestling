@@ -69,8 +69,9 @@ try {
              octet_length(world_state_gzip) AS gzip_bytes
       FROM ppw_worlds WHERE world_id = ${worldId}
     ` as unknown as Array<{ raw_bytes: number; gzip_bytes: number | null }>;
-    ok(Number(rows[0]?.gzip_bytes) > 0 && Number(rows[0]?.gzip_bytes) < Number(rows[0]?.raw_bytes),
-      "World was not stored with a smaller gzip transport copy");
+    ok(Number(rows[0]?.gzip_bytes) > 0
+      && Number(rows[0]?.gzip_bytes) <= Number(rows[0]?.raw_bytes) * 0.35,
+      "gzip transfer has regressed beyond 35% of the JSONB snapshot");
     const restored = await repository.load(worldId);
     ok(restored.state.people.length === sample.state.people.length,
       "compressed World did not restore its real roster");
@@ -102,6 +103,41 @@ try {
     const finalWorld = await repository.load(worldId);
     ok(finalWorld.state.promotions[0]!.cash === after.state.promotions[0]!.cash + 42,
       "legacy compressed transition lost World updates");
+  });
+
+
+  await test("raw SQL World edits invalidate stale gzip and cross-server caches", async () => {
+    const sample = fixture(62032);
+    await repository.initialize(sample);
+    const worldId = sample.state.world.id;
+    const changed = sample.state.promotions[0]!.cash + 777;
+    const before = await inspectionSql`
+      SELECT updated_at::text AS snapshot_version FROM ppw_worlds
+      WHERE world_id = ${worldId}
+    ` as unknown as Array<{ snapshot_version: string }>;
+    await inspectionSql`
+      UPDATE ppw_worlds SET world_state =
+        jsonb_set(world_state, '{promotions,0,cash}', to_jsonb(${changed}::numeric))
+      WHERE world_id = ${worldId}
+    `;
+    const row = await inspectionSql`
+      SELECT world_state_gzip IS NULL AS invalidated,
+        updated_at::text AS snapshot_version FROM ppw_worlds
+      WHERE world_id = ${worldId}
+    ` as unknown as Array<{ invalidated: boolean; snapshot_version: string }>;
+    ok(row[0]?.invalidated, "JSONB-only change left obsolete gzip active");
+    ok(row[0]?.snapshot_version !== before[0]?.snapshot_version,
+      "JSONB-only change did not invalidate version probes");
+    ok((await repository.load(worldId)).state.promotions[0]!.cash === changed,
+      "old compressed state hid newer authoritative JSONB");
+    await repository.transact(worldId, null, world => { world.runtime.revision += 1; });
+    const copy = await inspectionSql`
+      SELECT octet_length(world_state_gzip) AS bytes FROM ppw_worlds
+      WHERE world_id = ${worldId}
+    ` as unknown as Array<{ bytes: number | null }>;
+    ok(Number(copy[0]?.bytes) > 0, "normal transaction did not rebuild gzip copy");
+    ok((await repository.load(worldId)).state.promotions[0]!.cash === changed,
+      "transport rebuilding reverted external authoritative edit");
   });
 
   await test("PostgreSQL migration ledger is numbered and idempotent", async () => {

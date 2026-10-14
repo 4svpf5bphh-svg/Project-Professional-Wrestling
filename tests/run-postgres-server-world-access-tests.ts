@@ -322,6 +322,7 @@ await test("legacy JSONB snapshot backfills gzip once without mutating World rev
     const stats = first.readStatistics();
     ok(stats.rawFallbackReads === 1 && stats.backfilledSnapshots === 1,
       "legacy World was not backfilled after its first raw read");
+    ok(stats.snapshotWireBytes > 0, "legacy fallback did not measure transfer payload");
     const inspected = await sql`
       SELECT octet_length(world_state::text) AS raw_bytes,
              octet_length(world_state_gzip) AS gzip_bytes,
@@ -336,6 +337,8 @@ await test("legacy JSONB snapshot backfills gzip once without mutating World rev
     const onAnotherServer = await second.repository.load(worldId);
     ok(second.readStatistics().compressedSnapshotReads === 1,
       "new server transferred the full raw World after backfill");
+    ok(second.readStatistics().snapshotWireBytes < first.readStatistics().snapshotWireBytes * 0.35,
+      "cold-server gzip did not meet 65%+ transfer reduction budget");
     ok(onAnotherServer.state.people.length === aggregate.state.people.length,
       "compressed World lost wrestlers on a cold server instance");
   } finally {

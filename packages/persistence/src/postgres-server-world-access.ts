@@ -39,6 +39,8 @@ export interface ServerWorldReadStatistics {
   compressedSnapshotReads: number;
   rawFallbackReads: number;
   backfilledSnapshots: number;
+  /** World-state payload bytes read from PostgreSQL (excludes protocol and other tables). */
+  snapshotWireBytes: number;
 }
 
 type WorldReadRow = {
@@ -112,6 +114,7 @@ async function readWorldWithoutCommandReceipts(
   snapshotVersion: string;
   usedCompressed: boolean;
   backfilled: boolean;
+  snapshotWireBytes: number;
 }> {
   const startedAt = performance.now();
   // SQL does NOT transmit the 5–6MB JSONB when a compressed copy exists.
@@ -220,11 +223,27 @@ async function readWorldWithoutCommandReceipts(
       worldRevision: Number(row.runtime_revision),
     }));
   }
+  const snapshotWireBytes = row.world_state_gzip
+    ? row.world_state_gzip.byteLength
+    : Buffer.byteLength(JSON.stringify(row.world_state), "utf8");
+  // Count World payload only. Neon billing also includes other queries and
+  // PostgreSQL protocol overhead, which require a separate live measurement.
+  if (process.env.PPW_PERF_LOGS !== "0") {
+    console.info("[ppw-db-transfer]", JSON.stringify({
+      mode,
+      encoding: row.world_state_gzip ? "gzip" : "jsonb",
+      snapshotWireBytes,
+      worldRevision: Number(row.runtime_revision),
+      elapsedMs: Math.round(elapsedMs * 10) / 10,
+      backfilled,
+    }));
+  }
   return {
     aggregate,
     snapshotVersion: row.snapshot_version,
     usedCompressed: Boolean(row.world_state_gzip),
     backfilled,
+    snapshotWireBytes,
   };
 }
 
@@ -244,6 +263,7 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
   private readonly stats: ServerWorldReadStatistics = {
     fullSnapshotReads: 0, versionProbes: 0, cacheHits: 0, trimmedHistoryReads: 0,
     compressedSnapshotReads: 0, rawFallbackReads: 0, backfilledSnapshots: 0,
+    snapshotWireBytes: 0,
   };
 
   constructor(private readonly serverSql: SqlClient) {
@@ -273,6 +293,7 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     if (fresh.usedCompressed) this.stats.compressedSnapshotReads += 1;
     else this.stats.rawFallbackReads += 1;
     if (fresh.backfilled) this.stats.backfilledSnapshots += 1;
+    this.stats.snapshotWireBytes += fresh.snapshotWireBytes;
     // A bounded cache prevents many independent Worlds exhausting memory.
     this.cache.delete(worldId);
     this.cache.set(worldId, {
@@ -311,6 +332,7 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     if (fresh.usedCompressed) this.stats.compressedSnapshotReads += 1;
     else this.stats.rawFallbackReads += 1;
     if (fresh.backfilled) this.stats.backfilledSnapshots += 1;
+    this.stats.snapshotWireBytes += fresh.snapshotWireBytes;
     this.talentCache.delete(worldId);
     this.talentCache.set(worldId, {
       version: fresh.snapshotVersion, aggregate: structuredClone(fresh.aggregate),
