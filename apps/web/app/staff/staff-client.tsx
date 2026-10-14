@@ -17,7 +17,7 @@ export default function StaffClient(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [releaseConfirm, setReleaseConfirm] = useState(false);
-  const [dateChoices, setDateChoices] = useState<Record<string, number>>({});
+  const [dateChoices, setDateChoices] = useState<Record<string, string>>({});
   const [paymentChoices, setPaymentChoices] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -129,11 +129,13 @@ export default function StaffClient(): React.JSX.Element {
                     <summary className={styles.disclosure}>Eligible agreements · {view.dateAddendums.length}</summary>
                     <div className={styles.candidates}>
                       {view.dateAddendums.map(candidate => {
-                        const dates = dateChoices[candidate.contractId] ?? 1;
+                        const rawDates = dateChoices[candidate.contractId] ?? "1";
+                        const dates = Number(rawDates);
                         const rawPayment = paymentChoices[candidate.contractId] ??
                           String(Math.min(candidate.maxOneTimePayment, candidate.appearanceFee * dates));
                         const payment = Number(rawPayment);
-                        const valid = Number.isSafeInteger(dates) && dates >= 1 && dates <= candidate.maxAdditionalDates
+                        const valid = rawDates.trim().length > 0 && Number.isSafeInteger(dates)
+                          && dates >= 1 && dates <= candidate.maxAdditionalDates
                           && rawPayment.trim().length > 0 && Number.isSafeInteger(payment)
                           && payment >= 0 && payment <= candidate.maxOneTimePayment;
                         return (
@@ -143,9 +145,9 @@ export default function StaffClient(): React.JSX.Element {
                             <div className={styles.dateFields}>
                               <label>Extra dates
                                 <input type="number" inputMode="numeric" min={1} max={candidate.maxAdditionalDates} step={1}
-                                  value={dates} disabled={busy}
+                                  value={rawDates} disabled={busy}
                                   onChange={event => setDateChoices(previous => ({
-                                    ...previous, [candidate.contractId]: Number(event.target.value),
+                                    ...previous, [candidate.contractId]: event.target.value,
                                   }))} />
                               </label>
                               <label>One-time extra payment
