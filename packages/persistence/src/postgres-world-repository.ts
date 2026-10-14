@@ -161,6 +161,11 @@ WHERE worlds.world_id = 'world-20261002'
    );
 `,
   },
+  {
+    version: 9,
+    name: "track completed server bootstrap repairs without loading World snapshots",
+    sql: `ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS bootstrap_verified_version integer NOT NULL DEFAULT 0;`,
+  },
 ] as const;
 
 export const POSTGRES_APPLICATION_SCHEMA_SQL = [
