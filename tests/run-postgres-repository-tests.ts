@@ -59,6 +59,51 @@ function fixture(seed: number): ApplicationWorldAggregate {
 try {
   await repository.migrate();
 
+
+  await test("compressed transport is smaller, lossless, and transactionally maintained", async () => {
+    const sample = fixture(62030);
+    await repository.initialize(sample);
+    const worldId = sample.state.world.id;
+    const rows = await inspectionSql`
+      SELECT octet_length(world_state::text) AS raw_bytes,
+             octet_length(world_state_gzip) AS gzip_bytes
+      FROM ppw_worlds WHERE world_id = ${worldId}
+    ` as unknown as Array<{ raw_bytes: number; gzip_bytes: number | null }>;
+    ok(Number(rows[0]?.gzip_bytes) > 0 && Number(rows[0]?.gzip_bytes) < Number(rows[0]?.raw_bytes),
+      "World was not stored with a smaller gzip transport copy");
+    const restored = await repository.load(worldId);
+    ok(restored.state.people.length === sample.state.people.length,
+      "compressed World did not restore its real roster");
+
+    await repository.transact(worldId, null, state => {
+      state.state.promotions[0]!.cash += 1234;
+      state.runtime.revision += 1;
+    });
+    const after = await repository.load(worldId);
+    ok(after.state.promotions[0]!.cash === sample.state.promotions[0]!.cash + 1234,
+      "compressed copy was not updated in the authoritative transaction");
+
+    // Existing legacy Worlds may not yet have gzip. Retain the old JSONB
+    // fallback and upgrade on the next authoritative transaction.
+    await inspectionSql`UPDATE ppw_worlds SET world_state_gzip = NULL WHERE world_id = ${worldId}`;
+    const fallback = await repository.load(worldId);
+    ok(fallback.state.promotions[0]!.cash === after.state.promotions[0]!.cash,
+      "uncompressed legacy World was not readable");
+    await repository.transact(worldId, null, state => {
+      state.state.promotions[0]!.cash += 42;
+      state.runtime.revision += 1;
+    });
+    const repaired = await inspectionSql`
+      SELECT octet_length(world_state_gzip) AS gzip_bytes
+      FROM ppw_worlds WHERE world_id = ${worldId}
+    ` as unknown as Array<{ gzip_bytes: number | null }>;
+    ok(Number(repaired[0]?.gzip_bytes) > 0,
+      "authoritative write did not restore compressed transport for legacy World");
+    const finalWorld = await repository.load(worldId);
+    ok(finalWorld.state.promotions[0]!.cash === after.state.promotions[0]!.cash + 42,
+      "legacy compressed transition lost World updates");
+  });
+
   await test("PostgreSQL migration ledger is numbered and idempotent", async () => {
     await repository.migrate();
     const rows = await inspectionSql`SELECT version, name FROM ppw_schema_migrations ORDER BY version` as unknown as Array<{ version: number; name: string }>;

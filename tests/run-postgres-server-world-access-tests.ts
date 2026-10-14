@@ -3,6 +3,7 @@ declare const process: { env: Record<string, string | undefined>; exitCode?: num
 import { lockPersistedCurrentWeekShowCommitments } from "../packages/application/src/index.js";
 import { createAlphaWorldAggregate, claimAlphaPromotion } from "../packages/web-adapter/src/alpha-service.js";
 import { createPostgresServerWorldAccess } from "../packages/persistence/src/postgres-server-world-access.js";
+import postgres from "postgres";
 
 let passed = 0;
 let failed = 0;
@@ -295,6 +296,47 @@ await test("Talent and Staff read-only projections match full authoritative view
       buildPlayerStaffView(full, "lean-talent-player"), "Staff");
   } finally {
     await access.close();
+  }
+});
+
+
+await test("legacy JSONB snapshot backfills gzip once without mutating World revision", async () => {
+  const sql = postgres(connectionString, { max: 1 });
+  const first = createPostgresServerWorldAccess(connectionString);
+  const second = createPostgresServerWorldAccess(connectionString);
+  try {
+    await first.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62031, playerId: "gzip-backfill-player" });
+    await first.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    await sql`UPDATE ppw_worlds SET world_state_gzip = NULL WHERE world_id = ${worldId}`;
+    const loaded = await first.repository.load(worldId);
+    ok(loaded.runtime.revision === aggregate.runtime.revision
+      && loaded.state.people.length === aggregate.state.people.length,
+      "legacy fallback altered World during gzip backfill");
+    const stats = first.readStatistics();
+    ok(stats.rawFallbackReads === 1 && stats.backfilledSnapshots === 1,
+      "legacy World was not backfilled after its first raw read");
+    const inspected = await sql`
+      SELECT octet_length(world_state::text) AS raw_bytes,
+             octet_length(world_state_gzip) AS gzip_bytes,
+             runtime_revision
+      FROM ppw_worlds WHERE world_id = ${worldId}
+    ` as unknown as Array<{ raw_bytes: number; gzip_bytes: number | null; runtime_revision: string }>;
+    ok(Number(inspected[0]?.gzip_bytes) > 0
+      && Number(inspected[0]?.gzip_bytes) < Number(inspected[0]?.raw_bytes),
+      "backfill did not create a compact transport snapshot");
+    ok(Number(inspected[0]?.runtime_revision) === aggregate.runtime.revision,
+      "backfill advanced the multiplayer World revision");
+    const onAnotherServer = await second.repository.load(worldId);
+    ok(second.readStatistics().compressedSnapshotReads === 1,
+      "new server transferred the full raw World after backfill");
+    ok(onAnotherServer.state.people.length === aggregate.state.people.length,
+      "compressed World lost wrestlers on a cold server instance");
+  } finally {
+    await first.close();
+    await second.close();
+    await sql.end({ timeout: 5 });
   }
 });
 

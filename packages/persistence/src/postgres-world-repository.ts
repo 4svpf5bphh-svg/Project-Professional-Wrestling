@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { compressWorldSnapshot, restoreCompressedWorldSnapshot } from "./world-snapshot-compression.js";
 import type { Id, PpwDate } from "../../domain/src/types.js";
 import {
   CURRENT_APPLICATION_STATE_SCHEMA_VERSION,
@@ -166,6 +167,11 @@ WHERE worlds.world_id = 'world-20261002'
     name: "track completed server bootstrap repairs without loading World snapshots",
     sql: `ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS bootstrap_verified_version integer NOT NULL DEFAULT 0;`,
   },
+  {
+    version: 10,
+    name: "add optional compressed snapshot transport without changing authoritative JSONB",
+    sql: `ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS world_state_gzip bytea NULL;`,
+  },
 ] as const;
 
 export const POSTGRES_APPLICATION_SCHEMA_SQL = [
@@ -177,7 +183,8 @@ type SqlClient = ReturnType<typeof postgres>;
 
 type WorldRow = {
   world_id: string;
-  world_state: unknown;
+  world_state: unknown | null;
+  world_state_gzip: Uint8Array | null;
   planning_state: unknown | null;
   engagement_state: unknown | null;
   runtime_phase: WorldRuntimePhase;
@@ -218,7 +225,10 @@ type ReceiptRow = {
 async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): Promise<ApplicationWorldAggregate> {
   const lock = forUpdate ? " FOR UPDATE" : "";
   const worldRows = await sql.unsafe(
-    `SELECT world_id, world_state, planning_state, engagement_state, runtime_phase, runtime_revision, locked_ppw_date, last_resolved_ppw_date,
+    `SELECT world_id,
+            CASE WHEN world_state_gzip IS NULL THEN world_state ELSE NULL END AS world_state,
+            world_state_gzip,
+            planning_state, engagement_state, runtime_phase, runtime_revision, locked_ppw_date, last_resolved_ppw_date,
             commitment_locked_ppw_date, commitment_locked_real_cycle_key,
             locked_real_cycle_key, last_resolved_real_cycle_key, human_seat_limit
        FROM ppw_worlds WHERE world_id = $1${lock}`,
@@ -226,6 +236,10 @@ async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): P
   ) as unknown as WorldRow[];
   const row = worldRows[0];
   if (!row) throw new Error(`World ${worldId} was not found`);
+  const world = row.world_state_gzip
+    ? restoreCompressedWorldSnapshot(row.world_state_gzip)
+    : row.world_state;
+  if (!world) throw new Error(`World ${worldId} has no persisted snapshot`);
 
   const membershipRows = await sql`
     SELECT player_id, joined_date, status
@@ -248,7 +262,7 @@ async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): P
 
   const snapshot: PersistedApplicationWorld = {
     applicationStateSchemaVersion: CURRENT_APPLICATION_STATE_SCHEMA_VERSION,
-    world: row.world_state as PersistedApplicationWorld["world"],
+    world: world as PersistedApplicationWorld["world"],
     ownership: {
       worldId,
       humanSeatLimit: Number(row.human_seat_limit),
@@ -309,6 +323,7 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
     UPDATE ppw_worlds SET
       state_schema_version = ${CURRENT_WORLD_STATE_SCHEMA_VERSION},
       world_state = ${sql.json(snapshot.world as never)},
+      world_state_gzip = ${compressWorldSnapshot(snapshot.world)},
       planning_state = ${sql.json(snapshot.planning as never)},
       engagement_state = ${sql.json(snapshot.engagement as never)},
       runtime_phase = ${snapshot.runtime.phase},

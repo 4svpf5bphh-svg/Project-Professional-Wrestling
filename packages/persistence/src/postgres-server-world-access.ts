@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { compressWorldSnapshot, restoreCompressedWorldSnapshot } from "./world-snapshot-compression.js";
 import type { Id, PpwDate } from "../../domain/src/types.js";
 import { CURRENT_WORLD_STATE_SCHEMA_VERSION } from "../../sim-core/src/state-schema.js";
 import {
@@ -33,14 +34,18 @@ export interface ServerWorldReadStatistics {
   fullSnapshotReads: number;
   versionProbes: number;
   cacheHits: number;
-  /** Count of expensive but history-trimmed read-only Talent snapshots. */
+  /** Count of read-only Talent/Staff projections served from PostgreSQL. */
   trimmedHistoryReads: number;
+  compressedSnapshotReads: number;
+  rawFallbackReads: number;
+  backfilledSnapshots: number;
 }
 
 type WorldReadRow = {
   world_id: string;
   snapshot_version: string;
-  world_state: unknown;
+  world_state: unknown | null;
+  world_state_gzip: Uint8Array | null;
   planning_state: unknown | null;
   engagement_state: unknown | null;
   runtime_phase: WorldRuntimePhase;
@@ -104,16 +109,14 @@ async function readWorldWithoutCommandReceipts(
   mode: "full" | "talent" = "full",
 ): Promise<{ aggregate: ApplicationWorldAggregate; snapshotVersion: string }> {
   const startedAt = performance.now();
-  // Only current-schema read-only Talent/Staff views may omit financial history.
-  // Older schema versions must retain their complete legacy migration inputs.
-  const stateProjection = mode === "talent"
-    ? sql`CASE WHEN state_schema_version = ${CURRENT_WORLD_STATE_SCHEMA_VERSION}
-      THEN jsonb_set(world_state, '{financialTransactions}', '[]'::jsonb)
-      ELSE world_state END`
-    : sql`world_state`;
+  // SQL does NOT transmit the 5–6MB JSONB when a compressed copy exists.
+  // A legacy World without the copy falls back once to JSONB, then is safely
+  // backfilled using an optimistic version guard below.
   const worldRows = await sql`
     SELECT world_id, updated_at::text AS snapshot_version,
-           ${stateProjection} AS world_state, planning_state, engagement_state, runtime_phase, runtime_revision,
+           CASE WHEN world_state_gzip IS NULL THEN world_state ELSE NULL END AS world_state,
+           world_state_gzip,
+           planning_state, engagement_state, runtime_phase, runtime_revision,
            locked_ppw_date, last_resolved_ppw_date, commitment_locked_ppw_date, commitment_locked_real_cycle_key,
            locked_real_cycle_key, last_resolved_real_cycle_key, human_seat_limit
     FROM ppw_worlds
@@ -121,6 +124,28 @@ async function readWorldWithoutCommandReceipts(
   ` as unknown as WorldReadRow[];
   const row = worldRows[0];
   if (!row) throw new Error(`World ${worldId} was not found`);
+  const fullWorld = (row.world_state_gzip
+    ? restoreCompressedWorldSnapshot(row.world_state_gzip)
+    : row.world_state) as PersistedApplicationWorld["world"] | null;
+  if (!fullWorld) throw new Error(`World ${worldId} has no persisted snapshot`);
+  let backfilled = false;
+  if (!row.world_state_gzip) {
+    // Backfill is metadata-only and does NOT advance PPW time/revision or
+    // update the World cache's updated_at marker. Never overwrite a rival
+    // transaction: its updated_at will differ, or its gzip will be non-null.
+    const result = await sql`
+      UPDATE ppw_worlds SET world_state_gzip = ${compressWorldSnapshot(fullWorld)}
+      WHERE world_id = ${worldId}
+        AND updated_at::text = ${row.snapshot_version}
+        AND world_state_gzip IS NULL
+      RETURNING world_id
+    `;
+    backfilled = result.length === 1;
+  }
+  const projectedWorld = mode === "talent"
+    && fullWorld.stateSchemaVersion === CURRENT_WORLD_STATE_SCHEMA_VERSION
+    ? { ...fullWorld, financialTransactions: [] }
+    : fullWorld;
 
   const [membershipRows, controlRows] = await Promise.all([
     sql`
@@ -139,7 +164,7 @@ async function readWorldWithoutCommandReceipts(
 
   const snapshot: PersistedApplicationWorld = {
     applicationStateSchemaVersion: CURRENT_APPLICATION_STATE_SCHEMA_VERSION,
-    world: row.world_state as PersistedApplicationWorld["world"],
+    world: projectedWorld as PersistedApplicationWorld["world"],
     ownership: {
       worldId,
       humanSeatLimit: Number(row.human_seat_limit),
@@ -190,7 +215,12 @@ async function readWorldWithoutCommandReceipts(
       worldRevision: Number(row.runtime_revision),
     }));
   }
-  return { aggregate, snapshotVersion: row.snapshot_version };
+  return {
+    aggregate,
+    snapshotVersion: row.snapshot_version,
+    usedCompressed: Boolean(row.world_state_gzip),
+    backfilled,
+  };
 }
 
 class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
@@ -208,6 +238,7 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
   }>();
   private readonly stats: ServerWorldReadStatistics = {
     fullSnapshotReads: 0, versionProbes: 0, cacheHits: 0, trimmedHistoryReads: 0,
+    compressedSnapshotReads: 0, rawFallbackReads: 0, backfilledSnapshots: 0,
   };
 
   constructor(private readonly serverSql: SqlClient) {
@@ -234,6 +265,9 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
 
     this.stats.fullSnapshotReads += 1;
     const fresh = await readWorldWithoutCommandReceipts(this.serverSql, worldId);
+    if (fresh.usedCompressed) this.stats.compressedSnapshotReads += 1;
+    else this.stats.rawFallbackReads += 1;
+    if (fresh.backfilled) this.stats.backfilledSnapshots += 1;
     // A bounded cache prevents many independent Worlds exhausting memory.
     this.cache.delete(worldId);
     this.cache.set(worldId, {
@@ -269,6 +303,9 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     }
     const fresh = await readWorldWithoutCommandReceipts(this.serverSql, worldId, "talent");
     this.stats.trimmedHistoryReads += 1;
+    if (fresh.usedCompressed) this.stats.compressedSnapshotReads += 1;
+    else this.stats.rawFallbackReads += 1;
+    if (fresh.backfilled) this.stats.backfilledSnapshots += 1;
     this.talentCache.delete(worldId);
     this.talentCache.set(worldId, {
       version: fresh.snapshotVersion, aggregate: structuredClone(fresh.aggregate),
