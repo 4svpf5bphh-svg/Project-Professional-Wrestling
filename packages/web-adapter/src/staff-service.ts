@@ -95,6 +95,11 @@ export async function authoriseAlphaTalentManagerRenewal(
       const source = aggregate.state.contracts.find(row =>
         row.id === sourceContractId && row.promotionId === control.promotionId);
       if (!source) throw new Error("the contract is not on your roster");
+      // Staff eligibility must agree with the player-facing renewal queue,
+      // including already-signed future agreements and pending offers.
+      const eligible = buildPlayerStaffView(aggregate, playerId).renewals.some(row =>
+        row.contractId === source.id && row.personId === source.personId);
+      if (!eligible) throw new Error("this contract is not eligible for a Talent Manager renewal");
       const template = sameTermsRenewalTemplate(aggregate.state, source);
       if (!template) throw new Error("this contract requires manual renewal terms");
       const fresh: AlphaTalentOfferRequest = {
