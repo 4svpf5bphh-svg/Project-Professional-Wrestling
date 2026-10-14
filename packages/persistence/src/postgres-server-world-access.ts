@@ -107,7 +107,12 @@ async function readWorldWithoutCommandReceipts(
   sql: SqlClient,
   worldId: Id,
   mode: "full" | "talent" = "full",
-): Promise<{ aggregate: ApplicationWorldAggregate; snapshotVersion: string }> {
+): Promise<{
+  aggregate: ApplicationWorldAggregate;
+  snapshotVersion: string;
+  usedCompressed: boolean;
+  backfilled: boolean;
+}> {
   const startedAt = performance.now();
   // SQL does NOT transmit the 5–6MB JSONB when a compressed copy exists.
   // A legacy World without the copy falls back once to JSONB, then is safely
