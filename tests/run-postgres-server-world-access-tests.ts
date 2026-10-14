@@ -1,7 +1,7 @@
 declare const process: { env: Record<string, string | undefined>; exitCode?: number };
 
 import { lockPersistedCurrentWeekShowCommitments } from "../packages/application/src/index.js";
-import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
+import { createAlphaWorldAggregate, claimAlphaPromotion } from "../packages/web-adapter/src/alpha-service.js";
 import { createPostgresServerWorldAccess } from "../packages/persistence/src/postgres-server-world-access.js";
 
 let passed = 0;
@@ -260,11 +260,17 @@ await test("Talent and Staff read-only projections match full authoritative view
   try {
     await access.repository.migrate();
     const aggregate = createAlphaWorldAggregate({ seed: 62029, playerId: "lean-talent-player" });
+    const indie = aggregate.state.promotions.find(p =>
+      p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
+    if (!indie) throw new Error("projection test needs a promotion with a roster");
     await access.repository.initialize(aggregate);
     const worldId = aggregate.state.world.id;
+    await claimAlphaPromotion(access.repository, worldId, "lean-talent-player",
+      { promotionId: indie.id, requestId: "lean-views-claim" });
     const lean = await access.repository.loadTalentView(worldId);
-    ok(lean.state.ledger.length === 0 && lean.state.financialTransactions.length === 0,
-      "read-only Talent view transferred histories it does not need");
+    ok(lean.state.ledger.length > 0 && lean.state.financialTransactions.length === 0,
+      "Talent view lost the ledger needed for wrestler creative and alignment");
+
     ok(access.readStatistics().trimmedHistoryReads === 1,
       "first Talent view did not use the history-trimmed SQL projection");
     const again = await access.repository.loadTalentView(worldId);
@@ -276,10 +282,13 @@ await test("Talent and Staff read-only projections match full authoritative view
     const { buildPlayerTalentDirectoryView } = await import("../packages/application/src/talent-view.js");
     const { buildPlayerStaffView } = await import("../packages/application/src/staff-view.js");
     const full = await access.repository.load(worldId);
+    ok(lean.state.ledger.length === full.state.ledger.length,
+      "lean Talent view dropped alignment and contract decision history");
     const same = (left: unknown, right: unknown, label: string) =>
       ok(JSON.stringify(left) === JSON.stringify(right), `lean ${label} differs from full World read`);
-    same(buildPlayerTalentManagementView(lean, "lean-talent-player"),
-      buildPlayerTalentManagementView(full, "lean-talent-player"), "Talent management");
+    const management = buildPlayerTalentManagementView(lean, "lean-talent-player");
+    ok(management.roster.length > 0, "projection fixture lacks meaningful wrestler contract state");
+    same(management, buildPlayerTalentManagementView(full, "lean-talent-player"), "Talent management");
     same(buildPlayerTalentDirectoryView(lean, "lean-talent-player"),
       buildPlayerTalentDirectoryView(full, "lean-talent-player"), "Wrestler directory");
     same(buildPlayerStaffView(lean, "lean-talent-player"),
