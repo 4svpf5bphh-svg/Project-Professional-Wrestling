@@ -52,7 +52,8 @@ export function buildPlayerStaffView(aggregate: ApplicationWorldAggregate, playe
   const roster = promotion ? buildPlayerTalentManagementView(aggregate, playerId).roster : [];
   const renewals = roster.flatMap(row => {
     const terms = row.contract.sameTermsRenewal;
-    if (!terms || row.contract.renewalReason !== "EXPIRY_WINDOW") return [];
+    if (!terms || row.contract.renewalReason !== "EXPIRY_WINDOW"
+      || (row.scheduledRenewals?.length ?? 0) > 0) return [];
     // Explicit floor applies to all existing exclusive proposals at submission.
     if (terms.family === "EXCLUSIVE"
       && terms.weeklyGuarantee < Math.ceil(marketWeeklyValue(
