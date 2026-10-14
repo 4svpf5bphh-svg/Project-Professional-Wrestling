@@ -4,12 +4,13 @@ import {
 } from "../packages/web-adapter/src/alpha-service.js";
 import {
   loadAlphaStaff, hireAlphaTalentManager, releaseAlphaTalentManager,
-  authoriseAlphaTalentManagerRenewal,
+  authoriseAlphaTalentManagerRenewal, authoriseAlphaTalentManagerDatesAddendum,
 } from "../packages/web-adapter/src/staff-service.js";
 import { InMemoryApplicationWorldRepository } from "../packages/persistence/src/index.js";
 import { joinPlayerToWorld } from "../packages/application/src/ownership.js";
 import { buildPlayerAttention } from "../packages/application/src/attention.js";
 import { addPpwWeeks } from "../packages/sim-core/src/clock.js";
+import { canAddLimitedContractDates } from "../packages/sim-core/src/contracts.js";
 
 let passed = 0, failed = 0;
 async function test(name: string, run: () => Promise<void>): Promise<void> {
@@ -135,5 +136,83 @@ await test("delegate requires an employed manager and preserves exact money, rol
     "manager rejection hid the need for player negotiation");
 });
 
+
+await test("bounded staff addendum uses standard consent, pending offer and idempotent command", async () => {
+  const aggregate = createAlphaWorldAggregate({ seed: 73042, playerId: "player-a" });
+  const indie = aggregate.state.promotions.find(p => p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
+  if (!indie) throw Error("no eligible promotion");
+  const source = aggregate.state.contracts.find(contract => {
+    if (contract.promotionId !== indie.id || contract.family !== "LIMITED_NON_EXCLUSIVE" || contract.status !== "SIGNED") return false;
+    const person = aggregate.state.people.find(candidate => candidate.id === contract.personId);
+    return person && canAddLimitedContractDates(aggregate.state, person, contract, 1).ok;
+  });
+  if (!source) throw Error("no amendable contract");
+  indie.cash = Math.max(indie.cash, 500_000);
+  const repo = new InMemoryApplicationWorldRepository();
+  await repo.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repo, worldId, "player-a", { promotionId: indie.id, requestId: "staff-claim-dates" });
+  const request = { requestId: "staff-extra-dates-1", sourceContractId: source.id, additionalDates: 1, additionalPayment: 20_000 };
+  await rejects(() => authoriseAlphaTalentManagerDatesAddendum(repo, worldId, "player-a", request), "hire a Talent Manager");
+  const before = await loadAlphaStaff(repo, worldId, "player-a");
+  await hireAlphaTalentManager(repo, worldId, "player-a",
+    { requestId: "staff-hire-dates", staffId: before.availableManagers[0]!.staffId });
+  const eligible = (await loadAlphaStaff(repo, worldId, "player-a")).dateAddendums;
+  ok(eligible.some(entry => entry.contractId === source.id && entry.maxAdditionalDates >= 1),
+    "valid addendum is not offered on Staff screen");
+  await rejects(() => authoriseAlphaTalentManagerDatesAddendum(repo, worldId, "player-a",
+    { ...request, requestId: "too-many-staff-dates", additionalDates: 5 }), "between 1 and 4");
+  await rejects(() => authoriseAlphaTalentManagerDatesAddendum(repo, worldId, "player-a",
+    { ...request, requestId: "too-much-staff-payment", additionalPayment: 250_001 }), "between 0 and 250000");
+  const first = await authoriseAlphaTalentManagerDatesAddendum(repo, worldId, "player-a", request);
+  const after = await repo.load(worldId);
+  const pending = after.state.contractOffers.find(offer => offer.id === first.offerId);
+  ok(pending?.offerKind === "DATES_ADDENDUM" && pending.status === "PENDING"
+    && pending.sourceContractId === source.id && pending.signingBonus === request.additionalPayment,
+    "not a standard pending wrestler-consent proposal");
+  ok(pending.dateEntitlement === source.dateEntitlement + 1,
+    "staff changed date entitlement beyond player permission");
+  ok(after.state.contracts.find(contract => contract.id === source.id)?.dateEntitlement === source.dateEntitlement,
+    "staff mutated signed contract before wrestler acceptance");
+  ok(after.commands.receipts.some(receipt =>
+    receipt.requestId === request.requestId && receipt.playerId === "player-a"
+    && receipt.commandType === "SUBMIT_CONTRACT_DATES_ADDENDUM"),
+    "standard authoritative command provenance missing");
+  ok(!first.view.dateAddendums.some(entry => entry.contractId === source.id),
+    "ineligible pending wrestler still offered on Staff screen");
+  const revision = after.runtime.revision;
+  const replay = await authoriseAlphaTalentManagerDatesAddendum(repo, worldId, "player-a", request);
+  ok(replay.offerId === first.offerId && (await repo.load(worldId)).runtime.revision === revision,
+    "retry duplicated offer or advanced World");
+  await rejects(() => authoriseAlphaTalentManagerDatesAddendum(repo, worldId, "player-a",
+    { ...request, additionalPayment: 21_000 }), "different additional-date terms");
+  await rejects(() => authoriseAlphaTalentManagerDatesAddendum(repo, worldId, "player-a",
+    { ...request, requestId: "duplicate-staff-addendum" }), "not eligible");
+});
+
+await test("staff may not authorise additional-dates payment beyond available cash", async () => {
+  const aggregate = createAlphaWorldAggregate({ seed: 73042, playerId: "player-a" });
+  const indie = aggregate.state.promotions.find(p => p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
+  if (!indie) throw Error("no eligible promotion");
+  const source = aggregate.state.contracts.find(contract => {
+    if (contract.promotionId !== indie.id || contract.family !== "LIMITED_NON_EXCLUSIVE" || contract.status !== "SIGNED") return false;
+    const person = aggregate.state.people.find(candidate => candidate.id === contract.personId);
+    return person && canAddLimitedContractDates(aggregate.state, person, contract, 1).ok;
+  });
+  if (!source) throw Error("no amendable contract");
+  const repo = new InMemoryApplicationWorldRepository();
+  await repo.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repo, worldId, "player-a", { promotionId: indie.id, requestId: "staff-claim-low-cash" });
+  const available = await loadAlphaStaff(repo, worldId, "player-a");
+  await hireAlphaTalentManager(repo, worldId, "player-a",
+    { requestId: "staff-hire-low-cash", staffId: available.availableManagers[0]!.staffId });
+  await repo.transact(worldId, null, current => {
+    current.state.promotions.find(p => p.id === indie.id)!.cash = 500;
+  });
+  await rejects(() => authoriseAlphaTalentManagerDatesAddendum(repo, worldId, "player-a", {
+    requestId: "staff-unaffordable", sourceContractId: source.id, additionalDates: 1, additionalPayment: 501,
+  }), "available cash");
+});
 console.log(`\nWeb staff service tests: ${passed} passed, ${failed} failed`);
 if (failed) process.exitCode = 1;
