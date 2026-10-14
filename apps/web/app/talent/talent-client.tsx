@@ -1090,8 +1090,9 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
       : (wrestler.scheduledRenewals?.length ?? 0) > 0
         ? `signed-contract-${wrestler.personId}`
         : null;
-    if (cardId) {
-      const card = document.getElementById(cardId);
+    const destinationId = cardId ?? `current-contract-${wrestler.personId}`;
+    if (destinationId) {
+      const card = document.getElementById(destinationId);
       card?.scrollIntoView({ block: "center" });
       card?.focus({ preventScroll: true });
     }
@@ -1305,6 +1306,12 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
       || left.contract.weeksToExpiry - right.contract.weeksToExpiry
       || left.name.localeCompare(right.name)
     )), [view, pendingPeople, query]);
+  const contractDeskCurrent = useMemo(() => (view?.roster ?? [])
+    .filter((entry) => !entry.contract.renewalWindowOpen && !pendingPeople.has(entry.personId)
+      && (entry.scheduledRenewals?.length ?? 0) === 0)
+    .filter((entry) => matchesQuery(entry.name, query))
+    .sort((left, right) => left.contract.weeksToExpiry - right.contract.weeksToExpiry || left.name.localeCompare(right.name)),
+  [view, pendingPeople, query]);
   const contractDeskPending = useMemo(() => (view?.pendingOffers ?? [])
     .filter((offer) => matchesQuery(offer.personName, query)), [view, query]);
   const contractDeskSigned = useMemo(() => (view?.roster ?? [])
@@ -1731,6 +1738,34 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
                   })}
                   {contractDeskActionable.length === 0 ? <p className={styles.empty}>No outstanding contract decisions match your search.</p> : null}
                 </section>
+                {contractDeskCurrent.length > 0 ? (
+                  <section aria-label="Current contracts without outstanding decisions">
+                    <h2>Current agreements · {contractDeskCurrent.length}</h2>
+                    <p className={styles.subtle}>Active contracts with no immediate decision required. Review the terms here without starting a negotiation.</p>
+                    {contractDeskCurrent.map((entry) => (
+                      <article className={styles.contractDeskCard} key={entry.contractId}
+                        id={`current-contract-${entry.personId}`} tabIndex={-1}>
+                        <div className={styles.contractDeskHeader}>
+                          <div>
+                            <strong>{entry.name}</strong>
+                            <span>{label(entry.contract.family)} · {entry.contract.unlimitedAppearances ? "Unlimited appearances" : `${entry.contract.datesRemaining} dates remaining`} · expires {ppwDate(entry.contract.endDate)}</span>
+                          </div>
+                          <span className={styles.pending}>Current</span>
+                        </div>
+                        <div className={styles.contractBox}>
+                          <span>Weekly guarantee: {money(entry.contract.weeklyGuarantee)} · Appearance fee: {money(entry.contract.appearanceFee)}</span>
+                          <span>Creative control: {label(entry.contract.creativeControl)}</span>
+                        </div>
+                        <div className={styles.contractDeskActions}>
+                          <a className={styles.actionButton} href={`/talent/profile?personId=${encodeURIComponent(entry.personId)}&from=contracts`}>Wrestler profile</a>
+                          {entry.contract.family === "LIMITED_NON_EXCLUSIVE" ? (
+                            <button className={styles.actionButton} type="button" onClick={() => openMoreDates(entry)}>Negotiate more dates</button>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
+                  </section>
+                ) : null}
                 <section aria-label="Pending contract offers">
                   <h2>Waiting for response · {contractDeskPending.length}</h2>
                   <p className={styles.subtle}>Pending recruitment, renewals and additional-dates proposals. Responses resolve through the usual World contract rules.</p>
