@@ -69,7 +69,9 @@ type ControlRow = {
 };
 
 export interface PostgresServerWorldAccess {
-  repository: PostgresApplicationWorldRepository;
+  repository: PostgresApplicationWorldRepository & {
+    loadTalentView(worldId: Id): Promise<ApplicationWorldAggregate>;
+  };
   /** Diagnostic counters for tests and lightweight operational monitoring. */
   readStatistics(): ServerWorldReadStatistics;
   /** Fast bootstrap gate. Must only skip compatibility repairs previously completed. */
@@ -245,7 +247,7 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     return fresh.aggregate;
   }
 
-  override async loadTalentView(worldId: Id): Promise<ApplicationWorldAggregate> {
+  async loadTalentView(worldId: Id): Promise<ApplicationWorldAggregate> {
     this.stats.versionProbes += 1;
     const rows = await this.serverSql`
       SELECT updated_at::text AS snapshot_version
