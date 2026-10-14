@@ -64,6 +64,11 @@ export interface WorldTransactionResult<TResult> {
 export interface ApplicationWorldRepository {
   initialize(aggregate: ApplicationWorldAggregate): Promise<void>;
   load(worldId: Id): Promise<ApplicationWorldAggregate>;
+  /**
+   * Read-only Talent/Staff projection: may omit historical ledger and financial
+   * transactions. Never use the result for simulation or persistence writes.
+   */
+  loadTalentView?(worldId: Id): Promise<ApplicationWorldAggregate>;
   transact<TResult>(
     worldId: Id,
     expectedRevision: number | null,
