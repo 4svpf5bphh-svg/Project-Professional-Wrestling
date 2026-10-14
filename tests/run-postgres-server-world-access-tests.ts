@@ -117,5 +117,113 @@ await test("server reads omit command history while transactions retain idempote
   }
 });
 
+
+await test("unchanged World repeat loads use version probes, not repeated megabyte snapshots", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62024, playerId: "read-cache-player" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const first = await access.repository.load(worldId);
+    const second = await access.repository.load(worldId);
+    ok(first.state.people.length === second.state.people.length, "cache changed World population");
+    const counts = access.readStatistics();
+    ok(counts.fullSnapshotReads === 1 && counts.cacheHits === 1 && counts.versionProbes === 2,
+      `unchanged World re-transferred snapshot: ${JSON.stringify(counts)}`);
+
+    // No caller can mutate the cached snapshot through an exposed reference.
+    second.state.promotions[0]!.cash = -999_999;
+    const third = await access.repository.load(worldId);
+    ok(third.state.promotions[0]!.cash !== -999_999,
+      "caller mutated the cached World via a returned view object");
+    ok(access.readStatistics().fullSnapshotReads === 1,
+      "isolated cached read fetched another full World snapshot");
+  } finally {
+    await access.close();
+  }
+});
+
+await test("activity writes update cache without losing authoritative engagement or reloading World", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62025, playerId: "cache-activity-player" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    await access.repository.load(worldId);
+    await access.recordPlayerActivity(worldId, "cache-activity-player", "2026-10-14");
+    const after = await access.repository.load(worldId);
+    ok(after.engagement?.playerActivity.some(a =>
+      a.playerId === "cache-activity-player" && a.lastActiveCycleKey === "2026-10-14"),
+      "cached World lost activity update");
+    ok(access.readStatistics().fullSnapshotReads === 1,
+      "activity-only write forced multi-megabyte World reload");
+    await access.recordPlayerActivity(worldId, "cache-activity-player", "2026-10-14");
+    await access.repository.load(worldId);
+    ok(access.readStatistics().fullSnapshotReads === 1,
+      "unchanged activity generated a redundant World snapshot read");
+  } finally {
+    await access.close();
+  }
+});
+
+await test("external World transactions invalidate warm cache across server instances", async () => {
+  const current = createPostgresServerWorldAccess(connectionString);
+  const rival = createPostgresServerWorldAccess(connectionString);
+  try {
+    await current.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62026, playerId: "shared-world-player" });
+    await current.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const starting = await current.repository.load(worldId);
+    const previousCash = starting.state.promotions[0]!.cash;
+    await rival.repository.transact(worldId, null, working => {
+      working.state.promotions[0]!.cash += 4321;
+      working.runtime.revision += 1;
+    });
+    const refreshed = await current.repository.load(worldId);
+    ok(refreshed.state.promotions[0]!.cash === previousCash + 4321,
+      "warm instance hid rival player's authoritative World change");
+    ok(current.readStatistics().fullSnapshotReads === 2,
+      "World revision change failed to invalidate cached snapshot");
+    const warm = await current.repository.load(worldId);
+    ok(warm.state.promotions[0]!.cash === previousCash + 4321
+      && current.readStatistics().fullSnapshotReads === 2,
+      "updated shared state was not cached after invalidation");
+  } finally {
+    await current.close();
+    await rival.close();
+  }
+});
+
+await test("player activity cannot stamp a stale World cache as authoritative", async () => {
+  const current = createPostgresServerWorldAccess(connectionString);
+  const rival = createPostgresServerWorldAccess(connectionString);
+  try {
+    await current.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62027, playerId: "race-activity-player" });
+    await current.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const before = await current.repository.load(worldId);
+    const previousCash = before.state.promotions[0]!.cash;
+    await rival.repository.transact(worldId, null, working => {
+      working.state.promotions[0]!.cash += 222;
+      working.runtime.revision += 1;
+    });
+    await current.recordPlayerActivity(worldId, "race-activity-player", "2026-10-15");
+    const after = await current.repository.load(worldId);
+    ok(after.state.promotions[0]!.cash === previousCash + 222,
+      "activity incorrectly validated stale snapshot after another player wrote");
+    ok(after.engagement?.playerActivity.some(a => a.lastActiveCycleKey === "2026-10-15"),
+      "activity was dropped during stale cache invalidation");
+    ok(current.readStatistics().fullSnapshotReads === 2,
+      "stale snapshot was incorrectly reused after a rival write");
+  } finally {
+    await current.close();
+    await rival.close();
+  }
+});
+
 console.log(`\nPostgreSQL server-world access tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
