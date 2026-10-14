@@ -1399,7 +1399,7 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
       {view && !view.promotion ? <section className={styles.panel}><p>Take control of a promotion before managing talent.</p></section> : null}
 
       {dateAddendum ? (
-        <section className={styles.editor} aria-label={`Additional dates for ${dateAddendum.wrestler.name}`}>
+        <section className={`${styles.editor} ${styles.datesAddendumEditor}`} aria-label={`Additional dates for ${dateAddendum.wrestler.name}`}>
           <div className={styles.editorHeader}>
             <div>
               <span className={styles.eyebrow}>ADD DATES · SAME CONTRACT</span>
