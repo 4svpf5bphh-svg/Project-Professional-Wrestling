@@ -16,7 +16,7 @@ import {
 import { settleOverdueStewardshipExitRequests } from "./stewardship-auto-release.js";
 import { runAiStewardshipBuyouts } from "./stewardship-ai-buyouts.js";
 import { runStewardshipCaretakerRecruitment } from "./stewardship-caretaker.js";
-import type { ApplicationWorldRepository } from "./world-aggregate.js";
+import { transactWithoutReceiptHistory, type ApplicationWorldRepository } from "./world-aggregate.js";
 import { LedgerWriter } from "../../sim-core/src/ledger.js";
 import {
   lockPersistedCurrentWeekShowCommitments,
@@ -101,7 +101,7 @@ async function claimExistingLockForCycle(
   expectedRevision: number,
   cycleKey: string,
 ): Promise<{ revision: number; stale: boolean }> {
-  const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
+  const committed = await transactWithoutReceiptHistory(repository, worldId, expectedRevision, (aggregate) => {
     if (aggregate.runtime.phase !== "LOCKING") {
       throw new Error("scheduled lock changed before recovery");
     }
@@ -120,7 +120,7 @@ async function evaluateScheduledPlayerInactivity(
   expectedRevision: number,
   cycleKey: string,
 ): Promise<number> {
-  const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
+  const committed = await transactWithoutReceiptHistory(repository, worldId, expectedRevision, (aggregate) => {
     // Even a World with zero current controllers remembers actual scheduler
     // outages for any existing/open stewardship notice timers.
     protectMissedCycles(aggregate, cycleKey);

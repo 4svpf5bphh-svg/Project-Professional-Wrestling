@@ -60,6 +60,76 @@ try {
   await repository.migrate();
 
 
+
+  await test("receipt-free transactions skip historical history without removing persisted receipts", async () => {
+    const aggregate = fixture(14010);
+    joinPlayerToWorld(aggregate.ownership, "receipt-free-player", aggregate.state.world.currentDate);
+    await repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const promotion = aggregate.state.promotions.find(p =>
+      p.tier === "INDEPENDENT" && p.lifecycle === "ACTIVE")!;
+    const claim = {
+      requestId: "historic-claim", worldId, playerId: "receipt-free-player",
+      commandType: "CLAIM_INDEPENDENT_PROMOTION" as const,
+      payload: { promotionId: promotion.id },
+    };
+    await repository.transact(worldId, null, working => {
+      claimIndependentPromotionCommand(
+        working.state, working.ownership, working.commands, working.runtime, claim,
+      );
+    });
+    const before = await repository.load(worldId);
+    ok(before.commands.receipts.length === 1, "fixture failed to persist historic command");
+    const afterTransaction = await repository.transact(worldId, null, working => {
+      ok(working.commands.receipts.length === 0, "receipt-free transaction downloaded historical rows");
+      working.state.promotions[0]!.cash += 25;
+      working.runtime.revision += 1;
+      return working.runtime.revision;
+    }, []);
+    ok(afterTransaction.result === before.runtime.revision + 1,
+      "receipt-free World transaction lost simulation revision");
+    const after = await repository.load(worldId);
+    ok(after.commands.receipts.length === 1
+      && after.commands.receipts[0]!.requestId === claim.requestId,
+      "receipt-free transaction deleted a historical command receipt");
+    ok(after.state.promotions[0]!.cash === before.state.promotions[0]!.cash + 25,
+      "receipt-free transaction lost a World state change");
+    const retry = await repository.transact(worldId, null, working =>
+      claimIndependentPromotionCommand(
+        working.state, working.ownership, working.commands, working.runtime, claim,
+      ), [claim.requestId]);
+    ok(retry.revision === after.runtime.revision,
+      "selective historical idempotent retry changed World revision");
+  });
+
+  await test("accidentally skipping an existing receipt rejects duplicate writes atomically", async () => {
+    const aggregate = fixture(14011);
+    await repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const receipt = {
+      worldId, requestId: "double-submit", playerId: "player",
+      commandType: "CLAIM_INDEPENDENT_PROMOTION" as const,
+      canonicalPayload: "{}", resultJson: "{}", committedDate: { ...aggregate.state.world.currentDate },
+      committedRevision: aggregate.runtime.revision,
+    };
+    await repository.transact(worldId, null, working => { working.commands.receipts.push(receipt); });
+    let conflict = false;
+    try {
+      await repository.transact(worldId, null, working => {
+        ok(working.commands.receipts.length === 0, "fixture did not omit receipts");
+        working.commands.receipts.push(receipt);
+        working.state.promotions[0]!.cash += 1000;
+      }, []);
+    } catch (error) {
+      conflict = /unique|duplicate key|ppw_command_receipts/i.test(String(error));
+    }
+    ok(conflict, "duplicate receipt was silently ignored despite missing history lookup");
+    const after = await repository.load(worldId);
+    ok(after.commands.receipts.length === 1
+      && after.state.promotions[0]!.cash === aggregate.state.promotions[0]!.cash,
+      "conflicting World transaction partially committed");
+  });
+
   await test("compressed transport is smaller, lossless, and transactionally maintained", async () => {
     const sample = fixture(62030);
     await repository.initialize(sample);

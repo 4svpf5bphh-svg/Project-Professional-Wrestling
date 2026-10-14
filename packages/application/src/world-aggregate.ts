@@ -73,7 +73,21 @@ export interface ApplicationWorldRepository {
     worldId: Id,
     expectedRevision: number | null,
     action: (aggregate: ApplicationWorldAggregate) => TResult | Promise<TResult>,
+    /** Undefined = legacy full history; [] = none; IDs = exact retry receipts. */
+    receiptRequestIds?: readonly string[],
   ): Promise<WorldTransactionResult<TResult>>;
+}
+
+/** Explicit opt-in for simulation and non-idempotency mutations.
+ * They must never need historical command receipts to execute.
+ */
+export function transactWithoutReceiptHistory<TResult>(
+  repository: ApplicationWorldRepository,
+  worldId: Id,
+  expectedRevision: number | null,
+  action: (aggregate: ApplicationWorldAggregate) => TResult | Promise<TResult>,
+): Promise<WorldTransactionResult<TResult>> {
+  return repository.transact(worldId, expectedRevision, action, []);
 }
 
 function ensureEngagement(aggregate: ApplicationWorldAggregate): WorldEngagementState {

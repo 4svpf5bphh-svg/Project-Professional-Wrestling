@@ -20,6 +20,7 @@ import {
   createWorldPlanningState,
   createWorldRuntimeState,
   dismissAttention,
+  transactWithoutReceiptHistory,
   joinPlayerToWorld,
   incrementWorldRevision,
   lockPersistedWorldForResolution,
@@ -299,7 +300,7 @@ export async function dismissAlphaAttention(
   request: AlphaDismissAttentionRequest,
 ): Promise<AlphaPlayerWorldView> {
   const attentionId = requireAttentionId(request.attentionId);
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithoutReceiptHistory(repository, worldId, null, (aggregate) => {
     const visibleItem = buildPlayerAttention(aggregate, playerId)
       .find((item) => item.attentionId === attentionId);
     if (!visibleItem) {

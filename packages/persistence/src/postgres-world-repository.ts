@@ -260,7 +260,12 @@ type ReceiptRow = {
   committed_revision: string | number;
 };
 
-async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): Promise<ApplicationWorldAggregate> {
+async function readAggregate(
+  sql: SqlClient,
+  worldId: Id,
+  forUpdate: boolean,
+  receiptRequestIds?: readonly string[],
+): Promise<ApplicationWorldAggregate> {
   const lock = forUpdate ? " FOR UPDATE" : "";
   const worldRows = await sql.unsafe(
     `SELECT world_id,
@@ -291,12 +296,36 @@ async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): P
     WHERE world_id = ${worldId}
     ORDER BY ordinal
   ` as unknown as ControlRow[];
-  const receiptRows = await sql`
-    SELECT request_id, player_id, command_type, canonical_payload, result_json, committed_date, committed_revision
-    FROM ppw_command_receipts
-    WHERE world_id = ${worldId}
-    ORDER BY committed_revision, request_id
-  ` as unknown as ReceiptRow[];
+  // The World row is locked before receipt lookup in a transaction.
+  // This preserves cross-player serialization and exact retry semantics.
+  // Undefined retains the legacy full read for call sites not yet converted.
+  const selectedIds = receiptRequestIds === undefined ? undefined : [...new Set(receiptRequestIds)];
+  if (selectedIds?.some((id) => typeof id !== "string" || id.length < 1 || id.length > 256)) {
+    throw new Error("invalid requested transaction receipt ID");
+  }
+  const receiptRows: ReceiptRow[] = selectedIds === undefined
+    ? await sql`
+      SELECT request_id, player_id, command_type, canonical_payload, result_json, committed_date, committed_revision
+      FROM ppw_command_receipts WHERE world_id = ${worldId}
+      ORDER BY committed_revision, request_id
+    ` as unknown as ReceiptRow[]
+    : selectedIds.length === 0
+      ? []
+      : await sql`
+        SELECT request_id, player_id, command_type, canonical_payload, result_json, committed_date, committed_revision
+        FROM ppw_command_receipts WHERE world_id = ${worldId} AND request_id IN ${sql(selectedIds)}
+        ORDER BY committed_revision, request_id
+      ` as unknown as ReceiptRow[];
+  if (forUpdate && process.env.PPW_PERF_LOGS !== "0") {
+    console.info("[ppw-db-receipt-read]", JSON.stringify({
+      mode: selectedIds === undefined ? "legacy-all" : selectedIds.length === 0 ? "none" : "selected",
+      receiptCount: receiptRows.length,
+      // Result JSON is a proxy for row wire payload, not Neon billing.
+      receiptBytesApprox: Buffer.byteLength(JSON.stringify(receiptRows), "utf8"),
+      worldSnapshotBytes: row.world_state_gzip?.byteLength ?? Buffer.byteLength(JSON.stringify(row.world_state), "utf8"),
+      encoding: row.world_state_gzip ? "gzip" : "jsonb",
+    }));
+  }
 
   const snapshot: PersistedApplicationWorld = {
     applicationStateSchemaVersion: CURRENT_APPLICATION_STATE_SCHEMA_VERSION,
@@ -429,7 +458,8 @@ async function writeAggregate(
         ${worldId}, ${receipt.requestId}, ${receipt.playerId}, ${receipt.commandType}, ${receipt.canonicalPayload},
         ${receipt.resultJson}, ${sql.json(receipt.committedDate as never)}, ${receipt.committedRevision}
       )
-      ON CONFLICT (world_id, request_id) DO NOTHING
+      -- Deliberately no ON CONFLICT suppression. A forgotten historical
+      -- receipt lookup must fail atomically rather than duplicate a command.
     `;
   }
 }
@@ -485,10 +515,11 @@ export class PostgresApplicationWorldRepository implements ApplicationWorldRepos
     worldId: Id,
     expectedRevision: number | null,
     action: (aggregate: ApplicationWorldAggregate) => TResult | Promise<TResult>,
+    receiptRequestIds?: readonly string[],
   ): Promise<WorldTransactionResult<TResult>> {
     return this.sql.begin(async (tx) => {
       const transactionalSql = tx as unknown as SqlClient;
-      const working = await readAggregate(transactionalSql, worldId, true);
+      const working = await readAggregate(transactionalSql, worldId, true, receiptRequestIds);
       if (expectedRevision !== null && working.runtime.revision !== expectedRevision) {
         throw new Error(
           `stale World revision for ${worldId}: expected ${expectedRevision}, current ${working.runtime.revision}`,
