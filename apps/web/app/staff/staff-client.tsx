@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { PlayerStaffView } from "../../../../dist/packages/application/src/staff-view.js";
 import styles from "./staff.module.css";
 
-type Action = "POST" | "DELETE" | "PATCH";
+type Action = "POST" | "DELETE" | "PATCH" | "PUT";
 type Result = { view: PlayerStaffView; offerId?: string; error?: string };
 function money(value: number): string {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
@@ -17,6 +17,8 @@ export default function StaffClient(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [releaseConfirm, setReleaseConfirm] = useState(false);
+  const [dateChoices, setDateChoices] = useState<Record<string, number>>({});
+  const [paymentChoices, setPaymentChoices] = useState<Record<string, string>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -35,7 +37,7 @@ export default function StaffClient(): React.JSX.Element {
     return () => { cancelled = true; };
   }, []);
 
-  async function act(method: Action, fields: Record<string, string>, message: string): Promise<void> {
+  async function act(method: Action, fields: Record<string, string | number>, message: string): Promise<void> {
     if (busy) return;
     setBusy(true);
     setError(null);
@@ -112,6 +114,66 @@ export default function StaffClient(): React.JSX.Element {
                 </>
               )}
             </section>
+
+            {view.talentManager ? (
+              <section className={styles.panel}>
+                <span className={styles.eyebrow}>ADDITIONAL DATES · LIMITED AUTHORITY</span>
+                <h2>Let your manager submit an offer</h2>
+                <p>Authorise one proposal at a time. The manager cannot change existing wages,
+                  extend expiry or guarantee acceptance. This is limited to four extra dates and
+                  $250,000 one-time payment per proposal; larger offers stay in the Contract Desk.</p>
+                {view.dateAddendums.length === 0 ? (
+                  <p className={styles.muted}>No current contracts eligible for a staff additional-dates offer.</p>
+                ) : (
+                  <details>
+                    <summary className={styles.disclosure}>Eligible agreements · {view.dateAddendums.length}</summary>
+                    <div className={styles.candidates}>
+                      {view.dateAddendums.map(candidate => {
+                        const dates = dateChoices[candidate.contractId] ?? 1;
+                        const rawPayment = paymentChoices[candidate.contractId] ??
+                          String(Math.min(candidate.maxOneTimePayment, candidate.appearanceFee * dates));
+                        const payment = Number(rawPayment);
+                        const valid = Number.isSafeInteger(dates) && dates >= 1 && dates <= candidate.maxAdditionalDates
+                          && rawPayment.trim().length > 0 && Number.isSafeInteger(payment)
+                          && payment >= 0 && payment <= candidate.maxOneTimePayment;
+                        return (
+                          <div className={styles.renewal} key={candidate.contractId}>
+                            <strong>{candidate.personName}</strong>
+                            <small>{candidate.datesRemaining} dates left · {candidate.weeksToExpiry} weeks until expiry · {money(candidate.appearanceFee)}/appearance</small>
+                            <div className={styles.dateFields}>
+                              <label>Extra dates
+                                <input type="number" inputMode="numeric" min={1} max={candidate.maxAdditionalDates} step={1}
+                                  value={dates} disabled={busy}
+                                  onChange={event => setDateChoices(previous => ({
+                                    ...previous, [candidate.contractId]: Number(event.target.value),
+                                  }))} />
+                              </label>
+                              <label>One-time extra payment
+                                <input type="number" inputMode="numeric" min={0} max={candidate.maxOneTimePayment} step={1000}
+                                  value={rawPayment} disabled={busy}
+                                  onChange={event => setPaymentChoices(previous => ({
+                                    ...previous, [candidate.contractId]: event.target.value,
+                                  }))} />
+                              </label>
+                            </div>
+                            <small>Maximum {candidate.maxAdditionalDates} extra dates and {money(candidate.maxOneTimePayment)}.
+                              Existing weekly pay and appearance fees continue unchanged.</small>
+                            <button disabled={busy || !valid} onClick={() => void act("PUT", {
+                              sourceContractId: candidate.contractId, additionalDates: dates, additionalPayment: payment,
+                            }, `Your manager submitted ${candidate.personName}'s additional-dates offer. Acceptance is not guaranteed.`)}>
+                              {busy ? "Submitting…" : "Authorise this proposal"}
+                            </button>
+                            <a className={styles.back} href={`/talent/contracts?personId=${encodeURIComponent(candidate.personId)}`}>
+                              Review agreement and manual options →
+                            </a>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </details>
+                )}
+              </section>
+            ) : null}
 
             {view.talentManager ? (
               <section className={styles.panel}>
