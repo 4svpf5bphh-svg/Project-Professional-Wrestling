@@ -1393,12 +1393,6 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
         <button className={styles.button} disabled={loading || submitting} onClick={() => void refresh()}>{loading ? "Loading…" : "Refresh"}</button>
       </header>
 
-      {view?.promotion && tab === "ROSTER" ? (
-        <div className={styles.contractNavLinks}>
-          <a className={styles.backLink} href="/talent/contracts">Manage contracts &amp; pending offers →</a>
-          <a className={styles.backLink} href="/staff">Talent Manager · Staff &amp; renewals →</a>
-        </div>
-      ) : null}
       {view?.promotion && tab === "CONTRACTS" ? <a className={styles.backLink} href="/talent">← Back to roster</a> : null}
       {error ? <div className={styles.error}>{error}</div> : null}
       {notice ? <div className={styles.notice}>{notice}</div> : null}
