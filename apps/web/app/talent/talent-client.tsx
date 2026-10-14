@@ -1082,8 +1082,19 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
     }
     const wrestler = view.roster.find((entry) => entry.personId === focusPersonId);
     if (!wrestler) return;
-    if (wrestler.contract.renewalReason === "DATES_EXHAUSTED") openMoreDates(wrestler);
-    else if (wrestler.contract.renewalWindowOpen) openRenewal(wrestler, "NEGOTIATE");
+    if (wrestler.contract.renewalReason === "DATES_EXHAUSTED") {
+      openMoreDates(wrestler);
+      return;
+    }
+    if (wrestler.contract.renewalWindowOpen) {
+      openRenewal(wrestler, "NEGOTIATE");
+      return;
+    }
+    if ((wrestler.scheduledRenewals?.length ?? 0) > 0) {
+      const card = document.getElementById(`signed-contract-${wrestler.personId}`);
+      card?.scrollIntoView({ block: "center" });
+      card?.focus({ preventScroll: true });
+    }
   }, [tab, view, focusPersonId]);
 
   async function submitMoreDates(): Promise<void> {
@@ -1296,6 +1307,14 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
     )), [view, pendingPeople, query]);
   const contractDeskPending = useMemo(() => (view?.pendingOffers ?? [])
     .filter((offer) => matchesQuery(offer.personName, query)), [view, query]);
+  const contractDeskSigned = useMemo(() => (view?.roster ?? [])
+    .filter((entry) => (entry.scheduledRenewals?.length ?? 0) > 0)
+    .filter((entry) => matchesQuery(entry.name, query))
+    .sort((left, right) => {
+      const a = left.scheduledRenewals![0]!.startDate;
+      const b = right.scheduledRenewals![0]!.startDate;
+      return a.year - b.year || a.week - b.week || left.name.localeCompare(right.name);
+    }), [view, query]);
   const focusedPendingOffer = view?.pendingOffers.find((offer) => offer.personId === focusPersonId) ?? null;
 
   useEffect(() => {
@@ -1724,6 +1743,40 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
                   {contractDeskPending.map((offer) => <OfferCard key={offer.offerId} offer={offer} focused={offer.personId === focusPersonId} />)}
                   {contractDeskPending.length === 0 ? <p className={styles.empty}>No pending offers match your search.</p> : null}
                 </section>
+                {contractDeskSigned.length > 0 ? (
+                  <section aria-label="Signed upcoming contracts">
+                    <h2>Signed &amp; upcoming · {contractDeskSigned.length}</h2>
+                    <p className={styles.subtle}>These agreements have been accepted. Their future dates cannot be used before the new term begins.</p>
+                    {contractDeskSigned.map((entry) => (
+                      <article
+                        className={styles.contractDeskCard}
+                        key={entry.personId}
+                        id={`signed-contract-${entry.personId}`}
+                        tabIndex={-1}
+                      >
+                        <div className={styles.contractDeskHeader}>
+                          <div>
+                            <strong>{entry.name}</strong>
+                            <span>{entry.contract.unlimitedAppearances ? "Current deal: unlimited dates" : `Current deal: ${entry.contract.datesRemaining} dates left`} · expires {ppwDate(entry.contract.endDate)}</span>
+                          </div>
+                          <span className={styles.pending}>Signed</span>
+                        </div>
+                        {entry.scheduledRenewals!.map((renewal) => (
+                          <div className={styles.contractBox} key={renewal.contractId}>
+                            <strong>Starts {ppwDate(renewal.startDate)} · ends {ppwDate(renewal.endDate)}</strong>
+                            <span>{renewal.family === "EXCLUSIVE" ? "Unlimited appearances" : `${Math.max(0, renewal.dateEntitlement - renewal.datesUsed)}/${renewal.dateEntitlement} future dates`}</span>
+                          </div>
+                        ))}
+                        {entry.scheduledRenewals!.length > 1 ? (
+                          <p className={styles.subtle} role="alert">Several future agreements were signed for this wrestler. Existing records are preserved and need review.</p>
+                        ) : null}
+                        <div className={styles.contractDeskActions}>
+                          <a className={styles.actionButton} href={`/talent/profile?personId=${encodeURIComponent(entry.personId)}&from=contracts`}>Wrestler profile</a>
+                        </div>
+                      </article>
+                    ))}
+                  </section>
+                ) : null}
               </div>
             ) : null}
             {tab === "OFFERS" ? offers.map((entry) => <OfferCard key={entry.offerId} offer={entry} />) : null}

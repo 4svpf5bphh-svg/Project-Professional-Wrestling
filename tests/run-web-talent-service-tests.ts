@@ -694,6 +694,69 @@ await test("talent date addendum is private, same-contract and idempotent", asyn
   ok(rejected, "reusing requestId with different date terms was accepted");
 });
 
+await test("signed next-term renewal does not block a current-term dates addendum", async () => {
+  const repository = new InMemoryApplicationWorldRepository();
+  const aggregate = createAlphaWorldAggregate({ seed: 73042, playerId: "player-a" });
+  const promotion = aggregate.state.promotions.find(
+    (candidate) => candidate.playerTakeoverEligibility === "STANDARD" && candidate.lifecycle === "ACTIVE"
+  );
+  if (!promotion) throw new Error("no promotion for signed-renewal addendum fixture");
+  const source = aggregate.state.contracts.find((contract) => {
+    if (contract.promotionId !== promotion.id || contract.status !== "SIGNED" || contract.family !== "LIMITED_NON_EXCLUSIVE") return false;
+    const person = aggregate.state.people.find((candidate) => candidate.id === contract.personId);
+    return Boolean(person && canAddLimitedContractDates(aggregate.state, person, contract, 1).ok);
+  });
+  if (!source) throw new Error("no current deal can accept additional dates");
+
+  source.datesUsed = source.dateEntitlement;
+  const currentEntitlement = source.dateEntitlement;
+  const futureStart = addPpwWeeks(source.endDate, 1, aggregate.state.ruleset.weeksPerYear);
+  const nextContract = {
+    ...structuredClone(source),
+    id: "signed-next-term-for-date-addendum",
+    signedDate: { ...aggregate.state.world.currentDate },
+    startDate: futureStart,
+    endDate: addPpwWeeks(futureStart, 12, aggregate.state.ruleset.weeksPerYear),
+    dateEntitlement: 9,
+    datesUsed: 0,
+  };
+  aggregate.state.contracts.push(nextContract);
+  await repository.initialize(aggregate);
+  const worldId = aggregate.state.world.id;
+  await claimAlphaPromotion(repository, worldId, "player-a", {
+    promotionId: promotion.id,
+    requestId: "claim-signed-renewal-dates",
+  });
+
+  const before = await loadAlphaTalentSession(repository, worldId, "player-a");
+  const wrestler = before.roster.find((entry) => entry.personId === source.personId);
+  ok(wrestler?.scheduledRenewals?.some((renewal) => renewal.contractId === nextContract.id),
+    "signed future renewal is not visible before its start");
+  ok(wrestler?.contract.datesRemaining === 0 && wrestler.contract.renewalReason === "DATES_EXHAUSTED",
+    "current exhausted deal must remain eligible for a dates addendum, not another full renewal");
+  ok(wrestler?.contract.sameTermsRenewal === null, "signed future terms left another renewal action enabled");
+
+  const submitted = await submitAlphaDatesAddendum(repository, worldId, "player-a", {
+    requestId: "signed-next-term-current-addendum",
+    personId: source.personId,
+    contractId: source.id,
+    additionalDates: 1,
+    additionalPayment: 40_000,
+  });
+  ok(submitted.offerKind === "DATES_ADDENDUM", "dates proposal incorrectly became a second renewal");
+  const after = await repository.load(worldId);
+  const persistedCurrent = after.state.contracts.find((contract) => contract.id === source.id);
+  const persistedFuture = after.state.contracts.find((contract) => contract.id === nextContract.id);
+  const offer = after.state.contractOffers.find((entry) => entry.id === submitted.offerId);
+  ok(persistedCurrent?.dateEntitlement === currentEntitlement
+    && persistedCurrent.datesUsed === currentEntitlement,
+    "pending addendum changed current contractual appearance rights without consent");
+  ok(persistedFuture?.dateEntitlement === 9 && persistedFuture.datesUsed === 0,
+    "current-term dates offer modified the already-signed future agreement");
+  ok(offer?.sourceContractId === source.id && offer.dateEntitlement === currentEntitlement + 1,
+    "addendum did not apply to the correct current-term contract");
+});
+
 await test("Talent service stores promotion-specific alignment without rewriting the wrestler globally", async () => {
   const repository = new InMemoryApplicationWorldRepository();
   const aggregate = createAlphaWorldAggregate({ seed: 73004, playerId: "player-a" });
