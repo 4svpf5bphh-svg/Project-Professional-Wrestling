@@ -1663,7 +1663,7 @@ test("cryptic results participant strip conceals the unrevealed wrestler", () =>
   ok(old.length === 1 && old[0] === "Mystery footage",
     "archived unlabelled video exposed a subject that was never publicly identified");
   const archived = {
-    type: "VIDEO_PACKAGE" as const, order: 1, segment: {
+    kind: "SEGMENT" as const, order: 1, segment: {
       segmentId: "archival-video-unknown-reveal", type: "VIDEO_PACKAGE",
       videoReveal: null, videoSubjectName: "The Mystery Wrestler",
       participants: [{ personId: "secret", name: "The Mystery Wrestler" }],
