@@ -277,6 +277,7 @@
   color: #edf7f5;
   padding: 11px 12px;
   font: inherit;
+  font-size: max(16px, 1rem);
 }
 
 .formGrid input:focus,
