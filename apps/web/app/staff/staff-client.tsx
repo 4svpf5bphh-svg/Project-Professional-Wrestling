@@ -117,7 +117,7 @@ export default function StaffClient(): React.JSX.Element {
               <section className={styles.panel}>
                 <span className={styles.eyebrow}>RENEWAL DESK</span>
                 <h2>Ready for your authorisation</h2>
-                <p>Each offer matches the existing recurring terms. You must approve each attempt. Wrestlers respond during normal World resolution.</p>
+                <p>Each proposal repeats the existing recurring terms without a new signing bonus. You authorise each offer individually; your manager cannot change the terms or guarantee acceptance. For different terms, use the Contract Desk.</p>
                 {view.renewals.length === 0 ? (
                   <p className={styles.muted}>No eligible same-terms renewals. Others can still be negotiated manually through Talent.</p>
                 ) : (
@@ -125,6 +125,7 @@ export default function StaffClient(): React.JSX.Element {
                     {view.renewals.map(renewal => (
                       <div className={styles.renewal} key={renewal.contractId}>
                         <strong>{renewal.personName}</strong>
+                        <a className={styles.back} href={`/talent/contracts?personId=${encodeURIComponent(renewal.personId)}`}>Review contract and manual options →</a>
                         <small>{renewal.weeksToExpiry} weeks left · {renewal.termWeeks}-week proposal · {renewal.dates} contracted dates</small>
                         <small>{money(renewal.weeklyGuarantee)}/week · {money(renewal.appearanceFee)}/appearance · {renewal.creativeControl.replaceAll("_", " ").toLowerCase()}</small>
                         <small>Maximum potential pay: {money(renewal.totalPotential)} · no repeat signing bonus</small>
