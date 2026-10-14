@@ -177,7 +177,7 @@ WHERE worlds.world_id = 'world-20261002'
     name: "invalidate stale gzip on JSONB-only updates and refresh cache version",
     sql: `
 CREATE OR REPLACE FUNCTION ppw_guard_world_snapshot_transport()
-RETURNS trigger LANGUAGE plpgsql AS $
+RETURNS trigger LANGUAGE plpgsql AS '
 BEGIN
   -- Older binaries, recovery tools and manual edits can change authoritative
   -- JSONB alone. Make the compressed transport nullable again rather than
@@ -202,7 +202,7 @@ BEGIN
   END IF;
   RETURN NEW;
 END
-$;
+';
 DROP TRIGGER IF EXISTS ppw_guard_world_snapshot_transport ON ppw_worlds;
 CREATE TRIGGER ppw_guard_world_snapshot_transport
 BEFORE UPDATE OF world_state, planning_state, engagement_state,
