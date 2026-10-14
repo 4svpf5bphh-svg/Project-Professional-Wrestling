@@ -19,7 +19,7 @@ report = []
 
 def gh(method, endpoint):
     p = subprocess.run(
-        ["gh", "api", "--method", method, "--include", "--silent", endpoint],
+        ["gh", "api", "--method", method, "--include", endpoint],
         capture_output=True, text=True,
     )
     if p.returncode:
@@ -30,7 +30,7 @@ def gh(method, endpoint):
     return json.loads(parts[-1]) if parts[-1].strip().startswith(("{", "[")) else {}
 
 def api(endpoint):
-    p = subprocess.run(["gh", "api", "--silent", endpoint], capture_output=True, text=True)
+    p = subprocess.run(["gh", "api", endpoint], capture_output=True, text=True)
     if p.returncode:
         raise RuntimeError(p.stderr.strip()[:300])
     return json.loads(p.stdout)
