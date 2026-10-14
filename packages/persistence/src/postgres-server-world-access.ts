@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import type { Id, PpwDate } from "../../domain/src/types.js";
+import { CURRENT_WORLD_STATE_SCHEMA_VERSION } from "../../sim-core/src/state-schema.js";
 import {
   createWorldEngagementState,
   normalizeWorldEngagementState,
@@ -32,6 +33,8 @@ export interface ServerWorldReadStatistics {
   fullSnapshotReads: number;
   versionProbes: number;
   cacheHits: number;
+  /** Count of expensive but history-trimmed read-only Talent snapshots. */
+  trimmedHistoryReads: number;
 }
 
 type WorldReadRow = {
@@ -96,11 +99,20 @@ function validPpwDate(value: PpwDate | null): value is PpwDate {
 async function readWorldWithoutCommandReceipts(
   sql: SqlClient,
   worldId: Id,
+  mode: "full" | "talent" = "full",
 ): Promise<{ aggregate: ApplicationWorldAggregate; snapshotVersion: string }> {
   const startedAt = performance.now();
+  // Only current-schema read-only Talent/Staff views may omit history.
+  // Older schema versions must retain their complete legacy migration inputs.
+  const stateProjection = mode === "talent"
+    ? sql`CASE WHEN state_schema_version = ${CURRENT_WORLD_STATE_SCHEMA_VERSION}
+      THEN jsonb_set(jsonb_set(world_state, '{ledger}', '[]'::jsonb),
+        '{financialTransactions}', '[]'::jsonb)
+      ELSE world_state END`
+    : sql`world_state`;
   const worldRows = await sql`
     SELECT world_id, updated_at::text AS snapshot_version,
-           world_state, planning_state, engagement_state, runtime_phase, runtime_revision,
+           ${stateProjection} AS world_state, planning_state, engagement_state, runtime_phase, runtime_revision,
            locked_ppw_date, last_resolved_ppw_date, commitment_locked_ppw_date, commitment_locked_real_cycle_key,
            locked_real_cycle_key, last_resolved_real_cycle_key, human_seat_limit
     FROM ppw_worlds
@@ -189,8 +201,12 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     version: string;
     aggregate: ApplicationWorldAggregate;
   }>();
+  private readonly talentCache = new Map<Id, {
+    version: string;
+    aggregate: ApplicationWorldAggregate;
+  }>();
   private readonly stats: ServerWorldReadStatistics = {
-    fullSnapshotReads: 0, versionProbes: 0, cacheHits: 0,
+    fullSnapshotReads: 0, versionProbes: 0, cacheHits: 0, trimmedHistoryReads: 0,
   };
 
   constructor(private readonly serverSql: SqlClient) {
@@ -229,6 +245,37 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     return fresh.aggregate;
   }
 
+  override async loadTalentView(worldId: Id): Promise<ApplicationWorldAggregate> {
+    this.stats.versionProbes += 1;
+    const rows = await this.serverSql`
+      SELECT updated_at::text AS snapshot_version
+      FROM ppw_worlds WHERE world_id = ${worldId}
+    ` as unknown as WorldVersionRow[];
+    if (!rows[0]) throw new Error(`World ${worldId} was not found`);
+    const version = rows[0].snapshot_version;
+    const full = this.cache.get(worldId);
+    if (full?.version === version) {
+      this.stats.cacheHits += 1;
+      const readOnly = structuredClone(full.aggregate);
+      readOnly.state.ledger = [];
+      readOnly.state.financialTransactions = [];
+      return readOnly;
+    }
+    const cached = this.talentCache.get(worldId);
+    if (cached?.version === version) {
+      this.stats.cacheHits += 1;
+      return structuredClone(cached.aggregate);
+    }
+    const fresh = await readWorldWithoutCommandReceipts(this.serverSql, worldId, "talent");
+    this.stats.trimmedHistoryReads += 1;
+    this.talentCache.delete(worldId);
+    this.talentCache.set(worldId, {
+      version: fresh.snapshotVersion, aggregate: structuredClone(fresh.aggregate),
+    });
+    if (this.talentCache.size > 2) this.talentCache.delete(this.talentCache.keys().next().value!);
+    return fresh.aggregate;
+  }
+
   /** Activity writes only change engagement, not simulation World state.
    * Patch the cache only when it was current BEFORE the authoritative write.
    * Otherwise invalidate; a rival's World mutation must never be hidden.
@@ -238,6 +285,13 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     engagement: WorldEngagementState,
   ): void {
     const cached = this.cache.get(worldId);
+    const cachedTalent = this.talentCache.get(worldId);
+    if (cachedTalent) {
+      if (cachedTalent.version === beforeVersion) {
+        cachedTalent.aggregate.engagement = structuredClone(engagement);
+        cachedTalent.version = afterVersion;
+      } else this.talentCache.delete(worldId);
+    }
     if (!cached) return;
     if (cached.version !== beforeVersion) {
       this.cache.delete(worldId);
