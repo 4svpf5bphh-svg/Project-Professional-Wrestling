@@ -1,7 +1,6 @@
 import postgres from "postgres";
 import { compressWorldSnapshot, restoreCompressedWorldSnapshot } from "./world-snapshot-compression.js";
 import type { Id, PpwDate } from "../../domain/src/types.js";
-import { CURRENT_WORLD_STATE_SCHEMA_VERSION } from "../../sim-core/src/state-schema.js";
 import {
   createWorldEngagementState,
   normalizeWorldEngagementState,
@@ -36,8 +35,10 @@ export interface ServerWorldReadStatistics {
   cacheHits: number;
   /** Concurrent requests sharing an in-flight snapshot, without duplicate transfer. */
   coalescedReads: number;
-  /** Count of read-only Talent/Staff projections served from PostgreSQL. */
+  /** Legacy metric: now zero because Talent shares full compressed transfer. */
   trimmedHistoryReads: number;
+  /** Talent/Staff read-only views served by the shared snapshot path. */
+  talentViewReads: number;
   compressedSnapshotReads: number;
   rawFallbackReads: number;
   backfilledSnapshots: number;
@@ -110,7 +111,6 @@ function validPpwDate(value: PpwDate | null): value is PpwDate {
 async function readWorldWithoutCommandReceipts(
   sql: SqlClient,
   worldId: Id,
-  mode: "full" | "talent" = "full",
 ): Promise<{
   aggregate: ApplicationWorldAggregate;
   snapshotVersion: string;
@@ -152,11 +152,6 @@ async function readWorldWithoutCommandReceipts(
     `;
     backfilled = result.length === 1;
   }
-  const projectedWorld = mode === "talent"
-    && fullWorld.stateSchemaVersion === CURRENT_WORLD_STATE_SCHEMA_VERSION
-    ? { ...fullWorld, financialTransactions: [] }
-    : fullWorld;
-
   const [membershipRows, controlRows] = await Promise.all([
     sql`
       SELECT player_id, joined_date, status
@@ -174,7 +169,7 @@ async function readWorldWithoutCommandReceipts(
 
   const snapshot: PersistedApplicationWorld = {
     applicationStateSchemaVersion: CURRENT_APPLICATION_STATE_SCHEMA_VERSION,
-    world: projectedWorld as PersistedApplicationWorld["world"],
+    world: fullWorld as PersistedApplicationWorld["world"],
     ownership: {
       worldId,
       humanSeatLimit: Number(row.human_seat_limit),
@@ -232,7 +227,7 @@ async function readWorldWithoutCommandReceipts(
   // PostgreSQL protocol overhead, which require a separate live measurement.
   if (process.env.PPW_PERF_LOGS !== "0") {
     console.info("[ppw-db-transfer]", JSON.stringify({
-      mode,
+      mode: "full",
       encoding: row.world_state_gzip ? "gzip" : "jsonb",
       snapshotWireBytes,
       worldRevision: Number(row.runtime_revision),
@@ -258,15 +253,11 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     version: string;
     aggregate: ApplicationWorldAggregate;
   }>();
-  private readonly talentCache = new Map<Id, {
-    version: string;
-    aggregate: ApplicationWorldAggregate;
-  }>();
   /** Only simultaneous identical reads share work; each consumer gets a clone. */
   private readonly pendingFull = new Map<string, Promise<ApplicationWorldAggregate>>();
-  private readonly pendingTalent = new Map<string, Promise<ApplicationWorldAggregate>>();
   private readonly stats: ServerWorldReadStatistics = {
     fullSnapshotReads: 0, versionProbes: 0, cacheHits: 0, coalescedReads: 0, trimmedHistoryReads: 0,
+    talentViewReads: 0,
     compressedSnapshotReads: 0, rawFallbackReads: 0, backfilledSnapshots: 0,
     snapshotWireBytes: 0,
   };
@@ -325,61 +316,15 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
   }
 
   async loadTalentView(worldId: Id): Promise<ApplicationWorldAggregate> {
-    this.stats.versionProbes += 1;
-    const rows = await this.serverSql`
-      SELECT updated_at::text AS snapshot_version
-      FROM ppw_worlds WHERE world_id = ${worldId}
-    ` as unknown as WorldVersionRow[];
-    if (!rows[0]) throw new Error(`World ${worldId} was not found`);
-    const version = rows[0].snapshot_version;
-    const full = this.cache.get(worldId);
-    if (full?.version === version) {
-      this.stats.cacheHits += 1;
-      const readOnly = structuredClone(full.aggregate);
-      // Talent alignment and creative context require the complete Ledger.
-      readOnly.state.financialTransactions = [];
-      return readOnly;
-    }
-    const cached = this.talentCache.get(worldId);
-    if (cached?.version === version) {
-      this.stats.cacheHits += 1;
-      return structuredClone(cached.aggregate);
-    }
-    const key = JSON.stringify([worldId, version]);
-    // Prefer an already-running complete World read over transferring a
-    // second copy just to produce a Talent/Staff read-only projection.
-    const pendingFull = this.pendingFull.get(key);
-    if (pendingFull) {
-      this.stats.coalescedReads += 1;
-      const view = structuredClone(await pendingFull);
-      view.state.financialTransactions = [];
-      return view;
-    }
-    const pendingTalent = this.pendingTalent.get(key);
-    if (pendingTalent) {
-      this.stats.coalescedReads += 1;
-      return structuredClone(await pendingTalent);
-    }
-    const loading = (async () => {
-      const fresh = await readWorldWithoutCommandReceipts(this.serverSql, worldId, "talent");
-      this.stats.trimmedHistoryReads += 1;
-      if (fresh.usedCompressed) this.stats.compressedSnapshotReads += 1;
-      else this.stats.rawFallbackReads += 1;
-      if (fresh.backfilled) this.stats.backfilledSnapshots += 1;
-      this.stats.snapshotWireBytes += fresh.snapshotWireBytes;
-      this.talentCache.delete(worldId);
-      this.talentCache.set(worldId, {
-        version: fresh.snapshotVersion, aggregate: structuredClone(fresh.aggregate),
-      });
-      if (this.talentCache.size > 2) this.talentCache.delete(this.talentCache.keys().next().value!);
-      return fresh.aggregate;
-    })();
-    this.pendingTalent.set(key, loading);
-    try {
-      return structuredClone(await loading);
-    } finally {
-      if (this.pendingTalent.get(key) === loading) this.pendingTalent.delete(key);
-    }
+    // gzip already transfers the same complete compressed snapshot for
+    // Talent and full World routes. One shared in-flight load prevents
+    // duplicate egress regardless of which request arrives first.
+    // The load() method returns a private clone; trimming here cannot
+    // mutate cached authoritative state or another player's response.
+    const view = await this.load(worldId);
+    this.stats.talentViewReads += 1;
+    view.state.financialTransactions = [];
+    return view;
   }
 
   /** Activity writes only change engagement, not simulation World state.
@@ -391,13 +336,6 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     engagement: WorldEngagementState,
   ): void {
     const cached = this.cache.get(worldId);
-    const cachedTalent = this.talentCache.get(worldId);
-    if (cachedTalent) {
-      if (cachedTalent.version === beforeVersion) {
-        cachedTalent.aggregate.engagement = structuredClone(engagement);
-        cachedTalent.version = afterVersion;
-      } else this.talentCache.delete(worldId);
-    }
     if (!cached) return;
     if (cached.version !== beforeVersion) {
       this.cache.delete(worldId);

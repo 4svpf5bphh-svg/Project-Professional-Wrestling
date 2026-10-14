@@ -275,11 +275,13 @@ await test("Talent and Staff read-only projections match full authoritative view
     ok(lean.state.ledger.length > 0 && lean.state.financialTransactions.length === 0,
       "Talent view lost the ledger needed for wrestler creative and alignment");
 
-    ok(reader.readStatistics().trimmedHistoryReads === 1,
-      "cold Talent instance did not use the read-only projection");
+    ok(reader.readStatistics().fullSnapshotReads === 1
+      && reader.readStatistics().talentViewReads === 1,
+      "cold Talent instance did not use shared compressed World load");
     const again = await reader.repository.loadTalentView(worldId);
-    ok(reader.readStatistics().trimmedHistoryReads === 1
-      && reader.readStatistics().cacheHits === 1,
+    ok(reader.readStatistics().fullSnapshotReads === 1
+      && reader.readStatistics().cacheHits === 1
+      && reader.readStatistics().talentViewReads === 2,
       "repeat Talent view transferred another snapshot");
     ok(again.state.people.length === lean.state.people.length, "cached Talent view changed wrestler population");
 
@@ -368,8 +370,8 @@ await test("concurrent cold navigation transfers each World snapshot only once p
       || view.state.financialTransactions.length === 0),
       "Talent coalescing leaked financial history into read-only projection");
     const counters = access.readStatistics();
-    ok(counters.fullSnapshotReads + counters.trimmedHistoryReads <= 2,
-      `concurrent cold requests transferred more than two World copies: ${JSON.stringify(counters)}`);
+    ok(counters.fullSnapshotReads === 1 && counters.trimmedHistoryReads === 0,
+      `concurrent full and Talent screens fetched duplicate compressed World copies: ${JSON.stringify(counters)}`);
     ok(counters.snapshotWireBytes > 0,
       "cold concurrent reads omitted the snapshot transfer instrumentation");
     views[0]!.state.promotions[0]!.cash = -999_444;
@@ -395,8 +397,9 @@ await test("two simultaneous Talent-only cold screens coalesce into one snapshot
     ok(views.every(view => view.state.people.length === aggregate.state.people.length),
       "concurrent Talent loads lost wrestler directory");
     const counts = access.readStatistics();
-    ok(counts.trimmedHistoryReads === 1 && counts.fullSnapshotReads === 0,
-      `concurrent Talent screens transferred duplicate World snapshots: ${JSON.stringify(counts)}`);
+    ok(counts.fullSnapshotReads === 1 && counts.trimmedHistoryReads === 0
+      && counts.talentViewReads === 16,
+      `Talent-only screens fetched more than one compressed World copy: ${JSON.stringify(counts)}`);
   } finally {
     await access.close();
   }
