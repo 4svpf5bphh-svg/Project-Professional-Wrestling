@@ -82,6 +82,7 @@ async function readWorldWithoutCommandReceipts(
   sql: SqlClient,
   worldId: Id,
 ): Promise<ApplicationWorldAggregate> {
+  const startedAt = performance.now();
   const worldRows = await sql`
     SELECT world_id, world_state, planning_state, engagement_state, runtime_phase, runtime_revision,
            locked_ppw_date, last_resolved_ppw_date, commitment_locked_ppw_date, commitment_locked_real_cycle_key,
@@ -150,7 +151,17 @@ async function readWorldWithoutCommandReceipts(
       ? structuredClone(row.engagement_state as WorldEngagementState)
       : createWorldEngagementState(worldId),
   };
-  return restorePersistedApplicationWorld(snapshot);
+  const aggregate = restorePersistedApplicationWorld(snapshot);
+  const elapsedMs = performance.now() - startedAt;
+  if (process.env.PPW_PERF_LOGS !== "0" && elapsedMs >= 100) {
+    console.info("[ppw-db-world-read]", JSON.stringify({
+      elapsedMs: Math.round(elapsedMs * 10) / 10,
+      membershipCount: membershipRows.length,
+      controlCount: controlRows.length,
+      worldRevision: Number(row.runtime_revision),
+    }));
+  }
+  return aggregate;
 }
 
 class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
