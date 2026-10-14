@@ -23,10 +23,20 @@ type ActivityRow = {
   engagement_state: unknown | null;
   current_ppw_date: PpwDate | null;
   runtime_revision: string | number;
+  snapshot_version: string;
 };
+
+type WorldVersionRow = { snapshot_version: string };
+
+export interface ServerWorldReadStatistics {
+  fullSnapshotReads: number;
+  versionProbes: number;
+  cacheHits: number;
+}
 
 type WorldReadRow = {
   world_id: string;
+  snapshot_version: string;
   world_state: unknown;
   planning_state: unknown | null;
   engagement_state: unknown | null;
@@ -57,6 +67,8 @@ type ControlRow = {
 
 export interface PostgresServerWorldAccess {
   repository: PostgresApplicationWorldRepository;
+  /** Diagnostic counters for tests and lightweight operational monitoring. */
+  readStatistics(): ServerWorldReadStatistics;
   recordPlayerActivity(
     worldId: Id,
     playerId: string,
@@ -81,10 +93,11 @@ function validPpwDate(value: PpwDate | null): value is PpwDate {
 async function readWorldWithoutCommandReceipts(
   sql: SqlClient,
   worldId: Id,
-): Promise<ApplicationWorldAggregate> {
+): Promise<{ aggregate: ApplicationWorldAggregate; snapshotVersion: string }> {
   const startedAt = performance.now();
   const worldRows = await sql`
-    SELECT world_id, world_state, planning_state, engagement_state, runtime_phase, runtime_revision,
+    SELECT world_id, updated_at::text AS snapshot_version,
+           world_state, planning_state, engagement_state, runtime_phase, runtime_revision,
            locked_ppw_date, last_resolved_ppw_date, commitment_locked_ppw_date, commitment_locked_real_cycle_key,
            locked_real_cycle_key, last_resolved_real_cycle_key, human_seat_limit
     FROM ppw_worlds
@@ -161,16 +174,74 @@ async function readWorldWithoutCommandReceipts(
       worldRevision: Number(row.runtime_revision),
     }));
   }
-  return aggregate;
+  return { aggregate, snapshotVersion: row.snapshot_version };
 }
 
 class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
+  // A warm server can serve repeat GETs without transmitting 5–6 MB of
+  // World JSON each time. Only metadata is trusted for cache validity.
+  // Each instance has its own bounded cache; transactions still read and
+  // lock authoritative PostgreSQL state (never this cache).
+  private readonly cache = new Map<Id, {
+    version: string;
+    aggregate: ApplicationWorldAggregate;
+  }>();
+  private readonly stats: ServerWorldReadStatistics = {
+    fullSnapshotReads: 0, versionProbes: 0, cacheHits: 0,
+  };
+
   constructor(private readonly serverSql: SqlClient) {
     super(serverSql);
   }
 
+  readStatistics(): ServerWorldReadStatistics {
+    return { ...this.stats };
+  }
+
   override async load(worldId: Id): Promise<ApplicationWorldAggregate> {
-    return readWorldWithoutCommandReceipts(this.serverSql, worldId);
+    this.stats.versionProbes += 1;
+    const rows = await this.serverSql`
+      SELECT updated_at::text AS snapshot_version
+      FROM ppw_worlds WHERE world_id = ${worldId}
+    ` as unknown as WorldVersionRow[];
+    if (!rows[0]) throw new Error(`World ${worldId} was not found`);
+    const cached = this.cache.get(worldId);
+    if (cached && cached.version === rows[0].snapshot_version) {
+      this.stats.cacheHits += 1;
+      // Read-only projections must not alter the shared cached aggregate.
+      return structuredClone(cached.aggregate);
+    }
+
+    this.stats.fullSnapshotReads += 1;
+    const fresh = await readWorldWithoutCommandReceipts(this.serverSql, worldId);
+    // A bounded cache prevents many independent Worlds exhausting memory.
+    this.cache.delete(worldId);
+    this.cache.set(worldId, {
+      version: fresh.snapshotVersion,
+      aggregate: structuredClone(fresh.aggregate),
+    });
+    if (this.cache.size > 2) {
+      this.cache.delete(this.cache.keys().next().value!);
+    }
+    return fresh.aggregate;
+  }
+
+  /** Activity writes only change engagement, not simulation World state.
+   * Patch the cache only when it was current BEFORE the authoritative write.
+   * Otherwise invalidate; a rival's World mutation must never be hidden.
+   */
+  applyPlayerActivity(
+    worldId: Id, beforeVersion: string, afterVersion: string,
+    engagement: WorldEngagementState,
+  ): void {
+    const cached = this.cache.get(worldId);
+    if (!cached) return;
+    if (cached.version !== beforeVersion) {
+      this.cache.delete(worldId);
+      return;
+    }
+    cached.aggregate.engagement = structuredClone(engagement);
+    cached.version = afterVersion;
   }
 }
 
@@ -180,13 +251,14 @@ export function createPostgresServerWorldAccess(connectionString: string): Postg
 
   return {
     repository,
+    readStatistics: () => repository.readStatistics(),
     async recordPlayerActivity(worldId, playerId, realCycleKey): Promise<void> {
-      await sql.begin(async (tx) => {
+      const activity = await sql.begin(async (tx) => {
         const rows = await tx`
           SELECT
             engagement_state,
             world_state->'world'->'currentDate' AS current_ppw_date,
-            runtime_revision
+            runtime_revision, updated_at::text AS snapshot_version
           FROM ppw_worlds
           WHERE world_id = ${worldId}
           FOR UPDATE
@@ -207,7 +279,7 @@ export function createPostgresServerWorldAccess(connectionString: string): Postg
           && previous.lastActivePpwDate.year === row.current_ppw_date.year
           && previous.lastActivePpwDate.week === row.current_ppw_date.week
           && previous.lastActivePpwDate.day === row.current_ppw_date.day;
-        if (unchanged) return;
+        if (unchanged) return null;
 
         recordPlayerActivityInState(
           engagement,
@@ -217,12 +289,18 @@ export function createPostgresServerWorldAccess(connectionString: string): Postg
           realCycleKey,
         );
 
-        await tx`
+        const updated = await tx`
           UPDATE ppw_worlds
-          SET engagement_state = ${tx.json(engagement as never)}, updated_at = now()
+          SET engagement_state = ${tx.json(engagement as never)}, updated_at = clock_timestamp()
           WHERE world_id = ${worldId}
-        `;
+          RETURNING updated_at::text AS snapshot_version
+        ` as unknown as WorldVersionRow[];
+        return { beforeVersion: row.snapshot_version,
+          afterVersion: updated[0]!.snapshot_version, engagement };
       });
+      if (activity) repository.applyPlayerActivity(
+        worldId, activity.beforeVersion, activity.afterVersion, activity.engagement,
+      );
     },
     close: () => sql.end({ timeout: 5 }),
   };
