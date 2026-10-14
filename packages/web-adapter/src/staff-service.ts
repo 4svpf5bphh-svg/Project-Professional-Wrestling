@@ -2,6 +2,9 @@ import type { ApplicationWorldRepository } from "../../application/src/world-agg
 import {
   activePromotionControlForPlayer,
   authoriseStaffRenewalCommand,
+  submitContractDatesAddendumCommand,
+  STAFF_DATES_MAX_PER_OFFER,
+  STAFF_DATES_PAYMENT_CAP,
   buildPlayerStaffView,
   hireStaffCommand,
   releaseStaffCommand,
@@ -11,12 +14,15 @@ import {
 import { activeTalentManager } from "../../sim-core/src/staff.js";
 import { sameTermsRenewalTemplate } from "../../application/src/contract-renewal.js";
 import { buildFreshPlan, type AlphaTalentOfferRequest } from "./talent-service.js";
+import type { HumanDatesAddendumPlan } from "../../sim-core/src/human-contracts.js";
 
 export interface StaffActionRequest {
   requestId: string;
   staffId?: string;
   employmentId?: string;
   sourceContractId?: string;
+  additionalDates?: number;
+  additionalPayment?: number;
 }
 export interface StaffActionResult {
   view: PlayerStaffView;
@@ -115,6 +121,64 @@ export async function authoriseAlphaTalentManagerRenewal(
     const offer = authoriseStaffRenewalCommand(
       aggregate.state, aggregate.ownership, aggregate.commands, aggregate.runtime,
       { worldId, playerId, requestId, commandType: "AUTHORISE_TALENT_MANAGER_RENEWAL", payload },
+    );
+    return { offerId: offer.id, view: buildPlayerStaffView(aggregate, playerId) };
+  });
+  return result;
+}
+
+/**
+ * One player-approved, bounded offer delivered by a Talent Manager. Use the
+ * standard additional-dates command and wrestler consent resolver: no staff
+ * signing power, automatic reoffers or parallel contract system.
+ */
+export async function authoriseAlphaTalentManagerDatesAddendum(
+  repository: ApplicationWorldRepository, worldId: string, playerId: string, request: StaffActionRequest,
+): Promise<StaffActionResult> {
+  const requestId = required(request.requestId, "requestId");
+  const sourceContractId = required(request.sourceContractId, "sourceContractId");
+  if (typeof request.additionalDates !== "number" || !Number.isSafeInteger(request.additionalDates)
+    || request.additionalDates < 1 || request.additionalDates > STAFF_DATES_MAX_PER_OFFER) {
+    throw new Error(`delegated additional dates must be between 1 and ${STAFF_DATES_MAX_PER_OFFER}`);
+  }
+  if (typeof request.additionalPayment !== "number" || !Number.isSafeInteger(request.additionalPayment)
+    || request.additionalPayment < 0 || request.additionalPayment > STAFF_DATES_PAYMENT_CAP) {
+    throw new Error(`delegated one-time payment must be between 0 and ${STAFF_DATES_PAYMENT_CAP}`);
+  }
+  const additionalDates = request.additionalDates;
+  const additionalPayment = request.additionalPayment;
+  const { result } = await repository.transact(worldId, null, aggregate => {
+    const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
+    if (!control) throw new Error("control a promotion to delegate additional dates");
+    const prior = aggregate.commands.receipts.find(row => row.requestId === requestId);
+    let payload: HumanDatesAddendumPlan;
+    if (prior) {
+      if (prior.playerId !== playerId || prior.commandType !== "SUBMIT_CONTRACT_DATES_ADDENDUM") {
+        throw new Error("requestId was previously used for a different operation");
+      }
+      payload = JSON.parse(prior.canonicalPayload) as HumanDatesAddendumPlan;
+      if (payload.promotionId !== control.promotionId || payload.contractId !== sourceContractId
+        || payload.additionalDates !== additionalDates || payload.additionalPayment !== additionalPayment) {
+        throw new Error("requestId was previously used for different additional-date terms");
+      }
+    } else {
+      if (!activeTalentManager(aggregate.state, control.promotionId)) {
+        throw new Error("hire a Talent Manager before delegating additional dates");
+      }
+      const candidate = buildPlayerStaffView(aggregate, playerId).dateAddendums.find(row =>
+        row.contractId === sourceContractId);
+      if (!candidate || additionalDates > candidate.maxAdditionalDates) {
+        throw new Error("this contract is not eligible for the requested delegated additional dates");
+      }
+      if (additionalPayment > candidate.maxOneTimePayment) {
+        throw new Error("delegated payment exceeds available cash or the staff offer cap");
+      }
+      payload = { promotionId: control.promotionId, personId: candidate.personId,
+        contractId: sourceContractId, additionalDates, additionalPayment };
+    }
+    const offer = submitContractDatesAddendumCommand(
+      aggregate.state, aggregate.ownership, aggregate.commands, aggregate.runtime,
+      { worldId, playerId, requestId, commandType: "SUBMIT_CONTRACT_DATES_ADDENDUM", payload },
     );
     return { offerId: offer.id, view: buildPlayerStaffView(aggregate, playerId) };
   });
