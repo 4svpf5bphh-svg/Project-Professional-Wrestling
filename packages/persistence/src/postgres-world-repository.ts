@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { compressWorldSnapshot, restoreCompressedWorldSnapshot } from "./world-snapshot-compression.js";
 import type { Id, PpwDate } from "../../domain/src/types.js";
 import {
   CURRENT_APPLICATION_STATE_SCHEMA_VERSION,
@@ -161,6 +162,54 @@ WHERE worlds.world_id = 'world-20261002'
    );
 `,
   },
+  {
+    version: 9,
+    name: "track completed server bootstrap repairs without loading World snapshots",
+    sql: `ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS bootstrap_verified_version integer NOT NULL DEFAULT 0;`,
+  },
+  {
+    version: 10,
+    name: "add optional compressed snapshot transport without changing authoritative JSONB",
+    sql: `ALTER TABLE ppw_worlds ADD COLUMN IF NOT EXISTS world_state_gzip bytea NULL;`,
+  },
+  {
+    version: 11,
+    name: "invalidate stale gzip on JSONB-only updates and refresh cache version",
+    sql: `
+CREATE OR REPLACE FUNCTION ppw_guard_world_snapshot_transport()
+RETURNS trigger LANGUAGE plpgsql AS '
+BEGIN
+  -- Older binaries, recovery tools and manual edits can change authoritative
+  -- JSONB alone. Make the compressed transport nullable again rather than
+  -- serve stale wrestler data.
+  IF NEW.world_state_gzip IS NOT DISTINCT FROM OLD.world_state_gzip
+     AND NEW.world_state IS DISTINCT FROM OLD.world_state THEN
+    NEW.world_state_gzip := NULL;
+  END IF;
+
+  -- An external change must invalidate a warm Vercel instance, even when
+  -- that writer forgot to update its version marker.
+  IF NEW.updated_at IS NOT DISTINCT FROM OLD.updated_at
+     AND (
+       NEW.world_state IS DISTINCT FROM OLD.world_state
+       OR NEW.planning_state IS DISTINCT FROM OLD.planning_state
+       OR NEW.engagement_state IS DISTINCT FROM OLD.engagement_state
+       OR NEW.runtime_phase IS DISTINCT FROM OLD.runtime_phase
+       OR NEW.runtime_revision IS DISTINCT FROM OLD.runtime_revision
+       OR NEW.human_seat_limit IS DISTINCT FROM OLD.human_seat_limit
+     ) THEN
+    NEW.updated_at := clock_timestamp();
+  END IF;
+  RETURN NEW;
+END;
+';
+DROP TRIGGER IF EXISTS ppw_guard_world_snapshot_transport ON ppw_worlds;
+CREATE TRIGGER ppw_guard_world_snapshot_transport
+BEFORE UPDATE OF world_state, planning_state, engagement_state,
+  runtime_phase, runtime_revision, human_seat_limit ON ppw_worlds
+FOR EACH ROW EXECUTE FUNCTION ppw_guard_world_snapshot_transport();
+`,
+  },
 ] as const;
 
 export const POSTGRES_APPLICATION_SCHEMA_SQL = [
@@ -172,7 +221,8 @@ type SqlClient = ReturnType<typeof postgres>;
 
 type WorldRow = {
   world_id: string;
-  world_state: unknown;
+  world_state: unknown | null;
+  world_state_gzip: Uint8Array | null;
   planning_state: unknown | null;
   engagement_state: unknown | null;
   runtime_phase: WorldRuntimePhase;
@@ -213,7 +263,10 @@ type ReceiptRow = {
 async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): Promise<ApplicationWorldAggregate> {
   const lock = forUpdate ? " FOR UPDATE" : "";
   const worldRows = await sql.unsafe(
-    `SELECT world_id, world_state, planning_state, engagement_state, runtime_phase, runtime_revision, locked_ppw_date, last_resolved_ppw_date,
+    `SELECT world_id,
+            CASE WHEN world_state_gzip IS NULL THEN world_state ELSE NULL END AS world_state,
+            world_state_gzip,
+            planning_state, engagement_state, runtime_phase, runtime_revision, locked_ppw_date, last_resolved_ppw_date,
             commitment_locked_ppw_date, commitment_locked_real_cycle_key,
             locked_real_cycle_key, last_resolved_real_cycle_key, human_seat_limit
        FROM ppw_worlds WHERE world_id = $1${lock}`,
@@ -221,6 +274,10 @@ async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): P
   ) as unknown as WorldRow[];
   const row = worldRows[0];
   if (!row) throw new Error(`World ${worldId} was not found`);
+  const world = row.world_state_gzip
+    ? restoreCompressedWorldSnapshot(row.world_state_gzip)
+    : row.world_state;
+  if (!world) throw new Error(`World ${worldId} has no persisted snapshot`);
 
   const membershipRows = await sql`
     SELECT player_id, joined_date, status
@@ -243,7 +300,7 @@ async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): P
 
   const snapshot: PersistedApplicationWorld = {
     applicationStateSchemaVersion: CURRENT_APPLICATION_STATE_SCHEMA_VERSION,
-    world: row.world_state as PersistedApplicationWorld["world"],
+    world: world as PersistedApplicationWorld["world"],
     ownership: {
       worldId,
       humanSeatLimit: Number(row.human_seat_limit),
@@ -296,7 +353,15 @@ async function readAggregate(sql: SqlClient, worldId: Id, forUpdate: boolean): P
   return restorePersistedApplicationWorld(snapshot);
 }
 
-async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggregate): Promise<void> {
+async function writeAggregate(
+  sql: SqlClient,
+  aggregate: ApplicationWorldAggregate,
+  previousReceiptCount = 0,
+): Promise<void> {
+  if (!Number.isSafeInteger(previousReceiptCount) || previousReceiptCount < 0
+    || previousReceiptCount > aggregate.commands.receipts.length) {
+    throw new Error("invalid prior command receipt count during World persistence");
+  }
   const snapshot = createPersistedApplicationWorld(aggregate);
   const worldId = aggregate.state.world.id;
 
@@ -304,6 +369,7 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
     UPDATE ppw_worlds SET
       state_schema_version = ${CURRENT_WORLD_STATE_SCHEMA_VERSION},
       world_state = ${sql.json(snapshot.world as never)},
+      world_state_gzip = ${compressWorldSnapshot(snapshot.world)},
       planning_state = ${sql.json(snapshot.planning as never)},
       engagement_state = ${sql.json(snapshot.engagement as never)},
       runtime_phase = ${snapshot.runtime.phase},
@@ -315,7 +381,7 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
       locked_real_cycle_key = ${snapshot.runtime.lockedRealCycleKey ?? null},
       last_resolved_real_cycle_key = ${snapshot.runtime.lastResolvedRealCycleKey ?? null},
       human_seat_limit = ${snapshot.ownership.humanSeatLimit},
-      updated_at = now()
+      updated_at = clock_timestamp()
     WHERE world_id = ${worldId}
   `;
 
@@ -351,7 +417,11 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
   }
   await sql`DELETE FROM ppw_promotion_controls WHERE world_id = ${worldId} AND ordinal >= ${snapshot.ownership.promotionControls.length}`;
 
-  for (const receipt of snapshot.commands.receipts) {
+  // Receipts are immutable. Rewriting every old receipt on every player
+  // action scales writes, query count and Neon transfer with World age.
+  // Only new append-only receipts are persisted; the transaction verifies
+  // that its historical receipt prefix was not modified before writing.
+  for (const receipt of snapshot.commands.receipts.slice(previousReceiptCount)) {
     await sql`
       INSERT INTO ppw_command_receipts(
         world_id, request_id, player_id, command_type, canonical_payload, result_json, committed_date, committed_revision
@@ -359,13 +429,7 @@ async function writeAggregate(sql: SqlClient, aggregate: ApplicationWorldAggrega
         ${worldId}, ${receipt.requestId}, ${receipt.playerId}, ${receipt.commandType}, ${receipt.canonicalPayload},
         ${receipt.resultJson}, ${sql.json(receipt.committedDate as never)}, ${receipt.committedRevision}
       )
-      ON CONFLICT (world_id, request_id) DO UPDATE SET
-        player_id = EXCLUDED.player_id,
-        command_type = EXCLUDED.command_type,
-        canonical_payload = EXCLUDED.canonical_payload,
-        result_json = EXCLUDED.result_json,
-        committed_date = EXCLUDED.committed_date,
-        committed_revision = EXCLUDED.committed_revision
+      ON CONFLICT (world_id, request_id) DO NOTHING
     `;
   }
 }
@@ -430,8 +494,15 @@ export class PostgresApplicationWorldRepository implements ApplicationWorldRepos
           `stale World revision for ${worldId}: expected ${expectedRevision}, current ${working.runtime.revision}`,
         );
       }
+      // A command receipt is an immutable idempotency record. An action may
+      // append a new receipt but must never rewrite or reorder old receipts.
+      const previousReceipts = JSON.stringify(working.commands.receipts);
+      const previousReceiptCount = working.commands.receipts.length;
       const result = await action(working);
-      await writeAggregate(transactionalSql, working);
+      if (JSON.stringify(working.commands.receipts.slice(0, previousReceiptCount)) !== previousReceipts) {
+        throw new Error("World transaction changed an existing immutable command receipt");
+      }
+      await writeAggregate(transactionalSql, working, previousReceiptCount);
       return { result, revision: working.runtime.revision };
     });
   }

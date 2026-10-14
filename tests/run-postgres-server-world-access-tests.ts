@@ -1,8 +1,9 @@
 declare const process: { env: Record<string, string | undefined>; exitCode?: number };
 
 import { lockPersistedCurrentWeekShowCommitments } from "../packages/application/src/index.js";
-import { createAlphaWorldAggregate } from "../packages/web-adapter/src/alpha-service.js";
+import { createAlphaWorldAggregate, claimAlphaPromotion } from "../packages/web-adapter/src/alpha-service.js";
 import { createPostgresServerWorldAccess } from "../packages/persistence/src/postgres-server-world-access.js";
+import postgres from "postgres";
 
 let passed = 0;
 let failed = 0;
@@ -112,6 +113,293 @@ await test("server reads omit command history while transactions retain idempote
       receiptsVisibleInsideTransaction === 1,
       "transaction path did not retain command receipts required for idempotency",
     );
+  } finally {
+    await access.close();
+  }
+});
+
+
+await test("unchanged World repeat loads use version probes, not repeated megabyte snapshots", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62024, playerId: "read-cache-player" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const first = await access.repository.load(worldId);
+    const second = await access.repository.load(worldId);
+    ok(first.state.people.length === second.state.people.length, "cache changed World population");
+    const counts = access.readStatistics();
+    ok(counts.fullSnapshotReads === 1 && counts.cacheHits === 1 && counts.versionProbes === 2,
+      `unchanged World re-transferred snapshot: ${JSON.stringify(counts)}`);
+
+    // No caller can mutate the cached snapshot through an exposed reference.
+    second.state.promotions[0]!.cash = -999_999;
+    const third = await access.repository.load(worldId);
+    ok(third.state.promotions[0]!.cash !== -999_999,
+      "caller mutated the cached World via a returned view object");
+    ok(access.readStatistics().fullSnapshotReads === 1,
+      "isolated cached read fetched another full World snapshot");
+  } finally {
+    await access.close();
+  }
+});
+
+await test("activity writes update cache without losing authoritative engagement or reloading World", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62025, playerId: "cache-activity-player" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    await access.repository.load(worldId);
+    await access.recordPlayerActivity(worldId, "cache-activity-player", "2026-10-14");
+    const after = await access.repository.load(worldId);
+    ok(after.engagement?.playerActivity.some(a =>
+      a.playerId === "cache-activity-player" && a.lastActiveCycleKey === "2026-10-14"),
+      "cached World lost activity update");
+    ok(access.readStatistics().fullSnapshotReads === 1,
+      "activity-only write forced multi-megabyte World reload");
+    await access.recordPlayerActivity(worldId, "cache-activity-player", "2026-10-14");
+    await access.repository.load(worldId);
+    ok(access.readStatistics().fullSnapshotReads === 1,
+      "unchanged activity generated a redundant World snapshot read");
+  } finally {
+    await access.close();
+  }
+});
+
+await test("external World transactions invalidate warm cache across server instances", async () => {
+  const current = createPostgresServerWorldAccess(connectionString);
+  const rival = createPostgresServerWorldAccess(connectionString);
+  try {
+    await current.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62026, playerId: "shared-world-player" });
+    await current.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const starting = await current.repository.load(worldId);
+    const previousCash = starting.state.promotions[0]!.cash;
+    await rival.repository.transact(worldId, null, working => {
+      working.state.promotions[0]!.cash += 4321;
+      working.runtime.revision += 1;
+    });
+    const refreshed = await current.repository.load(worldId);
+    ok(refreshed.state.promotions[0]!.cash === previousCash + 4321,
+      "warm instance hid rival player's authoritative World change");
+    ok(current.readStatistics().fullSnapshotReads === 2,
+      "World revision change failed to invalidate cached snapshot");
+    const warm = await current.repository.load(worldId);
+    ok(warm.state.promotions[0]!.cash === previousCash + 4321
+      && current.readStatistics().fullSnapshotReads === 2,
+      "updated shared state was not cached after invalidation");
+  } finally {
+    await current.close();
+    await rival.close();
+  }
+});
+
+await test("player activity cannot stamp a stale World cache as authoritative", async () => {
+  const current = createPostgresServerWorldAccess(connectionString);
+  const rival = createPostgresServerWorldAccess(connectionString);
+  try {
+    await current.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62027, playerId: "race-activity-player" });
+    await current.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const before = await current.repository.load(worldId);
+    const previousCash = before.state.promotions[0]!.cash;
+    await rival.repository.transact(worldId, null, working => {
+      working.state.promotions[0]!.cash += 222;
+      working.runtime.revision += 1;
+    });
+    await current.recordPlayerActivity(worldId, "race-activity-player", "2026-10-15");
+    const after = await current.repository.load(worldId);
+    ok(after.state.promotions[0]!.cash === previousCash + 222,
+      "activity incorrectly validated stale snapshot after another player wrote");
+    ok(after.engagement?.playerActivity.some(a => a.lastActiveCycleKey === "2026-10-15"),
+      "activity was dropped during stale cache invalidation");
+    ok(current.readStatistics().fullSnapshotReads === 2,
+      "stale snapshot was incorrectly reused after a rival write");
+  } finally {
+    await current.close();
+    await rival.close();
+  }
+});
+
+
+await test("verified bootstrap metadata prevents expensive repeat compatibility loading", async () => {
+  const first = createPostgresServerWorldAccess(connectionString);
+  const second = createPostgresServerWorldAccess(connectionString);
+  try {
+    await first.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62028, playerId: "bootstrap-metadata-player" });
+    await first.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    ok(!(await first.bootstrapVerified(worldId, 1)),
+      "unverified World incorrectly skipped its required compatibility repairs");
+    await first.markBootstrapVerified(worldId, 1);
+    ok(await second.bootstrapVerified(worldId, 1),
+      "new server instance cannot observe completed compatibility repairs");
+    ok(!(await second.bootstrapVerified(worldId, 2)),
+      "future repairs must not be skipped by an older verified marker");
+    const persisted = await second.repository.load(worldId);
+    ok(persisted.runtime.revision === aggregate.runtime.revision
+      && persisted.state.people.length === aggregate.state.people.length,
+      "bootstrap marker changed World state or revision");
+    await second.markBootstrapVerified(worldId, 1);
+    ok(await first.bootstrapVerified(worldId, 1),
+      "repeated marking lost the durable verification marker");
+  } finally {
+    await first.close();
+    await second.close();
+  }
+});
+
+
+await test("Talent and Staff read-only projections match full authoritative views", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  // A fresh server instance must exercise the cold projection: promotion
+  // claiming legitimately warmed the original instance's full read cache.
+  const reader = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62029, playerId: "lean-talent-player" });
+    const indie = aggregate.state.promotions.find(p =>
+      p.playerTakeoverEligibility === "STANDARD" && p.lifecycle === "ACTIVE");
+    if (!indie) throw new Error("projection test needs a promotion with a roster");
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    await claimAlphaPromotion(access.repository, worldId, "lean-talent-player",
+      { promotionId: indie.id, requestId: "lean-views-claim" });
+    const lean = await reader.repository.loadTalentView(worldId);
+    ok(lean.state.ledger.length > 0 && lean.state.financialTransactions.length === 0,
+      "Talent view lost the ledger needed for wrestler creative and alignment");
+
+    ok(reader.readStatistics().fullSnapshotReads === 1
+      && reader.readStatistics().talentViewReads === 1,
+      "cold Talent instance did not use shared compressed World load");
+    const again = await reader.repository.loadTalentView(worldId);
+    ok(reader.readStatistics().fullSnapshotReads === 1
+      && reader.readStatistics().cacheHits === 1
+      && reader.readStatistics().talentViewReads === 2,
+      "repeat Talent view transferred another snapshot");
+    ok(again.state.people.length === lean.state.people.length, "cached Talent view changed wrestler population");
+
+    const { buildPlayerTalentManagementView } = await import("../packages/application/src/talent-view.js");
+    const { buildPlayerTalentDirectoryView } = await import("../packages/application/src/talent-view.js");
+    const { buildPlayerStaffView } = await import("../packages/application/src/staff-view.js");
+    const full = await access.repository.load(worldId);
+    ok(lean.state.ledger.length === full.state.ledger.length,
+      "lean Talent view dropped alignment and contract decision history");
+    const same = (left: unknown, right: unknown, label: string) =>
+      ok(JSON.stringify(left) === JSON.stringify(right), `lean ${label} differs from full World read`);
+    const management = buildPlayerTalentManagementView(lean, "lean-talent-player");
+    ok(management.roster.length > 0, "projection fixture lacks meaningful wrestler contract state");
+    same(management, buildPlayerTalentManagementView(full, "lean-talent-player"), "Talent management");
+    same(buildPlayerTalentDirectoryView(lean, "lean-talent-player"),
+      buildPlayerTalentDirectoryView(full, "lean-talent-player"), "Wrestler directory");
+    same(buildPlayerStaffView(lean, "lean-talent-player"),
+      buildPlayerStaffView(full, "lean-talent-player"), "Staff");
+  } finally {
+    await access.close();
+    await reader.close();
+  }
+});
+
+
+await test("legacy JSONB snapshot backfills gzip once without mutating World revision", async () => {
+  const sql = postgres(connectionString, { max: 1 });
+  const first = createPostgresServerWorldAccess(connectionString);
+  const second = createPostgresServerWorldAccess(connectionString);
+  try {
+    await first.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62031, playerId: "gzip-backfill-player" });
+    await first.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    await sql`UPDATE ppw_worlds SET world_state_gzip = NULL WHERE world_id = ${worldId}`;
+    const loaded = await first.repository.load(worldId);
+    ok(loaded.runtime.revision === aggregate.runtime.revision
+      && loaded.state.people.length === aggregate.state.people.length,
+      "legacy fallback altered World during gzip backfill");
+    const stats = first.readStatistics();
+    ok(stats.rawFallbackReads === 1 && stats.backfilledSnapshots === 1,
+      "legacy World was not backfilled after its first raw read");
+    ok(stats.snapshotWireBytes > 0, "legacy fallback did not measure transfer payload");
+    const inspected = await sql`
+      SELECT octet_length(world_state::text) AS raw_bytes,
+             octet_length(world_state_gzip) AS gzip_bytes,
+             runtime_revision
+      FROM ppw_worlds WHERE world_id = ${worldId}
+    ` as unknown as Array<{ raw_bytes: number; gzip_bytes: number | null; runtime_revision: string }>;
+    ok(Number(inspected[0]?.gzip_bytes) > 0
+      && Number(inspected[0]?.gzip_bytes) < Number(inspected[0]?.raw_bytes),
+      "backfill did not create a compact transport snapshot");
+    ok(Number(inspected[0]?.runtime_revision) === aggregate.runtime.revision,
+      "backfill advanced the multiplayer World revision");
+    const onAnotherServer = await second.repository.load(worldId);
+    ok(second.readStatistics().compressedSnapshotReads === 1,
+      "new server transferred the full raw World after backfill");
+    ok(second.readStatistics().snapshotWireBytes < first.readStatistics().snapshotWireBytes * 0.35,
+      "cold-server gzip did not meet 65%+ transfer reduction budget");
+    ok(onAnotherServer.state.people.length === aggregate.state.people.length,
+      "compressed World lost wrestlers on a cold server instance");
+  } finally {
+    await first.close();
+    await second.close();
+    await sql.end({ timeout: 5 });
+  }
+});
+
+
+await test("concurrent cold navigation transfers each World snapshot only once per version", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62033, playerId: "concurrent-player" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    // Simulate many mobile views arriving before a cold server cache is filled.
+    const views = await Promise.all(Array.from({ length: 24 }, (_, index) => (
+      index % 3 === 0
+        ? access.repository.loadTalentView(worldId)
+        : access.repository.load(worldId)
+    )));
+    ok(views.every(view => view.state.people.length === aggregate.state.people.length),
+      "coalesced load lost wrestler profiles");
+    ok(views.every((view, index) => index % 3 !== 0
+      || view.state.financialTransactions.length === 0),
+      "Talent coalescing leaked financial history into read-only projection");
+    const counters = access.readStatistics();
+    ok(counters.fullSnapshotReads === 1 && counters.trimmedHistoryReads === 0,
+      `concurrent full and Talent screens fetched duplicate compressed World copies: ${JSON.stringify(counters)}`);
+    ok(counters.snapshotWireBytes > 0,
+      "cold concurrent reads omitted the snapshot transfer instrumentation");
+    views[0]!.state.promotions[0]!.cash = -999_444;
+    ok(views.slice(1).every(view => view.state.promotions[0]!.cash !== -999_444),
+      "concurrent consumers shared mutable World state");
+    const after = await access.repository.load(worldId);
+    ok(after.state.promotions[0]!.cash !== -999_444,
+      "concurrent cache returned a caller-mutated World");
+  } finally {
+    await access.close();
+  }
+});
+
+await test("two simultaneous Talent-only cold screens coalesce into one snapshot read", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62034, playerId: "concurrent-talent-player" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const views = await Promise.all(Array.from({ length: 16 }, () =>
+      access.repository.loadTalentView(worldId)));
+    ok(views.every(view => view.state.people.length === aggregate.state.people.length),
+      "concurrent Talent loads lost wrestler directory");
+    const counts = access.readStatistics();
+    ok(counts.fullSnapshotReads === 1 && counts.trimmedHistoryReads === 0
+      && counts.talentViewReads === 16,
+      `Talent-only screens fetched more than one compressed World copy: ${JSON.stringify(counts)}`);
   } finally {
     await access.close();
   }

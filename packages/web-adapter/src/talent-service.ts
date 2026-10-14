@@ -310,7 +310,9 @@ export async function loadAlphaTalentSession(
   worldId: string,
   playerId: string,
 ): Promise<PlayerTalentManagementView> {
-  return buildPlayerTalentManagementView(await repository.load(worldId), playerId);
+  return buildPlayerTalentManagementView(
+    await (repository.loadTalentView?.(worldId) ?? repository.load(worldId)), playerId,
+  );
 }
 
 
@@ -319,7 +321,9 @@ export async function loadAlphaTalentDirectorySession(
   worldId: string,
   playerId: string,
 ): Promise<PlayerTalentDirectoryView> {
-  return buildPlayerTalentDirectoryView(await repository.load(worldId), playerId);
+  return buildPlayerTalentDirectoryView(
+    await (repository.loadTalentView?.(worldId) ?? repository.load(worldId)), playerId,
+  );
 }
 
 export async function submitAlphaTalentOffer(

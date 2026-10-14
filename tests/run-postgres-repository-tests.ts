@@ -59,6 +59,87 @@ function fixture(seed: number): ApplicationWorldAggregate {
 try {
   await repository.migrate();
 
+
+  await test("compressed transport is smaller, lossless, and transactionally maintained", async () => {
+    const sample = fixture(62030);
+    await repository.initialize(sample);
+    const worldId = sample.state.world.id;
+    const rows = await inspectionSql`
+      SELECT octet_length(world_state::text) AS raw_bytes,
+             octet_length(world_state_gzip) AS gzip_bytes
+      FROM ppw_worlds WHERE world_id = ${worldId}
+    ` as unknown as Array<{ raw_bytes: number; gzip_bytes: number | null }>;
+    ok(Number(rows[0]?.gzip_bytes) > 0
+      && Number(rows[0]?.gzip_bytes) <= Number(rows[0]?.raw_bytes) * 0.35,
+      "gzip transfer has regressed beyond 35% of the JSONB snapshot");
+    const restored = await repository.load(worldId);
+    ok(restored.state.people.length === sample.state.people.length,
+      "compressed World did not restore its real roster");
+
+    await repository.transact(worldId, null, state => {
+      state.state.promotions[0]!.cash += 1234;
+      state.runtime.revision += 1;
+    });
+    const after = await repository.load(worldId);
+    ok(after.state.promotions[0]!.cash === sample.state.promotions[0]!.cash + 1234,
+      "compressed copy was not updated in the authoritative transaction");
+
+    // Existing legacy Worlds may not yet have gzip. Retain the old JSONB
+    // fallback and upgrade on the next authoritative transaction.
+    await inspectionSql`UPDATE ppw_worlds SET world_state_gzip = NULL WHERE world_id = ${worldId}`;
+    const fallback = await repository.load(worldId);
+    ok(fallback.state.promotions[0]!.cash === after.state.promotions[0]!.cash,
+      "uncompressed legacy World was not readable");
+    await repository.transact(worldId, null, state => {
+      state.state.promotions[0]!.cash += 42;
+      state.runtime.revision += 1;
+    });
+    const repaired = await inspectionSql`
+      SELECT octet_length(world_state_gzip) AS gzip_bytes
+      FROM ppw_worlds WHERE world_id = ${worldId}
+    ` as unknown as Array<{ gzip_bytes: number | null }>;
+    ok(Number(repaired[0]?.gzip_bytes) > 0,
+      "authoritative write did not restore compressed transport for legacy World");
+    const finalWorld = await repository.load(worldId);
+    ok(finalWorld.state.promotions[0]!.cash === after.state.promotions[0]!.cash + 42,
+      "legacy compressed transition lost World updates");
+  });
+
+
+  await test("raw SQL World edits invalidate stale gzip and cross-server caches", async () => {
+    const sample = fixture(62032);
+    await repository.initialize(sample);
+    const worldId = sample.state.world.id;
+    const changed = sample.state.promotions[0]!.cash + 777;
+    const before = await inspectionSql`
+      SELECT updated_at::text AS snapshot_version FROM ppw_worlds
+      WHERE world_id = ${worldId}
+    ` as unknown as Array<{ snapshot_version: string }>;
+    await inspectionSql`
+      UPDATE ppw_worlds SET world_state =
+        jsonb_set(world_state, '{promotions,0,cash}', to_jsonb(${changed}::numeric))
+      WHERE world_id = ${worldId}
+    `;
+    const row = await inspectionSql`
+      SELECT world_state_gzip IS NULL AS invalidated,
+        updated_at::text AS snapshot_version FROM ppw_worlds
+      WHERE world_id = ${worldId}
+    ` as unknown as Array<{ invalidated: boolean; snapshot_version: string }>;
+    ok(row[0]?.invalidated, "JSONB-only change left obsolete gzip active");
+    ok(row[0]?.snapshot_version !== before[0]?.snapshot_version,
+      "JSONB-only change did not invalidate version probes");
+    ok((await repository.load(worldId)).state.promotions[0]!.cash === changed,
+      "old compressed state hid newer authoritative JSONB");
+    await repository.transact(worldId, null, world => { world.runtime.revision += 1; });
+    const copy = await inspectionSql`
+      SELECT octet_length(world_state_gzip) AS bytes FROM ppw_worlds
+      WHERE world_id = ${worldId}
+    ` as unknown as Array<{ bytes: number | null }>;
+    ok(Number(copy[0]?.bytes) > 0, "normal transaction did not rebuild gzip copy");
+    ok((await repository.load(worldId)).state.promotions[0]!.cash === changed,
+      "transport rebuilding reverted external authoritative edit");
+  });
+
   await test("PostgreSQL migration ledger is numbered and idempotent", async () => {
     await repository.migrate();
     const rows = await inspectionSql`SELECT version, name FROM ppw_schema_migrations ORDER BY version` as unknown as Array<{ version: number; name: string }>;
@@ -264,13 +345,54 @@ try {
     ok(loaded.commands.receipts.length === 1, "relational command receipt was not persisted");
     ok(loaded.state.promotions.find((candidate) => candidate.id === promotion.id)?.controllerType === "HUMAN", "simulation snapshot was not persisted");
 
+    const beforeReceipt = await inspectionSql`
+      SELECT xmin::text AS tuple_revision
+      FROM ppw_command_receipts
+      WHERE world_id = ${aggregate.state.world.id} AND request_id = ${envelope.requestId}
+    ` as unknown as Array<{ tuple_revision: string }>;
     const retry = await repository.transact(aggregate.state.world.id, 1, (working) => (
       claimIndependentPromotionCommand(working.state, working.ownership, working.commands, working.runtime, envelope)
     ));
+    const afterReceipt = await inspectionSql`
+      SELECT xmin::text AS tuple_revision
+      FROM ppw_command_receipts
+      WHERE world_id = ${aggregate.state.world.id} AND request_id = ${envelope.requestId}
+    ` as unknown as Array<{ tuple_revision: string }>;
+    ok(beforeReceipt[0]?.tuple_revision === afterReceipt[0]?.tuple_revision,
+      "idempotent retry rewrote an unchanged historical receipt");
     ok(retry.revision === 1, "idempotent retry revised persisted World");
     const afterRetry = await repository.load(aggregate.state.world.id);
     ok(afterRetry.commands.receipts.length === 1, "idempotent retry duplicated persisted receipt");
     ok(afterRetry.ownership.promotionControls.length === 1, "idempotent retry duplicated persisted control");
+  });
+
+
+  await test("transaction refuses to rewrite historical command receipts", async () => {
+    const aggregate = fixture(14009);
+    joinPlayerToWorld(aggregate.ownership, "player-protected", aggregate.state.world.currentDate);
+    await repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const promotion = aggregate.state.promotions.find(x =>
+      x.tier === "INDEPENDENT" && x.lifecycle === "ACTIVE")!;
+    await repository.transact(worldId, null, working => {
+      claimIndependentPromotionCommand(
+        working.state, working.ownership, working.commands, working.runtime,
+        { requestId: "protected-original", worldId, playerId: "player-protected",
+          commandType: "CLAIM_INDEPENDENT_PROMOTION", payload: { promotionId: promotion.id } },
+      );
+    });
+    let rejected = false;
+    try {
+      await repository.transact(worldId, null, working => {
+        working.commands.receipts[0]!.canonicalPayload = '{"tampered":true}';
+      });
+    } catch (error) {
+      rejected = error instanceof Error && error.message.includes("immutable command receipt");
+    }
+    ok(rejected, "transaction accepted a rewrite of an idempotency receipt");
+    const intact = await repository.load(worldId);
+    ok(intact.commands.receipts[0]?.canonicalPayload !== '{"tampered":true}',
+      "an old receipt changed despite its transaction being rejected");
   });
 
   await test("PostgreSQL transaction rollback leaves no partial World mutation", async () => {

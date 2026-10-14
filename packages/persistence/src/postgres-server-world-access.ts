@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { compressWorldSnapshot, restoreCompressedWorldSnapshot } from "./world-snapshot-compression.js";
 import type { Id, PpwDate } from "../../domain/src/types.js";
 import {
   createWorldEngagementState,
@@ -23,11 +24,33 @@ type ActivityRow = {
   engagement_state: unknown | null;
   current_ppw_date: PpwDate | null;
   runtime_revision: string | number;
+  snapshot_version: string;
 };
+
+type WorldVersionRow = { snapshot_version: string };
+
+export interface ServerWorldReadStatistics {
+  fullSnapshotReads: number;
+  versionProbes: number;
+  cacheHits: number;
+  /** Concurrent requests sharing an in-flight snapshot, without duplicate transfer. */
+  coalescedReads: number;
+  /** Legacy metric: now zero because Talent shares full compressed transfer. */
+  trimmedHistoryReads: number;
+  /** Talent/Staff read-only views served by the shared snapshot path. */
+  talentViewReads: number;
+  compressedSnapshotReads: number;
+  rawFallbackReads: number;
+  backfilledSnapshots: number;
+  /** World-state payload bytes read from PostgreSQL (excludes protocol and other tables). */
+  snapshotWireBytes: number;
+}
 
 type WorldReadRow = {
   world_id: string;
-  world_state: unknown;
+  snapshot_version: string;
+  world_state: unknown | null;
+  world_state_gzip: Uint8Array | null;
   planning_state: unknown | null;
   engagement_state: unknown | null;
   runtime_phase: WorldRuntimePhase;
@@ -56,7 +79,14 @@ type ControlRow = {
 };
 
 export interface PostgresServerWorldAccess {
-  repository: PostgresApplicationWorldRepository;
+  repository: PostgresApplicationWorldRepository & {
+    loadTalentView(worldId: Id): Promise<ApplicationWorldAggregate>;
+  };
+  /** Diagnostic counters for tests and lightweight operational monitoring. */
+  readStatistics(): ServerWorldReadStatistics;
+  /** Fast bootstrap gate. Must only skip compatibility repairs previously completed. */
+  bootstrapVerified(worldId: Id, requiredVersion: number): Promise<boolean>;
+  markBootstrapVerified(worldId: Id, completedVersion: number): Promise<void>;
   recordPlayerActivity(
     worldId: Id,
     playerId: string,
@@ -81,10 +111,22 @@ function validPpwDate(value: PpwDate | null): value is PpwDate {
 async function readWorldWithoutCommandReceipts(
   sql: SqlClient,
   worldId: Id,
-): Promise<ApplicationWorldAggregate> {
+): Promise<{
+  aggregate: ApplicationWorldAggregate;
+  snapshotVersion: string;
+  usedCompressed: boolean;
+  backfilled: boolean;
+  snapshotWireBytes: number;
+}> {
   const startedAt = performance.now();
+  // SQL does NOT transmit the 5–6MB JSONB when a compressed copy exists.
+  // A legacy World without the copy falls back once to JSONB, then is safely
+  // backfilled using an optimistic version guard below.
   const worldRows = await sql`
-    SELECT world_id, world_state, planning_state, engagement_state, runtime_phase, runtime_revision,
+    SELECT world_id, updated_at::text AS snapshot_version,
+           CASE WHEN world_state_gzip IS NULL THEN world_state ELSE NULL END AS world_state,
+           world_state_gzip,
+           planning_state, engagement_state, runtime_phase, runtime_revision,
            locked_ppw_date, last_resolved_ppw_date, commitment_locked_ppw_date, commitment_locked_real_cycle_key,
            locked_real_cycle_key, last_resolved_real_cycle_key, human_seat_limit
     FROM ppw_worlds
@@ -92,7 +134,24 @@ async function readWorldWithoutCommandReceipts(
   ` as unknown as WorldReadRow[];
   const row = worldRows[0];
   if (!row) throw new Error(`World ${worldId} was not found`);
-
+  const fullWorld = (row.world_state_gzip
+    ? restoreCompressedWorldSnapshot(row.world_state_gzip)
+    : row.world_state) as PersistedApplicationWorld["world"] | null;
+  if (!fullWorld) throw new Error(`World ${worldId} has no persisted snapshot`);
+  let backfilled = false;
+  if (!row.world_state_gzip) {
+    // Backfill is metadata-only and does NOT advance PPW time/revision or
+    // update the World cache's updated_at marker. Never overwrite a rival
+    // transaction: its updated_at will differ, or its gzip will be non-null.
+    const result = await sql`
+      UPDATE ppw_worlds SET world_state_gzip = ${compressWorldSnapshot(fullWorld)}
+      WHERE world_id = ${worldId}
+        AND updated_at::text = ${row.snapshot_version}
+        AND world_state_gzip IS NULL
+      RETURNING world_id
+    `;
+    backfilled = result.length === 1;
+  }
   const [membershipRows, controlRows] = await Promise.all([
     sql`
       SELECT player_id, joined_date, status
@@ -110,7 +169,7 @@ async function readWorldWithoutCommandReceipts(
 
   const snapshot: PersistedApplicationWorld = {
     applicationStateSchemaVersion: CURRENT_APPLICATION_STATE_SCHEMA_VERSION,
-    world: row.world_state as PersistedApplicationWorld["world"],
+    world: fullWorld as PersistedApplicationWorld["world"],
     ownership: {
       worldId,
       humanSeatLimit: Number(row.human_seat_limit),
@@ -161,16 +220,129 @@ async function readWorldWithoutCommandReceipts(
       worldRevision: Number(row.runtime_revision),
     }));
   }
-  return aggregate;
+  const snapshotWireBytes = row.world_state_gzip
+    ? row.world_state_gzip.byteLength
+    : Buffer.byteLength(JSON.stringify(row.world_state), "utf8");
+  // Count World payload only. Neon billing also includes other queries and
+  // PostgreSQL protocol overhead, which require a separate live measurement.
+  if (process.env.PPW_PERF_LOGS !== "0") {
+    console.info("[ppw-db-transfer]", JSON.stringify({
+      mode: "full",
+      encoding: row.world_state_gzip ? "gzip" : "jsonb",
+      snapshotWireBytes,
+      worldRevision: Number(row.runtime_revision),
+      elapsedMs: Math.round(elapsedMs * 10) / 10,
+      backfilled,
+    }));
+  }
+  return {
+    aggregate,
+    snapshotVersion: row.snapshot_version,
+    usedCompressed: Boolean(row.world_state_gzip),
+    backfilled,
+    snapshotWireBytes,
+  };
 }
 
 class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
+  // A warm server can serve repeat GETs without transmitting 5–6 MB of
+  // World JSON each time. Only metadata is trusted for cache validity.
+  // Each instance has its own bounded cache; transactions still read and
+  // lock authoritative PostgreSQL state (never this cache).
+  private readonly cache = new Map<Id, {
+    version: string;
+    aggregate: ApplicationWorldAggregate;
+  }>();
+  /** Only simultaneous identical reads share work; each consumer gets a clone. */
+  private readonly pendingFull = new Map<string, Promise<ApplicationWorldAggregate>>();
+  private readonly stats: ServerWorldReadStatistics = {
+    fullSnapshotReads: 0, versionProbes: 0, cacheHits: 0, coalescedReads: 0, trimmedHistoryReads: 0,
+    talentViewReads: 0,
+    compressedSnapshotReads: 0, rawFallbackReads: 0, backfilledSnapshots: 0,
+    snapshotWireBytes: 0,
+  };
+
   constructor(private readonly serverSql: SqlClient) {
     super(serverSql);
   }
 
+  readStatistics(): ServerWorldReadStatistics {
+    return { ...this.stats };
+  }
+
   override async load(worldId: Id): Promise<ApplicationWorldAggregate> {
-    return readWorldWithoutCommandReceipts(this.serverSql, worldId);
+    this.stats.versionProbes += 1;
+    const rows = await this.serverSql`
+      SELECT updated_at::text AS snapshot_version
+      FROM ppw_worlds WHERE world_id = ${worldId}
+    ` as unknown as WorldVersionRow[];
+    if (!rows[0]) throw new Error(`World ${worldId} was not found`);
+    const cached = this.cache.get(worldId);
+    if (cached && cached.version === rows[0].snapshot_version) {
+      this.stats.cacheHits += 1;
+      // Read-only projections must not alter the shared cached aggregate.
+      return structuredClone(cached.aggregate);
+    }
+
+    const key = JSON.stringify([worldId, rows[0].snapshot_version]);
+    const pending = this.pendingFull.get(key);
+    if (pending) {
+      this.stats.coalescedReads += 1;
+      return structuredClone(await pending);
+    }
+    // A cold navigation can fan out multiple GET requests from one Vercel
+    // instance. Transfer a given version of the World only once.
+    const loading = (async () => {
+      this.stats.fullSnapshotReads += 1;
+      const fresh = await readWorldWithoutCommandReceipts(this.serverSql, worldId);
+      if (fresh.usedCompressed) this.stats.compressedSnapshotReads += 1;
+      else this.stats.rawFallbackReads += 1;
+      if (fresh.backfilled) this.stats.backfilledSnapshots += 1;
+      this.stats.snapshotWireBytes += fresh.snapshotWireBytes;
+      this.cache.delete(worldId);
+      this.cache.set(worldId, {
+        version: fresh.snapshotVersion,
+        aggregate: structuredClone(fresh.aggregate),
+      });
+      if (this.cache.size > 2) this.cache.delete(this.cache.keys().next().value!);
+      return fresh.aggregate;
+    })();
+    this.pendingFull.set(key, loading);
+    try {
+      return structuredClone(await loading);
+    } finally {
+      if (this.pendingFull.get(key) === loading) this.pendingFull.delete(key);
+    }
+  }
+
+  async loadTalentView(worldId: Id): Promise<ApplicationWorldAggregate> {
+    // gzip already transfers the same complete compressed snapshot for
+    // Talent and full World routes. One shared in-flight load prevents
+    // duplicate egress regardless of which request arrives first.
+    // The load() method returns a private clone; trimming here cannot
+    // mutate cached authoritative state or another player's response.
+    const view = await this.load(worldId);
+    this.stats.talentViewReads += 1;
+    view.state.financialTransactions = [];
+    return view;
+  }
+
+  /** Activity writes only change engagement, not simulation World state.
+   * Patch the cache only when it was current BEFORE the authoritative write.
+   * Otherwise invalidate; a rival's World mutation must never be hidden.
+   */
+  applyPlayerActivity(
+    worldId: Id, beforeVersion: string, afterVersion: string,
+    engagement: WorldEngagementState,
+  ): void {
+    const cached = this.cache.get(worldId);
+    if (!cached) return;
+    if (cached.version !== beforeVersion) {
+      this.cache.delete(worldId);
+      return;
+    }
+    cached.aggregate.engagement = structuredClone(engagement);
+    cached.version = afterVersion;
   }
 }
 
@@ -180,13 +352,32 @@ export function createPostgresServerWorldAccess(connectionString: string): Postg
 
   return {
     repository,
+    readStatistics: () => repository.readStatistics(),
+    async bootstrapVerified(worldId, requiredVersion): Promise<boolean> {
+      const rows = await sql`
+        SELECT bootstrap_verified_version FROM ppw_worlds
+        WHERE world_id = ${worldId}
+      ` as unknown as Array<{ bootstrap_verified_version: number }>;
+      return Boolean(rows[0] && Number(rows[0].bootstrap_verified_version) >= requiredVersion);
+    },
+    async markBootstrapVerified(worldId, completedVersion): Promise<void> {
+      // Metadata-only update. World state, revision, updated_at and the
+      // version-validated read cache remain unchanged.
+      const rows = await sql`
+        UPDATE ppw_worlds
+        SET bootstrap_verified_version = GREATEST(bootstrap_verified_version, ${completedVersion})
+        WHERE world_id = ${worldId}
+        RETURNING world_id
+      `;
+      if (rows.length !== 1) throw new Error(`World ${worldId} was not found during bootstrap verification`);
+    },
     async recordPlayerActivity(worldId, playerId, realCycleKey): Promise<void> {
-      await sql.begin(async (tx) => {
+      const activity = await sql.begin(async (tx) => {
         const rows = await tx`
           SELECT
             engagement_state,
             world_state->'world'->'currentDate' AS current_ppw_date,
-            runtime_revision
+            runtime_revision, updated_at::text AS snapshot_version
           FROM ppw_worlds
           WHERE world_id = ${worldId}
           FOR UPDATE
@@ -207,7 +398,7 @@ export function createPostgresServerWorldAccess(connectionString: string): Postg
           && previous.lastActivePpwDate.year === row.current_ppw_date.year
           && previous.lastActivePpwDate.week === row.current_ppw_date.week
           && previous.lastActivePpwDate.day === row.current_ppw_date.day;
-        if (unchanged) return;
+        if (unchanged) return null;
 
         recordPlayerActivityInState(
           engagement,
@@ -217,12 +408,18 @@ export function createPostgresServerWorldAccess(connectionString: string): Postg
           realCycleKey,
         );
 
-        await tx`
+        const updated = await tx`
           UPDATE ppw_worlds
-          SET engagement_state = ${tx.json(engagement as never)}, updated_at = now()
+          SET engagement_state = ${tx.json(engagement as never)}, updated_at = clock_timestamp()
           WHERE world_id = ${worldId}
-        `;
+          RETURNING updated_at::text AS snapshot_version
+        ` as unknown as WorldVersionRow[];
+        return { beforeVersion: row.snapshot_version,
+          afterVersion: updated[0]!.snapshot_version, engagement };
       });
+      if (activity) repository.applyPlayerActivity(
+        worldId, activity.beforeVersion, activity.afterVersion, activity.engagement,
+      );
     },
     close: () => sql.end({ timeout: 5 }),
   };
