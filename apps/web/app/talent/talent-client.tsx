@@ -1085,16 +1085,13 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
     }
     const wrestler = view.roster.find((entry) => entry.personId === focusPersonId);
     if (!wrestler) return;
-    if (wrestler.contract.renewalReason === "DATES_EXHAUSTED") {
-      openMoreDates(wrestler);
-      return;
-    }
-    if (wrestler.contract.renewalWindowOpen) {
-      openRenewal(wrestler, "NEGOTIATE");
-      return;
-    }
-    if ((wrestler.scheduledRenewals?.length ?? 0) > 0) {
-      const card = document.getElementById(`signed-contract-${wrestler.personId}`);
+    const cardId = wrestler.contract.renewalWindowOpen
+      ? `actionable-contract-${wrestler.personId}`
+      : (wrestler.scheduledRenewals?.length ?? 0) > 0
+        ? `signed-contract-${wrestler.personId}`
+        : null;
+    if (cardId) {
+      const card = document.getElementById(cardId);
       card?.scrollIntoView({ block: "center" });
       card?.focus({ preventScroll: true });
     }
@@ -1707,7 +1704,7 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
                   {contractDeskActionable.map((entry) => {
                     const contract = entry.contract;
                     return (
-                      <article className={styles.contractDeskCard} key={entry.contractId}>
+                      <article className={styles.contractDeskCard} key={entry.contractId} id={`actionable-contract-${entry.personId}`} tabIndex={-1}>
                         <div className={styles.contractDeskHeader}>
                           <div>
                             <strong>{entry.name}</strong>
