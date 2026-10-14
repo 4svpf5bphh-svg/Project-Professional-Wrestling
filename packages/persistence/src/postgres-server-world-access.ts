@@ -69,6 +69,9 @@ export interface PostgresServerWorldAccess {
   repository: PostgresApplicationWorldRepository;
   /** Diagnostic counters for tests and lightweight operational monitoring. */
   readStatistics(): ServerWorldReadStatistics;
+  /** Fast bootstrap gate. Must only skip compatibility repairs previously completed. */
+  bootstrapVerified(worldId: Id, requiredVersion: number): Promise<boolean>;
+  markBootstrapVerified(worldId: Id, completedVersion: number): Promise<void>;
   recordPlayerActivity(
     worldId: Id,
     playerId: string,
@@ -252,6 +255,24 @@ export function createPostgresServerWorldAccess(connectionString: string): Postg
   return {
     repository,
     readStatistics: () => repository.readStatistics(),
+    async bootstrapVerified(worldId, requiredVersion): Promise<boolean> {
+      const rows = await sql`
+        SELECT bootstrap_verified_version FROM ppw_worlds
+        WHERE world_id = ${worldId}
+      ` as unknown as Array<{ bootstrap_verified_version: number }>;
+      return Boolean(rows[0] && Number(rows[0].bootstrap_verified_version) >= requiredVersion);
+    },
+    async markBootstrapVerified(worldId, completedVersion): Promise<void> {
+      // Metadata-only update. World state, revision, updated_at and the
+      // version-validated read cache remain unchanged.
+      const rows = await sql`
+        UPDATE ppw_worlds
+        SET bootstrap_verified_version = GREATEST(bootstrap_verified_version, ${completedVersion})
+        WHERE world_id = ${worldId}
+        RETURNING world_id
+      `;
+      if (rows.length !== 1) throw new Error(`World ${worldId} was not found during bootstrap verification`);
+    },
     async recordPlayerActivity(worldId, playerId, realCycleKey): Promise<void> {
       const activity = await sql.begin(async (tx) => {
         const rows = await tx`
