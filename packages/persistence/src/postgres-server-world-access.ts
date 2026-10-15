@@ -44,6 +44,10 @@ export interface ServerWorldReadStatistics {
   backfilledSnapshots: number;
   /** World-state payload bytes read from PostgreSQL (excludes protocol and other tables). */
   snapshotWireBytes: number;
+  /** Number of activity checks satisfied without a locking transaction. */
+  activityNoopProbes: number;
+  /** Activity checks requiring an authoritative locking transaction. */
+  activityTransactions: number;
 }
 
 type WorldReadRow = {
@@ -84,6 +88,7 @@ export interface PostgresServerWorldAccess {
   };
   /** Diagnostic counters for tests and lightweight operational monitoring. */
   readStatistics(): ServerWorldReadStatistics;
+  noteActivityProbe(noop: boolean): void;
   /** Fast bootstrap gate. Must only skip compatibility repairs previously completed. */
   bootstrapVerified(worldId: Id, requiredVersion: number): Promise<boolean>;
   markBootstrapVerified(worldId: Id, completedVersion: number): Promise<void>;
@@ -262,6 +267,7 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     talentViewReads: 0,
     compressedSnapshotReads: 0, rawFallbackReads: 0, backfilledSnapshots: 0,
     snapshotWireBytes: 0,
+    activityNoopProbes: 0, activityTransactions: 0,
   };
 
   constructor(private readonly serverSql: SqlClient) {
@@ -270,6 +276,11 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
 
   readStatistics(): ServerWorldReadStatistics {
     return { ...this.stats };
+  }
+
+  noteActivityProbe(noop: boolean): void {
+    if (noop) this.stats.activityNoopProbes += 1;
+    else this.stats.activityTransactions += 1;
   }
 
   override async load(worldId: Id): Promise<ApplicationWorldAggregate> {
@@ -405,7 +416,11 @@ export function createPostgresServerWorldAccess(connectionString: string): Postg
         && probePrevious.lastActiveRevision === Number(current.runtime_revision)
         && probePrevious.lastActivePpwDate.year === current.current_ppw_date.year
         && probePrevious.lastActivePpwDate.week === current.current_ppw_date.week
-        && probePrevious.lastActivePpwDate.day === current.current_ppw_date.day) return;
+        && probePrevious.lastActivePpwDate.day === current.current_ppw_date.day) {
+        repository.noteActivityProbe(true);
+        return;
+      }
+      repository.noteActivityProbe(false);
       const activity = await sql.begin(async (tx) => {
         const rows = await tx`
           SELECT
