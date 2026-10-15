@@ -1,6 +1,7 @@
 import postgres from "postgres";
 import { compressWorldSnapshot, restoreCompressedWorldSnapshot } from "./world-snapshot-compression.js";
 import type { Id, PpwDate } from "../../domain/src/types.js";
+import { buildAlphaPlayerWorldView, type AlphaPlayerWorldView } from "../../application/src/player-view.js";
 import {
   createWorldEngagementState,
   normalizeWorldEngagementState,
@@ -331,6 +332,56 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     } finally {
       if (this.pendingFull.get(key) === loading) this.pendingFull.delete(key);
     }
+  }
+
+  /** Version-scoped Home projection: a warm or cold instance can avoid
+   * fetching the complete World. The fallback remains authoritative.
+   * The membership/control joins prevent cross-player projection access.
+   */
+  async loadPlayerSessionView(worldId: Id, playerId: Id): Promise<AlphaPlayerWorldView> {
+    const rows = await this.serverSql`
+      SELECT projection.payload
+      FROM ppw_player_session_projections AS projection
+      JOIN ppw_worlds AS world ON world.world_id = projection.world_id
+        AND world.updated_at::text = projection.world_snapshot_version
+      JOIN ppw_world_memberships AS membership ON membership.world_id = projection.world_id
+        AND membership.player_id = projection.player_id AND membership.status = 'ACTIVE'
+      JOIN ppw_promotion_controls AS control ON control.world_id = projection.world_id
+        AND control.player_id = projection.player_id AND control.status = 'ACTIVE'
+      WHERE projection.world_id = ${worldId} AND projection.player_id = ${playerId}
+        AND projection.projection_schema_version = 1
+      LIMIT 1
+    ` as unknown as { payload: AlphaPlayerWorldView }[];
+    if (rows[0]) return structuredClone(rows[0].payload);
+
+    // Legacy behavior for unclaimed seats and projection misses. Never
+    // construct a response from an unvalidated cached projection.
+    const aggregate = await this.load(worldId);
+    const view = buildAlphaPlayerWorldView(aggregate, playerId);
+    const activeMember = aggregate.ownership.memberships.some(
+      (member) => member.playerId === playerId && member.status === "ACTIVE",
+    );
+    const activeControl = aggregate.ownership.promotionControls.some(
+      (control) => control.playerId === playerId && control.status === "ACTIVE",
+    );
+    if (activeMember && activeControl) {
+      // Guard against another server advancing the World after our load.
+      // A stale candidate must never overwrite a newer valid projection.
+      const version = this.cache.get(worldId)?.version;
+      if (version) {
+        await this.serverSql`
+          INSERT INTO ppw_player_session_projections
+            (world_id, player_id, world_snapshot_version, projection_schema_version, payload)
+          SELECT world_id, ${playerId}, ${version}, 1, ${this.serverSql.json(view)}
+          FROM ppw_worlds WHERE world_id = ${worldId} AND updated_at::text = ${version}
+          ON CONFLICT (world_id, player_id) DO UPDATE SET
+            world_snapshot_version = EXCLUDED.world_snapshot_version,
+            projection_schema_version = EXCLUDED.projection_schema_version,
+            payload = EXCLUDED.payload
+        `;
+      }
+    }
+    return view;
   }
 
   async loadTalentView(worldId: Id): Promise<ApplicationWorldAggregate> {
