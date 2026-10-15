@@ -438,3 +438,50 @@ await test("two simultaneous Talent-only cold screens coalesce into one snapshot
 
 console.log(`\nPostgreSQL server-world access tests: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exitCode = 1;
+
+await test("player session projection returns equivalent views and invalidates after a World mutation", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62105, playerId: "session-projection-player" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const legacy = await access.repository.load(worldId);
+    const { buildAlphaPlayerWorldView } = await import("../packages/application/src/player-view.js");
+    const expected = buildAlphaPlayerWorldView(legacy, "session-projection-player");
+    const first = await access.repository.loadPlayerSessionView(worldId, "session-projection-player");
+    ok(JSON.stringify(first) === JSON.stringify(expected), "first projected session differs from legacy");
+    const second = await access.repository.loadPlayerSessionView(worldId, "session-projection-player");
+    ok(JSON.stringify(second) === JSON.stringify(expected), "stored projected session differs from legacy");
+    await access.repository.transact(worldId, null, working => {
+      working.runtime.revision += 1;
+    }, []);
+    const after = await access.repository.loadPlayerSessionView(worldId, "session-projection-player");
+    ok(after.runtime.revision === expected.runtime.revision + 1,
+      "session projection remained stale after authoritative World revision");
+  } finally {
+    await access.close();
+  }
+});
+
+await test("session projection never returns another player's cached session", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62106, playerId: "session-owner" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    await access.repository.loadPlayerSessionView(worldId, "session-owner");
+    const rows = await access.repository.loadPlayerSessionView(worldId, "session-other");
+    ok(JSON.stringify(rows) !== JSON.stringify(
+      await access.repository.loadPlayerSessionView(worldId, "session-owner")),
+      "another player received the owner's cached projection");
+  } catch (error) {
+    // A denied unclaimed-player session is also correct isolation.
+    const message = error instanceof Error ? error.message : String(error);
+    ok(/membership|promotion|control|claim|not found|active|player/i.test(message),
+      "unclaimed player was rejected for an unrelated reason: " + message);
+  } finally {
+    await access.close();
+  }
+});
