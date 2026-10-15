@@ -265,6 +265,7 @@ async function readAggregate(
   worldId: Id,
   forUpdate: boolean,
   receiptRequestIds?: readonly string[],
+  onSnapshotRead?: (compressed: boolean) => void,
 ): Promise<ApplicationWorldAggregate> {
   const lock = forUpdate ? " FOR UPDATE" : "";
   const worldRows = await sql.unsafe(
@@ -279,6 +280,7 @@ async function readAggregate(
   ) as unknown as WorldRow[];
   const row = worldRows[0];
   if (!row) throw new Error(`World ${worldId} was not found`);
+  onSnapshotRead?.(row.world_state_gzip !== null);
   const world = row.world_state_gzip
     ? restoreCompressedWorldSnapshot(row.world_state_gzip)
     : row.world_state;
@@ -388,6 +390,7 @@ async function writeAggregate(
   previousReceiptCount = 0,
   previousWorldJson?: string,
   previousOwnershipJson?: string,
+  previousSnapshotCompressed = true,
 ): Promise<void> {
   if (!Number.isSafeInteger(previousReceiptCount) || previousReceiptCount < 0
     || previousReceiptCount > aggregate.commands.receipts.length) {
@@ -402,7 +405,7 @@ async function writeAggregate(
   // before and after the action to preserve exact simulation semantics.
   const worldChanged = previousWorldJson === undefined
     || previousWorldJson !== JSON.stringify(snapshot.world);
-  if (worldChanged) {
+  if (worldChanged || !previousSnapshotCompressed) {
     await sql`
       UPDATE ppw_worlds SET
         state_schema_version = ${CURRENT_WORLD_STATE_SCHEMA_VERSION},
@@ -553,7 +556,9 @@ export class PostgresApplicationWorldRepository implements ApplicationWorldRepos
   ): Promise<WorldTransactionResult<TResult>> {
     return this.sql.begin(async (tx) => {
       const transactionalSql = tx as unknown as SqlClient;
-      const working = await readAggregate(transactionalSql, worldId, true, receiptRequestIds);
+      let previousSnapshotCompressed = true;
+      const working = await readAggregate(transactionalSql, worldId, true, receiptRequestIds,
+        (compressed) => { previousSnapshotCompressed = compressed; });
       if (expectedRevision !== null && working.runtime.revision !== expectedRevision) {
         throw new Error(
           `stale World revision for ${worldId}: expected ${expectedRevision}, current ${working.runtime.revision}`,
@@ -569,7 +574,7 @@ export class PostgresApplicationWorldRepository implements ApplicationWorldRepos
       if (JSON.stringify(working.commands.receipts.slice(0, previousReceiptCount)) !== previousReceipts) {
         throw new Error("World transaction changed an existing immutable command receipt");
       }
-      await writeAggregate(transactionalSql, working, previousReceiptCount, previousWorldJson, previousOwnershipJson);
+      await writeAggregate(transactionalSql, working, previousReceiptCount, previousWorldJson, previousOwnershipJson, previousSnapshotCompressed);
       return { result, revision: working.runtime.revision };
     });
   }
