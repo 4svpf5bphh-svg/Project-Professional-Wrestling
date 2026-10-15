@@ -255,6 +255,8 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
   }>();
   /** Only simultaneous identical reads share work; each consumer gets a clone. */
   private readonly pendingFull = new Map<string, Promise<ApplicationWorldAggregate>>();
+  // A newer probe must not be overwritten by an older in-flight snapshot.
+  private readonly latestProbedVersion = new Map<Id, string>();
   private readonly stats: ServerWorldReadStatistics = {
     fullSnapshotReads: 0, versionProbes: 0, cacheHits: 0, coalescedReads: 0, trimmedHistoryReads: 0,
     talentViewReads: 0,
@@ -277,6 +279,7 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
       FROM ppw_worlds WHERE world_id = ${worldId}
     ` as unknown as WorldVersionRow[];
     if (!rows[0]) throw new Error(`World ${worldId} was not found`);
+    this.latestProbedVersion.set(worldId, rows[0].snapshot_version);
     const cached = this.cache.get(worldId);
     if (cached && cached.version === rows[0].snapshot_version) {
       this.stats.cacheHits += 1;
@@ -299,12 +302,17 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
       else this.stats.rawFallbackReads += 1;
       if (fresh.backfilled) this.stats.backfilledSnapshots += 1;
       this.stats.snapshotWireBytes += fresh.snapshotWireBytes;
-      this.cache.delete(worldId);
-      this.cache.set(worldId, {
-        version: fresh.snapshotVersion,
-        aggregate: structuredClone(fresh.aggregate),
-      });
-      if (this.cache.size > 2) this.cache.delete(this.cache.keys().next().value!);
+      // Do not install a snapshot if a concurrent request has already seen
+      // a newer version. The caller may use its response, but later reads
+      // must probe and retrieve the latest authoritative World.
+      if (this.latestProbedVersion.get(worldId) === fresh.snapshotVersion) {
+        this.cache.delete(worldId);
+        this.cache.set(worldId, {
+          version: fresh.snapshotVersion,
+          aggregate: structuredClone(fresh.aggregate),
+        });
+        if (this.cache.size > 2) this.cache.delete(this.cache.keys().next().value!);
+      }
       return fresh.aggregate;
     })();
     this.pendingFull.set(key, loading);
@@ -343,6 +351,7 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     }
     cached.aggregate.engagement = structuredClone(engagement);
     cached.version = afterVersion;
+    this.latestProbedVersion.set(worldId, afterVersion);
   }
 }
 
