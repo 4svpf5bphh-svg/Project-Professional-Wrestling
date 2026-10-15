@@ -387,6 +387,7 @@ async function writeAggregate(
   aggregate: ApplicationWorldAggregate,
   previousReceiptCount = 0,
   previousWorldJson?: string,
+  previousOwnershipJson?: string,
 ): Promise<void> {
   if (!Number.isSafeInteger(previousReceiptCount) || previousReceiptCount < 0
     || previousReceiptCount > aggregate.commands.receipts.length) {
@@ -441,37 +442,43 @@ async function writeAggregate(
     `;
   }
 
-  for (let ordinal = 0; ordinal < snapshot.ownership.memberships.length; ordinal += 1) {
-    const membership = snapshot.ownership.memberships[ordinal]!;
-    await sql`
-      INSERT INTO ppw_world_memberships(world_id, ordinal, player_id, joined_date, status)
-      VALUES (${worldId}, ${ordinal}, ${membership.playerId}, ${sql.json(membership.joinedDate as never)}, ${membership.status})
-      ON CONFLICT (world_id, ordinal) DO UPDATE SET
-        player_id = EXCLUDED.player_id,
-        joined_date = EXCLUDED.joined_date,
-        status = EXCLUDED.status
-    `;
-  }
-  await sql`DELETE FROM ppw_world_memberships WHERE world_id = ${worldId} AND ordinal >= ${snapshot.ownership.memberships.length}`;
+  // Most booking, contract and planning commands do not alter membership or
+  // promotion control. Avoid re-upserting every row on each such command.
+  if (previousOwnershipJson === undefined
+    || previousOwnershipJson !== JSON.stringify(snapshot.ownership)) {
+    for (let ordinal = 0; ordinal < snapshot.ownership.memberships.length; ordinal += 1) {
+      const membership = snapshot.ownership.memberships[ordinal]!;
+      await sql`
+        INSERT INTO ppw_world_memberships(world_id, ordinal, player_id, joined_date, status)
+        VALUES (${worldId}, ${ordinal}, ${membership.playerId}, ${sql.json(membership.joinedDate as never)}, ${membership.status})
+        ON CONFLICT (world_id, ordinal) DO UPDATE SET
+          player_id = EXCLUDED.player_id,
+          joined_date = EXCLUDED.joined_date,
+          status = EXCLUDED.status
+      `;
+    }
+    await sql`DELETE FROM ppw_world_memberships WHERE world_id = ${worldId} AND ordinal >= ${snapshot.ownership.memberships.length}`;
 
-  for (let ordinal = 0; ordinal < snapshot.ownership.promotionControls.length; ordinal += 1) {
-    const control = snapshot.ownership.promotionControls[ordinal]!;
-    await sql`
-      INSERT INTO ppw_promotion_controls(
-        world_id, ordinal, promotion_id, player_id, control_start_date, control_end_date, status
-      ) VALUES (
-        ${worldId}, ${ordinal}, ${control.promotionId}, ${control.playerId},
-        ${sql.json(control.controlStartDate as never)}, ${control.controlEndDate ? sql.json(control.controlEndDate as never) : null}, ${control.status}
-      )
-      ON CONFLICT (world_id, ordinal) DO UPDATE SET
-        promotion_id = EXCLUDED.promotion_id,
-        player_id = EXCLUDED.player_id,
-        control_start_date = EXCLUDED.control_start_date,
-        control_end_date = EXCLUDED.control_end_date,
-        status = EXCLUDED.status
-    `;
+    for (let ordinal = 0; ordinal < snapshot.ownership.promotionControls.length; ordinal += 1) {
+      const control = snapshot.ownership.promotionControls[ordinal]!;
+      await sql`
+        INSERT INTO ppw_promotion_controls(
+          world_id, ordinal, promotion_id, player_id, control_start_date, control_end_date, status
+        ) VALUES (
+          ${worldId}, ${ordinal}, ${control.promotionId}, ${control.playerId},
+          ${sql.json(control.controlStartDate as never)}, ${control.controlEndDate ? sql.json(control.controlEndDate as never) : null}, ${control.status}
+        )
+        ON CONFLICT (world_id, ordinal) DO UPDATE SET
+          promotion_id = EXCLUDED.promotion_id,
+          player_id = EXCLUDED.player_id,
+          control_start_date = EXCLUDED.control_start_date,
+          control_end_date = EXCLUDED.control_end_date,
+          status = EXCLUDED.status
+      `;
+    }
+    await sql`DELETE FROM ppw_promotion_controls WHERE world_id = ${worldId} AND ordinal >= ${snapshot.ownership.promotionControls.length}`;
+
   }
-  await sql`DELETE FROM ppw_promotion_controls WHERE world_id = ${worldId} AND ordinal >= ${snapshot.ownership.promotionControls.length}`;
 
   // Receipts are immutable. Rewriting every old receipt on every player
   // action scales writes, query count and Neon transfer with World age.
@@ -555,13 +562,14 @@ export class PostgresApplicationWorldRepository implements ApplicationWorldRepos
       // A command receipt is an immutable idempotency record. An action may
       // append a new receipt but must never rewrite or reorder old receipts.
       const previousWorldJson = JSON.stringify(createPersistedWorldState(working.state));
+      const previousOwnershipJson = JSON.stringify(working.ownership);
       const previousReceipts = JSON.stringify(working.commands.receipts);
       const previousReceiptCount = working.commands.receipts.length;
       const result = await action(working);
       if (JSON.stringify(working.commands.receipts.slice(0, previousReceiptCount)) !== previousReceipts) {
         throw new Error("World transaction changed an existing immutable command receipt");
       }
-      await writeAggregate(transactionalSql, working, previousReceiptCount, previousWorldJson);
+      await writeAggregate(transactionalSql, working, previousReceiptCount, previousWorldJson, previousOwnershipJson);
       return { result, revision: working.runtime.revision };
     });
   }
