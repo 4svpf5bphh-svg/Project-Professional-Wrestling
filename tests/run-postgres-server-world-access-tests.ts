@@ -173,7 +173,7 @@ await test("two players share cached reads and planning updates refresh without 
   const access = createPostgresServerWorldAccess(connectionString);
   try {
     await access.repository.migrate();
-    const aggregate = createAlphaWorldAggregate({ seed: 62034, playerId: "cost-player-one" });
+    const aggregate = createAlphaWorldAggregate({ seed: 62039, playerId: "cost-player-one" });
     await access.repository.initialize(aggregate);
     const worldId = aggregate.state.world.id;
     const first = await access.repository.load(worldId);
