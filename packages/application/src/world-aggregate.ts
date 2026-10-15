@@ -73,7 +73,40 @@ export interface ApplicationWorldRepository {
     worldId: Id,
     expectedRevision: number | null,
     action: (aggregate: ApplicationWorldAggregate) => TResult | Promise<TResult>,
+    /** Undefined = legacy full history; [] = none; IDs = exact retry receipts. */
+    receiptRequestIds?: readonly string[],
   ): Promise<WorldTransactionResult<TResult>>;
+}
+
+/** Narrow, durable idempotency lookup for player-authored commands.
+ * The World row lock serializes contenders before their receipt lookup.
+ */
+export function transactWithReceiptIds<TResult>(
+  repository: ApplicationWorldRepository,
+  worldId: Id,
+  expectedRevision: number | null,
+  receiptRequestIds: readonly string[],
+  action: (aggregate: ApplicationWorldAggregate) => TResult | Promise<TResult>,
+): Promise<WorldTransactionResult<TResult>> {
+  // Command receipts always store the normalized requestId. Some older API
+  // routes supply an untrimmed string, so normalize BEFORE the SQL lookup.
+  const ids = receiptRequestIds.map((id) => typeof id === "string" ? id.trim() : "");
+  if (ids.length === 0 || ids.some((id) => id.length === 0 || id.length > 256)) {
+    throw new Error("command transaction requires valid retry receipt IDs");
+  }
+  return repository.transact(worldId, expectedRevision, action, ids);
+}
+
+/** Explicit opt-in for simulation and non-idempotency mutations.
+ * They must never need historical command receipts to execute.
+ */
+export function transactWithoutReceiptHistory<TResult>(
+  repository: ApplicationWorldRepository,
+  worldId: Id,
+  expectedRevision: number | null,
+  action: (aggregate: ApplicationWorldAggregate) => TResult | Promise<TResult>,
+): Promise<WorldTransactionResult<TResult>> {
+  return repository.transact(worldId, expectedRevision, action, []);
 }
 
 function ensureEngagement(aggregate: ApplicationWorldAggregate): WorldEngagementState {

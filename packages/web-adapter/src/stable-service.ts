@@ -1,4 +1,5 @@
 import {
+  transactWithReceiptIds,
   activePromotionControlForPlayer,
   addStableMemberCommand,
   buildPlayerStableRosterView,
@@ -56,7 +57,7 @@ export async function mutateAlphaStable(
           stableId: textField(request.stableId, "stableId", 128),
         };
 
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [requestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("Take control of a promotion before managing stables");
     const receipt = aggregate.commands.receipts.find((r) => r.requestId === requestId);

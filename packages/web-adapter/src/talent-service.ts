@@ -15,6 +15,8 @@ import {
   validCreativeControl,
 } from "../../sim-core/src/index.js";
 import {
+  transactWithReceiptIds,
+  transactWithoutReceiptHistory,
   activePromotionControlForPlayer,
   activeWorldMembership,
   DETAILED_PLANNING_HORIZON_WEEKS,
@@ -340,7 +342,7 @@ export async function submitAlphaTalentOffer(
   };
   validateRequestShape(request);
 
-  const transaction = await repository.transact(worldId, null, (aggregate) => {
+  const transaction = await transactWithReceiptIds(repository, worldId, null, [request.requestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("player must control a promotion before submitting contract offers");
 
@@ -402,7 +404,7 @@ export async function submitAlphaDatesAddendum(
   };
   if (request.additionalDates < 1) throw new Error("additional dates must contain at least one appearance");
 
-  const result = await repository.transact(worldId, null, (aggregate) => {
+  const result = await transactWithReceiptIds(repository, worldId, null, [request.requestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("player must control a promotion before negotiating dates");
     const offer = submitContractDatesAddendumCommand(
@@ -442,7 +444,7 @@ export async function setAlphaTalentWatch(
   const personId = boundedText(rawRequest.personId, "personId");
   if (typeof rawRequest.watched !== "boolean") throw new Error("watched must be a boolean");
 
-  const transaction = await repository.transact(worldId, null, (aggregate) => {
+  const transaction = await transactWithoutReceiptHistory(repository, worldId, null, (aggregate) => {
     if (!activeWorldMembership(aggregate.ownership, playerId)) {
       throw new Error("player must be an active World member before changing Watchlist");
     }
@@ -478,7 +480,7 @@ export async function setAlphaRosterAlignment(
     throw new Error("unsupported wrestler alignment");
   }
 
-  const transaction = await repository.transact(worldId, null, (aggregate) => {
+  const transaction = await transactWithReceiptIds(repository, worldId, null, [request.requestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("player must control a promotion before changing roster alignment");
 

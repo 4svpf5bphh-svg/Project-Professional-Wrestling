@@ -8,6 +8,7 @@ import { seedRealWrestlerRelationships } from "../../content/src/real-wrestler-r
 import { completeAlphaWrestlerIdentityCoverage } from "../../content/src/wrestler-identity-coverage.js";
 import type { Promotion, PromotionShowSeries, TicketStrategy } from "../../domain/src/types.js";
 import {
+  transactWithReceiptIds,
   activePromotionControlForPlayer,
   alphaCurrentWeekShowDraftId,
   buildAlphaPlayerWorldView,
@@ -20,6 +21,7 @@ import {
   createWorldPlanningState,
   createWorldRuntimeState,
   dismissAttention,
+  transactWithoutReceiptHistory,
   joinPlayerToWorld,
   incrementWorldRevision,
   lockPersistedWorldForResolution,
@@ -215,7 +217,7 @@ async function upgradePersistedLegacyRealPromotionCalendars(
   ));
   if (!hasCandidate) return;
 
-  await repository.transact(worldId, null, (current) => {
+  await transactWithoutReceiptHistory(repository, worldId, null, (current) => {
     const upgraded = upgradeLegacyRealPromotionCalendarsSafely(current);
     if (upgraded.length > 0) incrementWorldRevision(current.runtime);
   });
@@ -255,7 +257,7 @@ export async function ensureAlphaWorld(
   try {
     const existing=await repository.load(worldId);
     if ((existing.state.wrestlerIdentities?.length??0)<existing.state.people.length) {
-      await repository.transact(worldId,null,current=>{
+      await transactWithoutReceiptHistory(repository,worldId,null,current=>{
         if(completeAlphaWrestlerIdentityCoverage(current.state,"EXISTING_WORLD")>0)
           incrementWorldRevision(current.runtime);
       });
@@ -299,7 +301,7 @@ export async function dismissAlphaAttention(
   request: AlphaDismissAttentionRequest,
 ): Promise<AlphaPlayerWorldView> {
   const attentionId = requireAttentionId(request.attentionId);
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithoutReceiptHistory(repository, worldId, null, (aggregate) => {
     const visibleItem = buildPlayerAttention(aggregate, playerId)
       .find((item) => item.attentionId === attentionId);
     if (!visibleItem) {
@@ -324,7 +326,7 @@ export async function claimAlphaPromotion(
   playerId: string,
   request: AlphaClaimRequest,
 ): Promise<AlphaPlayerWorldView> {
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [request.requestId], (aggregate) => {
     claimIndependentPromotionCommand(
       aggregate.state,
       aggregate.ownership,
@@ -363,7 +365,7 @@ export async function saveAlphaCurrentWeekShowPlan(
   const draftRequestId = `${requestId}:draft`;
   const reservationRequestId = `${requestId}:reserve`;
 
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [draftRequestId, reservationRequestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("Alpha player must control a promotion before planning a show");
 

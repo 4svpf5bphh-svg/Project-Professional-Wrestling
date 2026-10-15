@@ -11,6 +11,7 @@ import type {
   WorldState,
 } from "../../domain/src/types.js";
 import {
+  transactWithReceiptIds,
   activePromotionControlForPlayer,
   buildPlayerStableRosterView,
   type PlayerStableStoryFollowThroughView,
@@ -1456,7 +1457,7 @@ export async function saveAlphaShowCard(
   const cardRequestId = `${requestId}:card`;
   const reservationRequestId = `${requestId}:reserve`;
 
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [cardRequestId, reservationRequestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("Take control of a promotion before booking a card");
 
@@ -1649,7 +1650,7 @@ export async function requestAlphaShowCreativeConsent(
   const personId = requiredText(request.personId, "personId", 128);
   const expectedRevision = requireExpectedRevision(request.expectedRevision);
   const expectedPlanVersion = requirePlanVersion(request.expectedPlanVersion);
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [`${requestId}:creative-consent`], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("Take control of a promotion before requesting consent");
     const commandRequestId = `${requestId}:creative-consent`;
@@ -1708,7 +1709,7 @@ export async function withdrawAlphaShowCreativeAmendment(
   const expectedRevision = requireExpectedRevision(request.expectedRevision);
   const expectedPlanVersion = requirePlanVersion(request.expectedPlanVersion);
   const commandRequestId = `${requestId}:withdraw-creative-card`;
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [commandRequestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("Take control of a promotion before withdrawing a card amendment");
     const priorReceipt = aggregate.commands.receipts.find((entry) => entry.requestId === commandRequestId);

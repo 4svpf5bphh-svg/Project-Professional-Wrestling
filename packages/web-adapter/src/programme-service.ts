@@ -1,6 +1,7 @@
 import type { Id } from "../../domain/src/types.js";
 import type { ProgrammeParticipantRef } from "../../domain/src/programmes.js";
 import {
+  transactWithReceiptIds,
   activePromotionControlForPlayer,
   alphaCurrentWeekShowDraftId,
   reservationForDraft,
@@ -249,7 +250,7 @@ export async function startAlphaProgramme(
     ? undefined
     : requiredText(request.draftId, "draftId", 128);
 
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [requestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("Take control of a promotion before managing Programmes");
     const existingReceipt = aggregate.commands.receipts.find((receipt) => receipt.requestId === requestId);
@@ -311,7 +312,7 @@ export async function setAlphaProgrammeSegment(
   const segmentRequestId = `${requestId}:segment`;
   const reservationRequestId = `${requestId}:reserve`;
 
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [segmentRequestId, reservationRequestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("Take control of a promotion before managing Programmes");
     const segmentReceipt = aggregate.commands.receipts.find((receipt) => receipt.requestId === segmentRequestId);

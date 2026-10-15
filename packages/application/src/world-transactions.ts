@@ -22,7 +22,7 @@ import {
   applyResolvedShowTurns,
   recordResolvedShowSegments,
 } from "./programme-segments.js";
-import type { ApplicationWorldRepository } from "./world-aggregate.js";
+import { transactWithoutReceiptHistory, type ApplicationWorldRepository } from "./world-aggregate.js";
 import {
   assertWorldOpenForPlayerMutation,
   beginWorldResolution,
@@ -42,7 +42,7 @@ export async function materializePersistedCurrentWeekReservations(
   worldId: Id,
   expectedRevision: number,
 ): Promise<{ pass: ReservationMaterializationPass; revision: number }> {
-  const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
+  const committed = await transactWithoutReceiptHistory(repository, worldId, expectedRevision, (aggregate) => {
     assertWorldOpenForPlayerMutation(aggregate.runtime);
     const pass = materializeCurrentWeekReservations(aggregate.state, aggregate.planning);
     if (passMutatedWorld(pass)) incrementWorldRevision(aggregate.runtime);
@@ -57,7 +57,7 @@ export async function lockPersistedCurrentWeekShowCommitments(
   expectedRevision: number,
   realCycleKey: string | null = null,
 ): Promise<number> {
-  const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
+  const committed = await transactWithoutReceiptHistory(repository, worldId, expectedRevision, (aggregate) => {
     assertWorldOpenForPlayerMutation(aggregate.runtime);
     if (currentWeekShowCommitmentsLocked(aggregate.runtime, aggregate.state)) {
       lockCurrentWeekShowCommitments(aggregate.runtime, aggregate.state, realCycleKey);
@@ -91,7 +91,7 @@ export async function lockPersistedWorldForResolution(
   /** Manual Alpha advance only. Scheduled shared-World ticks do not pass this. */
   manualPromotionId: Id | null = null,
 ): Promise<number> {
-  const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
+  const committed = await transactWithoutReceiptHistory(repository, worldId, expectedRevision, (aggregate) => {
     if (manualPromotionId && !currentWeekShowCommitmentsLocked(aggregate.runtime, aggregate.state)) {
       const unresolved = unresolvedDueCreativeApprovals(
         aggregate.state, aggregate.planning, manualPromotionId,
@@ -168,7 +168,7 @@ export async function resolvePersistedWorldWeek(
   worldId: Id,
   expectedRevision: number,
 ): Promise<number> {
-  const committed = await repository.transact(worldId, expectedRevision, (aggregate) => {
+  const committed = await transactWithoutReceiptHistory(repository, worldId, expectedRevision, (aggregate) => {
     beginWorldResolution(aggregate.runtime, aggregate.state);
     resolveLockedWorldWeek(aggregate.runtime, aggregate.state, {
       afterProgrammeMatches: (state) => {

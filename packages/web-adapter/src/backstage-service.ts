@@ -6,7 +6,7 @@ import {
   type PlayerBackstageView,
   type RespondBackstagePayload,
 } from "../../application/src/backstage.js";
-import type { ApplicationWorldRepository } from "../../application/src/world-aggregate.js";
+import { transactWithReceiptIds, type ApplicationWorldRepository } from "../../application/src/world-aggregate.js";
 
 export interface AlphaBackstageResponseRequest extends RespondBackstagePayload {
   requestId: string;
@@ -26,7 +26,7 @@ export async function respondAlphaBackstage(
   playerId: string,
   request: AlphaBackstageResponseRequest,
 ): Promise<PlayerBackstageView> {
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [request.requestId], (aggregate) => {
     respondBackstageConversationCommand(aggregate, {
       worldId,
       playerId,
@@ -51,7 +51,7 @@ export async function discussAlphaBackstageProgrammeCreative(
   playerId: string,
   request: AlphaBackstageProgrammeCreativeRequest,
 ): Promise<PlayerBackstageView> {
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [request.requestId], (aggregate) => {
     discussBackstageProgrammeCreativeCommand(aggregate, {
       worldId, playerId, requestId: request.requestId,
       commandType: "REQUEST_STANDING_PROGRAMME_CREATIVE_AGREEMENT",

@@ -1,6 +1,7 @@
 import type { TicketStrategy } from "../../domain/src/types.js";
 import { primaryPromotionShowSeriesForDate } from "../../sim-core/src/show-calendar.js";
 import {
+  transactWithReceiptIds,
   activePromotionControlForPlayer,
   buildPlayerSixWeekPlannerView,
   reserveDetailedShowDraftCommand,
@@ -85,7 +86,7 @@ export async function saveAlphaPlannerShowPlan(
   const draftRequestId = `${requestId}:draft`;
   const reservationRequestId = `${requestId}:reserve`;
 
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [draftRequestId, reservationRequestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("Alpha player must control a promotion before planning a show");
 

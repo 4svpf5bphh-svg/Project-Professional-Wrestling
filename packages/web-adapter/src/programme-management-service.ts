@@ -1,6 +1,7 @@
 import type { Id } from "../../domain/src/types.js";
 import type { ProgrammeParticipantRef } from "../../domain/src/programmes.js";
 import {
+  transactWithReceiptIds,
   activePromotionControlForPlayer,
   startProgrammeCommand,
   type PostShowFollowUpChoice,
@@ -227,7 +228,7 @@ export async function startAlphaManagedProgramme(
     throw new Error("Programme sides must be arrays");
   }
 
-  await repository.transact(worldId, null, (aggregate) => {
+  await transactWithReceiptIds(repository, worldId, null, [requestId], (aggregate) => {
     const control = activePromotionControlForPlayer(aggregate.ownership, playerId);
     if (!control) throw new Error("Take control of a promotion before managing Programmes");
     const receipt = aggregate.commands.receipts.find((candidate) => candidate.requestId === requestId);
