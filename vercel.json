@@ -13,15 +13,5 @@
       "alpha-freeze-*": false,
       "work/**": false
     }
-  },
-  "crons": [
-    {
-      "path": "/api/internal/commit-shows",
-      "schedule": "0 6 * * *"
-    },
-    {
-      "path": "/api/internal/resolve-week",
-      "schedule": "0 8 * * *"
-    }
-  ]
+  }
 }
