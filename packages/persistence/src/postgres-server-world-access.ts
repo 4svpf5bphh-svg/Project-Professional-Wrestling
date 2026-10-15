@@ -372,6 +372,31 @@ export function createPostgresServerWorldAccess(connectionString: string): Postg
       if (rows.length !== 1) throw new Error(`World ${worldId} was not found during bootstrap verification`);
     },
     async recordPlayerActivity(worldId, playerId, realCycleKey): Promise<void> {
+      // Most navigation requests do not change the activity record. Check the
+      // current persisted values without taking a World row lock; only enter
+      // the transaction if the record may need updating. The locked path
+      // below rechecks everything, so concurrent World resolution is safe.
+      const probe = await sql`
+        SELECT engagement_state,
+               world_state->'world'->'currentDate' AS current_ppw_date,
+               runtime_revision, updated_at::text AS snapshot_version
+        FROM ppw_worlds WHERE world_id = ${worldId}
+      ` as unknown as ActivityRow[];
+      const current = probe[0];
+      if (!current) throw new Error(`World ${worldId} was not found`);
+      if (!validPpwDate(current.current_ppw_date)) {
+        throw new Error(`World ${worldId} has an invalid current PPW date`);
+      }
+      const probeEngagement = current.engagement_state
+        ? normalizeWorldEngagementState(current.engagement_state as WorldEngagementState, worldId)
+        : createWorldEngagementState(worldId);
+      const probePrevious = probeEngagement.playerActivity.find((entry) => entry.playerId === playerId);
+      if (probePrevious?.status === "ACTIVE"
+        && probePrevious.lastActiveCycleKey === realCycleKey
+        && probePrevious.lastActiveRevision === Number(current.runtime_revision)
+        && probePrevious.lastActivePpwDate.year === current.current_ppw_date.year
+        && probePrevious.lastActivePpwDate.week === current.current_ppw_date.week
+        && probePrevious.lastActivePpwDate.day === current.current_ppw_date.day) return;
       const activity = await sql.begin(async (tx) => {
         const rows = await tx`
           SELECT
