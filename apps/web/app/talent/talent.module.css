@@ -148,6 +148,38 @@
   padding: 16px;
 }
 
+/* A dates amendment is a two-field negotiation, not a full contract editor. */
+.datesAddendumEditor {
+  top: 50%;
+  bottom: auto;
+  width: min(480px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  grid-template-rows: auto auto auto;
+  transform: translate(-50%, -50%);
+  overflow-y: auto;
+}
+
+.datesAddendumEditor .formGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.datesAddendumEditor .formGrid label {
+  min-width: 0;
+}
+
+.datesAddendumEditor .formGrid input {
+  min-width: 0;
+  height: 44px;
+  font-size: 16px;
+}
+
+@media (max-width: 420px) {
+  .datesAddendumEditor .formGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .editorBody {
   min-height: 0;
   overflow-y: auto;
@@ -277,6 +309,7 @@
   color: #edf7f5;
   padding: 11px 12px;
   font: inherit;
+  font-size: max(16px, 1rem);
 }
 
 .formGrid input:focus,

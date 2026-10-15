@@ -693,12 +693,15 @@ function OfferCard({ offer, focused = false }: { offer: PlayerPendingContractOff
       <div className={styles.contractBox}>
         <div>
           <span>{offer.offerKind === "DATES_ADDENDUM" ? "Additional-dates proposal · same contract" : `${label(offer.family)} · ${label(offer.exclusivity)}`}</span>
-          <strong>{label(offer.roleExpectation)} · {offer.family === "EXCLUSIVE" ? "Unlimited dates" : `${offer.dateEntitlement} ${offer.offerKind === "DATES_ADDENDUM" ? "total dates proposed" : "dates"}`} · to {ppwDate(offer.endDate)}</strong>
+          <strong>{offer.offerKind === "DATES_ADDENDUM"
+            ? `Proposed amended entitlement: ${offer.dateEntitlement} total contracted dates · existing expiry ${ppwDate(offer.endDate)}`
+            : `${label(offer.roleExpectation)} · ${offer.family === "EXCLUSIVE" ? "Unlimited dates" : `${offer.dateEntitlement} dates`} · to ${ppwDate(offer.endDate)}`}</strong>
+          {offer.offerKind === "DATES_ADDENDUM" ? <span>Additional appearances added to the current contract if accepted; existing wages and appearance fees remain in place.</span> : null}
         </div>
         <div className={styles.moneyRows}>
           <span>Weekly <b>{money(offer.weeklyGuarantee)}</b></span>
           <span>Appearance <b>{money(offer.appearanceFee)}</b></span>
-          <span>{offer.offerKind === "DATES_ADDENDUM" ? "Extra payment" : "Signing"} <b>{money(offer.signingBonus)}</b></span>
+          <span>{offer.offerKind === "DATES_ADDENDUM" ? "One-time additional payment" : "Signing"} <b>{money(offer.signingBonus)}</b></span>
           {offer.creativeControl !== "NONE" && offer.offerKind !== "DATES_ADDENDUM" ? (
             <span>Creative rights <b>{label(offer.creativeControl)}</b></span>
           ) : null}
@@ -1082,16 +1085,14 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
     }
     const wrestler = view.roster.find((entry) => entry.personId === focusPersonId);
     if (!wrestler) return;
-    if (wrestler.contract.renewalReason === "DATES_EXHAUSTED") {
-      openMoreDates(wrestler);
-      return;
-    }
-    if (wrestler.contract.renewalWindowOpen) {
-      openRenewal(wrestler, "NEGOTIATE");
-      return;
-    }
-    if ((wrestler.scheduledRenewals?.length ?? 0) > 0) {
-      const card = document.getElementById(`signed-contract-${wrestler.personId}`);
+    const cardId = (wrestler.scheduledRenewals?.length ?? 0) > 0
+      ? `signed-contract-${wrestler.personId}`
+      : wrestler.contract.renewalWindowOpen && !view.pendingOffers.some((offer) => offer.personId === wrestler.personId)
+        ? `actionable-contract-${wrestler.personId}`
+        : null;
+    const destinationId = cardId ?? `current-contract-${wrestler.personId}`;
+    if (destinationId) {
+      const card = document.getElementById(destinationId);
       card?.scrollIntoView({ block: "center" });
       card?.focus({ preventScroll: true });
     }
@@ -1298,13 +1299,20 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
   );
   const pendingPeople = useMemo(() => new Set((view?.pendingOffers ?? []).map((offer) => offer.personId)), [view]);
   const contractDeskActionable = useMemo(() => (view?.roster ?? [])
-    .filter((entry) => entry.contract.renewalWindowOpen && !pendingPeople.has(entry.personId))
+    .filter((entry) => entry.contract.renewalWindowOpen && !pendingPeople.has(entry.personId)
+      && (entry.scheduledRenewals?.length ?? 0) === 0)
     .filter((entry) => matchesQuery(entry.name, query))
     .sort((left, right) => (
       Number(right.contract.renewalReason === "DATES_EXHAUSTED") - Number(left.contract.renewalReason === "DATES_EXHAUSTED")
       || left.contract.weeksToExpiry - right.contract.weeksToExpiry
       || left.name.localeCompare(right.name)
     )), [view, pendingPeople, query]);
+  const contractDeskCurrent = useMemo(() => (view?.roster ?? [])
+    .filter((entry) => !entry.contract.renewalWindowOpen && !pendingPeople.has(entry.personId)
+      && (entry.scheduledRenewals?.length ?? 0) === 0)
+    .filter((entry) => matchesQuery(entry.name, query))
+    .sort((left, right) => left.contract.weeksToExpiry - right.contract.weeksToExpiry || left.name.localeCompare(right.name)),
+  [view, pendingPeople, query]);
   const contractDeskPending = useMemo(() => (view?.pendingOffers ?? [])
     .filter((offer) => matchesQuery(offer.personName, query)), [view, query]);
   const contractDeskSigned = useMemo(() => (view?.roster ?? [])
@@ -1393,19 +1401,13 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
         <button className={styles.button} disabled={loading || submitting} onClick={() => void refresh()}>{loading ? "Loading…" : "Refresh"}</button>
       </header>
 
-      {view?.promotion && tab === "ROSTER" ? (
-        <div className={styles.contractNavLinks}>
-          <a className={styles.backLink} href="/talent/contracts">Manage contracts &amp; pending offers →</a>
-          <a className={styles.backLink} href="/staff">Talent Manager · Staff &amp; renewals →</a>
-        </div>
-      ) : null}
       {view?.promotion && tab === "CONTRACTS" ? <a className={styles.backLink} href="/talent">← Back to roster</a> : null}
       {error ? <div className={styles.error}>{error}</div> : null}
       {notice ? <div className={styles.notice}>{notice}</div> : null}
       {view && !view.promotion ? <section className={styles.panel}><p>Take control of a promotion before managing talent.</p></section> : null}
 
       {dateAddendum ? (
-        <section className={styles.editor} aria-label={`Additional dates for ${dateAddendum.wrestler.name}`}>
+        <section className={`${styles.editor} ${styles.datesAddendumEditor}`} role="dialog" aria-modal="true" aria-label={`Additional dates for ${dateAddendum.wrestler.name}`}>
           <div className={styles.editorHeader}>
             <div>
               <span className={styles.eyebrow}>ADD DATES · SAME CONTRACT</span>
@@ -1421,13 +1423,13 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
                 onChange={(extraDates) => setDateAddendum(current => current ? { ...current, extraDates } : null)} />
             </label>
             <label>
-              <span>One-time extra payment</span>
+              <span>Extra payment offered (one-time)</span>
               <MoneyInput value={dateAddendum.payment} disabled={submitting}
                 onChange={(payment) => setDateAddendum(current => current ? { ...current, payment } : null)} />
             </label>
           </div>
           <div className={styles.editorFooter}>
-            <span>Wrestler acceptance is not guaranteed. Expiry, exclusivity, regular wage and appearance fee stay unchanged.</span>
+            <span>This payment is only for the added dates, on top of existing weekly wages and appearance fees. It does not replace those payments. The wrestler may reject the offer; expiry and exclusivity stay unchanged.</span>
             <button className={styles.primaryButton} type="button" disabled={submitting}
               onClick={() => void submitMoreDates()}>{submitting ? "Submitting…" : "Offer more dates"}</button>
           </div>
@@ -1710,7 +1712,7 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
                   {contractDeskActionable.map((entry) => {
                     const contract = entry.contract;
                     return (
-                      <article className={styles.contractDeskCard} key={entry.contractId}>
+                      <article className={styles.contractDeskCard} key={entry.contractId} id={`actionable-contract-${entry.personId}`} tabIndex={-1}>
                         <div className={styles.contractDeskHeader}>
                           <div>
                             <strong>{entry.name}</strong>
@@ -1737,6 +1739,34 @@ export default function TalentClient({ initialTab = "ROSTER", focusPersonId = ""
                   })}
                   {contractDeskActionable.length === 0 ? <p className={styles.empty}>No outstanding contract decisions match your search.</p> : null}
                 </section>
+                {contractDeskCurrent.length > 0 ? (
+                  <section aria-label="Current contracts without outstanding decisions">
+                    <h2>Current agreements · {contractDeskCurrent.length}</h2>
+                    <p className={styles.subtle}>Active contracts with no immediate decision required. Review the terms here without starting a negotiation.</p>
+                    {contractDeskCurrent.map((entry) => (
+                      <article className={styles.contractDeskCard} key={entry.contractId}
+                        id={`current-contract-${entry.personId}`} tabIndex={-1}>
+                        <div className={styles.contractDeskHeader}>
+                          <div>
+                            <strong>{entry.name}</strong>
+                            <span>{label(entry.contract.family)} · {entry.contract.unlimitedAppearances ? "Unlimited appearances" : `${entry.contract.datesRemaining} dates remaining`} · expires {ppwDate(entry.contract.endDate)}</span>
+                          </div>
+                          <span className={styles.pending}>Current</span>
+                        </div>
+                        <div className={styles.contractBox}>
+                          <span>Weekly guarantee: {money(entry.contract.weeklyGuarantee)} · Appearance fee: {money(entry.contract.appearanceFee)}</span>
+                          <span>Creative control: {label(entry.contract.creativeControl)}</span>
+                        </div>
+                        <div className={styles.contractDeskActions}>
+                          <a className={styles.actionButton} href={`/talent/profile?personId=${encodeURIComponent(entry.personId)}&from=contracts`}>Wrestler profile</a>
+                          {entry.contract.family === "LIMITED_NON_EXCLUSIVE" ? (
+                            <button className={styles.actionButton} type="button" onClick={() => openMoreDates(entry)}>Negotiate more dates</button>
+                          ) : null}
+                        </div>
+                      </article>
+                    ))}
+                  </section>
+                ) : null}
                 <section aria-label="Pending contract offers">
                   <h2>Waiting for response · {contractDeskPending.length}</h2>
                   <p className={styles.subtle}>Pending recruitment, renewals and additional-dates proposals. Responses resolve through the usual World contract rules.</p>

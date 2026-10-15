@@ -23,3 +23,9 @@
 .error { color: #ffd2d2; background: #56282a; }
 .notice { color: #b8f8d7; background: #174235; }
 @media (max-width: 500px) { .panel { padding: 15px; } .candidate button { width: 100%; } .renewal button { width: 100%; } }
+
+.disclosure { cursor: pointer; padding: 10px 0; color: #8ce4d5; font-weight: 800; }
+.dateFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: 100%; }
+.dateFields label { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 13px; color: #c3dfd7; }
+.dateFields input { width: 100%; min-width: 0; padding: 10px; border: 1px solid #3f6b63; border-radius: 10px; font-size: 16px; background: #0a1c20; color: #edf7f5; }
+@media (max-width: 380px) { .dateFields { grid-template-columns: 1fr; } }
