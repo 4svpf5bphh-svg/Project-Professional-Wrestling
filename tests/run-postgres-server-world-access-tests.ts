@@ -169,6 +169,37 @@ await test("activity writes update cache without losing authoritative engagement
   }
 });
 
+await test("two players share cached reads and planning updates refresh without stale simulation", async () => {
+  const access = createPostgresServerWorldAccess(connectionString);
+  try {
+    await access.repository.migrate();
+    const aggregate = createAlphaWorldAggregate({ seed: 62034, playerId: "cost-player-one" });
+    await access.repository.initialize(aggregate);
+    const worldId = aggregate.state.world.id;
+    const first = await access.repository.load(worldId);
+    const initialCash = first.state.promotions[0]!.cash;
+    await access.repository.loadTalentView(worldId);
+    await access.repository.load(worldId);
+    ok(access.readStatistics().fullSnapshotReads === 1,
+      "multiple players/screens retransferred unchanged World snapshot");
+    await access.repository.transact(worldId, null, working => {
+      working.runtime.revision += 1;
+    }, []);
+    const refreshed = await access.repository.load(worldId);
+    ok(refreshed.runtime.revision === first.runtime.revision + 1,
+      "planning-only revision did not invalidate the shared World read cache");
+    ok(refreshed.state.promotions[0]!.cash === initialCash,
+      "planning-only revision unexpectedly modified simulation state");
+    ok(access.readStatistics().fullSnapshotReads === 2,
+      "revision change did not refresh the shared World cache");
+    await access.repository.loadTalentView(worldId);
+    ok(access.readStatistics().fullSnapshotReads === 2,
+      "Talent view retransferred a World snapshot already cached by another screen");
+  } finally {
+    await access.close();
+  }
+});
+
 await test("external World transactions invalidate warm cache across server instances", async () => {
   const current = createPostgresServerWorldAccess(connectionString);
   const rival = createPostgresServerWorldAccess(connectionString);
