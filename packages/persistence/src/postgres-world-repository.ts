@@ -15,7 +15,7 @@ import { createWorldPlanningState, type WorldPlanningState } from "../../applica
 import type { ApplicationCommandReceipt } from "../../application/src/commands.js";
 import type { PromotionControl, WorldMembership } from "../../application/src/ownership.js";
 import type { WorldRuntimePhase } from "../../application/src/runtime.js";
-import { CURRENT_WORLD_STATE_SCHEMA_VERSION } from "../../sim-core/src/state-schema.js";
+import { CURRENT_WORLD_STATE_SCHEMA_VERSION, createPersistedWorldState } from "../../sim-core/src/state-schema.js";
 
 interface PostgresMigration {
   version: number;
