@@ -88,7 +88,6 @@ export interface PostgresServerWorldAccess {
   };
   /** Diagnostic counters for tests and lightweight operational monitoring. */
   readStatistics(): ServerWorldReadStatistics;
-  noteActivityProbe(noop: boolean): void;
   /** Fast bootstrap gate. Must only skip compatibility repairs previously completed. */
   bootstrapVerified(worldId: Id, requiredVersion: number): Promise<boolean>;
   markBootstrapVerified(worldId: Id, completedVersion: number): Promise<void>;
