@@ -236,7 +236,7 @@ try {
   });
 
   await test("planning-only writes avoid retransmitting unchanged World snapshots and ownership", async () => {
-    const sample = fixture(62033);
+    const sample = fixture(62038);
     await repository.initialize(sample);
     const worldId = sample.state.world.id;
     const before = await inspectionSql`
