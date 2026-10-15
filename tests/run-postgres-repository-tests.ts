@@ -247,10 +247,6 @@ try {
     const beforeGzip = Buffer.from(before[0]!.world_state_gzip);
     await repository.transact(worldId, null, working => {
       working.runtime.revision += 1;
-      working.planning.workspaces.push({
-        worldId, promotionId: "test-promotion", version: 0,
-        detailedShowDrafts: [],
-      } as never);
     }, []);
     const after = await inspectionSql`
       SELECT world_state, world_state_gzip, planning_state,
