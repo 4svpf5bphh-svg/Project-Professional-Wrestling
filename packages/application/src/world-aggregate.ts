@@ -64,6 +64,12 @@ export interface WorldTransactionResult<TResult> {
 export interface ApplicationWorldRepository {
   initialize(aggregate: ApplicationWorldAggregate): Promise<void>;
   load(worldId: Id): Promise<ApplicationWorldAggregate>;
+  /** Optional, version-validated, player-scoped Home read model.
+   * Implementations must enforce ownership and return the same response as
+   * buildAlphaPlayerWorldView(load(worldId), playerId).
+   * Never use this method for authoritative writes or simulation.
+   */
+  loadPlayerSessionView?(worldId: Id, playerId: Id): Promise<import("./player-view.js").AlphaPlayerWorldView>;
   /**
    * Read-only Talent/Staff projection: may omit historical ledger and financial
    * transactions. Never use the result for simulation or persistence writes.

@@ -120,6 +120,8 @@ export async function withAlphaServerContext<TResult>(
   let actionMs = 0;
   let repositoryReused = false;
   let outcome: "ok" | "error" = "ok";
+  let readStatsBefore: ReturnType<PostgresServerWorldAccess["readStatistics"]> | null = null;
+  let readStatsAfter: ReturnType<PostgresServerWorldAccess["readStatistics"]> | null = null;
   const trackPlayerActivity = options.trackPlayerActivity !== false;
 
   try {
@@ -134,6 +136,7 @@ export async function withAlphaServerContext<TResult>(
     const accessState = serverWorldAccess(connectionString);
     repositoryReused = accessState.reused;
     const { access } = accessState;
+    if (process.env.PPW_DB_COST_LOGS === "1") readStatsBefore = access.readStatistics();
 
     const bootstrapStartedAt = performance.now();
     await ensureSchemaReady(connectionString, access.repository);
@@ -154,6 +157,25 @@ export async function withAlphaServerContext<TResult>(
     outcome = "error";
     throw error;
   } finally {
+    if (process.env.PPW_DB_COST_LOGS === "1" && readStatsBefore) {
+      // Best-effort diagnostic: do not change response or transaction semantics.
+      // Captures aggregate per-process deltas; overlapping requests may share counters.
+      const access = process.env.DATABASE_URL ? serverWorldAccesses.get(process.env.DATABASE_URL) : undefined;
+      readStatsAfter = access?.readStatistics() ?? null;
+      if (readStatsAfter) {
+        console.info("[ppw-db-cost-request]", JSON.stringify({
+          outcome,
+          fullSnapshotReads: readStatsAfter.fullSnapshotReads - readStatsBefore.fullSnapshotReads,
+          versionProbes: readStatsAfter.versionProbes - readStatsBefore.versionProbes,
+          cacheHits: readStatsAfter.cacheHits - readStatsBefore.cacheHits,
+          coalescedReads: readStatsAfter.coalescedReads - readStatsBefore.coalescedReads,
+          snapshotWireBytes: readStatsAfter.snapshotWireBytes - readStatsBefore.snapshotWireBytes,
+          activityNoopProbes: readStatsAfter.activityNoopProbes - readStatsBefore.activityNoopProbes,
+          activityTransactions: readStatsAfter.activityTransactions - readStatsBefore.activityTransactions,
+          note: "process-shared counters; overlapping requests may be double-attributed",
+        }));
+      }
+    }
     logPerformance({
       totalMs: performance.now() - startedAt,
       bootstrapMs,

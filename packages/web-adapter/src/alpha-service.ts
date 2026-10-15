@@ -283,6 +283,12 @@ export async function loadAlphaPlayerSession(
   worldId: string,
   playerId: string,
 ): Promise<AlphaPlayerWorldView> {
+  // Optional narrow, server-authorized read model. The persistence adapter
+  // must verify the World version and player scope before returning it.
+  // Other repositories retain the exact existing authoritative projection.
+  if (repository.loadPlayerSessionView) {
+    return repository.loadPlayerSessionView(worldId, playerId);
+  }
   return buildAlphaPlayerWorldView(await repository.load(worldId), playerId);
 }
 

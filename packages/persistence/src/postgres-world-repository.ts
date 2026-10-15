@@ -15,7 +15,7 @@ import { createWorldPlanningState, type WorldPlanningState } from "../../applica
 import type { ApplicationCommandReceipt } from "../../application/src/commands.js";
 import type { PromotionControl, WorldMembership } from "../../application/src/ownership.js";
 import type { WorldRuntimePhase } from "../../application/src/runtime.js";
-import { CURRENT_WORLD_STATE_SCHEMA_VERSION } from "../../sim-core/src/state-schema.js";
+import { CURRENT_WORLD_STATE_SCHEMA_VERSION, createPersistedWorldState } from "../../sim-core/src/state-schema.js";
 
 interface PostgresMigration {
   version: number;
@@ -210,6 +210,20 @@ BEFORE UPDATE OF world_state, planning_state, engagement_state,
 FOR EACH ROW EXECUTE FUNCTION ppw_guard_world_snapshot_transport();
 `,
   },
+  {
+    version: 12,
+    name: "player-scoped versioned session read projections",
+    sql: `CREATE TABLE IF NOT EXISTS ppw_player_session_projections (
+  world_id text NOT NULL REFERENCES ppw_worlds(world_id) ON DELETE CASCADE,
+  player_id text NOT NULL,
+  world_snapshot_version text NOT NULL,
+  projection_schema_version integer NOT NULL,
+  payload jsonb NOT NULL,
+  PRIMARY KEY (world_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS ppw_player_session_projections_world_version
+  ON ppw_player_session_projections(world_id, world_snapshot_version);`,
+  },
 ] as const;
 
 export const POSTGRES_APPLICATION_SCHEMA_SQL = [
@@ -265,6 +279,7 @@ async function readAggregate(
   worldId: Id,
   forUpdate: boolean,
   receiptRequestIds?: readonly string[],
+  onSnapshotRead?: (compressed: boolean) => void,
 ): Promise<ApplicationWorldAggregate> {
   const lock = forUpdate ? " FOR UPDATE" : "";
   const worldRows = await sql.unsafe(
@@ -279,6 +294,7 @@ async function readAggregate(
   ) as unknown as WorldRow[];
   const row = worldRows[0];
   if (!row) throw new Error(`World ${worldId} was not found`);
+  onSnapshotRead?.(row.world_state_gzip !== null);
   const world = row.world_state_gzip
     ? restoreCompressedWorldSnapshot(row.world_state_gzip)
     : row.world_state;
@@ -386,6 +402,9 @@ async function writeAggregate(
   sql: SqlClient,
   aggregate: ApplicationWorldAggregate,
   previousReceiptCount = 0,
+  previousWorldJson?: string,
+  previousOwnershipJson?: string,
+  previousSnapshotCompressed = true,
 ): Promise<void> {
   if (!Number.isSafeInteger(previousReceiptCount) || previousReceiptCount < 0
     || previousReceiptCount > aggregate.commands.receipts.length) {
@@ -394,57 +413,89 @@ async function writeAggregate(
   const snapshot = createPersistedApplicationWorld(aggregate);
   const worldId = aggregate.state.world.id;
 
-  await sql`
-    UPDATE ppw_worlds SET
-      state_schema_version = ${CURRENT_WORLD_STATE_SCHEMA_VERSION},
-      world_state = ${sql.json(snapshot.world as never)},
-      world_state_gzip = ${compressWorldSnapshot(snapshot.world)},
-      planning_state = ${sql.json(snapshot.planning as never)},
-      engagement_state = ${sql.json(snapshot.engagement as never)},
-      runtime_phase = ${snapshot.runtime.phase},
-      runtime_revision = ${snapshot.runtime.revision},
-      locked_ppw_date = ${snapshot.runtime.lockedPpwDate ? sql.json(snapshot.runtime.lockedPpwDate as never) : null},
-      last_resolved_ppw_date = ${snapshot.runtime.lastResolvedPpwDate ? sql.json(snapshot.runtime.lastResolvedPpwDate as never) : null},
-      commitment_locked_ppw_date = ${snapshot.runtime.commitmentLockedPpwDate ? sql.json(snapshot.runtime.commitmentLockedPpwDate as never) : null},
-      commitment_locked_real_cycle_key = ${snapshot.runtime.commitmentLockedRealCycleKey ?? null},
-      locked_real_cycle_key = ${snapshot.runtime.lockedRealCycleKey ?? null},
-      last_resolved_real_cycle_key = ${snapshot.runtime.lastResolvedRealCycleKey ?? null},
-      human_seat_limit = ${snapshot.ownership.humanSeatLimit},
-      updated_at = clock_timestamp()
-    WHERE world_id = ${worldId}
-  `;
-
-  for (let ordinal = 0; ordinal < snapshot.ownership.memberships.length; ordinal += 1) {
-    const membership = snapshot.ownership.memberships[ordinal]!;
+  // Planning-only and engagement-only commands must not retransmit the
+  // entire World JSON plus gzip snapshot to PostgreSQL. The World row is
+  // already locked by readAggregate; compare the persisted representation
+  // before and after the action to preserve exact simulation semantics.
+  const worldChanged = previousWorldJson === undefined
+    || previousWorldJson !== JSON.stringify(snapshot.world);
+  if (worldChanged || !previousSnapshotCompressed) {
     await sql`
-      INSERT INTO ppw_world_memberships(world_id, ordinal, player_id, joined_date, status)
-      VALUES (${worldId}, ${ordinal}, ${membership.playerId}, ${sql.json(membership.joinedDate as never)}, ${membership.status})
-      ON CONFLICT (world_id, ordinal) DO UPDATE SET
-        player_id = EXCLUDED.player_id,
-        joined_date = EXCLUDED.joined_date,
-        status = EXCLUDED.status
+      UPDATE ppw_worlds SET
+        state_schema_version = ${CURRENT_WORLD_STATE_SCHEMA_VERSION},
+        world_state = ${sql.json(snapshot.world as never)},
+        world_state_gzip = ${compressWorldSnapshot(snapshot.world)},
+        planning_state = ${sql.json(snapshot.planning as never)},
+        engagement_state = ${sql.json(snapshot.engagement as never)},
+        runtime_phase = ${snapshot.runtime.phase},
+        runtime_revision = ${snapshot.runtime.revision},
+        locked_ppw_date = ${snapshot.runtime.lockedPpwDate ? sql.json(snapshot.runtime.lockedPpwDate as never) : null},
+        last_resolved_ppw_date = ${snapshot.runtime.lastResolvedPpwDate ? sql.json(snapshot.runtime.lastResolvedPpwDate as never) : null},
+        commitment_locked_ppw_date = ${snapshot.runtime.commitmentLockedPpwDate ? sql.json(snapshot.runtime.commitmentLockedPpwDate as never) : null},
+        commitment_locked_real_cycle_key = ${snapshot.runtime.commitmentLockedRealCycleKey ?? null},
+        locked_real_cycle_key = ${snapshot.runtime.lockedRealCycleKey ?? null},
+        last_resolved_real_cycle_key = ${snapshot.runtime.lastResolvedRealCycleKey ?? null},
+        human_seat_limit = ${snapshot.ownership.humanSeatLimit},
+        updated_at = clock_timestamp()
+      WHERE world_id = ${worldId}
+    `;
+  } else {
+    await sql`
+      UPDATE ppw_worlds SET
+        state_schema_version = ${CURRENT_WORLD_STATE_SCHEMA_VERSION},
+        planning_state = ${sql.json(snapshot.planning as never)},
+        engagement_state = ${sql.json(snapshot.engagement as never)},
+        runtime_phase = ${snapshot.runtime.phase},
+        runtime_revision = ${snapshot.runtime.revision},
+        locked_ppw_date = ${snapshot.runtime.lockedPpwDate ? sql.json(snapshot.runtime.lockedPpwDate as never) : null},
+        last_resolved_ppw_date = ${snapshot.runtime.lastResolvedPpwDate ? sql.json(snapshot.runtime.lastResolvedPpwDate as never) : null},
+        commitment_locked_ppw_date = ${snapshot.runtime.commitmentLockedPpwDate ? sql.json(snapshot.runtime.commitmentLockedPpwDate as never) : null},
+        commitment_locked_real_cycle_key = ${snapshot.runtime.commitmentLockedRealCycleKey ?? null},
+        locked_real_cycle_key = ${snapshot.runtime.lockedRealCycleKey ?? null},
+        last_resolved_real_cycle_key = ${snapshot.runtime.lastResolvedRealCycleKey ?? null},
+        human_seat_limit = ${snapshot.ownership.humanSeatLimit},
+        updated_at = clock_timestamp()
+      WHERE world_id = ${worldId}
     `;
   }
-  await sql`DELETE FROM ppw_world_memberships WHERE world_id = ${worldId} AND ordinal >= ${snapshot.ownership.memberships.length}`;
 
-  for (let ordinal = 0; ordinal < snapshot.ownership.promotionControls.length; ordinal += 1) {
-    const control = snapshot.ownership.promotionControls[ordinal]!;
-    await sql`
-      INSERT INTO ppw_promotion_controls(
-        world_id, ordinal, promotion_id, player_id, control_start_date, control_end_date, status
-      ) VALUES (
-        ${worldId}, ${ordinal}, ${control.promotionId}, ${control.playerId},
-        ${sql.json(control.controlStartDate as never)}, ${control.controlEndDate ? sql.json(control.controlEndDate as never) : null}, ${control.status}
-      )
-      ON CONFLICT (world_id, ordinal) DO UPDATE SET
-        promotion_id = EXCLUDED.promotion_id,
-        player_id = EXCLUDED.player_id,
-        control_start_date = EXCLUDED.control_start_date,
-        control_end_date = EXCLUDED.control_end_date,
-        status = EXCLUDED.status
-    `;
+  // Most booking, contract and planning commands do not alter membership or
+  // promotion control. Avoid re-upserting every row on each such command.
+  if (previousOwnershipJson === undefined
+    || previousOwnershipJson !== JSON.stringify(snapshot.ownership)) {
+    for (let ordinal = 0; ordinal < snapshot.ownership.memberships.length; ordinal += 1) {
+      const membership = snapshot.ownership.memberships[ordinal]!;
+      await sql`
+        INSERT INTO ppw_world_memberships(world_id, ordinal, player_id, joined_date, status)
+        VALUES (${worldId}, ${ordinal}, ${membership.playerId}, ${sql.json(membership.joinedDate as never)}, ${membership.status})
+        ON CONFLICT (world_id, ordinal) DO UPDATE SET
+          player_id = EXCLUDED.player_id,
+          joined_date = EXCLUDED.joined_date,
+          status = EXCLUDED.status
+      `;
+    }
+    await sql`DELETE FROM ppw_world_memberships WHERE world_id = ${worldId} AND ordinal >= ${snapshot.ownership.memberships.length}`;
+
+    for (let ordinal = 0; ordinal < snapshot.ownership.promotionControls.length; ordinal += 1) {
+      const control = snapshot.ownership.promotionControls[ordinal]!;
+      await sql`
+        INSERT INTO ppw_promotion_controls(
+          world_id, ordinal, promotion_id, player_id, control_start_date, control_end_date, status
+        ) VALUES (
+          ${worldId}, ${ordinal}, ${control.promotionId}, ${control.playerId},
+          ${sql.json(control.controlStartDate as never)}, ${control.controlEndDate ? sql.json(control.controlEndDate as never) : null}, ${control.status}
+        )
+        ON CONFLICT (world_id, ordinal) DO UPDATE SET
+          promotion_id = EXCLUDED.promotion_id,
+          player_id = EXCLUDED.player_id,
+          control_start_date = EXCLUDED.control_start_date,
+          control_end_date = EXCLUDED.control_end_date,
+          status = EXCLUDED.status
+      `;
+    }
+    await sql`DELETE FROM ppw_promotion_controls WHERE world_id = ${worldId} AND ordinal >= ${snapshot.ownership.promotionControls.length}`;
+
   }
-  await sql`DELETE FROM ppw_promotion_controls WHERE world_id = ${worldId} AND ordinal >= ${snapshot.ownership.promotionControls.length}`;
 
   // Receipts are immutable. Rewriting every old receipt on every player
   // action scales writes, query count and Neon transfer with World age.
@@ -519,7 +570,9 @@ export class PostgresApplicationWorldRepository implements ApplicationWorldRepos
   ): Promise<WorldTransactionResult<TResult>> {
     return this.sql.begin(async (tx) => {
       const transactionalSql = tx as unknown as SqlClient;
-      const working = await readAggregate(transactionalSql, worldId, true, receiptRequestIds);
+      let previousSnapshotCompressed = true;
+      const working = await readAggregate(transactionalSql, worldId, true, receiptRequestIds,
+        (compressed) => { previousSnapshotCompressed = compressed; });
       if (expectedRevision !== null && working.runtime.revision !== expectedRevision) {
         throw new Error(
           `stale World revision for ${worldId}: expected ${expectedRevision}, current ${working.runtime.revision}`,
@@ -527,13 +580,15 @@ export class PostgresApplicationWorldRepository implements ApplicationWorldRepos
       }
       // A command receipt is an immutable idempotency record. An action may
       // append a new receipt but must never rewrite or reorder old receipts.
+      const previousWorldJson = JSON.stringify(createPersistedWorldState(working.state));
+      const previousOwnershipJson = JSON.stringify(working.ownership);
       const previousReceipts = JSON.stringify(working.commands.receipts);
       const previousReceiptCount = working.commands.receipts.length;
       const result = await action(working);
       if (JSON.stringify(working.commands.receipts.slice(0, previousReceiptCount)) !== previousReceipts) {
         throw new Error("World transaction changed an existing immutable command receipt");
       }
-      await writeAggregate(transactionalSql, working, previousReceiptCount);
+      await writeAggregate(transactionalSql, working, previousReceiptCount, previousWorldJson, previousOwnershipJson, previousSnapshotCompressed);
       return { result, revision: working.runtime.revision };
     });
   }

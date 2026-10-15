@@ -1,6 +1,7 @@
 import postgres from "postgres";
 import { compressWorldSnapshot, restoreCompressedWorldSnapshot } from "./world-snapshot-compression.js";
 import type { Id, PpwDate } from "../../domain/src/types.js";
+import { buildAlphaPlayerWorldView, type AlphaPlayerWorldView } from "../../application/src/player-view.js";
 import {
   createWorldEngagementState,
   normalizeWorldEngagementState,
@@ -44,6 +45,10 @@ export interface ServerWorldReadStatistics {
   backfilledSnapshots: number;
   /** World-state payload bytes read from PostgreSQL (excludes protocol and other tables). */
   snapshotWireBytes: number;
+  /** Number of activity checks satisfied without a locking transaction. */
+  activityNoopProbes: number;
+  /** Activity checks requiring an authoritative locking transaction. */
+  activityTransactions: number;
 }
 
 type WorldReadRow = {
@@ -255,11 +260,14 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
   }>();
   /** Only simultaneous identical reads share work; each consumer gets a clone. */
   private readonly pendingFull = new Map<string, Promise<ApplicationWorldAggregate>>();
+  // A newer probe must not be overwritten by an older in-flight snapshot.
+  private readonly latestProbedVersion = new Map<Id, string>();
   private readonly stats: ServerWorldReadStatistics = {
     fullSnapshotReads: 0, versionProbes: 0, cacheHits: 0, coalescedReads: 0, trimmedHistoryReads: 0,
     talentViewReads: 0,
     compressedSnapshotReads: 0, rawFallbackReads: 0, backfilledSnapshots: 0,
     snapshotWireBytes: 0,
+    activityNoopProbes: 0, activityTransactions: 0,
   };
 
   constructor(private readonly serverSql: SqlClient) {
@@ -270,6 +278,11 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     return { ...this.stats };
   }
 
+  noteActivityProbe(noop: boolean): void {
+    if (noop) this.stats.activityNoopProbes += 1;
+    else this.stats.activityTransactions += 1;
+  }
+
   override async load(worldId: Id): Promise<ApplicationWorldAggregate> {
     this.stats.versionProbes += 1;
     const rows = await this.serverSql`
@@ -277,6 +290,7 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
       FROM ppw_worlds WHERE world_id = ${worldId}
     ` as unknown as WorldVersionRow[];
     if (!rows[0]) throw new Error(`World ${worldId} was not found`);
+    this.latestProbedVersion.set(worldId, rows[0].snapshot_version);
     const cached = this.cache.get(worldId);
     if (cached && cached.version === rows[0].snapshot_version) {
       this.stats.cacheHits += 1;
@@ -299,12 +313,17 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
       else this.stats.rawFallbackReads += 1;
       if (fresh.backfilled) this.stats.backfilledSnapshots += 1;
       this.stats.snapshotWireBytes += fresh.snapshotWireBytes;
-      this.cache.delete(worldId);
-      this.cache.set(worldId, {
-        version: fresh.snapshotVersion,
-        aggregate: structuredClone(fresh.aggregate),
-      });
-      if (this.cache.size > 2) this.cache.delete(this.cache.keys().next().value!);
+      // Do not install a snapshot if a concurrent request has already seen
+      // a newer version. The caller may use its response, but later reads
+      // must probe and retrieve the latest authoritative World.
+      if (this.latestProbedVersion.get(worldId) === fresh.snapshotVersion) {
+        this.cache.delete(worldId);
+        this.cache.set(worldId, {
+          version: fresh.snapshotVersion,
+          aggregate: structuredClone(fresh.aggregate),
+        });
+        if (this.cache.size > 2) this.cache.delete(this.cache.keys().next().value!);
+      }
       return fresh.aggregate;
     })();
     this.pendingFull.set(key, loading);
@@ -313,6 +332,56 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     } finally {
       if (this.pendingFull.get(key) === loading) this.pendingFull.delete(key);
     }
+  }
+
+  /** Version-scoped Home projection: a warm or cold instance can avoid
+   * fetching the complete World. The fallback remains authoritative.
+   * The membership/control joins prevent cross-player projection access.
+   */
+  async loadPlayerSessionView(worldId: Id, playerId: Id): Promise<AlphaPlayerWorldView> {
+    const rows = await this.serverSql`
+      SELECT projection.payload
+      FROM ppw_player_session_projections AS projection
+      JOIN ppw_worlds AS world ON world.world_id = projection.world_id
+        AND world.updated_at::text = projection.world_snapshot_version
+      JOIN ppw_world_memberships AS membership ON membership.world_id = projection.world_id
+        AND membership.player_id = projection.player_id AND membership.status = 'ACTIVE'
+      JOIN ppw_promotion_controls AS control ON control.world_id = projection.world_id
+        AND control.player_id = projection.player_id AND control.status = 'ACTIVE'
+      WHERE projection.world_id = ${worldId} AND projection.player_id = ${playerId}
+        AND projection.projection_schema_version = 1
+      LIMIT 1
+    ` as unknown as { payload: AlphaPlayerWorldView }[];
+    if (rows[0]) return structuredClone(rows[0].payload);
+
+    // Legacy behavior for unclaimed seats and projection misses. Never
+    // construct a response from an unvalidated cached projection.
+    const aggregate = await this.load(worldId);
+    const view = buildAlphaPlayerWorldView(aggregate, playerId);
+    const activeMember = aggregate.ownership.memberships.some(
+      (member) => member.playerId === playerId && member.status === "ACTIVE",
+    );
+    const activeControl = aggregate.ownership.promotionControls.some(
+      (control) => control.playerId === playerId && control.status === "ACTIVE",
+    );
+    if (activeMember && activeControl) {
+      // Guard against another server advancing the World after our load.
+      // A stale candidate must never overwrite a newer valid projection.
+      const version = this.cache.get(worldId)?.version;
+      if (version) {
+        await this.serverSql`
+          INSERT INTO ppw_player_session_projections
+            (world_id, player_id, world_snapshot_version, projection_schema_version, payload)
+          SELECT world_id, ${playerId}, ${version}, 1, ${this.serverSql.json(view)}
+          FROM ppw_worlds WHERE world_id = ${worldId} AND updated_at::text = ${version}
+          ON CONFLICT (world_id, player_id) DO UPDATE SET
+            world_snapshot_version = EXCLUDED.world_snapshot_version,
+            projection_schema_version = EXCLUDED.projection_schema_version,
+            payload = EXCLUDED.payload
+        `;
+      }
+    }
+    return view;
   }
 
   async loadTalentView(worldId: Id): Promise<ApplicationWorldAggregate> {
@@ -343,6 +412,7 @@ class PostgresServerWorldRepository extends PostgresApplicationWorldRepository {
     }
     cached.aggregate.engagement = structuredClone(engagement);
     cached.version = afterVersion;
+    this.latestProbedVersion.set(worldId, afterVersion);
   }
 }
 
@@ -372,6 +442,35 @@ export function createPostgresServerWorldAccess(connectionString: string): Postg
       if (rows.length !== 1) throw new Error(`World ${worldId} was not found during bootstrap verification`);
     },
     async recordPlayerActivity(worldId, playerId, realCycleKey): Promise<void> {
+      // Most navigation requests do not change the activity record. Check the
+      // current persisted values without taking a World row lock; only enter
+      // the transaction if the record may need updating. The locked path
+      // below rechecks everything, so concurrent World resolution is safe.
+      const probe = await sql`
+        SELECT engagement_state,
+               world_state->'world'->'currentDate' AS current_ppw_date,
+               runtime_revision, updated_at::text AS snapshot_version
+        FROM ppw_worlds WHERE world_id = ${worldId}
+      ` as unknown as ActivityRow[];
+      const current = probe[0];
+      if (!current) throw new Error(`World ${worldId} was not found`);
+      if (!validPpwDate(current.current_ppw_date)) {
+        throw new Error(`World ${worldId} has an invalid current PPW date`);
+      }
+      const probeEngagement = current.engagement_state
+        ? normalizeWorldEngagementState(current.engagement_state as WorldEngagementState, worldId)
+        : createWorldEngagementState(worldId);
+      const probePrevious = probeEngagement.playerActivity.find((entry) => entry.playerId === playerId);
+      if (probePrevious?.status === "ACTIVE"
+        && probePrevious.lastActiveCycleKey === realCycleKey
+        && probePrevious.lastActiveRevision === Number(current.runtime_revision)
+        && probePrevious.lastActivePpwDate.year === current.current_ppw_date.year
+        && probePrevious.lastActivePpwDate.week === current.current_ppw_date.week
+        && probePrevious.lastActivePpwDate.day === current.current_ppw_date.day) {
+        repository.noteActivityProbe(true);
+        return;
+      }
+      repository.noteActivityProbe(false);
       const activity = await sql.begin(async (tx) => {
         const rows = await tx`
           SELECT

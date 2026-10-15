@@ -235,6 +235,34 @@ try {
       "transport rebuilding reverted external authoritative edit");
   });
 
+  await test("planning-only writes avoid retransmitting unchanged World snapshots and ownership", async () => {
+    const sample = fixture(62038);
+    await repository.initialize(sample);
+    const worldId = sample.state.world.id;
+    const before = await inspectionSql`
+      SELECT world_state, world_state_gzip, planning_state,
+             updated_at::text AS version
+      FROM ppw_worlds WHERE world_id = ${worldId}
+    ` as unknown as Array<{ world_state: unknown; world_state_gzip: Uint8Array; planning_state: unknown; version: string }>;
+    const beforeGzip = Buffer.from(before[0]!.world_state_gzip);
+    await repository.transact(worldId, null, working => {
+      working.runtime.revision += 1;
+    }, []);
+    const after = await inspectionSql`
+      SELECT world_state, world_state_gzip, planning_state,
+             updated_at::text AS version
+      FROM ppw_worlds WHERE world_id = ${worldId}
+    ` as unknown as Array<{ world_state: unknown; world_state_gzip: Uint8Array; planning_state: unknown; version: string }>;
+    ok(JSON.stringify(after[0]!.world_state) === JSON.stringify(before[0]!.world_state),
+      "planning-only command changed authoritative World JSON");
+    ok(Buffer.from(after[0]!.world_state_gzip).equals(beforeGzip),
+      "planning-only command replaced compressed World snapshot");
+    ok(after[0]!.version !== before[0]!.version,
+      "planning-only command failed to invalidate cached planning views");
+    ok((await repository.load(worldId)).runtime.revision === 1,
+      "planning-only command did not advance runtime revision");
+  });
+
   await test("PostgreSQL migration ledger is numbered and idempotent", async () => {
     await repository.migrate();
     const rows = await inspectionSql`SELECT version, name FROM ppw_schema_migrations ORDER BY version` as unknown as Array<{ version: number; name: string }>;
