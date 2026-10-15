@@ -210,6 +210,20 @@ BEFORE UPDATE OF world_state, planning_state, engagement_state,
 FOR EACH ROW EXECUTE FUNCTION ppw_guard_world_snapshot_transport();
 `,
   },
+  {
+    version: 12,
+    name: "player-scoped versioned session read projections",
+    sql: `CREATE TABLE IF NOT EXISTS ppw_player_session_projections (
+  world_id text NOT NULL REFERENCES ppw_worlds(world_id) ON DELETE CASCADE,
+  player_id text NOT NULL,
+  world_snapshot_version text NOT NULL,
+  projection_schema_version integer NOT NULL,
+  payload jsonb NOT NULL,
+  PRIMARY KEY (world_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS ppw_player_session_projections_world_version
+  ON ppw_player_session_projections(world_id, world_snapshot_version);`,
+  },
 ] as const;
 
 export const POSTGRES_APPLICATION_SCHEMA_SQL = [
