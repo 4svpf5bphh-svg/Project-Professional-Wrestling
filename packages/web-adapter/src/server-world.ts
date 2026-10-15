@@ -170,6 +170,8 @@ export async function withAlphaServerContext<TResult>(
           cacheHits: readStatsAfter.cacheHits - readStatsBefore.cacheHits,
           coalescedReads: readStatsAfter.coalescedReads - readStatsBefore.coalescedReads,
           snapshotWireBytes: readStatsAfter.snapshotWireBytes - readStatsBefore.snapshotWireBytes,
+          activityNoopProbes: readStatsAfter.activityNoopProbes - readStatsBefore.activityNoopProbes,
+          activityTransactions: readStatsAfter.activityTransactions - readStatsBefore.activityTransactions,
           note: "process-shared counters; overlapping requests may be double-attributed",
         }));
       }
