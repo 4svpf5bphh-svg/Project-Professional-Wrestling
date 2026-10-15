@@ -457,7 +457,7 @@ await test("player session projection returns equivalent views and invalidates a
       working.runtime.revision += 1;
     }, []);
     const after = await access.repository.loadPlayerSessionView(worldId, "session-projection-player");
-    ok(after.runtime.revision === expected.runtime.revision + 1,
+    ok(after.world.revision === expected.world.revision + 1,
       "session projection remained stale after authoritative World revision");
   } finally {
     await access.close();
